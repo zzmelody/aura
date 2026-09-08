@@ -6,11 +6,20 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const layers = ["frontend", "backend", "shared"];
-const expectedWorkspaces = layers.map((layer) => `packages/${layer}/*`);
+const platforms = ["mobile", "desktop", "server"];
+const expectedWorkspaces = [
+  "apps/*",
+  ...layers.map((layer) => `packages/${layer}/*`),
+];
 const allowedLayers = {
   frontend: new Set(["frontend", "shared"]),
   backend: new Set(["backend", "shared"]),
   shared: new Set(["shared"]),
+};
+const allowedAppLayers = {
+  mobile: new Set(["frontend", "shared"]),
+  desktop: new Set(["frontend", "backend", "shared"]),
+  server: new Set(["backend", "shared"]),
 };
 const ignored = new Set([
   "node_modules",
@@ -27,6 +36,12 @@ const directModelClients = new Set([
 ]);
 const readJson = async (path) => JSON.parse(await readFile(path, "utf8"));
 const inside = (root, path) => path === root || path.startsWith(root + sep);
+
+function exportTargets(value) {
+  if (typeof value === "string") return [value];
+  if (!value || typeof value !== "object") return [];
+  return Object.values(value).flatMap(exportTargets);
+}
 
 async function sourceFiles(dir) {
   const files = [];
@@ -76,6 +91,34 @@ export async function checkWorkspaces(root) {
     errors.push(`Root workspaces must be ${expectedWorkspaces.join(", ")}.`);
 
   const packages = new Map();
+  const appsDir = resolve(root, "apps");
+  for (const entry of await readdir(appsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const label = `apps/${entry.name}`;
+    const dir = resolve(appsDir, entry.name);
+    let manifest;
+    try {
+      manifest = await readJson(resolve(dir, "package.json"));
+    } catch (error) {
+      errors.push(`${label}: unreadable package.json (${error.message}).`);
+      continue;
+    }
+    if (!manifest.name?.startsWith("@aura/") || manifest.private !== true)
+      errors.push(`${label}: requires a private @aura/* package.`);
+    if (manifest.aura?.kind !== "app")
+      errors.push(`${label}: aura.kind must be app.`);
+    if (!new Set(platforms).has(manifest.aura?.platform))
+      errors.push(`${label}: aura.platform must be mobile, desktop or server.`);
+    if (manifest.aura?.layer !== undefined)
+      errors.push(`${label}: applications do not declare aura.layer.`);
+    if (packages.has(manifest.name)) errors.push(`Duplicate package ${manifest.name}.`);
+    packages.set(manifest.name, {
+      dir,
+      kind: "app",
+      platform: manifest.aura?.platform,
+      manifest,
+    });
+  }
   for (const layer of layers) {
     const layerDir = resolve(root, "packages", layer);
     for (const entry of await readdir(layerDir, { withFileTypes: true })) {
@@ -93,40 +136,43 @@ export async function checkWorkspaces(root) {
         errors.push(`${label}: requires a private @aura/* package.`);
       if (manifest.aura?.layer !== layer)
         errors.push(`${label}: aura.layer must be ${layer}.`);
-      if (!new Set(["app", "library"]).has(manifest.aura?.kind))
-        errors.push(`${label}: aura.kind must be app or library.`);
+      if (manifest.aura?.kind !== "library")
+        errors.push(`${label}: packages must declare aura.kind as library.`);
+      if (manifest.aura?.platform !== undefined)
+        errors.push(`${label}: libraries do not declare aura.platform.`);
       if (packages.has(manifest.name)) errors.push(`Duplicate package ${manifest.name}.`);
-      packages.set(manifest.name, { dir, layer, manifest });
+      packages.set(manifest.name, { dir, kind: "library", layer, manifest });
     }
   }
 
   for (const [name, owner] of packages) {
-    const { dir, layer, manifest } = owner;
+    const { dir, kind, layer, platform, manifest } = owner;
     const declared = {
       ...manifest.dependencies,
       ...manifest.devDependencies,
       ...manifest.peerDependencies,
     };
-    if (manifest.aura?.kind === "library" && !manifest.exports)
+    if (kind === "library" && !manifest.exports)
       errors.push(`${name}: library is missing public exports.`);
     for (const dep of Object.keys(declared))
       if (directModelClients.has(dep))
         errors.push(
           `${name}: model providers must use DSH; direct dependency ${dep} is forbidden.`,
         );
-    for (const target of Object.values(manifest.exports ?? {})) {
-      if (
-        typeof target !== "string" ||
-        !target.startsWith("./") ||
-        !inside(dir, resolve(dir, target))
-      ) {
+    for (const value of Object.values(manifest.exports ?? {})) {
+      const targets = exportTargets(value);
+      if (!targets.length)
         errors.push(`${name}: export target must be an explicit in-package file.`);
-        continue;
-      }
-      try {
-        await access(resolve(dir, target));
-      } catch {
-        errors.push(`${name}: missing export file ${target}.`);
+      for (const target of targets) {
+        if (!target.startsWith("./") || !inside(dir, resolve(dir, target))) {
+          errors.push(`${name}: export target must be an explicit in-package file.`);
+          continue;
+        }
+        try {
+          await access(resolve(dir, target));
+        } catch {
+          errors.push(`${name}: missing export file ${target}.`);
+        }
       }
     }
     for (const [dep, version] of Object.entries(declared)) {
@@ -136,10 +182,22 @@ export async function checkWorkspaces(root) {
         errors.push(`${name}: unknown workspace ${dep}.`);
         continue;
       }
-      if (target.manifest.aura?.kind === "app")
+      if (target.kind === "app")
         errors.push(`${name}: cannot depend on application ${dep}.`);
-      if (!allowedLayers[layer].has(target.layer))
+      if (
+        kind === "library" &&
+        target.kind === "library" &&
+        !allowedLayers[layer].has(target.layer)
+      )
         errors.push(`${name}: ${layer} packages cannot depend on ${target.layer} package ${dep}.`);
+      if (
+        kind === "app" &&
+        target.kind === "library" &&
+        !allowedAppLayers[platform]?.has(target.layer)
+      )
+        errors.push(
+          `${name}: ${platform} applications cannot depend on ${target.layer} package ${dep}.`,
+        );
       if (version !== "workspace:*") errors.push(`${name}: ${dep} must use workspace:*.`);
     }
     for (const path of await sourceFiles(dir)) {
@@ -194,6 +252,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.error(errors.join("\n"));
     process.exitCode = 1;
   } else {
-    console.log("Workspace metadata, layers, exports, imports and dependency graph passed.");
+    console.log("Application outputs, library layers, exports, imports and dependency graph passed.");
   }
 }

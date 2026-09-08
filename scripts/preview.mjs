@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { resolve, extname, sep } from "node:path";
 
 const root = fileURLToPath(
-  new URL("../packages/frontend/mobile/dist/", import.meta.url),
+  new URL("../apps/mobile/dist/", import.meta.url),
 );
 const mime = {
   ".html": "text/html; charset=utf-8",

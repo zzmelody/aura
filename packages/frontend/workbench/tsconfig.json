@@ -1,5 +1,5 @@
 {
   "extends": ["../../../tsconfig.base.json", "expo/tsconfig.base"],
   "compilerOptions": { "strict": true, "allowJs": true, "noEmit": true },
-  "include": ["**/*.ts", "**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

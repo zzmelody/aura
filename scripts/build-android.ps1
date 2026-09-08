@@ -19,12 +19,12 @@ $env:AURA_PREVIEW_HTTP = '1'
 $env:GRADLE_USER_HOME = "$auraRoot\.tools\gradle"
 $auraJdk17 = Get-ChildItem -LiteralPath "$auraRoot\.tools\jdk17" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($auraJdk17) { $env:AURA_JDK17 = $auraJdk17.FullName }
-Set-Location -LiteralPath "$auraRoot\packages\frontend\mobile"
+Set-Location -LiteralPath "$auraRoot\apps\mobile"
 if (!$SkipPrebuild) {
     & $auraNode "$auraRoot\node_modules\expo\bin\cli" prebuild --platform android --no-install
     if ($LASTEXITCODE -ne 0) { throw 'Expo prebuild failed.' }
 }
-Set-Location -LiteralPath "$auraRoot\packages\frontend\mobile\android"
+Set-Location -LiteralPath "$auraRoot\apps\mobile\android"
 & .\gradlew.bat :app:assembleRelease "-PreactNativeArchitectures=$Architectures" '-Porg.gradle.java.installations.fromEnv=AURA_JDK17,JAVA_HOME' '-Djava.net.preferIPv4Stack=true' --no-daemon --console=plain --max-workers=4
 if ($LASTEXITCODE -ne 0) { throw 'Android packaging failed.' }
 $auraOutput = "$auraRoot\output\android"

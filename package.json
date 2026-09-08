@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "workspaces": [
+    "apps/*",
     "packages/frontend/*",
     "packages/backend/*",
     "packages/shared/*"
@@ -13,13 +14,15 @@
   },
   "packageManager": "pnpm@10.17.1",
   "scripts": {
-    "dev": "pnpm --filter @aura/mobile run web",
+    "dev": "node scripts/run-with-runtime.mjs web",
     "mobile": "pnpm --filter @aura/mobile run start",
+    "desktop": "pnpm --filter @aura/desktop run start",
     "runtime": "pnpm --filter @aura/server run start",
-    "build": "pnpm run build:web",
+    "build": "pnpm run build:web && pnpm run build:desktop",
     "build:web": "pnpm --filter @aura/mobile run build:web",
+    "build:desktop": "pnpm --filter @aura/desktop run build:renderer",
     "build:android": "powershell -ExecutionPolicy Bypass -File scripts/build-android.ps1",
-    "preview": "node scripts/preview.mjs",
+    "preview": "node scripts/run-with-runtime.mjs preview",
     "typecheck": "pnpm -r --if-present run typecheck",
     "test": "pnpm -r --if-present run test && node --test tests/workspaces.test.mjs",
     "check:workspaces": "node scripts/check-workspaces.mjs",

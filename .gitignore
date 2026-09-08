@@ -4,9 +4,10 @@ node_modules/
 .aura/
 .tools/
 output/
-packages/frontend/mobile/dist/
-packages/frontend/mobile/android/
-packages/frontend/mobile/ios/
+apps/mobile/dist/
+apps/mobile/android/
+apps/mobile/ios/
+apps/desktop/dist/
 *.log
 .env
 .env.local

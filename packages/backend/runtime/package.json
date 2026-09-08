@@ -1,11 +1,20 @@
 {
-  "name": "@aura/server",
+  "name": "@aura/runtime",
   "version": "0.1.0",
   "private": true,
-  "aura": { "layer": "backend", "kind": "app" },
   "type": "module",
+  "aura": { "kind": "library", "layer": "backend" },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.mjs"
+    },
+    "./validation": {
+      "types": "./src/validation.d.ts",
+      "import": "./src/validation.mjs"
+    }
+  },
   "scripts": {
-    "start": "node server.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {

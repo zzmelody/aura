@@ -75,18 +75,32 @@ export function useCodexAuth(workspace: WorkspaceController) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ method } satisfies CodexLoginRequest),
       });
-      if (!response.ok) throw new Error("login unavailable");
+      if (!response.ok) {
+        const failure = (await response.json().catch(() => null)) as {
+          message?: unknown;
+        } | null;
+        throw new Error(
+          typeof failure?.message === "string"
+            ? failure.message
+            : `DSH 登录服务返回了 ${response.status}。`,
+        );
+      }
       const next = (await response.json()) as CodexAuthStatus;
       setStatus(next);
       const url = next.state === "pending" ? next.authUrl ?? next.verificationUri : undefined;
       if (url && authWindow) authWindow.location.href = url;
       else if (url) await Linking.openURL(url);
       else authWindow?.close();
-    } catch {
+    } catch (error) {
       authWindow?.close();
       setStatus({
         state: "error",
-        message: "无法开始登录。请确认 Aura 工作台服务正在运行。",
+        message:
+          error instanceof TypeError
+            ? `无法连接 ${endpoint}。请通过 Aura 的 dev、preview 或 desktop 命令启动应用。`
+            : error instanceof Error
+              ? error.message
+              : "无法开始 Codex 登录。",
         model: status.model,
       });
     } finally {

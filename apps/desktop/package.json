@@ -1,23 +1,18 @@
 {
-  "name": "@aura/mobile",
+  "name": "@aura/desktop",
   "version": "0.1.0",
   "private": true,
-  "aura": { "layer": "frontend", "kind": "app" },
+  "type": "module",
+  "aura": { "kind": "app", "platform": "desktop" },
   "main": "index.ts",
   "scripts": {
-    "start": "expo start",
-    "web": "expo start --web --port 8081",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
-    "build:web": "expo export --platform web",
-    "export:native": "expo export --platform android --platform ios --output-dir ../../../output/native-bundles",
+    "start": "pnpm run build:renderer && electron src/main.mjs",
+    "build:renderer": "expo export --platform web",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aura/core": "workspace:*",
-    "@aura/demo": "workspace:*",
-    "@aura/protocol": "workspace:*",
-    "@aura/ui": "workspace:*",
+    "@aura/runtime": "workspace:*",
+    "@aura/workbench": "workspace:*",
     "@expo-google-fonts/ibm-plex-mono": "0.4.1",
     "@expo-google-fonts/manrope": "0.4.2",
     "@expo/metro-runtime": "57.0.15",
@@ -25,7 +20,6 @@
     "expo": "57.0.20",
     "expo-clipboard": "57.0.1",
     "expo-font": "57.0.3",
-    "expo-linear-gradient": "57.0.1",
     "expo-status-bar": "57.0.1",
     "expo-system-ui": "57.0.3",
     "lucide-react-native": "1.42.0",
@@ -37,7 +31,9 @@
     "react-native-web": "0.21.2"
   },
   "devDependencies": {
+    "@types/node": "24.10.1",
     "@types/react": "~19.2.2",
+    "electron": "44.2.0",
     "typescript": "~5.9.2"
   }
 }

@@ -15,21 +15,24 @@ Codex：客户端 → Aura runtime → DSH SDK profile → dsh-llm-pi-ai → ope
 
 `@aura/dsh-codex` 在 Aura 后端组合 DSH 的 `dsh-credentials-local`、`dsh-authorization`、`dsh-llm` 和 `dsh-llm-pi-ai` 服务。它只把 DSH 授权 flow 的 notice、设备码和最终状态投影到客户端；OAuth grant 由 DSH 写入 `.aura/dsh/.credentials.yaml`，不会进入 HTTP 响应、前端存储或日志。
 
-对话由应用自有的 `aura-sdk` profile 启动。该 profile 叠加官方 `dsh-base` 与 `dsh-sdk-app` bundle，配置 `openai-codex` provider，并通过官方 SDK JSON-RPC 读取 session events。DSH profile 位于 `packages/backend/runtime/profile`，运行时复制到已忽略的 DSH home。DSH 依赖本身保持只读。
+对话由 Aura 自有的 `aura-sdk` profile 启动。该 profile 叠加官方 `dsh-base` 与 `dsh-sdk-app` bundle，配置 `openai-codex` provider，并通过官方 SDK JSON-RPC 读取 session events。可复用的 HTTP/DSH 实现与 profile 位于 `packages/backend/runtime`；`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。
 
 ## Monorepo
 
-pnpm workspace 只收录以下三层：
+pnpm workspace 收录应用输出和三层可复用库：
 
-| 层 | 放置内容 | 允许依赖 |
+| 位置 | 放置内容 | 允许依赖 |
 | --- | --- | --- |
-| `packages/frontend/*` | 页面、组件、交互状态、设备适配 | frontend library、shared |
+| `apps/*` | mobile、desktop、server 可运行入口与发布配置 | 按平台使用下列 libraries |
+| `packages/frontend/*` | 可复用页面、组件、交互状态、设备适配 | frontend、shared |
 | `packages/backend/*` | HTTP 服务、凭据、DSH、进程、文件和网络能力 | backend library、shared |
 | `packages/shared/*` | 与运行环境无关的类型、校验、存储格式和纯流程 | shared |
 
-每个包通过 `aura.layer` 和 `aura.kind` 声明位置与 app/library 身份。`check:workspaces` 校验目录元数据、依赖方向、`workspace:*`、显式导出、未声明依赖、私有子路径、跨包相对导入、应用被依赖和依赖环。完整约束位于根 [AGENTS.md](../AGENTS.md)。
+应用声明 `aura.kind: app` 与 `aura.platform`；packages 只允许 library，并声明 `aura.layer`。移动应用只能依赖 frontend/shared，服务应用只能依赖 backend/shared，桌面应用可以组合 frontend/backend/shared。`check:workspaces` 校验目录元数据、依赖方向、`workspace:*`、显式导出、未声明依赖、私有子路径、跨 workspace 相对导入、应用被依赖和依赖环。完整约束位于根 [AGENTS.md](../AGENTS.md)。
 
-客户端导航和 React 状态属于 `frontend/mobile`；可复用 React Native 组件属于 `frontend/ui`；Node HTTP 与 DSH 子进程属于 `backend/runtime`；DSH 授权适配属于 `backend/codex`；协议、存储与规则演示属于 shared。新增桌面端放在 `frontend/desktop`，新增小程序适配放在独立 frontend app，不预建空目录。
+移动、桌面和服务入口分别位于 `apps/mobile`、`apps/desktop` 与 `apps/server`。客户端导航和 React 状态属于 `packages/frontend/workbench`，基础组件属于 `packages/frontend/ui`，DSH 授权适配属于 `packages/backend/codex`，协议、存储与规则演示属于 shared。新增小程序时创建独立的 `apps/miniprogram`，复用 frontend/shared 库，不在 packages 中伪装成应用。
+
+Web 开发与静态预览命令通过 `scripts/run-with-runtime.mjs` 同时启动前端和 Aura runtime，解决页面存在但 4311 服务缺失的问题。Electron 主进程也会先检查并启动 runtime，再显示 renderer；所有由入口启动的子进程在入口退出时回收。移动原生应用不能内嵌 Node/DSH，真机通过设置中的局域网地址连接电脑端 runtime。
 
 ## 当前取舍
 

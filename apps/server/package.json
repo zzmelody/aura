@@ -1,0 +1,13 @@
+{
+  "name": "@aura/server",
+  "version": "0.1.0",
+  "private": true,
+  "aura": { "kind": "app", "platform": "server" },
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@aura/runtime": "workspace:*"
+  }
+}

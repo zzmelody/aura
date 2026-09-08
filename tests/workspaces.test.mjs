@@ -10,6 +10,7 @@ async function fixture(
   {
     clientDependency = { "@aura/core": "workspace:*" },
     clientSource = 'import { value } from "@aura/core";',
+    client = {},
     core = {},
   } = {},
 ) {
@@ -17,7 +18,9 @@ async function fixture(
   t.after(() => rm(root, { recursive: true, force: true }));
   const json = (path, value) => writeFile(join(root, path), JSON.stringify(value));
   for (const path of [
-    "packages/frontend/client",
+    "apps/mobile",
+    "apps/server",
+    "packages/frontend/ui",
     "packages/backend/service",
     "packages/shared/core",
   ])
@@ -25,23 +28,39 @@ async function fixture(
   await json("package.json", {
     private: true,
     workspaces: [
+      "apps/*",
       "packages/frontend/*",
       "packages/backend/*",
       "packages/shared/*",
     ],
   });
-  await json("packages/frontend/client/package.json", {
-    name: "@aura/client",
+  await json("apps/mobile/package.json", {
+    name: "@aura/mobile",
     version: "0.1.0",
     private: true,
-    aura: { layer: "frontend", kind: "app" },
+    aura: { kind: "app", platform: "mobile" },
     dependencies: clientDependency,
+    ...client,
+  });
+  await json("apps/server/package.json", {
+    name: "@aura/server",
+    version: "0.1.0",
+    private: true,
+    aura: { kind: "app", platform: "server" },
+  });
+  await json("packages/frontend/ui/package.json", {
+    name: "@aura/ui",
+    version: "0.1.0",
+    private: true,
+    aura: { layer: "frontend", kind: "library" },
+    exports: { ".": "./index.mjs" },
   });
   await json("packages/backend/service/package.json", {
     name: "@aura/service",
     version: "0.1.0",
     private: true,
-    aura: { layer: "backend", kind: "app" },
+    aura: { layer: "backend", kind: "library" },
+    exports: { ".": "./index.mjs" },
   });
   await json("packages/shared/core/package.json", {
     name: "@aura/core",
@@ -51,20 +70,34 @@ async function fixture(
     exports: { ".": "./index.mjs" },
     ...core,
   });
-  await writeFile(join(root, "packages/frontend/client/index.ts"), clientSource);
+  await writeFile(join(root, "apps/mobile/index.ts"), clientSource);
+  await writeFile(join(root, "apps/server/index.mjs"), "export {};\n");
+  await writeFile(join(root, "packages/frontend/ui/index.mjs"), "export {};\n");
   await writeFile(join(root, "packages/backend/service/index.mjs"), "export {};\n");
   await writeFile(join(root, "packages/shared/core/index.mjs"), "export const value = 1;\n");
+  await writeFile(join(root, "packages/shared/core/index.d.ts"), "export declare const value: number;\n");
   return root;
 }
 
-test("workspace gate accepts declared public imports", async (t) => {
+test("workspace gate accepts application outputs and public library imports", async (t) => {
   assert.deepEqual(await checkWorkspaces(await fixture(t)), []);
+});
+
+test("workspace gate accepts explicit conditional exports", async (t) => {
+  const root = await fixture(t, {
+    core: {
+      exports: {
+        ".": { types: "./index.d.ts", import: "./index.mjs" },
+      },
+    },
+  });
+  assert.deepEqual(await checkWorkspaces(root), []);
 });
 
 test("workspace gate rejects undeclared and private imports", async (t) => {
   const root = await fixture(t, {
     clientDependency: {},
-    clientSource: 'import "@aura/core/private"; import "../../shared/core/index.mjs";',
+    clientSource: 'import "@aura/core/private"; import "../../packages/shared/core/index.mjs";',
   });
   const errors = (await checkWorkspaces(root)).join("\n");
   assert.match(errors, /undeclared dependency/);
@@ -76,38 +109,62 @@ test("workspace gate rejects application dependencies and cycles", async (t) => 
   const errors = (
     await checkWorkspaces(
       await fixture(t, {
-        core: { dependencies: { "@aura/client": "workspace:*" } },
+        core: { dependencies: { "@aura/mobile": "workspace:*" } },
       }),
     )
   ).join("\n");
   assert.match(errors, /cannot depend on application/);
-  assert.match(errors, /shared packages cannot depend on frontend/);
   assert.match(errors, /dependency cycle/);
 });
 
-test("workspace gate enforces layer direction", async (t) => {
-  const errors = (
+test("workspace gate enforces application and library layer direction", async (t) => {
+  const mobileErrors = (
     await checkWorkspaces(
-      await fixture(t, { clientDependency: { "@aura/service": "workspace:*" } }),
+      await fixture(t, {
+        clientDependency: { "@aura/service": "workspace:*" },
+      }),
     )
   ).join("\n");
-  assert.match(errors, /frontend packages cannot depend on backend/);
-  assert.match(errors, /cannot depend on application/);
+  assert.match(mobileErrors, /mobile applications cannot depend on backend/);
+
+  const libraryErrors = (
+    await checkWorkspaces(
+      await fixture(t, {
+        core: { dependencies: { "@aura/ui": "workspace:*" } },
+      }),
+    )
+  ).join("\n");
+  assert.match(libraryErrors, /shared packages cannot depend on frontend/);
 });
 
-test("workspace gate rejects metadata, versions and missing exports", async (t) => {
+test("workspace gate enforces app metadata", async (t) => {
+  const errors = (
+    await checkWorkspaces(
+      await fixture(t, {
+        client: { aura: { kind: "library", platform: "watch", layer: "frontend" } },
+      }),
+    )
+  ).join("\n");
+  assert.match(errors, /aura.kind must be app/);
+  assert.match(errors, /aura.platform must be mobile, desktop or server/);
+  assert.match(errors, /applications do not declare aura.layer/);
+});
+
+test("workspace gate enforces library metadata, versions and exports", async (t) => {
   const errors = (
     await checkWorkspaces(
       await fixture(t, {
         clientDependency: { "@aura/core": "0.1.0", "@aura/missing": "workspace:*" },
         core: {
-          aura: { layer: "backend", kind: "library" },
+          aura: { layer: "backend", kind: "app", platform: "server" },
           exports: { ".": "./missing.mjs" },
         },
       }),
     )
   ).join("\n");
   assert.match(errors, /aura.layer must be shared/);
+  assert.match(errors, /packages must declare aura.kind as library/);
+  assert.match(errors, /libraries do not declare aura.platform/);
   assert.match(errors, /unknown workspace/);
   assert.match(errors, /must use workspace/);
   assert.match(errors, /missing export file/);
