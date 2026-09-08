@@ -1,0 +1,26 @@
+{
+  "name": "@aura/dsh-codex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "aura": { "layer": "backend", "kind": "library" },
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@aura/protocol": "workspace:*",
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-authorization": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-credentials-local": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-llm": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.1.2-rc.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "~5.9.2"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@aura/ui",
+  "version": "0.1.0",
+  "private": true,
+  "aura": { "layer": "frontend", "kind": "library" },
+  "type": "module",
+  "exports": {
+    "./components": "./src/components.tsx",
+    "./theme": "./src/theme.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-svg": "15.15.4",
+    "lucide-react-native": "1.42.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~5.9.2"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@aura/core",
+  "version": "0.1.0",
+  "private": true,
+  "aura": { "layer": "shared", "kind": "library" },
+  "type": "module",
+  "exports": {
+    ".": "./src/state.mjs",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@aura/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2"
+  }
+}

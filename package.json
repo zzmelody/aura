@@ -1,0 +1,34 @@
+{
+  "name": "aura-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/frontend/*",
+    "packages/backend/*",
+    "packages/shared/*"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "dev": "pnpm --filter @aura/mobile run web",
+    "mobile": "pnpm --filter @aura/mobile run start",
+    "runtime": "pnpm --filter @aura/server run start",
+    "build": "pnpm run build:web",
+    "build:web": "pnpm --filter @aura/mobile run build:web",
+    "build:android": "powershell -ExecutionPolicy Bypass -File scripts/build-android.ps1",
+    "preview": "node scripts/preview.mjs",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "test": "pnpm -r --if-present run test && node --test tests/workspaces.test.mjs",
+    "check:workspaces": "node scripts/check-workspaces.mjs",
+    "check": "pnpm run check:workspaces && pnpm run typecheck && pnpm run test",
+    "test:runtime": "node scripts/smoke-runtime.mjs"
+  },
+  "devDependencies": {
+    "prettier": "3.9.6",
+    "sharp": "0.35.4",
+    "typescript": "~5.9.2"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "aura-dsh-runtime-profile",
+  "private": true,
+  "type": "module",
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-sdk-app"
+      ],
+      "patchReload": "startup"
+    }
+  }
+}

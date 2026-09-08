@@ -1,0 +1,86 @@
+# Aura · 个人工作台
+
+Aura 是独立应用项目，不是 DeepSeek Harness 源码副本。客户端使用 React Native + Expo 共用 Web、Android 和 iOS 界面；服务端把官方 DSH npm 包组合成应用自有 profile，不修改 DSH 或 pi-ai 源码。
+
+## 当前能力
+
+- 本地会话、历史恢复、逐字回复、停止、复制、失败重试，以及深浅色和减少动态效果。
+- 离线规则演示，以及通过官方 DSH profile 运行的服务端演示。
+- 右上角「登录 Codex」入口：由 DSH 的授权与凭据服务完成 OpenAI OAuth，登录后对话通过 DSH 的 `openai-codex` provider 使用 ChatGPT Plus/Pro 订阅。
+- Web 导出、原生 JS 资源导出和 Android 内测包脚本。
+
+Bedrock 保持空白；当前没有图片生成、日历、云同步或生产用户系统。
+
+## 启动
+
+需要 Node.js 24+。项目使用 pnpm 10 和一份根锁文件；Windows 辅助脚本会选择可用的 Node 24，并使用已忽略的 `.tools/pnpm` 本地工具。
+
+首次安装 pnpm 工具与项目依赖：
+
+```powershell
+cd F:\aura
+npm install --prefix .tools/pnpm pnpm@10.17.1
+.\scripts\aura.ps1 install
+```
+
+只使用离线演示时：
+
+```powershell
+.\scripts\aura.ps1 run dev
+```
+
+开发网页位于 `http://localhost:8081`。要使用 DSH 演示或 Codex 订阅，另开一个终端启动 Aura runtime：
+
+```powershell
+.\scripts\aura.ps1 run runtime
+```
+
+服务默认监听 `http://127.0.0.1:4311`。右上角点击「登录 Codex」，浏览器会进入 OpenAI 登录；手机或非本机页面使用设备码登录。成功后 Aura 自动选择 Codex 模式，新对话采用 `gpt-5.6-terra`，可在启动服务前设置 `AURA_CODEX_MODEL` 更改。
+
+登录链路是 `Aura → DSH authorization → dsh-llm-pi-ai → openai-codex OAuth`；对话链路是 `Aura → dsh --profile aura-sdk → DSH agent loop → dsh-llm-pi-ai → Codex`。Aura 不直接调用 pi-ai，也不复用或复制 Codex 应用的登录缓存。DSH 将授权记录保存在已忽略的 `.aura/dsh/.credentials.yaml`，前端只接收脱敏状态。
+
+同一局域网手机连接时，服务需显式以 `HOST=0.0.0.0` 启动，并在设置页填写电脑的局域网地址。当前服务没有生产鉴权，只能用于本机或可信局域网，不能直接发布到公网。
+
+## 构建与验证
+
+```powershell
+.\scripts\aura.ps1 run check
+.\scripts\aura.ps1 run build:web
+.\scripts\aura.ps1 run preview
+```
+
+Web 预览地址是 `http://127.0.0.1:4173`。服务运行时可在另一个终端验证真实 DSH 演示链路：
+
+```powershell
+.\scripts\aura.ps1 run test:runtime
+```
+
+Android 内测包使用 `.\scripts\build-android.ps1`；原生 JS 资源使用：
+
+```powershell
+.\scripts\aura.ps1 --filter @aura/mobile run export:native
+```
+
+输出分别位于 `output/android/aura-preview.apk` 和 `output/native-bundles`。Windows 无法生成 iOS IPA；EAS 配置在 `packages/frontend/mobile/eas.json`。
+
+## Monorepo 目录
+
+```text
+packages/
+  frontend/
+    mobile/    @aura/mobile：Expo Web、Android/iOS 应用
+    ui/        @aura/ui：跨端组件、主题与设计变量
+  backend/
+    runtime/   @aura/server：Aura HTTP 服务与 DSH profile
+    codex/     @aura/dsh-codex：DSH Codex 授权组合
+  shared/
+    protocol/  @aura/protocol：请求、流事件与脱敏授权状态
+    core/      @aura/core：会话、存储恢复与地址校验
+    demo/      @aura/demo：无密钥规则回复
+scripts/       根级运行、构建与依赖检查
+tests/         仓库级工作区规则测试
+```
+
+放置和依赖规则见 [AGENTS.md](AGENTS.md)。简要规则是：frontend 只依赖 frontend/shared，backend 只依赖 backend/shared，shared 只依赖 shared；应用是入口，任何包都不能依赖应用；跨包只使用显式导出和 `workspace:*`。
+
+更多信息见 [架构](docs/architecture.md)、[模型接入](docs/model-providers.md)、[主题规范](docs/design-system.md) 和 [验证记录](docs/verification.md)。

@@ -1,0 +1,15 @@
+node_modules/
+.playwright-cli/
+.expo/
+.aura/
+.tools/
+output/
+packages/frontend/mobile/dist/
+packages/frontend/mobile/android/
+packages/frontend/mobile/ios/
+*.log
+.env
+.env.local
+*.keystore
+*.jks
+.DS_Store
