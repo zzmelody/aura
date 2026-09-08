@@ -19,6 +19,9 @@ export type ChatEvent =
 /** User-selectable OAuth flow supported by the Aura backend. */
 export type CodexLoginRequest = { method: "browser" | "device_code" };
 
+/** Manual callback URL or code requested by DSH's browser OAuth fallback. */
+export type CodexLoginInputRequest = { input: string };
+
 /** Public authentication state; OAuth credentials never cross this interface. */
 export type CodexAuthStatus =
   | { state: "signed_out"; model: string }
@@ -31,5 +34,10 @@ export type CodexAuthStatus =
       verificationUri?: string;
       userCode?: string;
       message?: string;
+      prompt?: {
+        kind: "text" | "secret";
+        message: string;
+        placeholder?: string;
+      };
       model: string;
     };

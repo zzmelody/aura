@@ -137,7 +137,9 @@ export async function startAuraRuntime(options = {}) {
       stdio: ["pipe", "pipe", "pipe"],
     });
     children.add(child);
-    const exited = new Promise((resolveExit) => child.once("exit", resolveExit));
+    const exited = new Promise((resolveExit) =>
+      child.once("exit", resolveExit),
+    );
     let stderr = "";
     child.stderr.on("data", (chunk) => {
       stderr = (stderr + chunk.toString()).slice(-6000);
@@ -170,12 +172,14 @@ export async function startAuraRuntime(options = {}) {
         textSeen = true;
         if (!res.destroyed)
           res.write(
-            JSON.stringify({ type: "delta", text: event.data.chunk.text }) + "\n",
+            JSON.stringify({ type: "delta", text: event.data.chunk.text }) +
+              "\n",
           );
       }
       if (event.type === "turn/end") {
         ended = true;
-        if (event.data.reason.kind === "completed" && textSeen) settle.resolve();
+        if (event.data.reason.kind === "completed" && textSeen)
+          settle.resolve();
         else
           settle.reject(
             new Error(`DSH turn ended: ${JSON.stringify(event.data.reason)}`),
@@ -218,7 +222,9 @@ export async function startAuraRuntime(options = {}) {
             type: "done",
             engine: "deepseek-harness",
             mode: route.mode,
-            ...(route.mode === "codex-subscription" ? { model: route.model } : {}),
+            ...(route.mode === "codex-subscription"
+              ? { model: route.model }
+              : {}),
           }) + "\n",
         );
     } catch (error) {
@@ -302,6 +308,30 @@ export async function startAuraRuntime(options = {}) {
         if (!res.destroyed)
           res.end(JSON.stringify({ message: "无法开始 Codex 登录。" }));
       }
+      return;
+    }
+    if (req.method === "POST" && req.url === "/auth/codex/complete") {
+      try {
+        const body = await readJson(req, 16 * 1024);
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(JSON.stringify(codex.submitLoginInput(body.input)));
+      } catch (error) {
+        if (!res.headersSent) res.writeHead(409);
+        if (!res.destroyed)
+          res.end(
+            JSON.stringify({
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "无法提交 Codex 授权结果。",
+            }),
+          );
+      }
+      return;
+    }
+    if (req.method === "POST" && req.url === "/auth/codex/cancel") {
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.end(JSON.stringify(await codex.cancelLogin()));
       return;
     }
 

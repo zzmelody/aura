@@ -13,7 +13,7 @@ Codex：客户端 → Aura runtime → DSH SDK profile → dsh-llm-pi-ai → ope
 登录：客户端 → Aura runtime → DSH authorization → dsh-llm-pi-ai OAuth flow
 ```
 
-`@aura/dsh-codex` 在 Aura 后端组合 DSH 的 `dsh-credentials-local`、`dsh-authorization`、`dsh-llm` 和 `dsh-llm-pi-ai` 服务。它只把 DSH 授权 flow 的 notice、设备码和最终状态投影到客户端；OAuth grant 由 DSH 写入 `.aura/dsh/.credentials.yaml`，不会进入 HTTP 响应、前端存储或日志。
+`@aura/dsh-codex` 在 Aura 后端组合 DSH 的 `dsh-credentials-local`、`dsh-authorization`、`dsh-llm` 和 `dsh-llm-pi-ai` 服务。它只把 DSH 授权 flow 的 notice、设备码、手动回调提示和最终状态投影到客户端；浏览器回调监听使用与 OpenAI redirect URI 一致的 `localhost`。OAuth grant 由 DSH 写入 `.aura/dsh/.credentials.yaml`，不会进入 HTTP 响应、前端存储或日志。
 
 对话由 Aura 自有的 `aura-sdk` profile 启动。该 profile 叠加官方 `dsh-base` 与 `dsh-sdk-app` bundle，配置 `openai-codex` provider，并通过官方 SDK JSON-RPC 读取 session events。可复用的 HTTP/DSH 实现与 profile 位于 `packages/backend/runtime`；`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。
 

@@ -35,7 +35,7 @@ npm install --prefix .tools/pnpm pnpm@10.17.1
 .\scripts\aura.ps1 run runtime
 ```
 
-服务默认监听 `http://127.0.0.1:4311`。右上角点击「登录 Codex」，浏览器会进入 OpenAI 登录；手机或非本机页面使用设备码登录。成功后 Aura 自动选择 Codex 模式，新对话采用 `gpt-5.6-terra`，可在启动服务前设置 `AURA_CODEX_MODEL` 更改。
+服务默认监听 `http://127.0.0.1:4311`。右上角点击「登录 Codex」，浏览器会进入 OpenAI 登录；手机或非本机页面使用设备码登录。桌面浏览器回到本机后会自动刷新状态；若本机回调被代理或浏览器拦截，可把浏览器最后停留的完整地址粘贴回登录窗口继续完成 DSH 授权。成功后 Aura 自动选择 Codex 模式，新对话采用 `gpt-5.6-terra`，可在启动服务前设置 `AURA_CODEX_MODEL` 更改。
 
 启动桌面应用：
 
