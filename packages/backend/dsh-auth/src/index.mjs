@@ -29,11 +29,11 @@ function loginErrorMessage(error) {
 }
 
 /** DSH-owned ChatGPT subscription authorization for the openai-codex route. */
-export class DshCodexAuthorization {
+export class CodexSubscriptionAuth {
   /**
    * Builds the DSH credential, authorization and pi-ai adapter composition.
    * @param {{credentialPath: string, model?: string}} options
-   * @returns {Promise<DshCodexAuthorization>}
+   * @returns {Promise<CodexSubscriptionAuth>}
    */
   static async create(options) {
     const ctx = new Context();
@@ -52,7 +52,7 @@ export class DshCodexAuthorization {
         },
       },
     });
-    const instance = new DshCodexAuthorization(
+    const instance = new CodexSubscriptionAuth(
       ctx,
       options.model ?? "gpt-5.6-terra",
     );

@@ -3,25 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "aura": { "kind": "library", "layer": "backend" },
+  "aura": {
+    "kind": "library",
+    "layer": "backend"
+  },
   "exports": {
-    ".": {
-      "types": "./src/index.d.ts",
-      "import": "./src/index.mjs"
-    },
-    "./validation": {
-      "types": "./src/validation.d.ts",
-      "import": "./src/validation.mjs"
-    }
+    ".": "./src/index.ts",
+    "./validation": "./src/validation.ts"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
   },
   "dependencies": {
-    "@aura/dsh-codex": "workspace:*",
+    "@aura/orchestration": "workspace:*",
+    "@aura/dsh-auth": "workspace:*",
     "@aura/demo": "workspace:*",
     "@aura/protocol": "workspace:*",
     "@deepseek-ai/dsh": "0.1.2-rc.1",
     "@deepseek-ai/dsh-sdk-protocol": "0.1.2-rc.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "~5.9.2"
   }
 }

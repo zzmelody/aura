@@ -23,6 +23,7 @@ import * as SystemUI from "expo-system-ui";
 import {
   Clock3,
   Grid2X2,
+  GitBranch,
   MessageCircle,
   Moon,
   Plus,
@@ -37,11 +38,13 @@ import { CodexLoginButton } from "./CodexLoginButton";
 import { HomeScreen, HistoryScreen } from "./screens/Home";
 import { ChatScreen } from "./screens/Chat";
 import { SettingsScreen } from "./screens/Settings";
+import { FlowsScreen } from "./screens/Flows";
 import type { Tab } from "./types";
 
 const tabs = [
   { id: "home", label: "空间", icon: Grid2X2 },
   { id: "chat", label: "对话", icon: MessageCircle },
+  { id: "flows", label: "流程", icon: GitBranch },
   { id: "history", label: "记录", icon: Clock3 },
   { id: "settings", label: "设置", icon: SlidersHorizontal },
 ] as const;
@@ -229,9 +232,11 @@ export default function App() {
                         ? "WORKSPACE"
                         : tab === "chat"
                           ? "CONVERSATION"
-                          : tab === "history"
-                            ? "YOUR ARCHIVE"
-                            : "PREFERENCES"}
+                          : tab === "flows"
+                            ? "AGENT WORKFLOWS"
+                            : tab === "history"
+                              ? "YOUR ARCHIVE"
+                              : "PREFERENCES"}
                     </Label>
                   ) : (
                     <>
@@ -308,6 +313,9 @@ export default function App() {
                   />
                 ) : null}
                 {tab === "chat" ? <ChatScreen workspace={workspace} /> : null}
+                {tab === "flows" ? (
+                  <FlowsScreen endpoint={codexAuth.endpoint} />
+                ) : null}
                 {tab === "history" ? (
                   <HistoryScreen
                     workspace={workspace}

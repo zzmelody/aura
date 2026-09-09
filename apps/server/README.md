@@ -1,6 +1,6 @@
 # @aura/server
 
-Aura 的独立服务端应用输出。入口只负责启动 `@aura/runtime`；后者拥有 HTTP API、DSH 进程、profile 与 Codex 授权能力，因此 Electron 桌面端也能通过正式 workspace 依赖复用同一后端，而不依赖另一个应用或私有文件路径。应用不复制或修改 DSH 源码，也不直接调用 pi-ai。
+Aura 的独立服务端应用输出。入口只负责启动 `@aura/runtime`；后者组合 HTTP API、DSH 进程和 profile，并通过 `@aura/dsh-auth` 注入授权能力。因此 Electron 桌面端也能通过正式 workspace 依赖复用同一后端，而不依赖另一个应用或私有文件路径。应用不复制或修改 DSH 源码，也不直接调用 pi-ai。
 
 在仓库根执行 `.\scripts\aura.ps1 run runtime`，服务默认只监听 `127.0.0.1:4311`。服务运行后执行 `.\scripts\aura.ps1 run test:runtime`，验证真实 DSH 进程的两轮流式演示。
 

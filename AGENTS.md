@@ -7,6 +7,8 @@ Read `docs/architecture.md` before changing package placement or dependencies.
 - `apps/*` owns runnable and publishable entrypoints. Use `aura.kind: app` with `aura.platform: mobile`, `desktop` or `server`; applications do not declare `aura.layer`. Mobile apps may depend on frontend/shared libraries, server apps on backend/shared libraries, and desktop apps on frontend/backend/shared libraries.
 - `packages/frontend/*` owns reusable user interfaces, interaction state, navigation and device adapters. Frontend packages may depend on frontend and shared packages, never backend packages.
 - `packages/backend/*` owns HTTP services, secrets, authentication, DSH processes, filesystem and network providers. Backend packages may depend on backend libraries and shared packages, never frontend packages.
+- `packages/backend/dsh-auth` owns DSH authorization/credential adapters. Provider-specific services may live there, but HTTP routes and model execution do not.
+- `packages/backend/runtime` is the backend composition root. Keep configuration, HTTP routes, DSH process execution, local model adapters and lifecycle management in separate TypeScript modules; do not reintroduce `.mjs` plus handwritten `.d.ts` pairs.
 - `packages/shared/*` owns deterministic, runtime-neutral types, validation, storage formats and workflow logic. Shared packages may depend only on other shared packages and must not depend on React, Expo, Node services or secret-bearing code.
 - Every package under `packages/*` declares `aura.kind: library` and its directory layer as `aura.layer`. No workspace may import or depend on an application.
 - Use package names and explicit `exports` between workspaces. Do not use cross-package relative imports or private source subpaths.

@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DshCodexAuthorization } from "@aura/dsh-codex";
+import { CodexSubscriptionAuth } from "@aura/dsh-auth";
 
 test("DSH registers an openai-codex authorization flow without network access", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "aura-dsh-codex-"));
+  const root = await mkdtemp(join(tmpdir(), "aura-dsh-auth-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const authorization = await DshCodexAuthorization.create({
+  const authorization = await CodexSubscriptionAuth.create({
     credentialPath: join(root, ".credentials.yaml"),
   });
   t.after(() => authorization.close());
@@ -19,9 +19,9 @@ test("DSH registers an openai-codex authorization flow without network access", 
 });
 
 test("Aura can complete DSH's manual browser callback prompt", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "aura-dsh-codex-prompt-"));
+  const root = await mkdtemp(join(tmpdir(), "aura-dsh-auth-prompt-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const authorization = await DshCodexAuthorization.create({
+  const authorization = await CodexSubscriptionAuth.create({
     credentialPath: join(root, ".credentials.yaml"),
   });
   t.after(() => authorization.close());
@@ -95,9 +95,9 @@ test("Aura can complete DSH's manual browser callback prompt", async (t) => {
 });
 
 test("a failed DSH login remains visible after status polling", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "aura-dsh-codex-error-"));
+  const root = await mkdtemp(join(tmpdir(), "aura-dsh-auth-error-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const authorization = await DshCodexAuthorization.create({
+  const authorization = await CodexSubscriptionAuth.create({
     credentialPath: join(root, ".credentials.yaml"),
   });
   t.after(() => authorization.close());

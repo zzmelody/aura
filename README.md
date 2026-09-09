@@ -83,8 +83,8 @@ packages/
     ui/        @aura/ui：跨端组件、主题与设计变量
     workbench/ @aura/workbench：移动端与桌面端共用界面
   backend/
-    codex/     @aura/dsh-codex：DSH Codex 授权组合
-    runtime/   @aura/runtime：可复用 HTTP、DSH 进程与服务生命周期
+    dsh-auth/  @aura/dsh-auth：DSH 授权与凭据适配
+    runtime/   @aura/runtime：TypeScript 后端组合根与服务生命周期
   shared/
     protocol/  @aura/protocol：请求、流事件与脱敏授权状态
     core/      @aura/core：会话、存储恢复与地址校验
@@ -95,4 +95,4 @@ tests/         仓库级工作区规则测试
 
 放置和依赖规则见 [AGENTS.md](AGENTS.md)。简要规则是：可运行入口只放 `apps/*`，可复用库才放 `packages/*`；frontend 只依赖 frontend/shared，backend 只依赖 backend/shared，shared 只依赖 shared；任何 workspace 都不能导入应用；跨 workspace 只使用显式导出和 `workspace:*`。
 
-更多信息见 [架构](docs/architecture.md)、[模型接入](docs/model-providers.md)、[主题规范](docs/design-system.md) 和 [验证记录](docs/verification.md)。
+更多信息见 [架构](docs/architecture.md)、[后端 Runtime 技术方案](docs/backend-runtime.md)、[模型接入](docs/model-providers.md)、[主题规范](docs/design-system.md) 和 [验证记录](docs/verification.md)。
