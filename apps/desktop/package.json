@@ -4,36 +4,29 @@
   "private": true,
   "type": "module",
   "aura": { "kind": "app", "platform": "desktop" },
-  "main": "index.ts",
+  "main": "src/main.ts",
   "scripts": {
-    "start": "pnpm run build:renderer && electron src/main.mjs",
-    "build:renderer": "expo export --platform web",
+    "start": "pnpm run build:renderer && electron .",
+    "build": "pnpm run build:renderer",
+    "build:renderer": "vite build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@aura/runtime": "workspace:*",
     "@aura/workbench": "workspace:*",
-    "@expo-google-fonts/ibm-plex-mono": "0.4.1",
-    "@expo-google-fonts/manrope": "0.4.2",
-    "@expo/metro-runtime": "57.0.15",
-    "@react-native-async-storage/async-storage": "2.2.0",
-    "expo": "57.0.20",
-    "expo-clipboard": "57.0.1",
-    "expo-font": "57.0.3",
-    "expo-status-bar": "57.0.1",
-    "expo-system-ui": "57.0.3",
-    "lucide-react-native": "1.42.0",
+    "@hono/node-server": "2.1.1",
+    "hono": "4.13.7",
+    "lucide-react": "1.43.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "react-native": "0.86.3",
-    "react-native-safe-area-context": "5.7.0",
-    "react-native-svg": "15.15.4",
-    "react-native-web": "0.21.2"
+    "react-dom": "19.2.3"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
     "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.2",
+    "@vitejs/plugin-react": "6.1.1",
     "electron": "44.2.0",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "vite": "8.2.2"
   }
 }

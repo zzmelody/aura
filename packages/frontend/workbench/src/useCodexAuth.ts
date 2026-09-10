@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { AppState, Linking, Platform } from "react-native";
 import type {
   CodexAuthStatus,
   CodexLoginInputRequest,
   CodexLoginRequest,
 } from "@aura/protocol/types";
 import type { WorkspaceController } from "./useWorkspace";
+import { openExternal, platform } from "./platform";
 
 const localRuntime = "http://127.0.0.1:4311";
 
 function browserMethod(): CodexLoginRequest["method"] {
-  if (Platform.OS !== "web") return "device_code";
+  if (platform() === "mobile") return "device_code";
   const host = globalThis.location?.hostname;
   return host === "localhost" || host === "127.0.0.1" || host === "::1"
     ? "browser"
@@ -78,31 +78,22 @@ export function useCodexAuth(workspace: WorkspaceController) {
   useEffect(() => {
     if (status.state !== "pending") return;
     const check = () => void refresh();
-    if (Platform.OS === "web") {
-      const onVisibility = () => {
-        if (globalThis.document.visibilityState === "visible") check();
-      };
-      globalThis.window.addEventListener("focus", check);
-      globalThis.document.addEventListener("visibilitychange", onVisibility);
-      return () => {
-        globalThis.window.removeEventListener("focus", check);
-        globalThis.document.removeEventListener(
-          "visibilitychange",
-          onVisibility,
-        );
-      };
-    }
-    const subscription = AppState.addEventListener("change", (next) => {
-      if (next === "active") check();
-    });
-    return () => subscription.remove();
+    const onVisibility = () => {
+      if (globalThis.document.visibilityState === "visible") check();
+    };
+    globalThis.window.addEventListener("focus", check);
+    globalThis.document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      globalThis.window.removeEventListener("focus", check);
+      globalThis.document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [refresh, status.state]);
 
   const start = useCallback(
     async (requestedMethod?: CodexLoginRequest["method"]) => {
       const method = requestedMethod ?? browserMethod();
       const authWindow =
-        Platform.OS === "web" && method === "browser"
+        platform() !== "mobile" && method === "browser"
           ? globalThis.open?.("", "_blank")
           : null;
       setLoading(true);
@@ -127,7 +118,7 @@ export function useCodexAuth(workspace: WorkspaceController) {
             ? (next.authUrl ?? next.verificationUri)
             : undefined;
         if (url && authWindow) authWindow.location.href = url;
-        else if (url) await Linking.openURL(url);
+        else if (url) await openExternal(url);
         else authWindow?.close();
       } catch (error) {
         authWindow?.close();

@@ -6,19 +6,20 @@
   "type": "module",
   "exports": {
     "./components": "./src/components.tsx",
-    "./theme": "./src/theme.ts"
+    "./theme": "./src/theme.ts",
+    "./web": "./src/web.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
     "react": "19.2.3",
-    "react-native": "0.86.3",
-    "react-native-svg": "15.15.4",
-    "lucide-react-native": "1.42.0"
+    "react-dom": "19.2.3",
+    "lucide-react": "1.43.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.2",
     "typescript": "~5.9.2"
   }
 }

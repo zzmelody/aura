@@ -1,12 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import type { ServerResponse } from "node:http";
 import {
   JsonRpcLineTransport,
   type InitializeResult,
   type SessionEventNotification,
 } from "@deepseek-ai/dsh-sdk-protocol";
-import type { ChatMessage } from "@aura/protocol/types";
+import type { ChatEvent, ChatMessage } from "@aura/protocol/types";
 import { errorMessage } from "./http-server.ts";
 import type { DshRoute, DshRunnerOptions } from "./types.ts";
 
@@ -27,20 +26,13 @@ export class DshSessionRunner {
 
   async stream(
     messages: ChatMessage[],
-    response: ServerResponse,
+    emit: (event: ChatEvent) => void,
     route: DshRoute,
+    signal: AbortSignal,
   ): Promise<void> {
     if (this.#closing) throw new Error("Aura runtime is shutting down.");
 
-    const abort = new AbortController();
-    const timer = setTimeout(
-      () => abort.abort(new Error("DSH 响应超时。")),
-      60_000,
-    );
-    const onResponseClose = () => {
-      if (!response.writableEnded) abort.abort(new Error("连接已关闭。"));
-    };
-    response.on("close", onResponseClose);
+    const abortSignal = AbortSignal.any([signal, AbortSignal.timeout(60_000)]);
 
     const child = spawn(
       process.execPath,
@@ -89,10 +81,10 @@ export class DshSessionRunner {
         );
     });
     const onAbort = () => {
-      settle.reject(abort.signal.reason);
+      settle.reject(abortSignal.reason);
       child.kill();
     };
-    abort.signal.addEventListener("abort", onAbort, { once: true });
+    abortSignal.addEventListener("abort", onAbort, { once: true });
     rpc.onNotification((method, parameters) => {
       if (method !== "session.event") return;
       const notification = parameters as unknown as SessionEventNotification;
@@ -103,10 +95,7 @@ export class DshSessionRunner {
         event.data.chunk.type === "text-delta"
       ) {
         textSeen = true;
-        if (!response.destroyed)
-          response.write(
-            `${JSON.stringify({ type: "delta", text: event.data.chunk.text })}\n`,
-          );
+        emit({ type: "delta", text: event.data.chunk.text });
       }
       if (event.type === "turn/end") {
         ended = true;
@@ -130,7 +119,7 @@ export class DshSessionRunner {
           reasoningEffort: route.reasoningEffort,
           maxTokens: route.maxTokens,
         },
-        abort.signal,
+        abortSignal,
       )) as InitializeResult;
       if (result.serverInfo?.name !== "deepseek-harness-sdk-runtime")
         throw new Error("DSH handshake failed.");
@@ -146,34 +135,32 @@ export class DshSessionRunner {
             },
           ],
         },
-        abort.signal,
+        abortSignal,
       );
       await completed;
-      await rpc.request("shutdown", {}, abort.signal);
-      if (!response.destroyed)
-        response.end(
-          `${JSON.stringify({
-            type: "done",
-            engine: "deepseek-harness",
-            mode: route.mode,
-            ...(route.mode === "codex-subscription"
-              ? { model: route.model }
-              : {}),
-          })}\n`,
-        );
+      await rpc.request("shutdown", {}, abortSignal);
+      emit(
+        route.mode === "codex-subscription"
+          ? {
+              type: "done",
+              engine: "deepseek-harness",
+              mode: route.mode,
+              model: route.model,
+            }
+          : {
+              type: "done",
+              engine: "deepseek-harness",
+              mode: route.mode,
+            },
+      );
     } catch (error) {
       console.error("[Aura DSH session]", errorMessage(error));
-      if (!response.destroyed)
-        response.end(
-          `${JSON.stringify({
-            type: "error",
-            message: "DSH 请求暂时不可用，请检查服务终端和登录状态后重试。",
-          })}\n`,
-        );
+      emit({
+        type: "error",
+        message: "DSH 请求暂时不可用，请检查服务终端和登录状态后重试。",
+      });
     } finally {
-      clearTimeout(timer);
-      response.off("close", onResponseClose);
-      abort.signal.removeEventListener("abort", onAbort);
+      abortSignal.removeEventListener("abort", onAbort);
       rpc.close();
       child.stdin.end();
       if (child.exitCode === null) child.kill();

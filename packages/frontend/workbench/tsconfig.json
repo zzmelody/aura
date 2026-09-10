@@ -1,5 +1,10 @@
 {
-  "extends": ["../../../tsconfig.base.json", "expo/tsconfig.base"],
-  "compilerOptions": { "strict": true, "allowJs": true, "noEmit": true },
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "esModuleInterop": true
+  },
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

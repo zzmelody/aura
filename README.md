@@ -1,13 +1,13 @@
 # Aura · 个人工作台
 
-Aura 是独立应用项目，不是 DeepSeek Harness 源码副本。`apps/mobile` 输出 Web、Android 和 iOS 应用，`apps/desktop` 输出 Electron 桌面应用；两端复用 `packages/frontend/workbench` 的 React Native 界面。服务端把官方 DSH npm 包组合成应用自有 profile，不修改 DSH 或 pi-ai 源码。
+Aura 是独立应用项目，不是 DeepSeek Harness 源码副本。项目采用 Web-first 架构：同一套 `packages/frontend/workbench` React Web 界面分别由浏览器、Electron 和 Capacitor 输出。服务端把官方 DSH npm 包组合成应用自有 profile，不修改 DSH 或 pi-ai 源码。
 
 ## 当前能力
 
 - 本地会话、历史恢复、逐字回复、停止、复制、失败重试，以及深浅色和减少动态效果。
 - 离线规则演示，以及通过官方 DSH profile 运行的服务端演示。
 - 右上角「登录 Codex」入口：由 DSH 的授权与凭据服务完成 OpenAI OAuth，登录后对话通过 DSH 的 `openai-codex` provider 使用 ChatGPT Plus/Pro 订阅。
-- Web 导出、Electron 桌面窗口、原生 JS 资源导出和 Android 内测包脚本。
+- Vite 浏览器构建、Electron 桌面窗口、Capacitor Android/iOS 容器和 Android 内测包脚本。
 
 Bedrock 保持空白；当前没有图片生成、日历、云同步或生产用户系统。
 
@@ -23,13 +23,13 @@ npm install --prefix .tools/pnpm pnpm@10.17.1
 .\scripts\aura.ps1 install
 ```
 
-启动 Web 开发应用：
+启动浏览器开发应用：
 
 ```powershell
 .\scripts\aura.ps1 run dev
 ```
 
-该命令会同时启动 Aura runtime 与 `http://localhost:8081`，右上角登录按钮可以直接使用。单独调试服务时仍可运行：
+该命令会同时启动 Aura runtime 与 Vite（`http://127.0.0.1:8081`），右上角登录按钮可以直接使用。单独调试服务时仍可运行：
 
 ```powershell
 .\scripts\aura.ps1 run runtime
@@ -43,7 +43,14 @@ npm install --prefix .tools/pnpm pnpm@10.17.1
 .\scripts\aura.ps1 run desktop
 ```
 
-桌面命令会构建 renderer、启动 DSH runtime 并打开 Electron 窗口；应用退出时会回收它启动的本地服务。移动端原生开发仍通过 `.\scripts\aura.ps1 run mobile` 启动，真机连接需要在设置页填写电脑的局域网服务地址。
+桌面命令会用 Vite 构建 renderer、启动 DSH runtime 并打开 Electron 窗口；应用退出时会回收它启动的本地服务。移动端在 `apps/mobile` 使用 Capacitor：
+
+```powershell
+.\scripts\aura.ps1 run mobile:sync
+.\scripts\aura.ps1 --filter @aura/mobile run android
+```
+
+首次同步前可运行 `pnpm exec cap add android` 或 `pnpm exec cap add ios` 创建原生工程；Android 内测包脚本会在缺少工程时自动创建。真机连接需要在设置页填写电脑的局域网服务地址。
 
 登录链路是 `Aura → DSH authorization → dsh-llm-pi-ai → openai-codex OAuth`；对话链路是 `Aura → dsh --profile aura-sdk → DSH agent loop → dsh-llm-pi-ai → Codex`。Aura 不直接调用 pi-ai，也不复用或复制 Codex 应用的登录缓存。DSH 将授权记录保存在已忽略的 `.aura/dsh/.credentials.yaml`，前端只接收脱敏状态。
 
@@ -63,25 +70,20 @@ Web 预览地址是 `http://127.0.0.1:4173`；预览命令现在会同时启动 
 .\scripts\aura.ps1 run test:runtime
 ```
 
-Android 内测包使用 `.\scripts\build-android.ps1`；原生 JS 资源使用：
-
-```powershell
-.\scripts\aura.ps1 --filter @aura/mobile run export:native
-```
-
-输出分别位于 `output/android/aura-preview.apk` 和 `output/native-bundles`。移动 Web 与桌面 renderer 分别位于 `apps/mobile/dist` 和 `apps/desktop/dist`。Windows 无法生成 iOS IPA；EAS 配置在 `apps/mobile/eas.json`。
+Android 内测包使用 `.\scripts\build-android.ps1`，输出位于 `output/android/aura-preview.apk`。浏览器、Electron renderer 与 Capacitor Web 产物分别位于 `apps/web/dist`、`apps/desktop/dist` 和 `apps/mobile/dist`。Windows 可以生成并同步 iOS Web 资源，但仍需在 macOS/Xcode 中产出 IPA。
 
 ## Monorepo 目录
 
 ```text
 apps/
-  mobile/      @aura/mobile：Expo Web、Android/iOS 应用输出
-  desktop/     @aura/desktop：Electron 桌面应用输出
+  web/         @aura/web：Vite 浏览器应用输出
+  mobile/      @aura/mobile：Capacitor Android/iOS 应用输出
+  desktop/     @aura/desktop：Vite renderer + Electron 桌面输出
   server/      @aura/server：Aura HTTP/DSH 服务入口
 packages/
   frontend/
-    ui/        @aura/ui：跨端组件、主题与设计变量
-    workbench/ @aura/workbench：移动端与桌面端共用界面
+    ui/        @aura/ui：React DOM 组件、主题与设计变量
+    workbench/ @aura/workbench：浏览器、Electron、Capacitor 共用界面
   backend/
     dsh-auth/  @aura/dsh-auth：DSH 授权与凭据适配
     runtime/   @aura/runtime：TypeScript 后端组合根与服务生命周期

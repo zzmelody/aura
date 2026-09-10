@@ -8,7 +8,7 @@ import {
   Text,
   TextInput,
   View,
-} from "react-native";
+} from "@aura/ui/web";
 import {
   Check,
   ChevronRight,
@@ -18,7 +18,7 @@ import {
   Sun,
   WandSparkles,
   Wifi,
-} from "lucide-react-native";
+} from "lucide-react";
 import {
   Button,
   Label,
@@ -255,7 +255,7 @@ export function SettingsScreen({
         <ChevronRight
           size={18}
           color={colors.muted}
-          style={{ transform: [{ rotate: preview ? "90deg" : "0deg" }] }}
+          style={{ transform: `rotate(${preview ? "90deg" : "0deg"})` }}
         />
       </Pressable>
       {preview ? (

@@ -1,86 +1,124 @@
 # @aura/orchestration
 
-Aura 唯一的流程编排包，所有定义校验、DAG 调度、并发、取消、节点输入装配、coordinator 汇总、运行记录与 HTTP 接口都在后端。前端不执行流程。
+Aura 的代码 Flow 编排包。Flow 的发现、加载、执行、动态 agent step、持久化与 HTTP 边界都在后端；前端只读取 catalog、提交参数并渲染运行结果。
 
-## 使用
+## 编写 Flow
 
-启动 Aura 后打开「流程」，填写任务并选择模式：
-
-- **DSH 演示**：使用真实 DSH agent/session/preset 链路，模型输出由本地规则生成，不需要登录、不消耗订阅额度。
-- **Codex 真实模型**：由 DSH 的 `openai-codex` provider 执行，沿用顶部登录与后端凭据，消耗已登录账号额度。不会失败后退回演示。
-
-内置「方案分析 + 风险审阅 → 最终报告」。通过「编辑流程 JSON」定制节点、依赖、preset 和 coordinator.sources；改 id 可另存为新流程。点击运行记录中的步骤，可查看对应 session ID、preset、节点输出及 DSH 会话内容。
-
-## 边界
+Flow 固定放在本包的 `flow/` 目录中。该目录只允许一级 Flow 目录，目录名就是稳定 ID；入口必须严格命名为 `<flow-id>.flow.js`，一个目录只能有一个 `*.flow.js`：
 
 ```text
-React Native 展示 / 操作
-          ↓ /flows/*
-@aura/orchestration
-  FlowDefinition → FlowRun → StepRun × N → coordinator StepRun
-                       │          │                  │
-                       │          └── DSH session ───┘
-                       └── DSH storageDomain
+flow/
+  research-report/
+    research-report.flow.js
+    prompts.js
+    lib/
+  code-review/
+    code-review.flow.js
 ```
 
-- `schema.ts`：后端 schema、DAG 校验、默认模板和上游输入装配。
-- `engine.ts`：后端调度、幂等请求、定义快照、故障与恢复策略。
-- `sessions.ts`：DSH Session Controller 适配，使用 create/selectModel/prompt/cancel/follow/page，以及原生 turn events、deriveMessages/flush。
-- `plugin.ts`：DSH 插件，组合调度器和原生领域存储；不定义私有 session event。
-- `profile.ts`：通过官方 profile/插件接口配置宿主、preset roots 和模型路由。
-- `index.ts`：长驻 DSH 子进程与 `/flows/*` HTTP 边界。
-- `presets/*`：Aura 自有 DSH preset，不复制 DSH 代码。
+入口使用公开的 `@aura/orchestration/flow` 接口。包导出的声明文件会为 JavaScript Flow 提供 `checkJs` 校验和编辑器补全：
 
-普通节点及 coordinator 都是独立的普通 DSH session，不伪装成 DSH subagent。当前锁定版本的原生 subagent/workflow agent 会继承父 preset，不能为每个节点选择独立 preset，因此仅 DAG 调度由 Aura 实现。
+```js
+import { defineFlow, z } from "@aura/orchestration/flow";
 
-## 生命周期与持久化
+export default defineFlow({
+  title: "多角度分析",
+  description: "分析、审阅并汇总结果",
+  input: z.object({ task: z.string().min(1) }),
+  output: z.object({ report: z.string() }),
+  concurrency: 2,
+  agentTimeoutMs: 180_000,
 
-每个 runtime 懒启动一个 `aura-flow` DSH 宿主，最多同时运行两个流程，每个流程最多 16 个普通节点、并发 1–4。每次运行固定定义快照及 revision；同一 requestId 重复提交只返回原运行，参数变化则返回 409。
+  async run(ctx, input) {
+    const [research, review] = await Promise.all([
+      ctx.agent({
+        id: "research",
+        label: "方案分析",
+        preset: "researcher-v1",
+        prompt: `分析：${input.task}`,
+      }),
+      ctx.agent({
+        id: "review",
+        label: "风险审阅",
+        preset: "reviewer-v1",
+        prompt: `审阅：${input.task}`,
+      }),
+    ]);
+    const coordinator = await ctx.agent({
+      id: "coordinator",
+      label: "最终报告",
+      preset: "coordinator-v1",
+      prompt: JSON.stringify({
+        task: input.task,
+        research: research.output,
+        review: review.output,
+      }),
+    });
+    return { report: coordinator.output };
+  },
+});
+```
 
-每个步骤先持久化独立 session ID，再调用 DSH。节点只有在对应回合成功、agent idle、session flush 成功且存在有效文本输出后才算完成。coordinator 在所有普通节点完成后接收 `sources` 指定的输出，不会隐式收到其他节点内容。依赖节点收到 `dependsOn` 指定的输出。空输出、超过 80,000 字符的输出和超过 180,000 字符的汇总输入均明确失败，不静默截断。
+`ctx.agent()` 返回 `{ stepId, sessionId, output }`。每次调用都会创建一个有独立 preset 和 session 的动态 step；同一次运行不能重复 step ID。并行关系直接用 JavaScript 的 `Promise.all()`、循环和条件表达，真正进入 DSH 的并发由 `concurrency` 限制。Agent 错误会先持久化失败 step 再抛出，Flow 可以捕获并降级，也可以让整个运行失败。
 
-页面刷新、断开 HTTP、切换页面不会取消流程；只有显式取消、节点超时或 runtime 关闭才取消正在执行的 DSH 回合。节点失败后不再启动待执行节点，已运行的其他节点完成后保留其结果，coordinator 跳过。取消是尽力停止，不能撤回已经发生的工具副作用。
+`input` 和 `output` 先经过各自的 Zod schema，再检查是否为大小受限、可持久化的 JSON。取消通过 `ctx.signal` 传给 Flow，并同时取消活跃 DSH session。任意 Flow 代码或工具副作用都不会在 runtime 重启后自动重放。
 
-DSH 宿主在无运行、无请求五分钟后通过原生根生命周期释放；下一次请求会重新启动并冷读历史。Aura 不取得或销毁 Session Controller 私有 agent handle。
+Flow JS 是部署时安装的受信任后端代码，不是 DSH agent 工具沙箱中的脚本。它拥有完整 Node.js 文件、网络与环境变量权限；HTTP 只能按已发现的 Flow ID 调用，不能上传代码或指定任意磁盘路径。
 
-持久化位置均位于已忽略的 `.aura/dsh/`：
+## 发现与热加载
 
-- `aura-flow-sessions/`：DSH 原生 JSONL 会话日志。
-- `aura-flow-storages/`：DSH JSON backend，`aura_flows` domain 保存定义和运行记录。
-- `aura-flow-settings.yaml`：流程宿主自己的 DSH settings，避免节点选模型修改普通对话默认设置。
-- `.credentials.yaml`：复用 DSH 凭据，不由编排层读取或返回。
+`FlowDiscovery` 在首次启动、catalog 读取、运行开始前和后台短周期扫描时检查 `flow/` 的直接子目录。非法 ID、入口名不一致、缺少入口或多个 `*.flow.js` 都会作为不可用项进入 catalog。
 
-进程崩溃后的未完成运行标为 `interrupted`，保留已完成输出与全部步骤/session 映射。不会自动续跑、自动重试或重放可能产生副作用的工具；用户需要明确新建一次运行。同一请求 ID 在重启后仍保持幂等。领域存储不支持跨进程写锁，同一 DSH home 只能由一个 Aura runtime 的流程宿主使用。
+每个合法入口由 DSH 已有的 Cordis Loader 注册为独立插件。DSH Cordis HMR 跟踪入口及其本地 ESM 依赖图，因此修改入口、`prompts.js` 或嵌套的 `lib/*.js` 都会重载对应 Flow。新目录自动挂载，删除目录或入口会注销 Flow。
 
-## 注册工具、skill、MCP
+HMR 导入或应用失败时保留最后一个成功版本，并在 catalog 返回加载警告；修复后自动切换。开始运行时会固定当前定义函数和整个 Flow 目录的 SHA-256 内容 hash，热更新或删除不会取消已经开始的运行，只影响后续运行。
 
-复用 DSH 原生 preset composition：在 DSH 用户 preset 根 `.aura/dsh/.agent-presets/<preset-id>/` 放置 `agent.cordis.yml` 与可选 `preset.yml`。DSH 负责发现、健康检查、standing scope 与工具/skill 隔离。下一次读取 catalog 即可发现新 preset；在流程定义中引用其 ID。
+## DSH 复用边界
 
-工具、skill、MCP 插件按该锁定 DSH 版本的公开配置接口写入用户 preset；宿主级服务通过部署 profile 配置。这里没有另建工具执行器、MCP 客户端、skill 加载器或凭据库，也不通过 HTTP 上传/执行任意插件代码。preset 是受信任的本地代码配置，不能交给不受信任的远程用户。若需注册服务，应遵守 DSH preset 的隔离 realm 规则。
+```text
+HTTP / host.invokeFlow
+          ↓
+discovery → Cordis Loader/HMR → code Flow registry
+                                  ↓ ctx.agent()
+                        DSH Session Controller
+                                  ↓
+                  DSH session JSONL + storage domain
+```
 
-内置三个 preset 只有 persona，不带文件、网络或 shell 工具，因此默认流程不会产生外部写入。自定义 preset 不应启动后台委派或依赖无人处理的交互审批；本期没有审批/提问桥接界面，涉及这些能力需后续接入 DSH 原生交互协议。输出中的上游内容作为数据传入，并在 persona 中明确不可当作指令。
+- `flow-api.ts`：`defineFlow`、Zod 与 JavaScript Flow 上下文类型。
+- `discovery.ts` / `registry.ts`：目录约束、Loader entry、last-known-good 定义和内容 hash。
+- `engine.ts`：代码 Flow 运行、动态 step、并发、取消、幂等与恢复。
+- `sessions.ts`：DSH Session Controller 适配，复用 create/selectModel/prompt/cancel/follow/page。
+- `plugin.ts`：DSH 插件组合、RPC 和新的 `aura_code_flows` storage domain。
+- `profile.ts`：DSH profile、Cordis HMR、preset roots 和模型路由。
+- `index.ts`：长驻 DSH 子进程、本地调用与 Hono HTTP 路由。
 
-运行快照固定的是 **preset ID**，不复制第三方插件代码或 preset 文件内容。应使用不可变版本 ID（如 `reviewer-v2`）发布 preset 变更；已挂载的 DSH standing composition 按原生生命周期复用，修改文件后需重启空闲宿主。保留旧 preset 和相关插件，以保证完整历史展示能力。
+Aura 不复制 DSH agent、session、模型、工具、skill、MCP 或会话历史实现。每个 agent step 只保存它和 DSH session 的映射；历史仍从 DSH Controller 分页读取。用户 preset 位于 `.aura/dsh/.agent-presets/<preset-id>/`，由 DSH 原生 composition 和健康检查加载。
 
-## UI 复用范围
+运行记录使用全新的 `aura_code_flows` domain，只保存 Flow 元数据、内容 hash、结构化 input/output、状态、动态 steps、preset、session ID、输出和安全错误。旧 JSON DAG 定义与旧运行记录不读取，也不会因此递归删除原 DSH session 日志。
 
-`dsh-client-ui-conversation`、`dsh-client-ui-chat`、`dsh-client-ui-workflow-run` 依赖 DSH 浏览器侧 Cordis services、slots、Lexical 和 React 运行时，不提供可直接嵌入当前 React Native 的独立聊天组件。因此前端复用 `@aura/ui`，只渲染后端 DTO，历史分页仍用 DSH Controller。不会把 DSH 浏览器系统复制进 Aura，或把编排逻辑塞进页面。
+## 调用
 
-历史视图显示用户输入、assistant 文本、工具名称/完成标记和回合状态。原始 request headers、凭据引用、provider 错误、reasoning 和插件私有 meta 不进入前端；完整工具结果仍保存在 DSH 日志，不在这一版页面中展开。没有完整 DSH 工具卡片、分支编辑器或 token 级实时输出。所有节点共用运行选择的 demo/Codex 模型路由，各自的 preset 独立。
+后端本地调用和 HTTP 调用进入同一执行、校验与持久化链路：
 
-## HTTP
+```ts
+const run = await host.invokeFlow("research-report", {
+  input: { task: "..." },
+  mode: "codex",
+  signal,
+});
+```
 
-| 方法 | 路径                                                | 作用                                                  |
-| ---- | --------------------------------------------------- | ----------------------------------------------------- |
-| GET  | `/flows/catalog`                                    | 定义版本、DSH preset 列表                             |
-| POST | `/flows/definitions`                                | 校验并保存完整定义                                    |
-| GET  | `/flows/runs`                                       | 最近 100 次运行摘要                                   |
-| POST | `/flows/runs`                                       | `{requestId, definitionId, task, mode}`，202 返回运行 |
-| GET  | `/flows/runs/:id`                                   | 运行快照、步骤、报告                                  |
-| POST | `/flows/runs/:id/cancel`                            | 显式取消                                              |
-| GET  | `/flows/runs/:id/steps/:stepId/history?beforeSeq=…` | 原生会话分页的安全显示投影                            |
+| 方法 | 路径                                                   | 作用                                                |
+| ---- | ------------------------------------------------------ | --------------------------------------------------- |
+| GET  | `/flows/catalog`                                       | Flow、JSON Schema、版本 hash、加载错误与 preset     |
+| POST | `/flows/:flowId/runs`                                  | 提交 `{requestId, mode, input}`，202 返回 `{runId}` |
+| GET  | `/flows/runs`                                          | 最近 100 次运行摘要                                 |
+| GET  | `/flows/runs/:runId`                                   | 结构化 input/output 和动态 steps                    |
+| POST | `/flows/runs/:runId/cancel`                            | 显式取消运行                                        |
+| GET  | `/flows/runs/:runId/steps/:stepId/history?beforeSeq=…` | DSH 会话历史分页                                    |
 
-历史只能通过某次运行确有的 stepId 访问，不接受任意 sessionId。当前 Aura runtime 仍是单用户、受信任局域网开发服务，没有多租户授权或公网保护，不应暴露到公网。
+历史接口只能访问该运行实际产生的 step ID，不接受任意 session ID。当前 Aura runtime 是受信任局域网开发服务，不应直接暴露到公网。
 
 ## 验证
 
@@ -91,4 +129,4 @@ pnpm run check
 pnpm run build:web
 ```
 
-真实 DSH 集成测试使用独立临时 DSH home 和本地模拟 provider，不读取个人登录凭据、不调用真实付费模型。覆盖不同 preset、选定来源、历史冷读和分页、取消、超时、崩溃恢复；单元测试覆盖 DAG 校验、并发、故障、幂等、快照及容量边界。
+真实 DSH/HMR 集成测试使用临时 Flow 目录、独立 DSH home 和本地模拟 provider，不读取个人凭据或调用付费模型。DSH 与原生 TypeScript 加载要求仓库规定的 Node.js 24 或更高版本。

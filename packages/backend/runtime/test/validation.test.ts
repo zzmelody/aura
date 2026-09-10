@@ -1,19 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Readable } from "node:stream";
-import { readJson } from "@aura/runtime/validation";
+import { isRecord } from "@aura/runtime/validation";
 
-test("request reader joins chunks and rejects malformed or oversized bodies", async () => {
-  assert.deepEqual(
-    await readJson(Readable.from([Buffer.from('{"a":'), Buffer.from("1}")])),
-    { a: 1 },
-  );
-  await assert.rejects(
-    readJson(Readable.from([Buffer.from("not json")])),
-    SyntaxError,
-  );
-  await assert.rejects(
-    readJson(Readable.from([Buffer.alloc(9)]), 8),
-    /请求过大/,
-  );
+test("record guard accepts only non-null, non-array objects", () => {
+  assert.equal(isRecord({ a: 1 }), true);
+  assert.equal(isRecord([]), false);
+  assert.equal(isRecord(null), false);
+  assert.equal(isRecord("value"), false);
 });

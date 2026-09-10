@@ -8,11 +8,11 @@
     "kind": "library"
   },
   "exports": {
-    ".": "./src/index.mjs"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.mjs"
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@aura/protocol": "workspace:*",
@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@types/node": "24.10.1",
+    "tsx": "4.23.13",
     "typescript": "~5.9.2"
   }
 }

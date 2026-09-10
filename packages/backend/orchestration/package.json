@@ -9,12 +9,16 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./flow": {
+      "types": "./types/flow.d.ts",
+      "default": "./src/flow-api.ts"
+    },
     "./plugin": "./src/plugin.ts",
     "./demo": "./src/demo.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.mjs"
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@aura/protocol": "workspace:*",
@@ -33,9 +37,12 @@
     "@deepseek-ai/dsh-persona": "0.1.2-rc.1",
     "@deepseek-ai/dsh-storage-domain": "0.1.2-rc.1",
     "@deepseek-ai/dsh-atomic-write": "0.1.2-rc.1",
+    "hono": "4.13.7",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@hono/node-server": "2.1.1",
+    "tsx": "4.23.13",
     "typescript": "~5.9.2",
     "@types/node": "24.10.1"
   }

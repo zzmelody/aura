@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   initialState,
   restoreState,
@@ -22,17 +21,14 @@ export function useWorkspace() {
   stateRef.current = state;
   useEffect(() => {
     let mounted = true;
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((raw) => {
-        if (mounted && raw)
-          setState(restoreState(JSON.parse(raw)) as Workspace);
-      })
-      .catch(() => {
-        if (mounted) setSaveError("无法读取本地记录，本次会话仍可使用。");
-      })
-      .finally(() => {
-        if (mounted) setReady(true);
-      });
+    try {
+      const raw = globalThis.localStorage.getItem(STORAGE_KEY);
+      if (mounted && raw) setState(restoreState(JSON.parse(raw)) as Workspace);
+    } catch {
+      if (mounted) setSaveError("无法读取本地记录，本次会话仍可使用。");
+    } finally {
+      if (mounted) setReady(true);
+    }
     return () => {
       mounted = false;
       controller.current?.abort();
@@ -41,9 +37,11 @@ export function useWorkspace() {
   useEffect(() => {
     if (!ready) return;
     const timer = setTimeout(() => {
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() =>
-        setSaveError("本地存储空间不足，最新对话可能无法保存。"),
-      );
+      try {
+        globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch {
+        setSaveError("本地存储空间不足，最新对话可能无法保存。");
+      }
     }, 200);
     return () => clearTimeout(timer);
   }, [state, ready]);

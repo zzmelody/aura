@@ -14,24 +14,30 @@
   },
   "packageManager": "pnpm@10.17.1",
   "scripts": {
-    "dev": "node scripts/run-with-runtime.mjs web",
-    "mobile": "pnpm --filter @aura/mobile run start",
+    "dev": "tsx scripts/run-with-runtime.ts web",
+    "web": "pnpm --filter @aura/web run dev",
+    "mobile": "pnpm --filter @aura/mobile run dev",
+    "mobile:sync": "pnpm --filter @aura/mobile run sync",
     "desktop": "pnpm --filter @aura/desktop run start",
     "runtime": "pnpm --filter @aura/server run start",
-    "build": "pnpm run build:web && pnpm run build:desktop",
-    "build:web": "pnpm --filter @aura/mobile run build:web",
-    "build:desktop": "pnpm --filter @aura/desktop run build:renderer",
+    "build": "pnpm run build:web && pnpm run build:desktop && pnpm run build:mobile",
+    "build:web": "pnpm --filter @aura/web run build",
+    "build:desktop": "pnpm --filter @aura/desktop run build",
+    "build:mobile": "pnpm --filter @aura/mobile run build",
     "build:android": "powershell -ExecutionPolicy Bypass -File scripts/build-android.ps1",
-    "preview": "node scripts/run-with-runtime.mjs preview",
+    "preview": "tsx scripts/run-with-runtime.ts preview",
     "typecheck": "pnpm -r --if-present run typecheck",
-    "test": "pnpm -r --if-present run test && node --test tests/workspaces.test.mjs",
-    "check:workspaces": "node scripts/check-workspaces.mjs",
+    "test": "pnpm -r --if-present run test && tsx --test tests/workspaces.test.ts",
+    "check:workspaces": "tsx scripts/check-workspaces.ts",
     "check": "pnpm run check:workspaces && pnpm run typecheck && pnpm run test",
-    "test:runtime": "node scripts/smoke-runtime.mjs"
+    "test:runtime": "tsx scripts/smoke-runtime.ts"
   },
   "devDependencies": {
+    "@hono/node-server": "2.1.1",
+    "hono": "4.13.7",
     "prettier": "3.9.6",
     "sharp": "0.35.4",
+    "tsx": "4.23.13",
     "typescript": "~5.9.2"
   }
 }

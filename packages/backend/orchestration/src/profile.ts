@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { fileURLToPath, URL } from "node:url";
+import { fileURLToPath, pathToFileURL, URL } from "node:url";
 import { writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
 
 const require = createRequire(import.meta.url);
@@ -9,8 +9,14 @@ export const dshBin = join(
   "lib",
   "bin.js",
 );
+export const defaultFlowRoot = fileURLToPath(
+  new URL("../flow", import.meta.url),
+);
 
-export async function provisionProfile(dshHome: string) {
+export async function provisionProfile(
+  dshHome: string,
+  flowRoot = defaultFlowRoot,
+) {
   const dir = join(dshHome, "profiles", "aura-flow");
   const disabled = [
     "tool-bash",
@@ -44,6 +50,13 @@ export async function provisionProfile(dshHome: string) {
     `
 - id: sdk-jsonrpc-server
   disabled: true
+- id: hmr
+  disabled: false
+  config:
+    base: ${JSON.stringify(pathToFileURL(flowRoot).href)}
+    root: ['.']
+    ignored: ['**/node_modules', '**/.*']
+    debounce: 100
 - id: sdk-app-startup
   config:
     profile: aura-flow

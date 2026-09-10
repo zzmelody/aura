@@ -13,18 +13,22 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@aura/orchestration": "workspace:*",
     "@aura/dsh-auth": "workspace:*",
     "@aura/demo": "workspace:*",
     "@aura/protocol": "workspace:*",
+    "@hono/node-server": "2.1.1",
     "@deepseek-ai/dsh": "0.1.2-rc.1",
-    "@deepseek-ai/dsh-sdk-protocol": "0.1.2-rc.1"
+    "@deepseek-ai/dsh-sdk-protocol": "0.1.2-rc.1",
+    "hono": "4.13.7",
+    "undici": "7.29.1"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
+    "tsx": "4.23.13",
     "typescript": "~5.9.2"
   }
 }

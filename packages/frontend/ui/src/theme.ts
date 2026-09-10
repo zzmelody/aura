@@ -1,5 +1,5 @@
-/** Shared React Native / React Native Web design tokens. */
-import type { TextStyle } from "react-native";
+/** Shared React Web design tokens. */
+import type { TextStyle } from "./web.tsx";
 
 export const palettes = {
   dark: {
@@ -41,30 +41,32 @@ export const palettes = {
 } as const;
 export type Palette = { [K in keyof typeof palettes.dark]: string };
 export const fonts = {
-  display: "Manrope_600SemiBold",
-  body: "Manrope_400Regular",
-  medium: "Manrope_500Medium",
-  mono: "IBMPlexMono_400Regular",
+  display: '\"Manrope\", \"Noto Sans SC\", system-ui, sans-serif',
+  body: '\"Manrope\", \"Noto Sans SC\", system-ui, sans-serif',
+  medium: '\"Manrope\", \"Noto Sans SC\", system-ui, sans-serif',
+  mono: '\"IBM Plex Mono\", ui-monospace, monospace',
 };
 export const type = {
   hero: {
     fontFamily: fonts.display,
     fontSize: 34,
-    lineHeight: 46,
+    fontWeight: 600,
+    lineHeight: "46px",
     letterSpacing: -1.3,
   },
   title: {
     fontFamily: fonts.display,
     fontSize: 24,
-    lineHeight: 34,
+    fontWeight: 600,
+    lineHeight: "34px",
     letterSpacing: -0.6,
   },
-  body: { fontFamily: fonts.body, fontSize: 15, lineHeight: 26 },
-  small: { fontFamily: fonts.body, fontSize: 12, lineHeight: 20 },
+  body: { fontFamily: fonts.body, fontSize: 15, lineHeight: "26px" },
+  small: { fontFamily: fonts.body, fontSize: 12, lineHeight: "20px" },
   label: {
     fontFamily: fonts.mono,
     fontSize: 10,
-    lineHeight: 16,
+    lineHeight: "16px",
     letterSpacing: 1.8,
   },
 } satisfies Record<string, TextStyle>;

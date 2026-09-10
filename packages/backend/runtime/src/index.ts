@@ -4,6 +4,7 @@ import { OrchestrationHost } from "@aura/orchestration";
 import { startApiServer } from "./api-server.ts";
 import { startDemoModel } from "./demo-model.ts";
 import { DshSessionRunner } from "./dsh-session-runner.ts";
+import { configureRuntimeNetwork } from "./network-proxy.ts";
 import { prepareDshProfile, resolveRuntimeConfig } from "./runtime-config.ts";
 import type {
   ApiServerHandle,
@@ -13,7 +14,6 @@ import type {
 } from "./types.ts";
 
 export type { AuraRuntimeHandle, AuraRuntimeOptions } from "./types.ts";
-export { readJson } from "./validation.ts";
 
 function throwCleanupFailures(results: PromiseSettledResult<void>[]): void {
   const failures = results
@@ -30,6 +30,7 @@ export async function startAuraRuntime(
   options: AuraRuntimeOptions = {},
 ): Promise<AuraRuntimeHandle> {
   const config = resolveRuntimeConfig(options);
+  await configureRuntimeNetwork();
   await prepareDshProfile(config);
 
   const codexAuth = await CodexSubscriptionAuth.create({

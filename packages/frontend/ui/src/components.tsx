@@ -1,31 +1,13 @@
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useId,
-} from "react";
+import React, { createContext, useContext, useId } from "react";
+import { ArrowUpRight, type LucideIcon } from "lucide-react";
 import {
-  Animated,
-  Easing,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
   type StyleProp,
   type ViewStyle,
-} from "react-native";
-import Svg, {
-  Circle,
-  Defs,
-  Ellipse,
-  G,
-  Line,
-  RadialGradient,
-  Stop,
-} from "react-native-svg";
-import { ArrowUpRight, type LucideIcon } from "lucide-react-native";
+} from "./web.tsx";
 import {
   fonts,
   motion,
@@ -72,7 +54,6 @@ export function IconButton({
   const { colors } = useTheme();
   return (
     <Pressable
-      accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled, selected: active }}
       disabled={disabled}
@@ -112,37 +93,28 @@ export function Button({
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors, reduced } = useTheme();
-  const scale = useRef(new Animated.Value(1)).current;
-  const animate = (toValue: number) => {
-    if (!reduced)
-      Animated.timing(scale, {
-        toValue,
-        duration: motion.press,
-        useNativeDriver: Platform.OS !== "web",
-      }).start();
-  };
   return (
-    <Animated.View
-      style={[style, { transform: [{ scale }], opacity: disabled ? 0.4 : 1 }]}
-    >
+    <View style={[style, { opacity: disabled ? 0.4 : 1 }]}>
       <Pressable
-        accessibilityRole="button"
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={onPress}
-        onPressIn={() => animate(0.975)}
-        onPressOut={() => animate(1)}
-        style={[
+        style={({ pressed }) => [
           styles.button,
           {
             minHeight: compact ? 44 : 54,
             backgroundColor: secondary ? colors.soft : colors.primary,
+            transform: [{ scale: !reduced && pressed ? 0.975 : 1 }],
+            transition: reduced
+              ? undefined
+              : `transform ${motion.press}ms ease, opacity ${motion.press}ms ease`,
           },
         ]}
       >
         <Text
           style={{
             fontFamily: fonts.medium,
+            fontWeight: 500,
             fontSize: 14,
             color: secondary ? colors.accent : colors.primaryText,
           }}
@@ -155,7 +127,7 @@ export function Button({
           strokeWidth={1.6}
         />
       </Pressable>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -169,41 +141,22 @@ export function Reveal({
   style?: StyleProp<ViewStyle>;
 }) {
   const { reduced } = useTheme();
-  const progress = useRef(new Animated.Value(reduced ? 1 : 0)).current;
-  useEffect(() => {
-    if (reduced) {
-      progress.setValue(1);
-      return;
-    }
-    const animation = Animated.timing(progress, {
-      toValue: 1,
-      duration: motion.enter,
-      delay,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: Platform.OS !== "web",
-    });
-    animation.start();
-    return () => animation.stop();
-  }, [delay, progress, reduced]);
   return (
-    <Animated.View
+    <View
+      className={reduced ? undefined : "aura-reveal"}
       style={[
         style,
-        {
-          opacity: progress,
-          transform: [
-            {
-              translateY: progress.interpolate({
-                inputRange: [0, 1],
-                outputRange: [12, 0],
-              }),
+        reduced
+          ? undefined
+          : {
+              animationDelay: `${delay}ms`,
+              animationDuration: `${motion.enter}ms`,
+              animationTimingFunction: motion.easing,
             },
-          ],
-        },
       ]}
     >
       {children}
-    </Animated.View>
+    </View>
   );
 }
 
@@ -223,6 +176,7 @@ export function AuraMark({ size = 30 }: { size?: number }) {
           width: size * 0.66,
           height: size * 0.66,
           borderWidth: 1.8,
+          borderStyle: "solid",
           borderColor: colors.accent,
           borderRadius: size,
           transform: [{ rotateX: "45deg" }, { rotateZ: "-35deg" }],
@@ -243,24 +197,8 @@ export function AuraMark({ size = 30 }: { size?: number }) {
 
 export function Orb({ compact = false }: { compact?: boolean }) {
   const { colors, dark, reduced } = useTheme();
-  const angle = useRef(new Animated.Value(0)).current;
   const id = useId().replace(/:/g, "");
-  useEffect(() => {
-    if (reduced) {
-      angle.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.timing(angle, {
-        toValue: 1,
-        duration: motion.orbit,
-        easing: Easing.linear,
-        useNativeDriver: Platform.OS !== "web",
-      }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [angle, reduced]);
+  const size = compact ? 152 : 210;
   return (
     <View
       accessible={false}
@@ -273,25 +211,31 @@ export function Orb({ compact = false }: { compact?: boolean }) {
         overflow: "hidden",
       }}
     >
-      <Svg
+      <svg
         width="100%"
         height="100%"
         viewBox="0 0 360 220"
-        style={StyleSheet.absoluteFill}
+        style={{ position: "absolute", inset: 0 }}
       >
-        <Defs>
-          <RadialGradient id={`${id}glow`}>
-            <Stop
+        <defs>
+          <radialGradient id={`${id}glow`}>
+            <stop
               offset="0"
               stopColor={colors.glow}
-              stopOpacity={dark ? "0.52" : "0.8"}
+              stopOpacity={dark ? 0.52 : 0.8}
             />
-            <Stop offset="1" stopColor={colors.background} stopOpacity="0" />
-          </RadialGradient>
-        </Defs>
-        <Ellipse cx="180" cy="110" rx="150" ry="109" fill={`url(#${id}glow)`} />
+            <stop offset="1" stopColor={colors.background} stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        <ellipse
+          cx="180"
+          cy="110"
+          rx="150"
+          ry="109"
+          fill={`url(#${id}glow)`}
+        />
         {[60, 95, 130, 165, 200, 235, 270, 305].map((x) => (
-          <Line
+          <line
             key={x}
             x1={x}
             x2={x}
@@ -303,7 +247,7 @@ export function Orb({ compact = false }: { compact?: boolean }) {
           />
         ))}
         {[40, 75, 110, 145, 180].map((y) => (
-          <Line
+          <line
             key={y}
             x1="32"
             x2="328"
@@ -314,7 +258,7 @@ export function Orb({ compact = false }: { compact?: boolean }) {
             opacity="0.5"
           />
         ))}
-        <Circle
+        <circle
           cx="180"
           cy="110"
           r="82"
@@ -322,33 +266,33 @@ export function Orb({ compact = false }: { compact?: boolean }) {
           strokeDasharray="2 8"
           fill="none"
         />
-        <Line x1="10" x2="24" y1="110" y2="110" stroke={colors.muted} />
-        <Line x1="336" x2="350" y1="110" y2="110" stroke={colors.muted} />
-      </Svg>
-      <Animated.View
+        <line x1="10" x2="24" y1="110" y2="110" stroke={colors.muted} />
+        <line x1="336" x2="350" y1="110" y2="110" stroke={colors.muted} />
+      </svg>
+      <View
+        className={reduced ? undefined : "aura-orbit"}
         style={{
-          width: compact ? 152 : 210,
-          height: compact ? 152 : 210,
-          transform: [
-            {
-              rotate: angle.interpolate({
-                inputRange: [0, 1],
-                outputRange: ["0deg", "360deg"],
-              }),
-            },
-          ],
+          width: size,
+          height: size,
+          animationDuration: `${motion.orbit}ms`,
         }}
       >
-        <Svg width="100%" height="100%" viewBox="0 0 210 210">
-          <Defs>
-            <RadialGradient id={`${id}core`} cx="35%" cy="25%" r="80%">
-              <Stop offset="0" stopColor={dark ? "#E6D9FF" : "#E5D6FF"} />
-              <Stop offset="0.48" stopColor="#A076E7" />
-              <Stop offset="1" stopColor={dark ? "#361362" : "#633397"} />
-            </RadialGradient>
-          </Defs>
-          <G rotation="-30" origin="105, 105">
-            <Ellipse
+        <svg width="100%" height="100%" viewBox="0 0 210 210">
+          <defs>
+            <radialGradient id={`${id}core`} cx="35%" cy="25%" r="80%">
+              <stop
+                offset="0"
+                stopColor={dark ? "#E6D9FF" : "#E5D6FF"}
+              />
+              <stop offset="0.48" stopColor="#A076E7" />
+              <stop
+                offset="1"
+                stopColor={dark ? "#361362" : "#633397"}
+              />
+            </radialGradient>
+          </defs>
+          <g transform="rotate(-30 105 105)">
+            <ellipse
               cx="105"
               cy="105"
               rx="96"
@@ -358,7 +302,7 @@ export function Orb({ compact = false }: { compact?: boolean }) {
               strokeWidth="0.8"
               opacity="0.7"
             />
-            <Ellipse
+            <ellipse
               cx="105"
               cy="105"
               rx="89"
@@ -368,9 +312,9 @@ export function Orb({ compact = false }: { compact?: boolean }) {
               strokeWidth="0.5"
               opacity="0.4"
             />
-          </G>
-          <G rotation="57" origin="105, 105">
-            <Ellipse
+          </g>
+          <g transform="rotate(57 105 105)">
+            <ellipse
               cx="105"
               cy="105"
               rx="74"
@@ -380,9 +324,9 @@ export function Orb({ compact = false }: { compact?: boolean }) {
               strokeWidth="0.65"
               opacity="0.6"
             />
-          </G>
-          <Circle cx="105" cy="105" r="37" fill={`url(#${id}core)`} />
-          <Circle
+          </g>
+          <circle cx="105" cy="105" r="37" fill={`url(#${id}core)`} />
+          <circle
             cx="105"
             cy="105"
             r="42"
@@ -391,9 +335,9 @@ export function Orb({ compact = false }: { compact?: boolean }) {
             strokeWidth="0.4"
             opacity="0.8"
           />
-          <Circle cx="182" cy="58" r="3.5" fill={colors.accent} />
-        </Svg>
-      </Animated.View>
+          <circle cx="182" cy="58" r="3.5" fill={colors.accent} />
+        </svg>
+      </View>
     </View>
   );
 }
@@ -409,7 +353,12 @@ export function SectionHeading({
   return (
     <View style={styles.sectionHeading}>
       <Text
-        style={{ fontFamily: fonts.medium, fontSize: 15, color: colors.text }}
+        style={{
+          fontFamily: fonts.medium,
+          fontWeight: 500,
+          fontSize: 15,
+          color: colors.text,
+        }}
       >
         {title}
       </Text>

@@ -8,9 +8,9 @@ import {
   Text,
   TextInput,
   View,
-} from "react-native";
-import { Check, Copy, ExternalLink, X } from "lucide-react-native";
-import * as Clipboard from "expo-clipboard";
+} from "@aura/ui/web";
+import { Check, Copy, ExternalLink, X } from "lucide-react";
+import { writeClipboard } from "./clipboard";
 import { useTheme } from "@aura/ui/components";
 import { fonts, type as textType } from "@aura/ui/theme";
 import type { CodexAuthController } from "./useCodexAuth";
@@ -190,7 +190,7 @@ export function CodexLoginButton({
                       <Pressable
                         accessibilityRole="button"
                         onPress={() => {
-                          void Clipboard.setStringAsync(
+                          void writeClipboard(
                             pendingStatus.userCode ?? "",
                           );
                           setCopied(true);
@@ -381,10 +381,7 @@ export function CodexLoginButton({
                 </>
               )}
               <Text style={[styles.footer, { color: colors.muted }]}>
-                {Platform.OS === "web"
-                  ? "登录页会在新窗口打开"
-                  : "登录页会在系统浏览器打开"}{" "}
-                · 凭据由 Aura 后端的 DSH 管理
+                登录页会在系统浏览器打开 · 凭据由 Aura 后端的 DSH 管理
               </Text>
             </ScrollView>
           </Pressable>

@@ -1,11 +1,8 @@
 {
-  "extends": ["../../tsconfig.base.json", "expo/tsconfig.base"],
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "strict": true,
-    "allowJs": true,
-    "checkJs": true,
-    "noEmit": true,
-    "types": ["node"]
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client", "react", "react-dom"]
   },
-  "include": ["index.ts", "src/**/*.mjs"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

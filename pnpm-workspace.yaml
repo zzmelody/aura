@@ -11,4 +11,5 @@ onlyBuiltDependencies:
   - node-pty
   - protobufjs
   - electron
+  - esbuild
   - sharp

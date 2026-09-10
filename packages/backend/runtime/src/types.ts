@@ -1,5 +1,5 @@
-import type { ServerResponse } from "node:http";
 import type {
+  ChatEvent,
   ChatMessage,
   CodexAuthStatus,
   CodexLoginRequest,
@@ -60,8 +60,9 @@ export interface CodexAuthPort {
 export interface DshSessionPort {
   stream(
     messages: ChatMessage[],
-    response: ServerResponse,
+    emit: (event: ChatEvent) => void,
     route: DshRoute,
+    signal: AbortSignal,
   ): Promise<void>;
 }
 

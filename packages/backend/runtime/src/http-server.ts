@@ -1,65 +1,77 @@
-import type { IncomingMessage, Server, ServerResponse } from "node:http";
+import { serve, type ServerType } from "@hono/node-server";
+import type { MiddlewareHandler } from "hono";
+import { cors } from "hono/cors";
 
-export async function listenHttpServer(
-  server: Server,
+interface FetchApplication {
+  fetch(request: Request): Response | Promise<Response>;
+}
+
+export interface HonoServerHandle {
+  server: ServerType;
+  port: number;
+}
+
+/** Starts a Hono Fetch application with the official Node.js adapter. */
+export async function startHonoServer(
+  app: FetchApplication,
   host: string,
   port: number,
-): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const onError = (error: Error) => reject(error);
-    server.once("error", onError);
-    server.listen(port, host, () => {
-      server.off("error", onError);
-      resolve();
-    });
+): Promise<HonoServerHandle> {
+  let server: ServerType | undefined;
+  const address = await new Promise<{ port: number }>((resolve, reject) => {
+    server = serve(
+      { fetch: app.fetch.bind(app), hostname: host, port },
+      (info) => resolve({ port: info.port }),
+    );
+    server.once("error", reject);
   });
+  if (!server) throw new Error("Hono server adapter did not start.");
+  return { server, port: address.port };
 }
 
-export async function closeHttpServer(server: Server): Promise<void> {
+/** Gracefully stops a server returned by Hono's Node.js adapter. */
+export async function closeHonoServer(server: ServerType): Promise<void> {
   if (!server.listening) return;
-  await new Promise<void>((resolve) => {
-    server.close(() => resolve());
-    server.closeAllConnections();
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+    if ("closeAllConnections" in server) server.closeAllConnections();
   });
 }
 
-export function sendJson(
-  response: ServerResponse,
-  status: number,
-  body: unknown,
-): void {
-  if (!response.headersSent)
-    response.writeHead(status, {
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store",
-    });
-  if (!response.destroyed) response.end(JSON.stringify(body));
-}
-
-/** Allows native clients, loopback pages and same-host LAN development pages. */
-export function allowRequestOrigin(
-  request: IncomingMessage,
-  response: ServerResponse,
-): boolean {
-  const origin = request.headers.origin;
-  if (!origin) return true;
+function allowsOrigin(origin: string, requestHostHeader: string | undefined) {
   try {
+    const nativeAppOrigins = new Set([
+      "capacitor://localhost",
+      "https://localhost",
+    ]);
+    if (nativeAppOrigins.has(origin)) return true;
     const originHost = new URL(origin).hostname;
-    const requestHost = new URL(`http://${request.headers.host ?? "invalid"}`)
+    const requestHost = new URL(`http://${requestHostHeader ?? "invalid"}`)
       .hostname;
     const loopback = new Set(["localhost", "127.0.0.1", "::1"]);
-    if (
-      originHost !== requestHost &&
-      !(loopback.has(originHost) && loopback.has(requestHost))
-    )
-      return false;
-    response.setHeader("Access-Control-Allow-Origin", origin);
-    response.setHeader("Vary", "Origin");
-    return true;
+    return (
+      originHost === requestHost ||
+      (loopback.has(originHost) && loopback.has(requestHost))
+    );
   } catch {
     return false;
   }
 }
+
+const honoCors = cors({
+  origin: (origin, context) =>
+    allowsOrigin(origin, context.req.header("Host")) ? origin : null,
+  allowHeaders: ["Content-Type"],
+  allowMethods: ["GET", "POST", "OPTIONS"],
+});
+
+/** Rejects foreign browser origins while admitting Aura's fixed Capacitor origin. */
+export const localOriginPolicy: MiddlewareHandler = async (context, next) => {
+  const origin = context.req.header("Origin");
+  if (origin && !allowsOrigin(origin, context.req.header("Host")))
+    return context.body(null, 403);
+  return honoCors(context, next);
+};
 
 export function formatHttpUrl(host: string, port: number): string {
   const urlHost = host.includes(":") ? `[${host}]` : host;

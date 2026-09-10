@@ -2,19 +2,23 @@
   "name": "@aura/demo",
   "version": "0.1.0",
   "private": true,
-  "aura": { "layer": "shared", "kind": "library" },
+  "aura": {
+    "layer": "shared",
+    "kind": "library"
+  },
   "type": "module",
   "exports": {
-    ".": "./src/index.mjs"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.mjs"
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@aura/protocol": "workspace:*"
   },
   "devDependencies": {
+    "tsx": "4.23.13",
     "typescript": "~5.9.2"
   }
 }

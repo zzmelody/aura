@@ -2,12 +2,21 @@
   "name": "@aura/server",
   "version": "0.1.0",
   "private": true,
-  "aura": { "kind": "app", "platform": "server" },
+  "aura": {
+    "kind": "app",
+    "platform": "server"
+  },
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "tsx server.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@aura/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "tsx": "4.23.13",
+    "typescript": "~5.9.2"
   }
 }

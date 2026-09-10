@@ -4,6 +4,7 @@ node_modules/
 .aura/
 .tools/
 output/
+apps/web/dist/
 apps/mobile/dist/
 apps/mobile/android/
 apps/mobile/ios/

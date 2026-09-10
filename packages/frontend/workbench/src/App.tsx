@@ -1,25 +1,13 @@
 import React, { useEffect, useState } from "react";
 import {
-  AccessibilityInfo,
   ActivityIndicator,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   useColorScheme,
   useWindowDimensions,
   View,
-} from "react-native";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { StatusBar } from "expo-status-bar";
-import { useFonts } from "expo-font";
-import { Manrope_400Regular } from "@expo-google-fonts/manrope/400Regular";
-import { Manrope_500Medium } from "@expo-google-fonts/manrope/500Medium";
-import { Manrope_600SemiBold } from "@expo-google-fonts/manrope/600SemiBold";
-import { IBMPlexMono_400Regular } from "@expo-google-fonts/ibm-plex-mono/400Regular";
-import * as SystemUI from "expo-system-ui";
+} from "@aura/ui/web";
 import {
   Clock3,
   Grid2X2,
@@ -29,7 +17,12 @@ import {
   Plus,
   SlidersHorizontal,
   Sun,
-} from "lucide-react-native";
+} from "lucide-react";
+import "@fontsource/manrope/latin-400.css";
+import "@fontsource/manrope/latin-500.css";
+import "@fontsource/manrope/latin-600.css";
+import "@fontsource/ibm-plex-mono/latin-400.css";
+import "./styles.css";
 import { AuraMark, IconButton, Label, ThemeContext } from "@aura/ui/components";
 import { fonts, palettes } from "@aura/ui/theme";
 import { useWorkspace } from "./useWorkspace";
@@ -53,7 +46,6 @@ export default function App() {
   const workspace = useWorkspace();
   const codexAuth = useCodexAuth(workspace);
   const [tab, setTab] = useState<Tab>("home");
-  const [keyboard, setKeyboard] = useState(false);
   const [systemReduced, setSystemReduced] = useState(false);
   const systemTheme = useColorScheme();
   const { width } = useWindowDimensions();
@@ -64,42 +56,22 @@ export default function App() {
       : workspace.state.theme === "dark";
   const colors = dark ? palettes.dark : palettes.light;
   const reduced = systemReduced || workspace.state.reduceMotion;
-  const [loaded, fontError] = useFonts({
-    Manrope_400Regular,
-    Manrope_500Medium,
-    Manrope_600SemiBold,
-    IBMPlexMono_400Regular,
-  });
   useEffect(() => {
-    let mounted = true;
-    AccessibilityInfo.isReduceMotionEnabled().then((value) => {
-      if (mounted) setSystemReduced(value);
-    });
-    const sub = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      setSystemReduced,
-    );
-    const show = Keyboard.addListener("keyboardDidShow", () =>
-      setKeyboard(true),
-    );
-    const hide = Keyboard.addListener("keyboardDidHide", () =>
-      setKeyboard(false),
-    );
+    const media = matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setSystemReduced(media.matches);
+    update();
+    media.addEventListener("change", update);
     return () => {
-      mounted = false;
-      sub.remove();
-      show.remove();
-      hide.remove();
+      media.removeEventListener("change", update);
     };
   }, []);
   useEffect(() => {
-    void SystemUI.setBackgroundColorAsync(colors.background);
+    document.documentElement.style.backgroundColor = colors.background;
+    document.body.style.backgroundColor = colors.background;
   }, [colors.background]);
   useEffect(() => {
-    if (Platform.OS === "web") {
-      document.title = "Aura · 留一点空间，给下一个想法";
-      document.documentElement.style.colorScheme = dark ? "dark" : "light";
-    }
+    document.title = "Aura · 留一点空间，给下一个想法";
+    document.documentElement.style.colorScheme = dark ? "dark" : "light";
   }, [dark]);
   const toggleTheme = () =>
     workspace.setState((s) => ({ ...s, theme: dark ? "light" : "dark" }));
@@ -120,7 +92,7 @@ export default function App() {
     }
   }, [queuedPrompt, workspace.active]);
 
-  if ((!loaded && !fontError) || !workspace.ready)
+  if (!workspace.ready)
     return (
       <View style={[styles.loading, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.accent} />
@@ -181,14 +153,12 @@ export default function App() {
     </View>
   );
   return (
-    <SafeAreaProvider>
-      <ThemeContext.Provider value={{ colors, dark, reduced }}>
-        <StatusBar style={dark ? "light" : "dark"} />
-        <SafeAreaView
-          style={{ flex: 1, backgroundColor: colors.background }}
-          edges={["top", "bottom"]}
-        >
-          <View style={styles.shell}>
+    <ThemeContext.Provider value={{ colors, dark, reduced }}>
+      <View
+        className="aura-root"
+        style={{ backgroundColor: colors.background }}
+      >
+        <View style={styles.shell}>
             {wide ? (
               <View style={[styles.sidebar, { borderColor: colors.border }]}>
                 <View style={styles.brand}>
@@ -298,10 +268,7 @@ export default function App() {
                   {workspace.saveError}
                 </Text>
               ) : null}
-              <KeyboardAvoidingView
-                style={{ flex: 1, minHeight: 0 }}
-                behavior={Platform.OS === "ios" ? "padding" : undefined}
-              >
+              <View style={{ flex: 1, minHeight: 0 }}>
                 {tab === "home" ? (
                   <HomeScreen
                     workspace={workspace}
@@ -332,13 +299,12 @@ export default function App() {
                     systemReduced={systemReduced}
                   />
                 ) : null}
-              </KeyboardAvoidingView>
-              {!wide && !keyboard ? nav : null}
+              </View>
+              {!wide ? nav : null}
             </View>
-          </View>
-        </SafeAreaView>
-      </ThemeContext.Provider>
-    </SafeAreaProvider>
+        </View>
+      </View>
+    </ThemeContext.Provider>
   );
 }
 

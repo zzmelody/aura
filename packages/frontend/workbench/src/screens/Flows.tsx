@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -7,46 +7,45 @@ import {
   Text,
   TextInput,
   View,
-} from "react-native";
-import { fetch } from "expo/fetch";
-import { Button as AuraButton, Label, useTheme } from "@aura/ui/components";
-import { fonts } from "@aura/ui/theme";
+} from "@aura/ui/web";
+import {
+  ChevronRight,
+  Clock3,
+  GitBranch,
+  Play,
+  RefreshCw,
+  Square,
+} from "lucide-react";
+import {
+  Button,
+  Label,
+  Reveal,
+  SectionHeading,
+  useTheme,
+} from "@aura/ui/components";
+import { fonts, type as textType } from "@aura/ui/theme";
 import type {
   FlowCatalog,
   FlowHistory,
+  FlowMode,
   FlowPhase,
   FlowRun,
   FlowRunSummary,
-  SavedFlowDefinition,
+  JsonValue,
 } from "@aura/protocol/types";
 
-const labels: Record<FlowPhase, string> = {
+const phaseLabels: Record<FlowPhase, string> = {
   queued: "等待执行",
   running: "执行中",
   completed: "已完成",
   failed: "失败",
   cancelled: "已取消",
   interrupted: "已中断",
-  skipped: "未执行",
 };
-const running = (phase?: FlowPhase) =>
-  phase === "queued" || phase === "running";
+const active = (phase?: FlowPhase) => phase === "queued" || phase === "running";
+const requestId = () => crypto.randomUUID();
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : "流程服务暂时不可用。";
-function Button({
-  label,
-  ...props
-}: Omit<React.ComponentProps<typeof AuraButton>, "children"> & {
-  label: string;
-}) {
-  return <AuraButton {...props}>{label}</AuraButton>;
-}
-// An idempotency identifier, not a credential. Also works on native and LAN HTTP.
-const requestId = () =>
-  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
-    const value = Math.floor(Math.random() * 16);
-    return (char === "x" ? value : (value & 3) | 8).toString(16);
-  });
 
 async function api<T>(
   endpoint: string,
@@ -60,7 +59,9 @@ async function api<T>(
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal,
   });
-  const result = await response.json().catch(() => null);
+  const result = (await response.json().catch(() => null)) as {
+    message?: string;
+  } | null;
   if (!response.ok)
     throw new Error(
       result?.message ||
@@ -69,573 +70,1065 @@ async function api<T>(
   return result as T;
 }
 
-/** Display and commands only: no graph traversal, prompt assembly or scheduling. */
+function outputText(value: JsonValue | undefined): string {
+  if (value === undefined) return "";
+  return JSON.stringify(value, null, 2);
+}
+
+function reportText(value: JsonValue | undefined): string | undefined {
+  const output = asObject(value);
+  return typeof output?.report === "string" ? output.report : undefined;
+}
+
+type JsonObject = { [key: string]: JsonValue };
+
+const asObject = (value: JsonValue | undefined): JsonObject | undefined =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : undefined;
+
+function schemaInitialValue(schemaValue: JsonValue | undefined): JsonValue {
+  const schema = asObject(schemaValue);
+  if (!schema) return null;
+  if (schema.default !== undefined) return schema.default;
+  const kind = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  if (kind === "object") {
+    const properties = asObject(schema.properties);
+    const required = new Set(
+      Array.isArray(schema.required)
+        ? schema.required.filter(
+            (item): item is string => typeof item === "string",
+          )
+        : [],
+    );
+    return Object.fromEntries(
+      Object.entries(properties ?? {})
+        .filter(
+          ([name, property]) =>
+            required.has(name) || asObject(property)?.default !== undefined,
+        )
+        .map(([name, property]) => [name, schemaInitialValue(property)]),
+    );
+  }
+  if (kind === "array") return [];
+  if (kind === "boolean") return false;
+  if (kind === "integer" || kind === "number") return 0;
+  if (kind === "string") {
+    const options = Array.isArray(schema.enum) ? schema.enum : [];
+    return options[0] ?? "";
+  }
+  return null;
+}
+
+function SchemaField({
+  name,
+  required,
+  schemaValue,
+  value,
+  onChange,
+}: {
+  name: string;
+  required: boolean;
+  schemaValue: JsonValue;
+  value: JsonValue | undefined;
+  onChange(value: JsonValue): void;
+}) {
+  const { colors } = useTheme();
+  const schema = asObject(schemaValue) ?? {};
+  const kind = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  const options = Array.isArray(schema.enum) ? schema.enum : undefined;
+  const label = typeof schema.title === "string" ? schema.title : name;
+  const description =
+    typeof schema.description === "string" ? schema.description : "";
+  const example = Array.isArray(schema.examples)
+    ? schema.examples[0]
+    : undefined;
+
+  return (
+    <View style={styles.schemaField}>
+      <View style={styles.fieldHeading}>
+        <Text style={[textType.small, { color: colors.text }]}>{label}</Text>
+        <Label color={required ? colors.accent : colors.muted}>
+          {required ? "REQUIRED" : "OPTIONAL"}
+        </Label>
+      </View>
+      {description ? (
+        <Text style={[textType.small, { color: colors.muted }]}>
+          {description}
+        </Text>
+      ) : null}
+      {options ? (
+        <View style={styles.optionRow}>
+          {options.map((option) => {
+            const selected = JSON.stringify(value) === JSON.stringify(option);
+            return (
+              <Pressable
+                key={JSON.stringify(option)}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selected }}
+                onPress={() => onChange(option)}
+                style={[
+                  styles.option,
+                  {
+                    backgroundColor: selected ? colors.soft : colors.input,
+                    borderColor: selected ? colors.accent : colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    textType.small,
+                    { color: selected ? colors.accent : colors.secondary },
+                  ]}
+                >
+                  {typeof option === "string" ? option : JSON.stringify(option)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : kind === "boolean" ? (
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: value === true }}
+          onPress={() => onChange(value !== true)}
+          style={[
+            styles.toggle,
+            {
+              backgroundColor: value === true ? colors.soft : colors.input,
+              borderColor: value === true ? colors.accent : colors.border,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.toggleDot,
+              {
+                backgroundColor: value === true ? colors.accent : colors.muted,
+              },
+            ]}
+          />
+          <Text style={[textType.small, { color: colors.secondary }]}>
+            {value === true ? "已启用" : "未启用"}
+          </Text>
+        </Pressable>
+      ) : kind === "string" || kind === "number" || kind === "integer" ? (
+        <TextInput
+          accessibilityLabel={label}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType={kind === "string" ? undefined : "numeric"}
+          multiline={kind === "string" && Number(schema.maxLength ?? 0) > 240}
+          onChangeText={(next) => {
+            if (kind === "string") return onChange(next);
+            const numeric = Number(next);
+            onChange(next.trim() && Number.isFinite(numeric) ? numeric : next);
+          }}
+          placeholder={typeof example === "string" ? example : name}
+          placeholderTextColor={colors.muted}
+          style={[
+            styles.schemaInput,
+            kind === "string" && Number(schema.maxLength ?? 0) > 240
+              ? styles.schemaTextarea
+              : undefined,
+            {
+              backgroundColor: colors.input,
+              borderColor: colors.border,
+              color: colors.text,
+            },
+          ]}
+          value={value === undefined || value === null ? "" : String(value)}
+        />
+      ) : (
+        <TextInput
+          accessibilityLabel={`${label} JSON`}
+          autoCapitalize="none"
+          autoCorrect={false}
+          multiline
+          onChangeText={(next) => {
+            try {
+              onChange(JSON.parse(next) as JsonValue);
+            } catch {
+              // Keep the last valid value; the full JSON editor below remains available.
+            }
+          }}
+          placeholder="JSON"
+          placeholderTextColor={colors.muted}
+          style={[
+            styles.schemaInput,
+            styles.schemaTextarea,
+            {
+              backgroundColor: colors.input,
+              borderColor: colors.border,
+              color: colors.text,
+            },
+          ]}
+          value={JSON.stringify(
+            value ?? schemaInitialValue(schemaValue),
+            null,
+            2,
+          )}
+        />
+      )}
+    </View>
+  );
+}
+
+function SchemaInputEditor({
+  schemaValue,
+  value,
+  onChange,
+}: {
+  schemaValue: JsonValue | undefined;
+  value: JsonValue;
+  onChange(value: JsonValue): void;
+}) {
+  const schema = asObject(schemaValue);
+  const properties = asObject(schema?.properties);
+  const current = asObject(value);
+  if (schema?.type !== "object" || !properties || !current) return null;
+  const required = new Set(
+    Array.isArray(schema.required)
+      ? schema.required.filter(
+          (item): item is string => typeof item === "string",
+        )
+      : [],
+  );
+  return (
+    <View style={styles.schemaFields}>
+      {Object.entries(properties).map(([name, property]) => (
+        <SchemaField
+          key={name}
+          name={name}
+          required={required.has(name)}
+          schemaValue={property}
+          value={current[name]}
+          onChange={(next) => onChange({ ...current, [name]: next })}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** UI-only Flow client; discovery, validation and execution stay in DSH. */
 export function FlowsScreen({ endpoint }: { endpoint: string }) {
   const { colors } = useTheme();
   const [catalog, setCatalog] = useState<FlowCatalog>();
-  const [definitionId, setDefinitionId] = useState("");
-  const [configText, setConfigText] = useState("");
-  const [editing, setEditing] = useState(false);
-  const [task, setTask] = useState("");
-  const [mode, setMode] = useState<"demo" | "codex">("demo");
+  const [flowId, setFlowId] = useState("");
+  const [input, setInput] = useState('{\n  "task": ""\n}');
+  const [mode, setMode] = useState<FlowMode>("demo");
   const [runs, setRuns] = useState<FlowRunSummary[]>([]);
-  const [selected, setSelected] = useState("");
+  const [selectedId, setSelectedId] = useState("");
   const [run, setRun] = useState<FlowRun>();
-  const [stepId, setStepId] = useState("");
+  const [runRevision, setRunRevision] = useState(0);
   const [history, setHistory] = useState<FlowHistory>();
-  const [historyError, setHistoryError] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [historyStep, setHistoryStep] = useState("");
   const [historyBusy, setHistoryBusy] = useState(false);
-  const [refresh, setRefresh] = useState(0);
-  const submission = useRef<{ fingerprint: string; id: string } | undefined>(
-    undefined,
-  );
-  const generation = useRef(0);
-  const view = useRef({ selected, stepId, endpoint });
-  view.current = { selected, stepId, endpoint };
-  const definition = catalog?.definitions.find(
-    (saved) => saved.definition.id === definitionId,
-  );
-  const chooseDefinition = (saved: SavedFlowDefinition) => {
-    setDefinitionId(saved.definition.id);
-    setConfigText(JSON.stringify(saved.definition, null, 2));
-  };
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const selectedFlow = catalog?.flows.find((item) => item.id === flowId);
+  const endpointRef = useRef(endpoint);
+  const inputFlowRef = useRef("");
+  endpointRef.current = endpoint;
+
+  async function refresh(signal?: AbortSignal) {
+    const [nextCatalog, nextRuns] = await Promise.all([
+      api<FlowCatalog>(endpoint, "/catalog", undefined, signal),
+      api<FlowRunSummary[]>(endpoint, "/runs", undefined, signal),
+    ]);
+    setCatalog(nextCatalog);
+    setRuns(nextRuns);
+    setFlowId((current) =>
+      nextCatalog.flows.some((item) => item.id === current)
+        ? current
+        : (nextCatalog.flows.find((item) => item.available)?.id ?? ""),
+    );
+  }
 
   useEffect(() => {
     const abort = new AbortController();
-    generation.current++;
-    setCatalog(undefined);
-    setRuns([]);
-    setBusy(false);
-    setSelected("");
-    setRun(undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
     setError("");
-    Promise.all([
-      api<FlowCatalog>(endpoint, "/catalog", undefined, abort.signal),
-      api<FlowRunSummary[]>(endpoint, "/runs", undefined, abort.signal),
-    ])
-      .then(([next, list]) => {
-        if (abort.signal.aborted) return;
+    const pollCatalog = async () => {
+      try {
+        const next = await api<FlowCatalog>(
+          endpoint,
+          "/catalog",
+          undefined,
+          abort.signal,
+        );
         setCatalog(next);
-        setRuns(list);
-        if (next.definitions[0]) chooseDefinition(next.definitions[0]);
+        setFlowId((current) =>
+          next.flows.some((item) => item.id === current)
+            ? current
+            : (next.flows.find((item) => item.available)?.id ?? ""),
+        );
+      } catch (cause) {
+        if (!abort.signal.aborted) setError(errorText(cause));
+      }
+      if (!abort.signal.aborted) timer = setTimeout(pollCatalog, 1_500);
+    };
+    void refresh(abort.signal)
+      .then(() => {
+        if (!abort.signal.aborted) timer = setTimeout(pollCatalog, 1_500);
       })
-      .catch((err) => {
-        if (!abort.signal.aborted) setError(errorText(err));
+      .catch((cause) => {
+        if (!abort.signal.aborted) setError(errorText(cause));
       });
     return () => {
       abort.abort();
-      generation.current++;
+      if (timer) clearTimeout(timer);
     };
-  }, [endpoint, refresh]);
+  }, [endpoint]);
 
   useEffect(() => {
-    if (!selected) return;
+    if (!selectedFlow || inputFlowRef.current === selectedFlow.id) return;
+    inputFlowRef.current = selectedFlow.id;
+    setInput(
+      JSON.stringify(schemaInitialValue(selectedFlow.inputSchema), null, 2),
+    );
+  }, [selectedFlow?.id]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setRun(undefined);
+      return;
+    }
     const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    setRun(undefined);
-    setStepId("");
-    const poll = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = async () => {
       try {
-        const [next, list] = await Promise.all([
-          api<FlowRun>(endpoint, `/runs/${selected}`, undefined, abort.signal),
-          api<FlowRunSummary[]>(endpoint, "/runs", undefined, abort.signal),
-        ]);
-        if (abort.signal.aborted) return;
+        const next = await api<FlowRun>(
+          endpointRef.current,
+          `/runs/${encodeURIComponent(selectedId)}`,
+          undefined,
+          abort.signal,
+        );
         setRun(next);
-        setRuns(list);
-        setError("");
-        if (running(next.status)) timer = setTimeout(() => void poll(), 1200);
-      } catch (err) {
-        if (!abort.signal.aborted) {
-          setError(errorText(err));
-          timer = setTimeout(() => void poll(), 4000);
-        }
+        setRuns((current) => [
+          {
+            id: next.id,
+            flowId: next.flow.id,
+            title: next.flow.title,
+            inputPreview: JSON.stringify(next.input),
+            status: next.status,
+            mode: next.mode,
+            createdAt: next.createdAt,
+          },
+          ...current.filter((item) => item.id !== next.id),
+        ]);
+        if (active(next.status)) timer = setTimeout(read, 1200);
+      } catch (cause) {
+        if (!abort.signal.aborted) setError(errorText(cause));
       }
     };
-    void poll();
+    void read();
     return () => {
       abort.abort();
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
     };
-  }, [selected, endpoint]);
+  }, [selectedId, runRevision]);
 
-  useEffect(() => {
+  const parsed = useMemo(() => {
+    try {
+      return { value: JSON.parse(input) as JsonValue, error: "" };
+    } catch {
+      return { value: null, error: "请输入有效的 JSON。" };
+    }
+  }, [input]);
+
+  async function start() {
+    if (!selectedFlow?.available || parsed.error || busy) return;
+    setBusy(true);
+    setError("");
     setHistory(undefined);
-    setHistoryError("");
-    if (!selected || !stepId) return;
-    const abort = new AbortController();
-    setHistoryBusy(true);
-    api<FlowHistory>(
-      endpoint,
-      `/runs/${selected}/steps/${stepId}/history`,
-      undefined,
-      abort.signal,
-    )
-      .then((next) => {
-        if (!abort.signal.aborted) setHistory(next);
-      })
-      .catch((err) => {
-        if (!abort.signal.aborted) setHistoryError(errorText(err));
-      })
-      .finally(() => {
-        if (!abort.signal.aborted) setHistoryBusy(false);
-      });
-    return () => abort.abort();
-  }, [selected, stepId, endpoint, run?.status]);
+    setHistoryStep("");
+    try {
+      const next = await api<{ runId: string }>(
+        endpoint,
+        `/${encodeURIComponent(flowId)}/runs`,
+        { requestId: requestId(), input: parsed.value, mode },
+      );
+      setSelectedId(next.runId);
+      setRun(undefined);
+      await refresh();
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
 
-  const command = async (work: () => Promise<void>) => {
-    const epoch = generation.current;
+  async function cancel() {
+    if (!run || !active(run.status) || busy) return;
     setBusy(true);
     setError("");
     try {
-      await work();
-    } catch (err) {
-      if (generation.current === epoch) setError(errorText(err));
-    } finally {
-      if (generation.current === epoch) setBusy(false);
-    }
-  };
-  const start = () =>
-    command(async () => {
-      const epoch = generation.current;
-      const fingerprint = JSON.stringify({
+      const next = await api<FlowRun>(
         endpoint,
-        definitionId,
-        task: task.trim(),
-        mode,
-      });
-      if (submission.current?.fingerprint !== fingerprint)
-        submission.current = { fingerprint, id: requestId() };
-      const next = await api<FlowRun>(endpoint, "/runs", {
-        requestId: submission.current.id,
-        definitionId,
-        task: task.trim(),
-        mode,
-      });
-      if (generation.current !== epoch) return;
-      submission.current = undefined;
-      setSelected(next.id);
-    });
-  const save = () =>
-    command(async () => {
-      const epoch = generation.current;
-      const saved = await api<SavedFlowDefinition>(
-        endpoint,
-        "/definitions",
-        JSON.parse(configText),
+        `/runs/${encodeURIComponent(run.id)}/cancel`,
+        {},
       );
-      const next = await api<FlowCatalog>(endpoint, "/catalog");
-      if (generation.current !== epoch) return;
-      setCatalog(next);
-      chooseDefinition(saved);
-      setEditing(false);
-    });
-  const olderHistory = async () => {
-    if (!history?.hasMore || history.beforeSeq === undefined) return;
-    const address = { ...view.current };
+      setRun(next);
+      await refresh();
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openHistory(stepId: string) {
+    if (!run) return;
+    setHistoryStep(stepId);
+    setHistory(undefined);
+    setError("");
     setHistoryBusy(true);
+    try {
+      setHistory(
+        await api<FlowHistory>(
+          endpoint,
+          `/runs/${encodeURIComponent(run.id)}/steps/${encodeURIComponent(stepId)}/history`,
+        ),
+      );
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
+  async function loadOlderHistory() {
+    if (!run || !historyStep || !history?.hasMore || historyBusy) return;
+    const beforeSeq =
+      history.beforeSeq ??
+      (history.entries.length
+        ? Math.min(...history.entries.map(({ seq }) => seq))
+        : undefined);
+    if (beforeSeq === undefined) return;
+    setHistoryBusy(true);
+    setError("");
     try {
       const older = await api<FlowHistory>(
         endpoint,
-        `/runs/${selected}/steps/${stepId}/history?beforeSeq=${history.beforeSeq}`,
+        `/runs/${encodeURIComponent(run.id)}/steps/${encodeURIComponent(historyStep)}/history?beforeSeq=${beforeSeq}`,
       );
-      if (JSON.stringify(view.current) !== JSON.stringify(address)) return;
-      setHistory((current) =>
-        current
-          ? { ...older, entries: [...older.entries, ...current.entries] }
-          : older,
-      );
-    } catch (err) {
-      if (JSON.stringify(view.current) === JSON.stringify(address))
-        setHistoryError(errorText(err));
+      setHistory({
+        ...older,
+        entries: [
+          ...older.entries,
+          ...history.entries.filter(
+            (entry) => !older.entries.some(({ seq }) => seq === entry.seq),
+          ),
+        ],
+      });
+    } catch (cause) {
+      setError(errorText(cause));
     } finally {
-      if (JSON.stringify(view.current) === JSON.stringify(address))
-        setHistoryBusy(false);
+      setHistoryBusy(false);
     }
-  };
+  }
 
-  const textStyle = { color: colors.text, fontFamily: fonts.body };
-  const muted = { color: colors.secondary };
-  const card = [
-    styles.card,
-    { borderColor: colors.border, backgroundColor: colors.surface },
-  ];
-  const input = [
-    styles.input,
-    textStyle,
-    { borderColor: colors.border, backgroundColor: colors.background },
-  ];
-  const step = run?.steps.find((node) => node.id === stepId);
   return (
     <ScrollView
       contentContainerStyle={styles.page}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={{ gap: 10 }}>
-        <Label color={colors.accent}>AGENT WORKFLOWS</Label>
-        <Text style={[textStyle, styles.title]}>各自思考，一起交付。</Text>
-        <Text style={[styles.copy, muted]}>
-          独立 preset · 独立会话 · 一份最终报告{"\n"}
-          流程在后端运行，离开页面不会中止执行。
+      <Reveal>
+        <Label>AGENT WORKFLOWS</Label>
+        <Text style={[textType.title, { color: colors.text, marginTop: 14 }]}>
+          把复杂任务，交给一组 Agent。
         </Text>
-      </View>
+        <Text
+          style={[
+            textType.body,
+            { color: colors.secondary, marginTop: 8, marginBottom: 28 },
+          ]}
+        >
+          Flow 由后端代码定义，DSH 负责会话、模型、取消和运行记录。
+        </Text>
+      </Reveal>
+
       {error ? (
-        <Text accessibilityRole="alert" style={{ color: colors.danger }}>
+        <Text
+          accessibilityRole="alert"
+          style={[
+            styles.notice,
+            { color: colors.danger, borderColor: colors.danger },
+          ]}
+        >
           {error}
         </Text>
       ) : null}
+
       {!catalog ? (
-        <View style={styles.row}>
+        <View style={styles.loading}>
           <ActivityIndicator color={colors.accent} />
-          <Button
-            compact
-            secondary
-            label="重新连接"
-            onPress={() => setRefresh((v) => v + 1)}
-          />
+          <Text style={[textType.small, { color: colors.muted }]}>
+            正在读取 Flow 目录
+          </Text>
         </View>
       ) : (
-        <View style={card}>
-          <View style={styles.row}>
-            <Label>01 / 配置与任务</Label>
-            <Button
-              compact
-              secondary
-              label={editing ? "收起配置" : "编辑流程 JSON"}
-              onPress={() => setEditing((v) => !v)}
-            />
+        <>
+          <SectionHeading title="选择 Flow" meta="01 / CATALOG" />
+          <View style={styles.catalog}>
+            {catalog.flows.map((flow) => {
+              const chosen = flow.id === flowId;
+              return (
+                <Pressable
+                  key={flow.id}
+                  accessibilityRole="radio"
+                  accessibilityLabel={flow.title}
+                  accessibilityState={{
+                    checked: chosen,
+                    disabled: !flow.available,
+                  }}
+                  disabled={!flow.available}
+                  onPress={() => setFlowId(flow.id)}
+                  style={({ pressed }) => [
+                    styles.flowCard,
+                    {
+                      backgroundColor: chosen ? colors.soft : colors.surface,
+                      borderColor: chosen ? colors.accent : colors.border,
+                      opacity: !flow.available ? 0.5 : pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <View style={styles.cardTop}>
+                    <GitBranch
+                      size={20}
+                      color={chosen ? colors.accent : colors.muted}
+                    />
+                    <Label color={chosen ? colors.accent : colors.muted}>
+                      {flow.available ? "READY" : "UNAVAILABLE"}
+                    </Label>
+                  </View>
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>
+                    {flow.title}
+                  </Text>
+                  <Text
+                    style={[
+                      textType.small,
+                      { color: colors.secondary, marginTop: 7 },
+                    ]}
+                  >
+                    {flow.description}
+                  </Text>
+                  {flow.sourceHash ? (
+                    <Text style={[styles.hash, { color: colors.muted }]}>
+                      {flow.id} · {flow.sourceHash.slice(0, 10)}
+                    </Text>
+                  ) : null}
+                  {flow.error ? (
+                    <Text
+                      style={[
+                        textType.small,
+                        { color: colors.danger, marginTop: 8 },
+                      ]}
+                    >
+                      {flow.error}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
           </View>
-          <View style={styles.row}>
-            {catalog.definitions.map((saved) => (
-              <Button
-                key={saved.definition.id}
-                compact
-                secondary={definitionId !== saved.definition.id}
-                label={saved.definition.name}
-                onPress={() => chooseDefinition(saved)}
-              />
-            ))}
-          </View>
-          {editing ? (
-            <>
-              <Text style={[styles.copy, muted]}>
-                修改节点的 preset、dependsOn 和 coordinator.sources。更改 id
-                可保存为新流程；已开始的运行保留定义快照。校验与执行均由后端负责。
+
+          <View style={{ marginTop: 30 }}>
+            <SectionHeading title="运行参数" meta="02 / INPUT" />
+            <View
+              style={[
+                styles.editor,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[textType.small, { color: colors.secondary }]}>
+                {selectedFlow?.title ?? "请选择可用 Flow"} · Schema 参数
               </Text>
-              <Text style={[styles.small, muted]}>
-                可用 preset：
-                {catalog.presets
-                  .filter((preset) => !preset.unavailable)
-                  .map((preset) => preset.id)
-                  .join(" · ")}
-              </Text>
+              {selectedFlow?.inputSchema && !parsed.error ? (
+                <SchemaInputEditor
+                  schemaValue={selectedFlow.inputSchema}
+                  value={parsed.value}
+                  onChange={(next) => setInput(JSON.stringify(next, null, 2))}
+                />
+              ) : null}
+              <Label color={colors.muted}>RAW JSON</Label>
               <TextInput
-                accessibilityLabel="流程 JSON 配置"
-                multiline
+                accessibilityLabel="Flow JSON 输入"
                 autoCapitalize="none"
                 autoCorrect={false}
-                value={configText}
-                onChangeText={setConfigText}
-                style={[input, styles.code]}
-              />
-              <Button
-                compact
-                label="保存流程配置"
-                disabled={busy}
-                onPress={() => void save()}
-              />
-            </>
-          ) : (
-            <View style={styles.row}>
-              {definition?.definition.nodes.map((node) => (
-                <View
-                  key={node.id}
-                  style={[styles.node, { backgroundColor: colors.soft }]}
-                >
-                  <Text style={textStyle}>{node.label}</Text>
-                  <Text style={[styles.mono, muted]}>{node.preset}</Text>
-                  <Text style={[styles.small, muted]}>
-                    依赖：{node.dependsOn.join("、") || "无"}
-                  </Text>
-                </View>
-              ))}
-              <Text style={{ color: colors.accent }}>→</Text>
-              <View
+                multiline
+                onChangeText={setInput}
+                placeholder={'{ "task": "描述要完成的任务" }'}
+                placeholderTextColor={colors.muted}
                 style={[
-                  styles.node,
-                  { borderColor: colors.accent, borderWidth: 1 },
-                ]}
-              >
-                <Text style={textStyle}>最终报告</Text>
-                <Text style={[styles.mono, muted]}>
-                  {definition?.definition.coordinator.preset}
-                </Text>
-                <Text style={[styles.small, muted]}>
-                  来源：{definition?.definition.coordinator.sources.join("、")}
-                </Text>
-              </View>
-            </View>
-          )}
-          <TextInput
-            accessibilityLabel="流程任务"
-            placeholder="这次，希望团队一起完成什么？"
-            placeholderTextColor={colors.muted}
-            multiline
-            value={task}
-            onChangeText={setTask}
-            style={[input, { minHeight: 95 }]}
-          />
-          <View style={styles.row}>
-            <Button
-              compact
-              secondary={mode !== "demo"}
-              label="DSH 演示"
-              onPress={() => setMode("demo")}
-            />
-            <Button
-              compact
-              secondary={mode !== "codex"}
-              label="Codex 真实模型"
-              onPress={() => setMode("codex")}
-            />
-            <Button
-              compact
-              label={busy ? "正在提交…" : "运行流程"}
-              disabled={busy || !task.trim() || !definitionId}
-              onPress={() => void start()}
-            />
-          </View>
-          <Text style={[styles.small, muted]}>
-            {mode === "demo"
-              ? "演示模式经过真实 DSH 会话，内容由本地规则模型生成，不消耗订阅额度。"
-              : "将为各节点和 coordinator 调用 Codex，使用已登录账号的额度。请先在顶部完成登录。"}
-          </Text>
-        </View>
-      )}
-      <View style={{ gap: 12 }}>
-        <View style={styles.row}>
-          <Label>02 / 运行记录</Label>
-          <Button
-            compact
-            secondary
-            label="刷新记录"
-            disabled={busy}
-            onPress={() =>
-              void command(async () =>
-                setRuns(await api<FlowRunSummary[]>(endpoint, "/runs")),
-              )
-            }
-          />
-        </View>
-        {!runs.length ? (
-          <Text style={muted}>
-            开始一次运行后，步骤、会话和报告会保存在这里。
-          </Text>
-        ) : null}
-        {runs.map((item) => (
-          <Pressable
-            key={item.id}
-            accessibilityRole="button"
-            accessibilityLabel={`查看运行：${item.task}`}
-            onPress={() => setSelected(item.id)}
-            style={[
-              styles.runRow,
-              {
-                borderColor:
-                  selected === item.id ? colors.accent : colors.border,
-                backgroundColor:
-                  selected === item.id ? colors.soft : "transparent",
-              },
-            ]}
-          >
-            <View style={{ flex: 1, gap: 5 }}>
-              <Text numberOfLines={1} style={textStyle}>
-                {item.task}
-              </Text>
-              <Text style={[styles.small, muted]}>
-                {item.name} · {item.mode === "demo" ? "演示" : "Codex"} ·{" "}
-                {new Date(item.createdAt).toLocaleString("zh-CN")}
-              </Text>
-            </View>
-            <Text style={{ color: colors.accent }}>{labels[item.status]}</Text>
-          </Pressable>
-        ))}
-      </View>
-      {selected && !run ? <ActivityIndicator color={colors.accent} /> : null}
-      {run ? (
-        <>
-          <View style={card}>
-            <View style={styles.row}>
-              <Label color={colors.accent}>
-                FINAL REPORT / {labels[run.status]}
-              </Label>
-              {running(run.status) ? (
-                <Button
-                  compact
-                  secondary
-                  label="取消运行"
-                  disabled={busy}
-                  onPress={() =>
-                    void command(async () => {
-                      await api(endpoint, `/runs/${run.id}/cancel`, {});
-                    })
-                  }
-                />
-              ) : null}
-            </View>
-            <Text selectable style={[styles.copy, textStyle]}>
-              {run.report ||
-                run.error ||
-                (running(run.status)
-                  ? "节点正在执行。所有节点成功完成后，coordinator 将汇总选定输出。"
-                  : "本次运行未生成最终报告。已完成的节点输出仍可查看。")}
-            </Text>
-            <Text selectable style={[styles.mono, muted]}>
-              RUN {run.id} · 配置 v{run.revision}
-            </Text>
-          </View>
-          <View style={card}>
-            <Label>03 / 步骤与 DSH 会话</Label>
-            {run.steps.map((node, index) => (
-              <Pressable
-                key={node.id}
-                accessibilityRole="button"
-                accessibilityLabel={`查看 ${node.label} 会话`}
-                onPress={() => setStepId(node.id)}
-                style={[
-                  styles.stepRow,
+                  styles.input,
                   {
-                    borderColor: colors.border,
-                    backgroundColor:
-                      stepId === node.id ? colors.soft : "transparent",
+                    backgroundColor: colors.input,
+                    borderColor: parsed.error ? colors.danger : colors.border,
+                    color: colors.text,
                   },
                 ]}
+                value={input}
+              />
+              {parsed.error ? (
+                <Text style={[textType.small, { color: colors.danger }]}>
+                  {parsed.error}
+                </Text>
+              ) : null}
+              <View style={styles.modeRow}>
+                {(["demo", "codex"] as const).map((value) => (
+                  <Pressable
+                    key={value}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: mode === value }}
+                    onPress={() => setMode(value)}
+                    style={[
+                      styles.mode,
+                      {
+                        backgroundColor:
+                          mode === value ? colors.soft : colors.input,
+                        borderColor:
+                          mode === value ? colors.accent : colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        textType.small,
+                        {
+                          color:
+                            mode === value ? colors.accent : colors.secondary,
+                        },
+                      ]}
+                    >
+                      {value === "demo" ? "DSH 演示" : "Codex 订阅"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Button
+                disabled={
+                  !selectedFlow?.available || Boolean(parsed.error) || busy
+                }
+                icon={Play}
+                onPress={() => void start()}
               >
-                <Text style={[styles.mono, { color: colors.accent }]}>
-                  {String(index + 1).padStart(2, "0")}
-                </Text>
-                <View style={{ flex: 1, gap: 5 }}>
-                  <Text style={textStyle}>
-                    {node.label} · {labels[node.status]}
-                  </Text>
-                  <Text selectable style={[styles.mono, muted]}>
-                    {node.preset}
-                    {"\n"}
-                    {node.sessionId}
-                  </Text>
-                  {node.error ? (
-                    <Text style={{ color: colors.danger }}>{node.error}</Text>
-                  ) : null}
-                </View>
-                <Text style={{ color: colors.accent }}>↗</Text>
-              </Pressable>
-            ))}
+                {busy ? "正在提交…" : "开始运行"}
+              </Button>
+            </View>
           </View>
-          {step ? (
-            <View style={card}>
-              <Label>{step.label} / SESSION</Label>
-              {step.output ? (
-                <Text selectable style={[styles.copy, textStyle]}>
-                  {step.output}
+        </>
+      )}
+
+      <View style={{ marginTop: 30 }}>
+        <SectionHeading
+          title="最近运行"
+          meta={`${runs.length}`.padStart(2, "0")}
+        />
+        {!runs.length ? (
+          <View style={[styles.empty, { borderColor: colors.border }]}>
+            <Clock3 size={19} color={colors.muted} />
+            <Text style={[textType.small, { color: colors.muted }]}>
+              运行记录会出现在这里。
+            </Text>
+          </View>
+        ) : (
+          runs.map((item) => (
+            <Pressable
+              key={item.id}
+              accessibilityLabel={`查看运行：${item.title}`}
+              onPress={() => {
+                setSelectedId(item.id);
+                setHistory(undefined);
+                setHistoryStep("");
+              }}
+              style={({ pressed }) => [
+                styles.runRow,
+                {
+                  borderColor: colors.border,
+                  backgroundColor:
+                    selectedId === item.id ? colors.soft : "transparent",
+                  opacity: pressed ? 0.65 : 1,
+                },
+              ]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.runTitle, { color: colors.text }]}>
+                  {item.title}
                 </Text>
-              ) : null}
-              <Text style={[styles.small, muted]}>
-                以下内容由 DSH
-                历史接口读取。工具调用显示名称与状态，完整工具结果保留在后端 DSH
-                日志。
-              </Text>
-              {historyError ? (
                 <Text
-                  accessibilityRole="alert"
-                  style={{ color: colors.danger }}
+                  numberOfLines={1}
+                  style={[
+                    textType.small,
+                    { color: colors.muted, marginTop: 4 },
+                  ]}
                 >
-                  {historyError}
+                  {item.inputPreview} ·{" "}
+                  {item.mode === "codex" ? "CODEX" : "DEMO"}
                 </Text>
-              ) : null}
-              {history?.hasMore ? (
-                <Button
-                  compact
-                  secondary
-                  label="加载更早内容"
-                  disabled={historyBusy}
-                  onPress={() => void olderHistory()}
-                />
-              ) : null}
-              {historyBusy ? <ActivityIndicator color={colors.accent} /> : null}
-              {history?.entries.map((entry) => (
-                <View
-                  key={entry.seq}
-                  style={[styles.transcript, { borderColor: colors.border }]}
-                >
-                  <Label>
-                    {entry.kind.toUpperCase()} · #{entry.seq}
-                  </Label>
-                  <Text selectable style={[styles.copy, textStyle]}>
-                    {entry.text || "（无文本内容）"}
+              </View>
+              <Label color={active(item.status) ? colors.accent : colors.muted}>
+                {phaseLabels[item.status]}
+              </Label>
+              <ChevronRight size={16} color={colors.muted} />
+            </Pressable>
+          ))
+        )}
+      </View>
+
+      {selectedId ? (
+        <View style={{ marginTop: 30 }}>
+          <SectionHeading title="运行详情" meta="03 / RESULT" />
+          {!run ? (
+            <ActivityIndicator color={colors.accent} />
+          ) : (
+            <View
+              style={[
+                styles.detail,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.detailHead}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>
+                    {run.flow.title}
+                  </Text>
+                  <Text
+                    style={[
+                      textType.small,
+                      { color: colors.muted, marginTop: 5 },
+                    ]}
+                  >
+                    {phaseLabels[run.status]} ·{" "}
+                    {new Date(run.createdAt).toLocaleString("zh-CN")}
+                  </Text>
+                  <Text style={[styles.hash, { color: colors.muted }]}>
+                    {run.flow.id} · {run.flow.sourceHash.slice(0, 10)}
                   </Text>
                 </View>
-              ))}
-              {history && !history.entries.length ? (
-                <Text style={muted}>这个步骤尚无会话内容。</Text>
+                <Pressable
+                  accessibilityLabel="刷新运行状态"
+                  onPress={() => setRunRevision((value) => value + 1)}
+                  style={styles.refresh}
+                >
+                  <RefreshCw size={16} color={colors.accent} />
+                </Pressable>
+              </View>
+              {active(run.status) ? (
+                <Button
+                  secondary
+                  compact
+                  disabled={busy}
+                  icon={Square}
+                  onPress={() => void cancel()}
+                >
+                  停止运行
+                </Button>
+              ) : null}
+              <View style={styles.steps}>
+                {run.steps.map((step) => (
+                  <Pressable
+                    key={step.id}
+                    accessibilityLabel={`查看 ${step.label} 会话`}
+                    onPress={() => void openHistory(step.id)}
+                    style={[
+                      styles.step,
+                      {
+                        backgroundColor:
+                          historyStep === step.id ? colors.soft : colors.input,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.dot,
+                        {
+                          backgroundColor:
+                            step.status === "completed"
+                              ? colors.success
+                              : active(step.status)
+                                ? colors.accent
+                                : colors.muted,
+                        },
+                      ]}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[textType.body, { color: colors.text }]}>
+                        {step.label}
+                      </Text>
+                      <Text style={[textType.small, { color: colors.muted }]}>
+                        {step.preset} · {phaseLabels[step.status]}
+                      </Text>
+                      <Text
+                        selectable
+                        style={[styles.sessionId, { color: colors.muted }]}
+                      >
+                        session {step.sessionId}
+                      </Text>
+                    </View>
+                    <ChevronRight size={15} color={colors.muted} />
+                  </Pressable>
+                ))}
+              </View>
+              {run.error ? (
+                <Text style={[textType.small, { color: colors.danger }]}>
+                  {run.error}
+                </Text>
+              ) : null}
+              {run.output !== undefined ? (
+                <View
+                  style={[
+                    styles.output,
+                    {
+                      backgroundColor: colors.input,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Label>FLOW OUTPUT</Label>
+                  {reportText(run.output) ? (
+                    <Text
+                      selectable
+                      style={[
+                        textType.body,
+                        styles.preformatted,
+                        { color: colors.text, marginTop: 10 },
+                      ]}
+                    >
+                      {reportText(run.output)}
+                    </Text>
+                  ) : null}
+                  <Label color={colors.muted}>STRUCTURED JSON</Label>
+                  <Text
+                    selectable
+                    style={[styles.jsonOutput, { color: colors.secondary }]}
+                  >
+                    {outputText(run.output)}
+                  </Text>
+                </View>
+              ) : null}
+              {historyStep ? (
+                <View style={[styles.output, { borderColor: colors.border }]}>
+                  <Label>SESSION HISTORY / {historyStep.toUpperCase()}</Label>
+                  {!history ? (
+                    <ActivityIndicator color={colors.accent} />
+                  ) : history.entries.length ? (
+                    <>
+                      <Text
+                        selectable
+                        style={[styles.sessionId, { color: colors.muted }]}
+                      >
+                        {history.preset} · session {history.sessionId}
+                      </Text>
+                      {history.hasMore ? (
+                        <Button
+                          compact
+                          secondary
+                          disabled={historyBusy}
+                          onPress={() => void loadOlderHistory()}
+                        >
+                          {historyBusy ? "读取中…" : "加载更早记录"}
+                        </Button>
+                      ) : null}
+                      {history.entries.map((entry) => (
+                        <View key={entry.seq} style={{ marginTop: 12 }}>
+                          <Label
+                            color={
+                              entry.kind === "assistant"
+                                ? colors.accent
+                                : colors.muted
+                            }
+                          >
+                            {entry.kind.toUpperCase()}
+                          </Label>
+                          <Text
+                            style={[
+                              textType.small,
+                              { color: colors.secondary, marginTop: 4 },
+                            ]}
+                          >
+                            {entry.text}
+                          </Text>
+                        </View>
+                      ))}
+                    </>
+                  ) : (
+                    <Text
+                      style={[
+                        textType.small,
+                        { color: colors.muted, marginTop: 10 },
+                      ]}
+                    >
+                      暂无可展示的会话记录。
+                    </Text>
+                  )}
+                </View>
               ) : null}
             </View>
-          ) : null}
-        </>
+          )}
+        </View>
       ) : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 24, gap: 28, paddingBottom: 64 },
-  title: {
-    fontFamily: fonts.display,
-    fontSize: 29,
-    lineHeight: 40,
-    letterSpacing: -0.8,
+  page: {
+    padding: 24,
+    paddingBottom: 40,
+    width: "100%",
+    maxWidth: 900,
+    alignSelf: "center",
   },
-  copy: { fontSize: 14, lineHeight: 24 },
-  small: { fontSize: 12, lineHeight: 19 },
-  mono: { fontFamily: fonts.mono, fontSize: 11, lineHeight: 18 },
-  card: { borderWidth: 1, borderRadius: 18, padding: 20, gap: 18 },
-  row: {
-    flexDirection: "row",
+  notice: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 20,
+    fontFamily: fonts.body,
+    fontSize: 12,
+  },
+  loading: {
+    minHeight: 100,
     alignItems: "center",
-    flexWrap: "wrap",
+    justifyContent: "center",
     gap: 10,
   },
-  node: { padding: 12, borderRadius: 10, gap: 5, minWidth: 130 },
-  input: {
+  catalog: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  flowCard: {
+    flex: 1,
+    minWidth: 240,
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 14,
-    lineHeight: 23,
-    textAlignVertical: "top",
+    borderRadius: 18,
+    padding: 18,
   },
-  code: {
-    minHeight: 310,
-    fontFamily: fonts.mono,
-    fontSize: 12,
-    lineHeight: 20,
-  },
-  runRow: {
+  cardTop: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+  },
+  cardTitle: {
+    fontFamily: fonts.medium,
+    fontWeight: 500,
+    fontSize: 15,
+    marginTop: 18,
+  },
+  hash: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    lineHeight: "16px",
+    marginTop: 8,
+  },
+  editor: { borderWidth: 1, borderRadius: 18, padding: 18, gap: 14 },
+  input: {
+    minHeight: 116,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    lineHeight: "19px",
+  },
+  modeRow: { flexDirection: "row", gap: 10 },
+  mode: {
+    flex: 1,
+    minHeight: 42,
     borderWidth: 1,
     borderRadius: 12,
-    padding: 14,
-    gap: 12,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  stepRow: {
+  empty: {
+    minHeight: 72,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderRadius: 16,
     flexDirection: "row",
-    alignItems: "flex-start",
-    borderBottomWidth: 1,
-    padding: 12,
-    gap: 12,
-    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
   },
-  transcript: { borderTopWidth: 1, paddingTop: 16, gap: 10 },
+  runRow: {
+    minHeight: 72,
+    padding: 14,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  runTitle: { fontFamily: fonts.medium, fontWeight: 500, fontSize: 14 },
+  detail: { borderWidth: 1, borderRadius: 18, padding: 18, gap: 16 },
+  detailHead: { flexDirection: "row", alignItems: "center", gap: 12 },
+  refresh: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  steps: { gap: 10 },
+  step: {
+    minHeight: 64,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+  },
+  dot: { width: 7, height: 7, borderRadius: 4 },
+  output: { borderWidth: 1, borderRadius: 14, padding: 16 },
+  schemaFields: { gap: 14 },
+  schemaField: { gap: 7 },
+  fieldHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  schemaInput: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+    fontFamily: fonts.mono,
+    fontSize: 12,
+  },
+  schemaTextarea: { minHeight: 96, textAlignVertical: "top" },
+  optionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  option: {
+    minHeight: 38,
+    borderWidth: 1,
+    borderRadius: 11,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toggle: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+  toggleDot: { width: 8, height: 8, borderRadius: 4 },
+  sessionId: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    lineHeight: "16px",
+    marginTop: 3,
+  },
+  preformatted: { whiteSpace: "pre-wrap" },
+  jsonOutput: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    lineHeight: "18px",
+    marginTop: 8,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+  },
 });

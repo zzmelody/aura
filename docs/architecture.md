@@ -15,30 +15,36 @@ Codex：客户端 → Aura runtime → DSH SDK profile → dsh-llm-pi-ai → ope
 
 `@aura/dsh-auth` 是 Aura 对 DSH authorization/credentials seam 的后端适配层。包名描述稳定职责，不绑定当前供应商；其中 `CodexSubscriptionAuth` 组合 DSH 的 `dsh-credentials-local`、`dsh-authorization`、`dsh-llm` 和 `dsh-llm-pi-ai` 服务。它只把 notice、设备码、手动回调提示和最终状态投影到客户端；浏览器回调监听使用与 OpenAI redirect URI 一致的 `localhost`。OAuth grant 由 DSH 写入 `.aura/dsh/.credentials.yaml`，不会进入 HTTP 响应、前端存储或日志。
 
-对话由 Aura 自有的 `aura-sdk` profile 启动。该 profile 叠加官方 `dsh-base` 与 `dsh-sdk-app` bundle，配置 `openai-codex` provider，并通过官方 SDK JSON-RPC 读取 session events。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、DSH 子进程、开发演示模型和 HTTP 基础设施分别位于独立模块。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](backend-runtime.md)。
+对话由 Aura 自有的 `aura-sdk` profile 启动。该 profile 叠加官方 `dsh-base` 与 `dsh-sdk-app` bundle，配置 `openai-codex` provider，并通过官方 SDK JSON-RPC 读取 session events。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、DSH 子进程、开发演示模型和 HTTP 基础设施分别位于独立模块。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](backend-runtime.md)。
 
 ## Monorepo
 
 pnpm workspace 收录应用输出和三层可复用库：
 
-| 位置                  | 放置内容                                     | 允许依赖                 |
-| --------------------- | -------------------------------------------- | ------------------------ |
-| `apps/*`              | mobile、desktop、server 可运行入口与发布配置 | 按平台使用下列 libraries |
-| `packages/frontend/*` | 可复用页面、组件、交互状态、设备适配         | frontend、shared         |
-| `packages/backend/*`  | HTTP 服务、凭据、DSH、进程、文件和网络能力   | backend library、shared  |
-| `packages/shared/*`   | 与运行环境无关的类型、校验、存储格式和纯流程 | shared                   |
+| 位置                  | 放置内容                                          | 允许依赖                 |
+| --------------------- | ------------------------------------------------- | ------------------------ |
+| `apps/*`              | web、mobile、desktop、server 可运行入口与发布配置 | 按平台使用下列 libraries |
+| `packages/frontend/*` | 可复用页面、组件、交互状态、设备适配              | frontend、shared         |
+| `packages/backend/*`  | HTTP 服务、凭据、DSH、进程、文件和网络能力        | backend library、shared  |
+| `packages/shared/*`   | 与运行环境无关的类型、校验、存储格式和纯流程      | shared                   |
 
-应用声明 `aura.kind: app` 与 `aura.platform`；packages 只允许 library，并声明 `aura.layer`。移动应用只能依赖 frontend/shared，服务应用只能依赖 backend/shared，桌面应用可以组合 frontend/backend/shared。`check:workspaces` 校验目录元数据、依赖方向、`workspace:*`、显式导出、未声明依赖、私有子路径、跨 workspace 相对导入、应用被依赖和依赖环。完整约束位于根 [AGENTS.md](../AGENTS.md)。
+应用声明 `aura.kind: app` 与 `aura.platform`；packages 只允许 library，并声明 `aura.layer`。Web 与移动应用只能依赖 frontend/shared，服务应用只能依赖 backend/shared，桌面应用可以组合 frontend/backend/shared。`check:workspaces` 校验目录元数据、依赖方向、`workspace:*`、显式导出、未声明依赖、私有子路径、跨 workspace 相对导入、应用被依赖和依赖环。完整约束位于根 [AGENTS.md](../AGENTS.md)。
 
-移动、桌面和服务入口分别位于 `apps/mobile`、`apps/desktop` 与 `apps/server`。客户端导航和 React 状态属于 `packages/frontend/workbench`，基础组件属于 `packages/frontend/ui`，DSH 授权适配属于 `packages/backend/dsh-auth`，协议、存储与规则演示属于 shared。新增小程序时创建独立的 `apps/miniprogram`，复用 frontend/shared 库，不在 packages 中伪装成应用。
+浏览器、移动、桌面和服务入口分别位于 `apps/web`、`apps/mobile`、`apps/desktop` 与 `apps/server`。客户端导航和 React 状态属于 `packages/frontend/workbench`，DOM 原语与设计系统属于 `packages/frontend/ui`，DSH 授权适配属于 `packages/backend/dsh-auth`，协议、存储与规则演示属于 shared。新增小程序时创建独立的 `apps/miniprogram`，复用适合小程序运行时的 shared 逻辑，不在 packages 中伪装成应用。
 
-Web 开发与静态预览命令通过 `scripts/run-with-runtime.mjs` 同时启动前端和 Aura runtime，解决页面存在但 4311 服务缺失的问题。Electron 主进程也会先检查并启动 runtime，再显示 renderer；所有由入口启动的子进程在入口退出时回收。移动原生应用不能内嵌 Node/DSH，真机通过设置中的局域网地址连接电脑端 runtime。
+## Web-first 客户端
+
+Aura 只有一套 React Web 界面。`@aura/workbench` 负责页面、状态与 transport，`@aura/ui` 直接输出标准 HTML/SVG 组件；两者不依赖 Expo、React Native、React Native Web 或 Metro。三个客户端应用保持为薄宿主：`@aura/web` 用 Vite 输出浏览器静态站点，`@aura/desktop` 用 Vite 构建 renderer 后由 Electron 承载，`@aura/mobile` 用同样的 Vite 构建交给 Capacitor 同步到 Android/iOS。
+
+每个客户端独立构建同一个 library，而不是让应用依赖另一个应用的 `dist`。这样 workspace 依赖方向保持单向，Electron/Capacitor 的宿主能力也不会渗入公共页面。宿主只通过 `window.auraHost` 暴露最小的平台标识与打开系统浏览器能力；会话继续使用 Web Storage，OAuth token 仍只属于后端 DSH。
+
+Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动 Vite 和 Aura runtime，解决页面存在但 4311 服务缺失的问题。Electron 主进程也会先检查并启动 runtime，再显示 renderer；所有由入口启动的子进程在入口退出时回收。Capacitor 原生应用不能内嵌 Node/DSH，真机通过设置中的局域网地址连接电脑端 runtime。后端 Origin 策略仅额外接受 Capacitor 固定的 `https://localhost` / `capacitor://localhost` 来源。
 
 ## 后端 Agent 流程编排
 
-`packages/backend/orchestration`（`@aura/orchestration`）统一拥有流程定义、DAG 调度、步骤/session 映射、coordinator 输入汇总、运行持久化和 `/flows/*` API。`@aura/runtime` 只创建并关闭宿主、转交 HTTP 命名空间；前端「流程」页面只提交操作和渲染 DTO。shared/protocol 仅增加通信类型，不包含调度或 prompt 装配逻辑。
+`packages/backend/orchestration`（`@aura/orchestration`）统一拥有代码 Flow 的发现、Cordis Loader/HMR 注册、执行、动态步骤/session 映射、运行持久化和 `/flows/*` API。Flow 位于该包的 `flow/<flow-id>/<flow-id>.flow.js`，用 JavaScript 的条件、循环和 `Promise.all()` 表达控制流，并通过 `@aura/orchestration/flow` 获得 `defineFlow`、Zod 与声明文件补全。`@aura/runtime` 只创建并关闭宿主、转交 HTTP 命名空间；前端「流程」页面只根据后端 JSON Schema 收集参数并渲染 DTO。shared/protocol 仅包含通信类型，不执行 Flow 或装配 prompt。
 
-流程使用独立、长驻且空闲可回收的 `aura-flow` DSH profile。每个节点与最终 coordinator 各有独立 preset/session，复用 DSH Session Controller、领域存储、JSONL、模型路由和取消。客户端断开不取消流程；重启后未完成运行保留为 interrupted，不自动重放。普通 `/chat` 链路仍保留原实现，流程不依赖客户端对话历史。实现、限制与扩展配置见 [编排包说明](../packages/backend/orchestration/README.md)。
+流程使用独立、长驻且空闲可回收的 `aura-flow` DSH profile。每次 `ctx.agent()` 都产生独立 preset/session，复用 DSH Session Controller、领域存储、JSONL、模型路由和取消；Cordis HMR 复用 DSH 已有模块依赖图与事务回滚。运行开始时固定代码定义和 Flow 目录内容 hash，后续热更新只影响新运行。客户端断开不取消流程；重启后未完成运行保留为 interrupted，不自动重放代码或工具副作用。Flow JS 是拥有完整 Node.js 权限的受信任后端代码。普通 `/chat` 链路仍保留原实现，流程不依赖客户端对话历史。实现、限制与扩展配置见 [编排包说明](../packages/backend/orchestration/README.md)。
 
 ## 当前取舍
 
@@ -46,6 +52,6 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.mjs` 同时启�
 
 Codex 默认模型是 `gpt-5.6-terra`，推理档位为 medium，输出上限为 4096，传输为 SSE。部署可以通过 `AURA_CODEX_MODEL` 选择同一锁定 DSH/pi-ai 目录中存在的其他模型；未知模型在 DSH 初始化时直接失败，不回退到演示。
 
-客户端继续使用 `aura.workspace.v1` 本地存储。增加 `codex` provider 不改变现有会话格式；恢复时会保留已选择的模式，并把中断中的回复标为已停止。
+客户端继续使用 `aura.workspace.v1` Web Storage。增加 `codex` provider 不改变现有会话格式；从 AsyncStorage 迁移不会读取旧 Expo 应用沙盒的数据，已有浏览器 localStorage 数据则保持兼容。恢复时会保留已选择的模式，并把中断中的回复标为已停止。
 
 服务只有开发期同源/同主机 Origin 限制，没有用户认证、多租户隔离或公网防护。手机不保存个人订阅 token，只调用运行在电脑上的 Aura 服务。Bedrock、图片生成、云同步和生产账号系统仍未接入。

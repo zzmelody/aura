@@ -4,20 +4,25 @@ $auraApkPath = (Resolve-Path -LiteralPath $Apk).Path
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $auraArchive = [System.IO.Compression.ZipFile]::OpenRead($auraApkPath)
 try {
-    $auraBundle = $auraArchive.GetEntry('assets/index.android.bundle')
-    if (!$auraBundle -or $auraBundle.Length -lt 100000) { throw 'Missing embedded application bundle.' }
+    if (!$auraArchive.GetEntry('assets/public/index.html')) { throw 'Missing Capacitor Web entrypoint.' }
+    $auraScripts = @($auraArchive.Entries | Where-Object { $_.FullName -match '^assets/public/assets/.+\.js$' })
+    if ($auraScripts.Count -lt 1) { throw 'Missing bundled React application code.' }
     if (!$auraArchive.GetEntry('classes.dex')) { throw 'Missing Android executable classes.' }
-    $auraFonts = @($auraArchive.Entries | Where-Object { $_.FullName -match '\.ttf$' })
-    if ($auraFonts.Count -lt 4) { throw 'Missing embedded fonts.' }
-    Write-Output "PASS: application code and $($auraFonts.Count) local fonts are embedded."
+    $auraFonts = @($auraArchive.Entries | Where-Object { $_.FullName -match '^assets/public/assets/.+\.woff2$' })
+    if ($auraFonts.Count -lt 4) { throw 'Missing embedded Web fonts.' }
+    Write-Output "PASS: Capacitor Web assets, application code and $($auraFonts.Count) local fonts are embedded."
 } finally { $auraArchive.Dispose() }
+
 if ($env:ANDROID_HOME -and $env:JAVA_HOME) {
-    $auraBuildTools = Join-Path $env:ANDROID_HOME 'build-tools\36.0.0'
-    & "$auraBuildTools\apksigner.bat" verify $auraApkPath
+    $auraBuildTools = Get-ChildItem -LiteralPath (Join-Path $env:ANDROID_HOME 'build-tools') -Directory | Sort-Object Name -Descending | Select-Object -First 1
+    if (!$auraBuildTools) { throw 'Android build-tools are missing.' }
+    & (Join-Path $auraBuildTools.FullName 'apksigner.bat') verify $auraApkPath
     if ($LASTEXITCODE -ne 0) { throw 'APK signature verification failed.' }
-    $auraPermissions = & "$auraBuildTools\aapt.exe" dump permissions $auraApkPath
+    $auraPermissions = & (Join-Path $auraBuildTools.FullName 'aapt.exe') dump permissions $auraApkPath
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect APK permissions.' }
-    if ($auraPermissions -match 'READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|SYSTEM_ALERT_WINDOW|VIBRATE') { throw 'Unused Android permissions are present.' }
+    if ($auraPermissions -match 'READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|SYSTEM_ALERT_WINDOW|VIBRATE') {
+        throw 'Unused Android permissions are present.'
+    }
     Write-Output 'PASS: APK signature and permission checks.'
 } else {
     Write-Output 'Set ANDROID_HOME and JAVA_HOME to verify signature and permissions.'

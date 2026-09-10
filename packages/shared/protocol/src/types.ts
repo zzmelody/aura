@@ -1,36 +1,26 @@
 /** Text-only message accepted by the demo HTTP endpoint. */
 export type ChatMessage = { role: "user" | "assistant"; text: string };
 
-/** Wire data only. Validation, dependency resolution and execution live in the backend. */
+/** Wire data only. Flow discovery, validation and execution live in the backend. */
+export type JsonValue =
+  null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+
 export type FlowPhase =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "interrupted"
-  | "skipped";
-export interface FlowDefinition {
+  "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+export type FlowMode = "demo" | "codex";
+
+export interface FlowCatalogEntry {
   id: string;
-  name: string;
-  nodes: {
-    id: string;
-    label: string;
-    preset: string;
-    prompt: string;
-    dependsOn: string[];
-  }[];
-  coordinator: { preset: string; prompt: string; sources: string[] };
-  concurrency: number;
-  timeoutMs: number;
-}
-export interface SavedFlowDefinition {
-  definition: FlowDefinition;
-  revision: number;
-  updatedAt: number;
+  title: string;
+  description: string;
+  available: boolean;
+  sourceHash?: string;
+  inputSchema?: JsonValue;
+  outputSchema?: JsonValue;
+  error?: string;
 }
 export interface FlowCatalog {
-  definitions: SavedFlowDefinition[];
+  flows: FlowCatalogEntry[];
   presets: {
     id: string;
     name: string;
@@ -52,23 +42,28 @@ export interface FlowStep {
 export interface FlowRun {
   id: string;
   requestId: string;
-  definition: FlowDefinition;
-  revision: number;
-  task: string;
-  mode: "demo" | "codex";
+  flow: {
+    id: string;
+    title: string;
+    description: string;
+    sourceHash: string;
+  };
+  input: JsonValue;
+  mode: FlowMode;
   status: FlowPhase;
   createdAt: number;
   finishedAt?: number;
   steps: FlowStep[];
-  report?: string;
+  output?: JsonValue;
   error?: string;
 }
 export interface FlowRunSummary {
   id: string;
-  name: string;
-  task: string;
+  flowId: string;
+  title: string;
+  inputPreview: string;
   status: FlowPhase;
-  mode: "demo" | "codex";
+  mode: FlowMode;
   createdAt: number;
 }
 export interface FlowHistory {

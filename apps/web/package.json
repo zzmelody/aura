@@ -1,0 +1,26 @@
+{
+  "name": "@aura/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "aura": { "kind": "app", "platform": "web" },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 8081",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aura/workbench": "workspace:*",
+    "lucide-react": "1.43.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.2",
+    "@vitejs/plugin-react": "6.1.1",
+    "typescript": "~5.9.2",
+    "vite": "8.2.2"
+  }
+}

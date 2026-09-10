@@ -6,7 +6,7 @@ import {
   Text,
   View,
   useWindowDimensions,
-} from "react-native";
+} from "@aura/ui/web";
 import {
   ArrowUpRight,
   ChevronRight,
@@ -16,7 +16,7 @@ import {
   Plus,
   Sun,
   Trash2,
-} from "lucide-react-native";
+} from "lucide-react";
 import {
   AuraMark,
   Button,

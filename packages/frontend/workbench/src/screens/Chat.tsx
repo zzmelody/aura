@@ -8,9 +8,9 @@ import {
   Text,
   TextInput,
   View,
-} from "react-native";
-import { ArrowUp, Check, Copy, RotateCcw, Square } from "lucide-react-native";
-import * as Clipboard from "expo-clipboard";
+} from "@aura/ui/web";
+import { ArrowUp, Check, Copy, RotateCcw, Square } from "lucide-react";
+import { writeClipboard } from "../clipboard";
 import {
   AuraMark,
   IconButton,
@@ -134,7 +134,7 @@ function MessageView({
             label={copied ? "已复制" : "复制回复"}
             icon={copied ? Check : Copy}
             onPress={() => {
-              void Clipboard.setStringAsync(message.text)
+              void writeClipboard(message.text)
                 .then(() => {
                   setCopied(true);
                   setCopyError(false);

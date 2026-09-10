@@ -1,4 +1,3 @@
-import { fetch } from "expo/fetch";
 import type { ChatRequest } from "@aura/protocol/types";
 import { streamDemo } from "@aura/demo";
 import type { Message } from "@aura/core/types";
