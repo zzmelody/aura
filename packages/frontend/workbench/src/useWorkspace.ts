@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  initialState,
-  restoreState,
-  STORAGE_KEY,
-} from "@aura/core";
+import { initialState, restoreState, STORAGE_KEY } from "@aura/core";
 import { reply } from "./transport";
 import type { Message, Workspace } from "@aura/core/types";
 
@@ -15,8 +11,11 @@ export function useWorkspace() {
   const [ready, setReady] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const controller = useRef<AbortController | null>(null);
+  const [runningIds, setRunningIds] = useState<string[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const controllers = useRef(new Map<string, AbortController>());
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
   const stateRef = useRef(state);
   stateRef.current = state;
   useEffect(() => {
@@ -31,7 +30,7 @@ export function useWorkspace() {
     }
     return () => {
       mounted = false;
-      controller.current?.abort();
+      for (const controller of controllers.current.values()) controller.abort();
     };
   }, []);
   useEffect(() => {
@@ -65,10 +64,12 @@ export function useWorkspace() {
       ),
     }));
   }
-  async function send(text: string, retryLast = false) {
-    if (!text.trim() || controller.current || text.length > 4000) return;
+  async function send(text: string, retryLast = false, context?: string) {
+    if (!text.trim() || text.length > 4000) return;
     const current = stateRef.current;
-    const sessionId = activeId ?? id();
+    const draftKey = activeIdRef.current ?? "new";
+    const sessionId = activeIdRef.current ?? id();
+    if (controllers.current.has(sessionId)) return;
     const user: Message = {
       id: id(),
       role: "user",
@@ -102,13 +103,27 @@ export function useWorkspace() {
       ].slice(0, 60),
     }));
     setActiveId(sessionId);
-    setBusy(true);
+    activeIdRef.current = sessionId;
+    setDrafts((values) => ({ ...values, [draftKey]: "" }));
     const abort = new AbortController();
-    controller.current = abort;
+    controllers.current.set(sessionId, abort);
+    setRunningIds([...controllers.current.keys()]);
     let accumulated = "";
     try {
       for await (const chunk of reply(
-        history.filter((m) => m.status !== "error"),
+        [
+          ...(context
+            ? [
+                {
+                  id: "flow-context",
+                  role: "user" as const,
+                  status: "complete" as const,
+                  text: context.slice(0, 12000),
+                },
+              ]
+            : []),
+          ...history.filter((m) => m.status !== "error"),
+        ],
         current.provider,
         current.endpoint,
         sessionId,
@@ -131,8 +146,8 @@ export function useWorkspace() {
           status: "error",
         });
     } finally {
-      controller.current = null;
-      setBusy(false);
+      controllers.current.delete(sessionId);
+      setRunningIds([...controllers.current.keys()]);
     }
   }
   return {
@@ -141,26 +156,42 @@ export function useWorkspace() {
     ready,
     saveError,
     active,
-    busy,
+    busy: activeId !== null && runningIds.includes(activeId),
+    runningIds,
+    draft: drafts[activeId ?? "new"] ?? "",
+    setDraft: (value: string) =>
+      setDrafts((current) => ({ ...current, [activeId ?? "new"]: value })),
     send,
-    retry: () => {
+    retry: (context?: string) => {
       const messages = active?.messages ?? [];
       if (
         messages.at(-1)?.status === "error" &&
         messages.at(-2)?.role === "user"
       )
-        void send(messages.at(-2)!.text, true);
+        void send(messages.at(-2)!.text, true, context);
     },
-    stop: () => controller.current?.abort(),
+    stop: () => {
+      if (activeId) controllers.current.get(activeId)?.abort();
+    },
     newChat: () => {
-      if (!controller.current) setActiveId(null);
+      activeIdRef.current = null;
+      setActiveId(null);
     },
     openChat: (value: string) => {
-      if (!controller.current) setActiveId(value);
+      activeIdRef.current = value;
+      setActiveId(value);
     },
     removeChat: (value: string) => {
-      if (!controller.current) {
-        if (value === activeId) setActiveId(null);
+      if (!controllers.current.has(value)) {
+        if (value === activeId) {
+          activeIdRef.current = null;
+          setActiveId(null);
+        }
+        setDrafts((current) => {
+          const next = { ...current };
+          delete next[value];
+          return next;
+        });
         setState((s) => ({
           ...s,
           sessions: s.sessions.filter((item) => item.id !== value),

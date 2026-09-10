@@ -88,7 +88,7 @@ export function HomeScreen({
     <ScrollView
       contentContainerStyle={[
         styles.page,
-        roomy && { paddingHorizontal: 48, paddingTop: 36 },
+        roomy && { paddingHorizontal: 20, paddingTop: 20 },
       ]}
       showsVerticalScrollIndicator={false}
     >
@@ -191,7 +191,7 @@ export function HomeScreen({
                   color: colors.text,
                   fontFamily: fonts.medium,
                   fontSize: 15,
-                  marginTop: 23,
+                  marginTop: 12,
                 }}
               >
                 {title}
@@ -211,7 +211,7 @@ export function HomeScreen({
           ))}
         </View>
       </Reveal>
-      <Reveal delay={290} style={{ marginTop: 30 }}>
+      <Reveal delay={290} style={{ marginTop: 20 }}>
         <SectionHeading
           title="最近的对话"
           meta={String(workspace.state.sessions.length).padStart(2, "0")}
@@ -222,8 +222,7 @@ export function HomeScreen({
               key={s.id}
               session={s}
               onPress={() => {
-                if (!workspace.busy || workspace.active?.id === s.id)
-                  open(s.id);
+                open(s.id);
               }}
             />
           ))
@@ -237,7 +236,7 @@ export function HomeScreen({
         )}
       </Reveal>
       <View
-        style={{ marginTop: 36, alignItems: "center", opacity: dark ? 0.8 : 1 }}
+        style={{ marginTop: 24, alignItems: "center", opacity: dark ? 0.8 : 1 }}
       >
         <Label>MADE FOR YOUR EVERYDAY.</Label>
       </View>
@@ -266,7 +265,7 @@ export function HistoryScreen({
         <Text
           style={[
             textType.body,
-            { color: colors.secondary, marginTop: 8, marginBottom: 28 },
+            { color: colors.secondary, marginTop: 8, marginBottom: 16 },
           ]}
         >
           共 {workspace.state.sessions.length} 段对话，保存在本机。
@@ -276,7 +275,7 @@ export function HistoryScreen({
         <Text
           style={[textType.small, { color: colors.accent, marginBottom: 16 }]}
         >
-          当前回复完成后，可以切换或删除会话。
+          生成中的会话可随时切换，回复会在后台继续。
         </Text>
       ) : null}
       {workspace.state.sessions.map((s) => (
@@ -286,14 +285,14 @@ export function HistoryScreen({
               <SessionRow
                 session={s}
                 onPress={() => {
-                  if (!workspace.busy) open(s.id);
+                  open(s.id);
                 }}
               />
             </View>
             <IconButton
               icon={Trash2}
               label={`删除会话：${s.title}`}
-              disabled={workspace.busy}
+              disabled={workspace.runningIds.includes(s.id)}
               onPress={() => setConfirmId(s.id)}
             />
           </View>
@@ -338,8 +337,8 @@ export function HistoryScreen({
 
 const styles = StyleSheet.create({
   page: {
-    paddingHorizontal: 24,
-    paddingTop: 25,
+    paddingHorizontal: 20,
+    paddingTop: 18,
     paddingBottom: 32,
     width: "100%",
     maxWidth: 940,
@@ -360,7 +359,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   prompts: { flexDirection: "row", gap: 12 },
-  prompt: { flex: 1, borderWidth: 1, borderRadius: 18, padding: 17 },
+  prompt: { flex: 1, borderWidth: 1, borderRadius: 10, padding: 17 },
   promptTop: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -370,7 +369,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    paddingVertical: 16,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   sessionIcon: {

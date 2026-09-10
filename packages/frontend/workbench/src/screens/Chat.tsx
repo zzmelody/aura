@@ -1,521 +1,304 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "@aura/ui/web";
-import { ArrowUp, Check, Copy, RotateCcw, Square } from "lucide-react";
+  ArrowUp,
+  Check,
+  Copy,
+  FileCode2,
+  GitBranch,
+  RotateCcw,
+  Sparkles,
+  Square,
+} from "lucide-react";
+import { AuraMark } from "@aura/ui/components";
 import { writeClipboard } from "../clipboard";
-import {
-  AuraMark,
-  IconButton,
-  Label,
-  Orb,
-  Reveal,
-  useTheme,
-} from "@aura/ui/components";
-import { fonts, type as textType } from "@aura/ui/theme";
+import { extractFlowCode } from "../flowDraft";
 import type { WorkspaceController } from "../useWorkspace";
 import type { Message } from "@aura/core/types";
 
 function MessageView({
   message,
   retry,
-  workspaceProvider,
+  onApplyFlow,
 }: {
   message: Message;
   retry?: () => void;
-  workspaceProvider: WorkspaceController["state"]["provider"];
+  onApplyFlow?: (code: string) => void;
 }) {
-  const { colors } = useTheme();
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
+  const [applied, setApplied] = useState(false);
   useEffect(() => {
-    if (copied) {
-      const timer = setTimeout(() => setCopied(false), 1800);
-      return () => clearTimeout(timer);
-    }
-  }, [copied]);
+    if (!copied && !applied) return;
+    const timer = setTimeout(() => {
+      setCopied(false);
+      setApplied(false);
+    }, 1800);
+    return () => clearTimeout(timer);
+  }, [copied, applied]);
   const user = message.role === "user";
+  const flowCode =
+    !user && message.status === "complete" && onApplyFlow
+      ? extractFlowCode(message.text)
+      : undefined;
   return (
-    <Reveal
-      style={{ alignItems: user ? "flex-end" : "flex-start", marginBottom: 28 }}
+    <article
+      className={`chat-message ${user ? "from-user" : "from-assistant"}`}
     >
       {!user ? (
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 7,
-            marginBottom: 10,
-          }}
-        >
-          <AuraMark size={23} />
-          <Text
-            style={{
-              color: colors.text,
-              fontFamily: fonts.display,
-              fontSize: 13,
-            }}
-          >
-            Aura
-          </Text>
-          <Label color={colors.muted}>
-            {workspaceProvider === "codex" ? "CODEX" : "DEMO"}
-          </Label>
-        </View>
+        <div className="message-author">
+          <AuraMark size={20} />
+          <strong>Aura</strong>
+          {message.status === "streaming" ? (
+            <span className="generating-label">生成中</span>
+          ) : null}
+        </div>
       ) : null}
-      <View
-        style={[
-          styles.message,
-          {
-            backgroundColor: user ? colors.user : colors.surface,
-            borderColor: user ? colors.user : colors.border,
-            borderTopRightRadius: user ? 5 : 18,
-            borderTopLeftRadius: user ? 18 : 5,
-            maxWidth: user ? "90%" : "100%",
-          },
-        ]}
+      <div
+        className={`message-body${message.status === "error" ? " error" : ""}`}
       >
-        {message.text ? (
-          <Text
-            selectable
-            style={[
-              textType.body,
-              {
-                color: message.status === "error" ? colors.danger : colors.text,
-              },
-            ]}
-          >
-            {message.text}
-          </Text>
-        ) : message.status === "streaming" ? (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={[textType.small, { color: colors.muted }]}>
-              正在准备回复
-            </Text>
-          </View>
-        ) : null}
-        {message.status === "streaming" && message.text ? (
-          <View
-            style={{
-              width: 6,
-              height: 14,
-              backgroundColor: colors.accent,
-              marginTop: 5,
-              borderRadius: 1,
-            }}
-          />
-        ) : null}
+        {message.text ||
+          (message.status === "streaming" ? (
+            <span className="thinking">
+              <span className="aura-spinner" />
+              正在准备回复…
+            </span>
+          ) : null)}
         {message.status === "stopped" ? (
-          <Text
-            style={[textType.small, { color: colors.muted, marginTop: 10 }]}
-          >
-            回复已停止
-          </Text>
+          <span className="message-stopped">回复已停止</span>
         ) : null}
-      </View>
+      </div>
       {!user && message.status !== "streaming" ? (
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-            marginTop: 2,
-          }}
-        >
-          <IconButton
-            label={copied ? "已复制" : "复制回复"}
-            icon={copied ? Check : Copy}
-            onPress={() => {
+        <div className="message-actions">
+          <button
+            className="icon-control"
+            aria-label={copied ? "已复制" : "复制回复"}
+            onClick={() =>
               void writeClipboard(message.text)
                 .then(() => {
                   setCopied(true);
                   setCopyError(false);
                 })
-                .catch(() => setCopyError(true));
-            }}
-          />
+                .catch(() => setCopyError(true))
+            }
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+          </button>
           {message.status === "error" && retry ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="重试上一条消息"
-              onPress={retry}
-              style={styles.retry}
+            <button className="tool-button" onClick={retry}>
+              <RotateCcw size={13} />
+              重试
+            </button>
+          ) : null}
+          {flowCode ? (
+            <button
+              className="tool-button accent"
+              onClick={() => {
+                onApplyFlow?.(flowCode);
+                setApplied(true);
+              }}
             >
-              <RotateCcw size={14} color={colors.accent} />
-              <Text style={[textType.small, { color: colors.accent }]}>
-                重试
-              </Text>
-            </Pressable>
+              <FileCode2 size={13} />
+              {applied ? "已放入编辑器" : "放入 Flow 编辑器"}
+            </button>
           ) : null}
-          {copied || copyError ? (
-            <Text style={[textType.small, { color: colors.muted }]}>
-              {copied ? "已复制" : "请长按文字手动复制"}
-            </Text>
+          {copyError ? (
+            <span role="status">复制失败，请选择文字复制。</span>
           ) : null}
-        </View>
+        </div>
       ) : null}
-    </Reveal>
+    </article>
   );
 }
 
-export function ChatScreen({ workspace }: { workspace: WorkspaceController }) {
-  const { colors } = useTheme();
-  const [draft, setDraft] = useState("");
-  const [focused, setFocused] = useState(false);
-  const scroll = useRef<ScrollView>(null);
+export function ChatScreen({
+  workspace,
+  flowMode = false,
+  context,
+  onApplyFlow,
+}: {
+  workspace: WorkspaceController;
+  flowMode?: boolean;
+  context?: string;
+  onApplyFlow?: (code: string) => void;
+}) {
+  const scroll = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const nearBottom = useRef(true);
-  const input = useRef<TextInput>(null);
+  const draft = workspace.draft;
   const messages = workspace.active?.messages ?? [];
+  const providerName =
+    workspace.state.provider === "codex"
+      ? "Codex"
+      : workspace.state.provider === "offline"
+        ? "本地演示"
+        : "DSH 演示";
   useEffect(() => {
-    setDraft("");
     nearBottom.current = true;
   }, [workspace.active?.id]);
+  useEffect(() => {
+    if (nearBottom.current && scroll.current)
+      scroll.current.scrollTop = scroll.current.scrollHeight;
+  }, [messages]);
   function submit() {
-    if (draft.trim() && !workspace.busy) {
-      void workspace.send(draft);
-      setDraft("");
-      nearBottom.current = true;
-    }
+    if (!draft.trim() || workspace.busy) return;
+    nearBottom.current = true;
+    void workspace.send(draft, false, context);
   }
   return (
-    <View
-      style={{
-        flex: 1,
-        minHeight: 0,
-        width: "100%",
-        maxWidth: 860,
-        alignSelf: "center",
-      }}
+    <section
+      className="chat-screen"
+      aria-label={flowMode ? "Flow 生成对话" : "会话内容"}
     >
-      <View style={[styles.chatTitle, { borderColor: colors.border }]}>
-        <View style={{ flex: 1 }}>
-          <Text
-            numberOfLines={1}
-            style={{
-              fontFamily: fonts.medium,
-              fontSize: 14,
-              color: colors.text,
-            }}
-          >
-            {workspace.active?.title ?? "新的对话"}
-          </Text>
-          <Text style={[textType.small, { color: colors.muted, marginTop: 4 }]}>
-            {workspace.state.provider === "offline"
-              ? "本地演示 · 对话只留在你的设备"
-              : workspace.state.provider === "codex"
-                ? "Codex 订阅 · 由 DSH 管理会话与模型"
-                : "DSH 演示 · 通过工作台服务连接"}
-          </Text>
-        </View>
-        <View style={[styles.pill, { backgroundColor: colors.soft }]}>
-          <View
-            style={{
-              backgroundColor: colors.success,
-              width: 5,
-              height: 5,
-              borderRadius: 3,
-            }}
+      <div className="chat-title">
+        <strong title={workspace.active?.title}>
+          {workspace.active?.title ?? (flowMode ? "一起构建 Flow" : "新的对话")}
+        </strong>
+        <span className="badge">
+          <span
+            className={`session-status${workspace.busy ? " running" : ""}`}
           />
-          <Text
-            style={{
-              fontFamily: fonts.mono,
-              fontSize: 9,
-              color: colors.accent,
-              letterSpacing: 1,
-            }}
-          >
-            {workspace.busy ? "ACTIVE" : "READY"}
-          </Text>
-        </View>
-      </View>
-      <ScrollView
+          {workspace.busy ? "生成中" : providerName}
+        </span>
+      </div>
+      <div
+        className="chat-transcript"
         ref={scroll}
-        contentContainerStyle={styles.transcript}
-        keyboardShouldPersistTaps="handled"
-        onContentSizeChange={() => {
-          if (nearBottom.current)
-            scroll.current?.scrollToEnd({ animated: false });
-        }}
-        onScroll={(e) => {
-          const { contentOffset, contentSize, layoutMeasurement } =
-            e.nativeEvent;
+        onScroll={(event) => {
+          const el = event.currentTarget;
           nearBottom.current =
-            contentSize.height - layoutMeasurement.height - contentOffset.y <
-            100;
+            el.scrollHeight - el.clientHeight - el.scrollTop < 100;
         }}
-        scrollEventThrottle={100}
       >
         {!messages.length ? (
-          <Reveal>
-            <View style={{ marginTop: 15 }}>
-              <Orb compact />
-            </View>
-            <Text
-              style={[
-                textType.title,
-                { color: colors.text, textAlign: "center", marginTop: 14 },
-              ]}
-            >
-              今天，想从哪里开始？
-            </Text>
-            <Text
-              style={[
-                textType.body,
-                {
-                  color: colors.secondary,
-                  textAlign: "center",
-                  marginTop: 12,
-                  marginBottom: 26,
-                },
-              ]}
-            >
-              一个问题，一闪而过的灵感，{"\n"}或者只是打个招呼。
-            </Text>
-            <View style={{ gap: 10, alignItems: "center" }}>
-              {[
-                "你好，Aura",
-                "帮我安排今天的计划",
-                "我有一个新想法，帮我梳理一下",
-              ].map((prompt) => (
-                <Pressable
+          <div className="chat-empty">
+            <div className="chat-empty-icon">
+              {flowMode ? (
+                <GitBranch size={24} strokeWidth={1.4} />
+              ) : (
+                <Sparkles size={24} strokeWidth={1.4} />
+              )}
+            </div>
+            <h2>{flowMode ? "想把什么变成 Flow？" : "从一个想法开始"}</h2>
+            <p>
+              {flowMode
+                ? "描述任务，拆分步骤，再把生成的代码放入编辑器。"
+                : "提一个问题，或继续你的下一步。"}
+            </p>
+            <div className="chat-suggestions">
+              {(flowMode
+                ? [
+                    "生成一个并行分析、汇总报告的 Flow",
+                    "检查当前 Flow 的输入输出",
+                    "为当前 Flow 增加风险审阅步骤",
+                  ]
+                : ["帮我梳理一个新想法", "帮我安排今天的计划", "你好，Aura"]
+              ).map((prompt) => (
+                <button
                   key={prompt}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    void workspace.send(prompt);
+                  onClick={() => {
+                    workspace.setDraft(prompt);
+                    input.current?.focus();
                   }}
-                  style={({ pressed }) => [
-                    styles.suggestion,
-                    {
-                      borderColor: colors.border,
-                      backgroundColor: pressed ? colors.soft : colors.surface,
-                    },
-                  ]}
                 >
-                  <Text
-                    style={{
-                      color: colors.secondary,
-                      fontFamily: fonts.body,
-                      fontSize: 13,
-                    }}
-                  >
-                    {prompt}
-                  </Text>
-                </Pressable>
+                  <span>{prompt}</span>
+                  <ArrowUp size={13} />
+                </button>
               ))}
-            </View>
-          </Reveal>
+            </div>
+          </div>
         ) : (
           messages.map((message) => (
             <MessageView
               key={message.id}
               message={message}
-              workspaceProvider={workspace.state.provider}
               retry={
-                message.id === messages.at(-1)?.id ? workspace.retry : undefined
+                message.id === messages.at(-1)?.id
+                  ? () => workspace.retry(context)
+                  : undefined
               }
+              onApplyFlow={flowMode ? onApplyFlow : undefined}
             />
           ))
         )}
-      </ScrollView>
-      <View
-        style={[
-          styles.composerArea,
-          { borderColor: colors.border, backgroundColor: colors.background },
-        ]}
-      >
-        <View
-          style={[
-            styles.composer,
-            {
-              backgroundColor: colors.input,
-              borderColor: focused ? colors.accent : colors.border,
-            },
-          ]}
-        >
-          <TextInput
+      </div>
+      <div className="chat-composer-area">
+        {flowMode ? (
+          <div className="composer-context">
+            <FileCode2 size={12} />
+            <span>当前 Flow 草稿作为上下文</span>
+          </div>
+        ) : null}
+        <div className="chat-composer">
+          <textarea
             ref={input}
-            accessibilityLabel="消息输入框"
-            placeholder="把你的想法，放在这里…"
-            placeholderTextColor={colors.muted}
-            multiline
+            aria-label="消息输入框"
+            placeholder={flowMode ? "描述要生成或修改的 Flow…" : "发送消息…"}
             maxLength={4000}
             value={draft}
-            onChangeText={setDraft}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            style={[
-              styles.input,
-              { color: colors.text },
-              Platform.OS === "web" ? { outlineWidth: 0 } : null,
-            ]}
-            onKeyPress={(e) => {
-              if (Platform.OS === "web") {
-                const event = e as unknown as {
-                  nativeEvent: {
-                    key: string;
-                    shiftKey?: boolean;
-                    isComposing?: boolean;
-                  };
-                  preventDefault: () => void;
-                };
-                if (
-                  event.nativeEvent.key === "Enter" &&
-                  !event.nativeEvent.shiftKey &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault();
-                  submit();
-                }
+            onChange={(event) => workspace.setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                submit();
               }
             }}
           />
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              paddingLeft: 5,
-            }}
-          >
-            <Text
-              style={[textType.small, { color: colors.muted, fontSize: 10 }]}
-            >
-              {draft.length > 3600
-                ? `${draft.length} / 4000`
-                : workspace.state.provider === "offline"
-                  ? "AURA · LOCAL DEMO"
-                  : workspace.state.provider === "codex"
-                    ? "AURA · DSH / CODEX"
-                    : "AURA · DSH DEMO"}
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={workspace.busy ? "停止生成" : "发送消息"}
-              accessibilityState={{
-                disabled: !workspace.busy && !draft.trim(),
-              }}
+          <div className="composer-tools">
+            <label className="provider-select">
+              <select
+                aria-label="对话模型"
+                value={workspace.state.provider}
+                disabled={workspace.busy}
+                onChange={(event) =>
+                  workspace.setState((s) => ({
+                    ...s,
+                    provider: event.target.value as typeof s.provider,
+                    endpoint: s.endpoint || "http://127.0.0.1:4311",
+                  }))
+                }
+              >
+                <option value="offline">本地演示</option>
+                <option value="dsh">DSH 演示</option>
+                <option value="codex">Codex 订阅</option>
+              </select>
+            </label>
+            <span className="composer-count">
+              {draft.length > 3600 ? `${draft.length}/4000` : ""}
+            </span>
+            <button
+              className="send-button"
+              aria-label={workspace.busy ? "停止生成" : "发送消息"}
               disabled={!workspace.busy && !draft.trim()}
-              onPress={workspace.busy ? workspace.stop : submit}
-              style={({ pressed }) => [
-                styles.send,
-                {
-                  backgroundColor: colors.primary,
-                  opacity: pressed
-                    ? 0.7
-                    : !workspace.busy && !draft.trim()
-                      ? 0.4
-                      : 1,
-                },
-              ]}
+              onClick={workspace.busy ? workspace.stop : submit}
             >
               {workspace.busy ? (
-                <Square
-                  size={16}
-                  fill={colors.primaryText}
-                  color={colors.primaryText}
-                />
+                <Square size={14} fill="currentColor" />
               ) : (
-                <ArrowUp
-                  size={22}
-                  color={colors.primaryText}
-                  strokeWidth={1.8}
-                />
+                <ArrowUp size={18} />
               )}
-            </Pressable>
-          </View>
-        </View>
-        <Text
-          style={[
-            textType.small,
-            {
-              color: colors.muted,
-              textAlign: "center",
-              fontSize: 10,
-              marginTop: 8,
-            },
-          ]}
-        >
-          {workspace.state.provider === "codex"
-            ? "回复由你的 Codex 订阅生成，并通过 DSH 处理。"
-            : "演示内容由规则生成，未调用真实 AI 模型。"}
-        </Text>
-        <Text accessibilityLiveRegion="polite" style={styles.live}>
+            </button>
+          </div>
+        </div>
+        <div className="composer-footnote">
+          <span>
+            {workspace.state.provider === "codex"
+              ? "Codex 订阅"
+              : "演示模式 · 未调用真实 AI"}
+          </span>
+          <span>Enter 发送 · ⇧ Enter 换行</span>
+        </div>
+        <span className="sr-only" aria-live="polite">
           {workspace.busy
             ? "正在生成回复"
             : messages.at(-1)?.role === "assistant"
               ? "回复结束"
               : ""}
-        </Text>
-      </View>
-    </View>
+        </span>
+      </div>
+    </section>
   );
 }
-
-const styles = StyleSheet.create({
-  chatTitle: {
-    paddingHorizontal: 24,
-    paddingVertical: 18,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  pill: {
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  transcript: { padding: 24, paddingBottom: 6, flexGrow: 1 },
-  message: {
-    borderWidth: 1,
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 15,
-  },
-  suggestion: {
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    minHeight: 44,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  composerArea: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
-  composer: { borderWidth: 1, borderRadius: 20, padding: 10 },
-  input: {
-    fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 24,
-    minHeight: 45,
-    maxHeight: 116,
-    paddingHorizontal: 7,
-    paddingTop: 6,
-    paddingBottom: 10,
-    textAlignVertical: "top",
-  },
-  send: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  retry: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    minHeight: 44,
-    paddingHorizontal: 8,
-  },
-  live: { height: 0, width: 0, overflow: "hidden" },
-});

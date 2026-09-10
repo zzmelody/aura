@@ -1,12 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
   useColorScheme,
   useWindowDimensions,
-  View,
 } from "@aura/ui/web";
 import {
   Clock3,
@@ -14,42 +10,57 @@ import {
   GitBranch,
   MessageCircle,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
+  Search,
   SlidersHorizontal,
   Sun,
+  X,
 } from "lucide-react";
 import "@fontsource/manrope/latin-400.css";
 import "@fontsource/manrope/latin-500.css";
 import "@fontsource/manrope/latin-600.css";
 import "@fontsource/ibm-plex-mono/latin-400.css";
 import "./styles.css";
-import { AuraMark, IconButton, Label, ThemeContext } from "@aura/ui/components";
-import { fonts, palettes } from "@aura/ui/theme";
+import { AuraMark, ThemeContext } from "@aura/ui/components";
+import { palettes } from "@aura/ui/theme";
 import { useWorkspace } from "./useWorkspace";
 import { useCodexAuth } from "./useCodexAuth";
 import { CodexLoginButton } from "./CodexLoginButton";
 import { HomeScreen, HistoryScreen } from "./screens/Home";
 import { ChatScreen } from "./screens/Chat";
 import { SettingsScreen } from "./screens/Settings";
-import { FlowsScreen } from "./screens/Flows";
+import { FlowStudio } from "./screens/FlowStudio";
+import { flowContext, useFlowDraft } from "./flowDraft";
 import type { Tab } from "./types";
 
 const tabs = [
-  { id: "home", label: "空间", icon: Grid2X2 },
+  { id: "flows", label: "Flow 工作台", icon: GitBranch },
   { id: "chat", label: "对话", icon: MessageCircle },
-  { id: "flows", label: "流程", icon: GitBranch },
-  { id: "history", label: "记录", icon: Clock3 },
-  { id: "settings", label: "设置", icon: SlidersHorizontal },
+  { id: "home", label: "概览", icon: Grid2X2 },
+  { id: "history", label: "全部记录", icon: Clock3 },
 ] as const;
 
 export default function App() {
   const workspace = useWorkspace();
   const codexAuth = useCodexAuth(workspace);
-  const [tab, setTab] = useState<Tab>("home");
+  const flowDraft = useFlowDraft();
+  const [tab, setTab] = useState<Tab>("flows");
   const [systemReduced, setSystemReduced] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(() => innerWidth >= 1180);
+  const [query, setQuery] = useState("");
+  const [onlyRunning, setOnlyRunning] = useState(false);
+  const [editorRevision, setEditorRevision] = useState(0);
+  const dialog = useRef<HTMLDialogElement>(null);
   const systemTheme = useColorScheme();
   const { width } = useWindowDimensions();
   const wide = width >= 900;
+  const split = width >= 1180;
   const dark =
     workspace.state.theme === "system"
       ? systemTheme !== "light"
@@ -61,304 +72,363 @@ export default function App() {
     const update = () => setSystemReduced(media.matches);
     update();
     media.addEventListener("change", update);
-    return () => {
-      media.removeEventListener("change", update);
-    };
+    return () => media.removeEventListener("change", update);
   }, []);
   useEffect(() => {
     document.documentElement.style.backgroundColor = colors.background;
     document.body.style.backgroundColor = colors.background;
-  }, [colors.background]);
-  useEffect(() => {
-    document.title = "Aura · 留一点空间，给下一个想法";
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
-  }, [dark]);
-  const toggleTheme = () =>
-    workspace.setState((s) => ({ ...s, theme: dark ? "light" : "dark" }));
-  const start = (prompt?: string) => {
-    if (workspace.busy) {
-      setTab("chat");
-      return;
-    }
-    workspace.newChat();
-    setTab("chat");
-    if (prompt) pendingPrompt(prompt);
-  };
-  const [queuedPrompt, pendingPrompt] = useState("");
+    document.title = "Aura · Flow 工作台";
+  }, [colors.background, dark]);
   useEffect(() => {
-    if (queuedPrompt && !workspace.active) {
-      void workspace.send(queuedPrompt);
-      pendingPrompt("");
-    }
-  }, [queuedPrompt, workspace.active]);
+    if (!wide && sidebarOpen) dialog.current?.showModal();
+    else dialog.current?.close();
+  }, [wide, sidebarOpen]);
 
-  if (!workspace.ready)
-    return (
-      <View style={[styles.loading, { backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.accent} />
-        <Text style={{ color: colors.secondary, marginTop: 16 }}>
-          正在打开你的空间
-        </Text>
-      </View>
-    );
-  const nav = (
-    <View
-      style={[
-        wide ? styles.sideNav : styles.bottomNav,
-        { borderColor: colors.border, backgroundColor: colors.background },
-      ]}
-    >
-      {tabs.map(({ id, label, icon: Icon }) => (
-        <Pressable
-          key={id}
-          accessibilityRole="tab"
-          accessibilityLabel={label}
-          accessibilityState={{ selected: tab === id }}
-          onPress={() => setTab(id)}
-          style={({ pressed }) => [
-            wide ? styles.sideNavItem : styles.navItem,
-            {
-              backgroundColor: wide && tab === id ? colors.soft : "transparent",
-              opacity: pressed ? 0.6 : 1,
-            },
-          ]}
-        >
-          <Icon
-            size={21}
-            strokeWidth={tab === id ? 2 : 1.6}
-            color={tab === id ? colors.accent : colors.muted}
-          />
-          <Text
-            style={{
-              color: tab === id ? colors.accent : colors.muted,
-              fontFamily: fonts.medium,
-              fontSize: wide ? 14 : 10,
-            }}
-          >
-            {label}
-          </Text>
-          {wide && tab === id ? (
-            <View
-              style={{
-                marginLeft: "auto",
-                width: 5,
-                height: 5,
-                borderRadius: 3,
-                backgroundColor: colors.accent,
-              }}
-            />
-          ) : null}
-        </Pressable>
-      ))}
-    </View>
+  const navigate = (next: Tab) => {
+    setTab(next);
+    setSidebarOpen(false);
+  };
+  const start = (prompt?: string) => {
+    workspace.newChat();
+    if (tab !== "flows") setTab("chat");
+    setAssistantOpen(true);
+    setSidebarOpen(false);
+    if (prompt) void workspace.send(prompt);
+  };
+  const open = (id: string) => {
+    workspace.openChat(id);
+    if (tab !== "flows") setTab("chat");
+    setAssistantOpen(true);
+    setSidebarOpen(false);
+  };
+  const visibleSessions = workspace.state.sessions.filter(
+    (session) =>
+      (!onlyRunning || workspace.runningIds.includes(session.id)) &&
+      `${session.title} ${session.messages.at(-1)?.text ?? ""}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
   );
+  const sidebar = (
+    <aside className="workspace-sidebar" aria-label="工作区与会话">
+      <div className="sidebar-brand">
+        <AuraMark size={27} />
+        <strong>aura</strong>
+        <span className="brand-tag">WORKSPACE</span>
+        <button
+          className="icon-control sidebar-toggle"
+          aria-label={wide ? "收起侧栏" : "关闭会话列表"}
+          onClick={() => (wide ? setCollapsed(true) : setSidebarOpen(false))}
+        >
+          {wide ? <PanelLeftClose size={17} /> : <X size={17} />}
+        </button>
+      </div>
+      <button className="new-session" onClick={() => start()}>
+        <Plus size={16} />
+        新建会话
+      </button>
+      <nav className="workspace-nav" aria-label="主导航">
+        {tabs.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            className={tab === id ? "selected" : ""}
+            aria-current={tab === id ? "page" : undefined}
+            onClick={() => navigate(id)}
+          >
+            <Icon size={16} />
+            {label}
+            {id === "flows" ? <span className="nav-meta">BUILD</span> : null}
+          </button>
+        ))}
+      </nav>
+      <div className="session-heading">
+        <span>会话</span>
+        <span className="count">{workspace.state.sessions.length}</span>
+        <button
+          className="text-control"
+          aria-pressed={onlyRunning}
+          onClick={() => setOnlyRunning(!onlyRunning)}
+        >
+          {onlyRunning ? "显示全部" : "进行中"}
+          {workspace.runningIds.length ? ` ${workspace.runningIds.length}` : ""}
+        </button>
+      </div>
+      <label className="session-search">
+        <Search size={14} />
+        <input
+          aria-label="搜索会话"
+          placeholder="搜索会话…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        {query ? (
+          <button
+            className="icon-control"
+            aria-label="清空搜索"
+            onClick={() => setQuery("")}
+          >
+            <X size={13} />
+          </button>
+        ) : null}
+      </label>
+      <div className="session-list">
+        {visibleSessions.length ? (
+          visibleSessions.map((session, index) => {
+            const running = workspace.runningIds.includes(session.id);
+            const today =
+              new Date(session.updatedAt).toDateString() ===
+              new Date().toDateString();
+            const previousToday =
+              index > 0 &&
+              new Date(visibleSessions[index - 1].updatedAt).toDateString() ===
+                new Date().toDateString();
+            return (
+              <React.Fragment key={session.id}>
+                {index === 0 || today !== previousToday ? (
+                  <div className="session-group">{today ? "今天" : "更早"}</div>
+                ) : null}
+                <button
+                  className={`session-item${workspace.active?.id === session.id ? " selected" : ""}`}
+                  aria-current={
+                    workspace.active?.id === session.id ? "true" : undefined
+                  }
+                  aria-label={`打开会话：${session.title}`}
+                  onClick={() => open(session.id)}
+                >
+                  <span
+                    className={`session-status${running ? " running" : session.messages.at(-1)?.status === "error" ? " failed" : ""}`}
+                  />
+                  <span className="session-copy">
+                    <span className="session-name">{session.title}</span>
+                    <span className="session-preview">
+                      {running
+                        ? "正在生成回复…"
+                        : session.messages.at(-1)?.text || "暂无消息"}
+                    </span>
+                  </span>
+                  <span className="session-time">
+                    {new Date(session.updatedAt).toLocaleDateString("zh-CN", {
+                      month: "numeric",
+                      day: "numeric",
+                    })}
+                  </span>
+                </button>
+              </React.Fragment>
+            );
+          })
+        ) : (
+          <div className="sidebar-empty">
+            {query || onlyRunning
+              ? "没有匹配的会话"
+              : "从一段对话开始。\n生成过程和历史会话会留在这里。"}
+          </div>
+        )}
+      </div>
+      <div className="sidebar-footer">
+        <button
+          className={tab === "settings" ? "selected" : ""}
+          onClick={() => navigate("settings")}
+        >
+          <SlidersHorizontal size={16} />
+          设置
+        </button>
+        <span>
+          本地工作区 <span className="session-status" />
+        </span>
+      </div>
+    </aside>
+  );
+  const showChat = tab === "chat" || (tab === "flows" && assistantOpen);
   return (
     <ThemeContext.Provider value={{ colors, dark, reduced }}>
-      <View
-        className="aura-root"
-        style={{ backgroundColor: colors.background }}
+      <div
+        className="aura-root workbench"
+        data-reduced={reduced}
+        style={
+          Object.fromEntries(
+            Object.entries(colors).map(([key, value]) => [`--${key}`, value]),
+          ) as React.CSSProperties
+        }
       >
-        <View style={styles.shell}>
-            {wide ? (
-              <View style={[styles.sidebar, { borderColor: colors.border }]}>
-                <View style={styles.brand}>
-                  <AuraMark />
-                  <Text style={[styles.wordmark, { color: colors.text }]}>
-                    aura
-                  </Text>
-                  <Text style={{ color: colors.accent, fontSize: 22 }}>✦</Text>
-                </View>
-                <View style={{ marginTop: 8, paddingLeft: 6 }}>
-                  <Label>YOUR PERSONAL SPACE</Label>
-                </View>
-                <View style={{ marginTop: 50 }}>{nav}</View>
-                <View style={{ marginTop: "auto", gap: 12, padding: 8 }}>
-                  <View
-                    style={[
-                      styles.statusDot,
-                      { backgroundColor: colors.success },
-                    ]}
-                  />
-                  <Text
-                    style={{
-                      fontFamily: fonts.body,
-                      color: colors.secondary,
-                      fontSize: 12,
-                      lineHeight: 22,
-                    }}
-                  >
-                    留一点空间，{"\n"}给下一个想法。
-                  </Text>
-                  <Label>AURA / 0.1.0</Label>
-                </View>
-              </View>
+        {!workspace.ready ? (
+          <div className="workspace-loading">
+            <ActivityIndicator color={colors.accent} />
+            正在打开工作台
+          </div>
+        ) : (
+          <>
+            {wide && !collapsed ? sidebar : null}
+            {!wide ? (
+              <dialog
+                className="sidebar-dialog"
+                ref={dialog}
+                onCancel={() => setSidebarOpen(false)}
+                onClick={(event) => {
+                  if (event.target === event.currentTarget)
+                    setSidebarOpen(false);
+                }}
+              >
+                {sidebar}
+              </dialog>
             ) : null}
-            <View style={styles.main}>
-              <View style={[styles.header, { borderColor: colors.border }]}>
-                <View style={styles.brand}>
-                  {wide ? (
-                    <Label>
-                      {tab === "home"
-                        ? "WORKSPACE"
-                        : tab === "chat"
-                          ? "CONVERSATION"
-                          : tab === "flows"
-                            ? "AGENT WORKFLOWS"
-                            : tab === "history"
-                              ? "YOUR ARCHIVE"
-                              : "PREFERENCES"}
-                    </Label>
-                  ) : (
-                    <>
-                      <AuraMark size={27} />
-                      <Text style={[styles.wordmark, { color: colors.text }]}>
-                        aura
-                      </Text>
-                    </>
-                  )}
-                </View>
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
-                >
-                  <CodexLoginButton auth={codexAuth} compact={!wide} />
-                  <IconButton
-                    icon={dark ? Sun : Moon}
-                    label={dark ? "切换到浅色主题" : "切换到深色主题"}
-                    onPress={toggleTheme}
-                  />
-                  {tab === "chat" ? (
-                    <IconButton
-                      icon={Plus}
-                      label="新建对话"
-                      onPress={() => start()}
-                      disabled={workspace.busy}
-                    />
-                  ) : (
-                    <View
-                      style={[
-                        styles.avatar,
-                        {
-                          backgroundColor: colors.soft,
-                          borderColor: colors.border,
-                        },
-                      ]}
+            <main className="workspace-main">
+              <header className="workspace-header">
+                {collapsed || !wide ? (
+                  <button
+                    className="icon-control"
+                    aria-label="展开会话列表"
+                    onClick={() =>
+                      wide ? setCollapsed(false) : setSidebarOpen(true)
+                    }
+                  >
+                    <PanelLeftOpen size={18} />
+                  </button>
+                ) : null}
+                <div className="workspace-breadcrumb">
+                  <span>工作区</span>
+                  <span>/</span>
+                  <strong>
+                    {tab === "flows"
+                      ? "Flow 工作台"
+                      : tab === "chat"
+                        ? "对话"
+                        : tab === "home"
+                          ? "概览"
+                          : tab === "history"
+                            ? "全部记录"
+                            : "设置"}
+                  </strong>
+                </div>
+                <div className="header-actions">
+                  {tab === "flows" ? (
+                    <button
+                      className={`tool-button${assistantOpen ? " active" : ""}`}
+                      aria-pressed={assistantOpen}
+                      onClick={() => setAssistantOpen(!assistantOpen)}
                     >
-                      <Text
-                        style={{
-                          fontFamily: fonts.mono,
-                          fontSize: 12,
-                          color: colors.accent,
-                        }}
-                      >
-                        YOU
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </View>
+                      {assistantOpen ? (
+                        <PanelRightClose size={15} />
+                      ) : (
+                        <PanelRightOpen size={15} />
+                      )}
+                      <span>生成助手</span>
+                    </button>
+                  ) : null}
+                  <CodexLoginButton auth={codexAuth} compact={!wide} />
+                  <button
+                    className="icon-control"
+                    aria-label={dark ? "切换到浅色主题" : "切换到深色主题"}
+                    onClick={() =>
+                      workspace.setState((s) => ({
+                        ...s,
+                        theme: dark ? "light" : "dark",
+                      }))
+                    }
+                  >
+                    {dark ? <Sun size={17} /> : <Moon size={17} />}
+                  </button>
+                </div>
+              </header>
               {workspace.saveError ? (
-                <Text
-                  accessibilityRole="alert"
-                  style={{
-                    paddingHorizontal: 24,
-                    color: colors.danger,
-                    fontSize: 12,
-                  }}
-                >
+                <div className="workspace-notice" role="alert">
                   {workspace.saveError}
-                </Text>
+                </div>
               ) : null}
-              <View style={{ flex: 1, minHeight: 0 }}>
-                {tab === "home" ? (
-                  <HomeScreen
-                    workspace={workspace}
-                    start={start}
-                    open={(id) => {
-                      workspace.openChat(id);
-                      setTab("chat");
+              <div
+                className={`workspace-deck${tab === "flows" && showChat && split ? " split" : ""}`}
+                hidden={tab !== "flows" && tab !== "chat"}
+              >
+                <div
+                  className="flow-area"
+                  hidden={tab !== "flows" || (!split && showChat)}
+                >
+                  <FlowStudio
+                    endpoint={codexAuth.endpoint}
+                    draft={flowDraft}
+                    editorRevision={editorRevision}
+                    onAsk={() => {
+                      setAssistantOpen(true);
+                      workspace.setDraft(
+                        "帮我完善当前 Flow，检查步骤拆分、输入输出与异常处理。",
+                      );
                     }}
                   />
-                ) : null}
-                {tab === "chat" ? <ChatScreen workspace={workspace} /> : null}
-                {tab === "flows" ? (
-                  <FlowsScreen endpoint={codexAuth.endpoint} />
-                ) : null}
-                {tab === "history" ? (
-                  <HistoryScreen
+                </div>
+                <div
+                  className={`assistant-area${tab === "chat" ? " standalone" : ""}`}
+                  hidden={!showChat}
+                >
+                  {tab === "flows" ? (
+                    <div className="assistant-heading">
+                      <span>
+                        <MessageCircle size={15} />
+                        生成助手
+                      </span>
+                      <div>
+                        <button
+                          className="icon-control"
+                          aria-label="新建助手会话"
+                          onClick={() => start()}
+                        >
+                          <Plus size={15} />
+                        </button>
+                        <button
+                          className="icon-control"
+                          aria-label="返回 Flow 编辑器"
+                          onClick={() => setAssistantOpen(false)}
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <ChatScreen
                     workspace={workspace}
-                    open={(id) => {
-                      workspace.openChat(id);
-                      setTab("chat");
+                    flowMode={tab === "flows"}
+                    context={
+                      tab === "flows" ? flowContext(flowDraft.code) : undefined
+                    }
+                    onApplyFlow={(code) => {
+                      flowDraft.update(code);
+                      setEditorRevision((value) => value + 1);
+                      if (!split) setAssistantOpen(false);
                     }}
-                    start={() => start()}
                   />
-                ) : null}
-                {tab === "settings" ? (
-                  <SettingsScreen
-                    workspace={workspace}
-                    systemReduced={systemReduced}
+                </div>
+              </div>
+              {tab === "home" ? (
+                <HomeScreen workspace={workspace} start={start} open={open} />
+              ) : null}
+              {tab === "history" ? (
+                <HistoryScreen
+                  workspace={workspace}
+                  start={start}
+                  open={open}
+                />
+              ) : null}
+              {tab === "settings" ? (
+                <SettingsScreen
+                  workspace={workspace}
+                  systemReduced={systemReduced}
+                />
+              ) : null}
+              <footer className="workspace-status">
+                <span>
+                  <span
+                    className={`session-status${workspace.runningIds.length ? " running" : ""}`}
                   />
-                ) : null}
-              </View>
-              {!wide ? nav : null}
-            </View>
-        </View>
-      </View>
+                  {workspace.runningIds.length
+                    ? `${workspace.runningIds.length} 个会话生成中`
+                    : "工作区就绪"}
+                </span>
+                <span>
+                  Flow · {flowDraft.saveError ? "草稿未保存" : "本地草稿"}
+                </span>
+              </footer>
+            </main>
+          </>
+        )}
+      </div>
     </ThemeContext.Provider>
   );
 }
-
-const styles = StyleSheet.create({
-  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
-  shell: {
-    flex: 1,
-    flexDirection: "row",
-    width: "100%",
-    maxWidth: 1200,
-    alignSelf: "center",
-  },
-  sidebar: { width: 230, padding: 28, borderRightWidth: 1 },
-  main: { flex: 1, minWidth: 0 },
-  header: {
-    height: 72,
-    paddingHorizontal: 24,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  brand: { flexDirection: "row", alignItems: "center", gap: 7 },
-  wordmark: { fontFamily: fonts.display, fontSize: 28, letterSpacing: -1.5 },
-  avatar: {
-    width: 37,
-    height: 37,
-    borderRadius: 13,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    marginLeft: 8,
-  },
-  bottomNav: {
-    flexDirection: "row",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 8,
-    paddingBottom: 6,
-  },
-  navItem: {
-    flex: 1,
-    minHeight: 51,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-  },
-  sideNav: { gap: 10 },
-  sideNavItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    minHeight: 48,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-  },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-});

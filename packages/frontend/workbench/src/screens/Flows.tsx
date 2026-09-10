@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -16,13 +15,7 @@ import {
   RefreshCw,
   Square,
 } from "lucide-react";
-import {
-  Button,
-  Label,
-  Reveal,
-  SectionHeading,
-  useTheme,
-} from "@aura/ui/components";
+import { Label, useTheme } from "@aura/ui/components";
 import { fonts, type as textType } from "@aura/ui/theme";
 import type {
   FlowCatalog,
@@ -316,6 +309,7 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
   const [catalog, setCatalog] = useState<FlowCatalog>();
   const [flowId, setFlowId] = useState("");
   const [input, setInput] = useState('{\n  "task": ""\n}');
+  const [inputView, setInputView] = useState<"form" | "json">("form");
   const [mode, setMode] = useState<FlowMode>("demo");
   const [runs, setRuns] = useState<FlowRunSummary[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -329,6 +323,8 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
   const selectedFlow = catalog?.flows.find((item) => item.id === flowId);
   const endpointRef = useRef(endpoint);
   const inputFlowRef = useRef("");
+  const inputDrafts = useRef(new Map<string, string>());
+  const historyRequest = useRef(0);
   endpointRef.current = endpoint;
 
   async function refresh(signal?: AbortSignal) {
@@ -336,6 +332,7 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
       api<FlowCatalog>(endpoint, "/catalog", undefined, signal),
       api<FlowRunSummary[]>(endpoint, "/runs", undefined, signal),
     ]);
+    if (signal?.aborted || endpoint !== endpointRef.current) return;
     setCatalog(nextCatalog);
     setRuns(nextRuns);
     setFlowId((current) =>
@@ -348,6 +345,13 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
   useEffect(() => {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    setCatalog(undefined);
+    setSelectedId("");
+    setRun(undefined);
+    setRuns([]);
+    setHistoryStep("");
+    setHistory(undefined);
+    historyRequest.current++;
     setError("");
     const pollCatalog = async () => {
       try {
@@ -385,15 +389,22 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
     if (!selectedFlow || inputFlowRef.current === selectedFlow.id) return;
     inputFlowRef.current = selectedFlow.id;
     setInput(
-      JSON.stringify(schemaInitialValue(selectedFlow.inputSchema), null, 2),
+      inputDrafts.current.get(selectedFlow.id) ??
+        JSON.stringify(schemaInitialValue(selectedFlow.inputSchema), null, 2),
     );
   }, [selectedFlow?.id]);
+
+  useEffect(() => {
+    if (flowId && inputFlowRef.current === flowId)
+      inputDrafts.current.set(flowId, input);
+  }, [input]);
 
   useEffect(() => {
     if (!selectedId) {
       setRun(undefined);
       return;
     }
+    setRun(undefined);
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const read = async () => {
@@ -404,6 +415,7 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
           undefined,
           abort.signal,
         );
+        if (abort.signal.aborted) return;
         setRun(next);
         setRuns((current) => [
           {
@@ -427,7 +439,7 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
       abort.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [selectedId, runRevision]);
+  }, [selectedId, runRevision, endpoint]);
 
   const parsed = useMemo(() => {
     try {
@@ -440,6 +452,7 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
   async function start() {
     if (!selectedFlow?.available || parsed.error || busy) return;
     setBusy(true);
+    historyRequest.current++;
     setError("");
     setHistory(undefined);
     setHistoryStep("");
@@ -480,21 +493,21 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
 
   async function openHistory(stepId: string) {
     if (!run) return;
+    const revision = ++historyRequest.current;
     setHistoryStep(stepId);
     setHistory(undefined);
     setError("");
     setHistoryBusy(true);
     try {
-      setHistory(
-        await api<FlowHistory>(
-          endpoint,
-          `/runs/${encodeURIComponent(run.id)}/steps/${encodeURIComponent(stepId)}/history`,
-        ),
+      const next = await api<FlowHistory>(
+        endpoint,
+        `/runs/${encodeURIComponent(run.id)}/steps/${encodeURIComponent(stepId)}/history`,
       );
+      if (revision === historyRequest.current) setHistory(next);
     } catch (cause) {
-      setError(errorText(cause));
+      if (revision === historyRequest.current) setError(errorText(cause));
     } finally {
-      setHistoryBusy(false);
+      if (revision === historyRequest.current) setHistoryBusy(false);
     }
   }
 
@@ -506,6 +519,7 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
         ? Math.min(...history.entries.map(({ seq }) => seq))
         : undefined);
     if (beforeSeq === undefined) return;
+    const revision = historyRequest.current;
     setHistoryBusy(true);
     setError("");
     try {
@@ -513,6 +527,7 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
         endpoint,
         `/runs/${encodeURIComponent(run.id)}/steps/${encodeURIComponent(historyStep)}/history?beforeSeq=${beforeSeq}`,
       );
+      if (revision !== historyRequest.current) return;
       setHistory({
         ...older,
         entries: [
@@ -523,563 +538,350 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
         ],
       });
     } catch (cause) {
-      setError(errorText(cause));
+      if (revision === historyRequest.current) setError(errorText(cause));
     } finally {
-      setHistoryBusy(false);
+      if (revision === historyRequest.current) setHistoryBusy(false);
     }
   }
 
+  function selectRun(id: string) {
+    historyRequest.current++;
+    setSelectedId(id);
+    setRun(undefined);
+    setHistory(undefined);
+    setHistoryStep("");
+    setHistoryBusy(false);
+  }
+
   return (
-    <ScrollView
-      contentContainerStyle={styles.page}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Reveal>
-        <Label>AGENT WORKFLOWS</Label>
-        <Text style={[textType.title, { color: colors.text, marginTop: 14 }]}>
-          把复杂任务，交给一组 Agent。
-        </Text>
-        <Text
-          style={[
-            textType.body,
-            { color: colors.secondary, marginTop: 8, marginBottom: 28 },
-          ]}
+    <div className="flow-runtime">
+      <div className="runtime-heading">
+        <div>
+          <h2>运行已注册的 Flow</h2>
+          <p>配置输入，查看运行结果和每个 Agent 的会话。</p>
+        </div>
+        <button
+          className="icon-control"
+          aria-label="刷新 Flow 目录"
+          onClick={() => {
+            setError("");
+            void refresh().catch((cause) => setError(errorText(cause)));
+          }}
         >
-          Flow 由后端代码定义，DSH 负责会话、模型、取消和运行记录。
-        </Text>
-      </Reveal>
-
+          <RefreshCw size={15} />
+        </button>
+      </div>
       {error ? (
-        <Text
-          accessibilityRole="alert"
-          style={[
-            styles.notice,
-            { color: colors.danger, borderColor: colors.danger },
-          ]}
-        >
+        <div className="workspace-notice" role="alert">
           {error}
-        </Text>
+        </div>
       ) : null}
-
-      {!catalog ? (
-        <View style={styles.loading}>
-          <ActivityIndicator color={colors.accent} />
-          <Text style={[textType.small, { color: colors.muted }]}>
-            正在读取 Flow 目录
-          </Text>
-        </View>
-      ) : (
-        <>
-          <SectionHeading title="选择 Flow" meta="01 / CATALOG" />
-          <View style={styles.catalog}>
-            {catalog.flows.map((flow) => {
-              const chosen = flow.id === flowId;
-              return (
-                <Pressable
-                  key={flow.id}
-                  accessibilityRole="radio"
-                  accessibilityLabel={flow.title}
-                  accessibilityState={{
-                    checked: chosen,
-                    disabled: !flow.available,
-                  }}
-                  disabled={!flow.available}
-                  onPress={() => setFlowId(flow.id)}
-                  style={({ pressed }) => [
-                    styles.flowCard,
-                    {
-                      backgroundColor: chosen ? colors.soft : colors.surface,
-                      borderColor: chosen ? colors.accent : colors.border,
-                      opacity: !flow.available ? 0.5 : pressed ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <View style={styles.cardTop}>
-                    <GitBranch
-                      size={20}
-                      color={chosen ? colors.accent : colors.muted}
-                    />
-                    <Label color={chosen ? colors.accent : colors.muted}>
-                      {flow.available ? "READY" : "UNAVAILABLE"}
-                    </Label>
-                  </View>
-                  <Text style={[styles.cardTitle, { color: colors.text }]}>
-                    {flow.title}
-                  </Text>
-                  <Text
-                    style={[
-                      textType.small,
-                      { color: colors.secondary, marginTop: 7 },
-                    ]}
-                  >
-                    {flow.description}
-                  </Text>
-                  {flow.sourceHash ? (
-                    <Text style={[styles.hash, { color: colors.muted }]}>
-                      {flow.id} · {flow.sourceHash.slice(0, 10)}
-                    </Text>
-                  ) : null}
-                  {flow.error ? (
-                    <Text
-                      style={[
-                        textType.small,
-                        { color: colors.danger, marginTop: 8 },
-                      ]}
-                    >
-                      {flow.error}
-                    </Text>
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <View style={{ marginTop: 30 }}>
-            <SectionHeading title="运行参数" meta="02 / INPUT" />
-            <View
-              style={[
-                styles.editor,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}
-            >
-              <Text style={[textType.small, { color: colors.secondary }]}>
-                {selectedFlow?.title ?? "请选择可用 Flow"} · Schema 参数
-              </Text>
-              {selectedFlow?.inputSchema && !parsed.error ? (
-                <SchemaInputEditor
-                  schemaValue={selectedFlow.inputSchema}
-                  value={parsed.value}
-                  onChange={(next) => setInput(JSON.stringify(next, null, 2))}
-                />
-              ) : null}
-              <Label color={colors.muted}>RAW JSON</Label>
-              <TextInput
-                accessibilityLabel="Flow JSON 输入"
-                autoCapitalize="none"
-                autoCorrect={false}
-                multiline
-                onChangeText={setInput}
-                placeholder={'{ "task": "描述要完成的任务" }'}
-                placeholderTextColor={colors.muted}
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: colors.input,
-                    borderColor: parsed.error ? colors.danger : colors.border,
-                    color: colors.text,
-                  },
-                ]}
-                value={input}
-              />
-              {parsed.error ? (
-                <Text style={[textType.small, { color: colors.danger }]}>
-                  {parsed.error}
-                </Text>
-              ) : null}
-              <View style={styles.modeRow}>
-                {(["demo", "codex"] as const).map((value) => (
-                  <Pressable
-                    key={value}
-                    accessibilityRole="radio"
-                    accessibilityState={{ checked: mode === value }}
-                    onPress={() => setMode(value)}
-                    style={[
-                      styles.mode,
-                      {
-                        backgroundColor:
-                          mode === value ? colors.soft : colors.input,
-                        borderColor:
-                          mode === value ? colors.accent : colors.border,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        textType.small,
-                        {
-                          color:
-                            mode === value ? colors.accent : colors.secondary,
-                        },
-                      ]}
-                    >
-                      {value === "demo" ? "DSH 演示" : "Codex 订阅"}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-              <Button
-                disabled={
-                  !selectedFlow?.available || Boolean(parsed.error) || busy
-                }
-                icon={Play}
-                onPress={() => void start()}
-              >
-                {busy ? "正在提交…" : "开始运行"}
-              </Button>
-            </View>
-          </View>
-        </>
-      )}
-
-      <View style={{ marginTop: 30 }}>
-        <SectionHeading
-          title="最近运行"
-          meta={`${runs.length}`.padStart(2, "0")}
-        />
-        {!runs.length ? (
-          <View style={[styles.empty, { borderColor: colors.border }]}>
-            <Clock3 size={19} color={colors.muted} />
-            <Text style={[textType.small, { color: colors.muted }]}>
-              运行记录会出现在这里。
-            </Text>
-          </View>
-        ) : (
-          runs.map((item) => (
-            <Pressable
-              key={item.id}
-              accessibilityLabel={`查看运行：${item.title}`}
-              onPress={() => {
-                setSelectedId(item.id);
-                setHistory(undefined);
-                setHistoryStep("");
-              }}
-              style={({ pressed }) => [
-                styles.runRow,
-                {
-                  borderColor: colors.border,
-                  backgroundColor:
-                    selectedId === item.id ? colors.soft : "transparent",
-                  opacity: pressed ? 0.65 : 1,
-                },
-              ]}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.runTitle, { color: colors.text }]}>
-                  {item.title}
-                </Text>
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    textType.small,
-                    { color: colors.muted, marginTop: 4 },
-                  ]}
-                >
-                  {item.inputPreview} ·{" "}
-                  {item.mode === "codex" ? "CODEX" : "DEMO"}
-                </Text>
-              </View>
-              <Label color={active(item.status) ? colors.accent : colors.muted}>
-                {phaseLabels[item.status]}
-              </Label>
-              <ChevronRight size={16} color={colors.muted} />
-            </Pressable>
-          ))
-        )}
-      </View>
-
-      {selectedId ? (
-        <View style={{ marginTop: 30 }}>
-          <SectionHeading title="运行详情" meta="03 / RESULT" />
-          {!run ? (
-            <ActivityIndicator color={colors.accent} />
+      <div className="runtime-columns">
+        <section className="runtime-config" aria-label="Flow 运行配置">
+          <div className="panel-heading">
+            <GitBranch size={14} />
+            <strong>选择 Flow</strong>
+            <span className="count">{catalog?.flows.length ?? 0}</span>
+          </div>
+          {!catalog ? (
+            <div className="runtime-empty">
+              {error ? (
+                <span>无法连接 Flow 服务，启动服务后点击刷新。</span>
+              ) : (
+                <>
+                  <ActivityIndicator color={colors.accent} />
+                  正在读取 Flow 目录…
+                </>
+              )}
+            </div>
+          ) : !catalog.flows.length ? (
+            <div className="runtime-empty">
+              暂无已注册的 Flow，可先在代码草稿中编写。
+            </div>
           ) : (
-            <View
-              style={[
-                styles.detail,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}
-            >
-              <View style={styles.detailHead}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.cardTitle, { color: colors.text }]}>
-                    {run.flow.title}
-                  </Text>
-                  <Text
-                    style={[
-                      textType.small,
-                      { color: colors.muted, marginTop: 5 },
-                    ]}
+            <>
+              <div className="compact-catalog">
+                {catalog.flows.map((flow) => (
+                  <button
+                    key={flow.id}
+                    className={`catalog-item${flowId === flow.id ? " selected" : ""}`}
+                    aria-pressed={flowId === flow.id}
+                    disabled={!flow.available}
+                    onClick={() => setFlowId(flow.id)}
                   >
-                    {phaseLabels[run.status]} ·{" "}
-                    {new Date(run.createdAt).toLocaleString("zh-CN")}
-                  </Text>
-                  <Text style={[styles.hash, { color: colors.muted }]}>
-                    {run.flow.id} · {run.flow.sourceHash.slice(0, 10)}
-                  </Text>
-                </View>
-                <Pressable
-                  accessibilityLabel="刷新运行状态"
-                  onPress={() => setRunRevision((value) => value + 1)}
-                  style={styles.refresh}
-                >
-                  <RefreshCw size={16} color={colors.accent} />
-                </Pressable>
-              </View>
-              {active(run.status) ? (
-                <Button
-                  secondary
-                  compact
-                  disabled={busy}
-                  icon={Square}
-                  onPress={() => void cancel()}
-                >
-                  停止运行
-                </Button>
-              ) : null}
-              <View style={styles.steps}>
-                {run.steps.map((step) => (
-                  <Pressable
-                    key={step.id}
-                    accessibilityLabel={`查看 ${step.label} 会话`}
-                    onPress={() => void openHistory(step.id)}
+                    <span>
+                      <GitBranch size={14} />
+                      <strong>{flow.title}</strong>
+                    </span>
+                    <small>{flow.error || flow.description}</small>
+                  </button>
+                ))}
+              </div>
+              <div className="panel-heading input-heading">
+                <strong>运行参数</strong>
+                <div className="segmented" aria-label="参数编辑方式">
+                  <button
+                    aria-pressed={inputView === "form"}
+                    onClick={() => setInputView("form")}
+                  >
+                    表单
+                  </button>
+                  <button
+                    aria-pressed={inputView === "json"}
+                    onClick={() => setInputView("json")}
+                  >
+                    JSON
+                  </button>
+                </div>
+              </div>
+              <div className="runtime-input">
+                {inputView === "form" &&
+                selectedFlow?.inputSchema &&
+                !parsed.error &&
+                asObject(parsed.value) ? (
+                  <SchemaInputEditor
+                    schemaValue={selectedFlow.inputSchema}
+                    value={parsed.value}
+                    onChange={(next) => setInput(JSON.stringify(next, null, 2))}
+                  />
+                ) : (
+                  <TextInput
+                    accessibilityLabel="Flow JSON 输入"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    multiline
+                    onChangeText={setInput}
                     style={[
-                      styles.step,
+                      styles.input,
                       {
-                        backgroundColor:
-                          historyStep === step.id ? colors.soft : colors.input,
-                        borderColor: colors.border,
+                        backgroundColor: colors.input,
+                        color: colors.text,
+                        borderColor: parsed.error
+                          ? colors.danger
+                          : colors.border,
                       },
                     ]}
+                    value={input}
+                  />
+                )}
+                {parsed.error ? (
+                  <p className="error" role="alert">
+                    {parsed.error}
+                  </p>
+                ) : null}
+              </div>
+              <div className="runtime-launch">
+                <label>
+                  运行模式
+                  <select
+                    aria-label="Flow 运行模式"
+                    value={mode}
+                    onChange={(event) =>
+                      setMode(event.target.value as FlowMode)
+                    }
                   >
-                    <View
-                      style={[
-                        styles.dot,
-                        {
-                          backgroundColor:
-                            step.status === "completed"
-                              ? colors.success
-                              : active(step.status)
-                                ? colors.accent
-                                : colors.muted,
-                        },
-                      ]}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[textType.body, { color: colors.text }]}>
-                        {step.label}
-                      </Text>
-                      <Text style={[textType.small, { color: colors.muted }]}>
-                        {step.preset} · {phaseLabels[step.status]}
-                      </Text>
-                      <Text
-                        selectable
-                        style={[styles.sessionId, { color: colors.muted }]}
-                      >
-                        session {step.sessionId}
-                      </Text>
-                    </View>
-                    <ChevronRight size={15} color={colors.muted} />
-                  </Pressable>
+                    <option value="demo">DSH 演示</option>
+                    <option value="codex">Codex 订阅</option>
+                  </select>
+                </label>
+                <button
+                  className="primary-button"
+                  disabled={
+                    !selectedFlow?.available || Boolean(parsed.error) || busy
+                  }
+                  onClick={() => void start()}
+                >
+                  <Play size={14} />
+                  {busy ? "正在提交…" : "开始运行"}
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+        <section className="runtime-results" aria-label="Flow 运行结果">
+          <div className="panel-heading">
+            <Clock3 size={14} />
+            <strong>运行记录</strong>
+            <span className="count">{runs.length}</span>
+          </div>
+          <div className="run-picker">
+            <select
+              aria-label="选择运行记录"
+              value={selectedId}
+              onChange={(event) => selectRun(event.target.value)}
+            >
+              <option value="">
+                {runs.length ? "选择一条运行记录" : "暂无运行记录"}
+              </option>
+              {runs.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {phaseLabels[item.status]} · {item.title} ·{" "}
+                  {new Date(item.createdAt).toLocaleString("zh-CN")}
+                </option>
+              ))}
+            </select>
+          </div>
+          {!selectedId ? (
+            <div className="runtime-empty result-empty">
+              <Play size={25} strokeWidth={1.3} />
+              <h3>让 Flow 开始工作</h3>
+              <p>运行后在这里查看步骤、输出和 Agent 会话。</p>
+            </div>
+          ) : !run ? (
+            <div className="runtime-empty">
+              <ActivityIndicator color={colors.accent} />
+              正在读取运行记录…
+            </div>
+          ) : (
+            <div className="run-detail">
+              <div className="run-detail-heading">
+                <div>
+                  <h3>{run.flow.title}</h3>
+                  <span className={`phase phase-${run.status}`}>
+                    {phaseLabels[run.status]}
+                  </span>
+                  <small>
+                    {new Date(run.createdAt).toLocaleString("zh-CN")}
+                  </small>
+                </div>
+                <button
+                  className="icon-control"
+                  aria-label="刷新运行状态"
+                  onClick={() => setRunRevision((value) => value + 1)}
+                >
+                  <RefreshCw size={14} />
+                </button>
+              </div>
+              {active(run.status) ? (
+                <button
+                  className="tool-button"
+                  disabled={busy}
+                  onClick={() => void cancel()}
+                >
+                  <Square size={12} />
+                  停止运行
+                </button>
+              ) : null}
+              <div className="agent-steps">
+                {run.steps.map((step, index) => (
+                  <button
+                    key={step.id}
+                    className={`agent-step${historyStep === step.id ? " selected" : ""}`}
+                    aria-label={`查看 ${step.label} 会话`}
+                    aria-pressed={historyStep === step.id}
+                    onClick={() => void openHistory(step.id)}
+                  >
+                    <span className={`step-number phase-${step.status}`}>
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span>
+                      <strong>{step.label}</strong>
+                      <small>
+                        {phaseLabels[step.status]} · {step.preset}
+                      </small>
+                    </span>
+                    <ChevronRight size={14} />
+                  </button>
                 ))}
-              </View>
+              </div>
               {run.error ? (
-                <Text style={[textType.small, { color: colors.danger }]}>
+                <p className="error" role="alert">
                   {run.error}
-                </Text>
+                </p>
               ) : null}
               {run.output !== undefined ? (
-                <View
-                  style={[
-                    styles.output,
-                    {
-                      backgroundColor: colors.input,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                >
-                  <Label>FLOW OUTPUT</Label>
+                <div className="run-output" hidden={Boolean(historyStep)}>
+                  <div className="panel-heading">
+                    <strong>输出结果</strong>
+                  </div>
                   {reportText(run.output) ? (
-                    <Text
-                      selectable
-                      style={[
-                        textType.body,
-                        styles.preformatted,
-                        { color: colors.text, marginTop: 10 },
-                      ]}
-                    >
-                      {reportText(run.output)}
-                    </Text>
+                    <div className="report-text">{reportText(run.output)}</div>
                   ) : null}
-                  <Label color={colors.muted}>STRUCTURED JSON</Label>
-                  <Text
-                    selectable
-                    style={[styles.jsonOutput, { color: colors.secondary }]}
-                  >
-                    {outputText(run.output)}
-                  </Text>
-                </View>
+                  <details open={!reportText(run.output)}>
+                    <summary>结构化 JSON</summary>
+                    <pre>{outputText(run.output)}</pre>
+                  </details>
+                </div>
               ) : null}
               {historyStep ? (
-                <View style={[styles.output, { borderColor: colors.border }]}>
-                  <Label>SESSION HISTORY / {historyStep.toUpperCase()}</Label>
+                <div className="step-history">
+                  <div className="panel-heading">
+                    <strong>
+                      {run.steps.find((step) => step.id === historyStep)?.label}{" "}
+                      · 会话
+                    </strong>
+                    <button
+                      className="text-control"
+                      onClick={() => {
+                        historyRequest.current++;
+                        setHistoryStep("");
+                        setHistory(undefined);
+                        setHistoryBusy(false);
+                      }}
+                    >
+                      查看输出
+                    </button>
+                    <button
+                      className="text-control"
+                      disabled={historyBusy}
+                      onClick={() => void openHistory(historyStep)}
+                    >
+                      刷新
+                    </button>
+                  </div>
                   {!history ? (
-                    <ActivityIndicator color={colors.accent} />
-                  ) : history.entries.length ? (
+                    <div className="runtime-empty">
+                      {historyBusy
+                        ? "正在读取会话…"
+                        : "会话读取失败，可点击刷新重试。"}
+                    </div>
+                  ) : (
                     <>
-                      <Text
-                        selectable
-                        style={[styles.sessionId, { color: colors.muted }]}
-                      >
-                        {history.preset} · session {history.sessionId}
-                      </Text>
+                      <small className="session-identifier">
+                        {history.preset} · {history.sessionId}
+                      </small>
                       {history.hasMore ? (
-                        <Button
-                          compact
-                          secondary
+                        <button
+                          className="tool-button"
                           disabled={historyBusy}
-                          onPress={() => void loadOlderHistory()}
+                          onClick={() => void loadOlderHistory()}
                         >
                           {historyBusy ? "读取中…" : "加载更早记录"}
-                        </Button>
+                        </button>
                       ) : null}
-                      {history.entries.map((entry) => (
-                        <View key={entry.seq} style={{ marginTop: 12 }}>
-                          <Label
-                            color={
-                              entry.kind === "assistant"
-                                ? colors.accent
-                                : colors.muted
-                            }
-                          >
-                            {entry.kind.toUpperCase()}
-                          </Label>
-                          <Text
-                            style={[
-                              textType.small,
-                              { color: colors.secondary, marginTop: 4 },
-                            ]}
-                          >
-                            {entry.text}
-                          </Text>
-                        </View>
-                      ))}
+                      {history.entries.length ? (
+                        history.entries.map((entry) => (
+                          <div key={entry.seq} className="history-entry">
+                            <span>{entry.kind}</span>
+                            <p>{entry.text}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="muted">暂无会话记录。</p>
+                      )}
                     </>
-                  ) : (
-                    <Text
-                      style={[
-                        textType.small,
-                        { color: colors.muted, marginTop: 10 },
-                      ]}
-                    >
-                      暂无可展示的会话记录。
-                    </Text>
                   )}
-                </View>
+                </div>
               ) : null}
-            </View>
+            </div>
           )}
-        </View>
-      ) : null}
-    </ScrollView>
+        </section>
+      </div>
+    </div>
   );
 }
 
 const styles = StyleSheet.create({
-  page: {
-    padding: 24,
-    paddingBottom: 40,
-    width: "100%",
-    maxWidth: 900,
-    alignSelf: "center",
-  },
-  notice: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 20,
-    fontFamily: fonts.body,
-    fontSize: 12,
-  },
-  loading: {
-    minHeight: 100,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  catalog: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  flowCard: {
-    flex: 1,
-    minWidth: 240,
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 18,
-  },
-  cardTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  cardTitle: {
-    fontFamily: fonts.medium,
-    fontWeight: 500,
-    fontSize: 15,
-    marginTop: 18,
-  },
-  hash: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    lineHeight: "16px",
-    marginTop: 8,
-  },
-  editor: { borderWidth: 1, borderRadius: 18, padding: 18, gap: 14 },
   input: {
-    minHeight: 116,
+    minHeight: 150,
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 7,
+    padding: 10,
     fontFamily: fonts.mono,
     fontSize: 12,
     lineHeight: "19px",
   },
-  modeRow: { flexDirection: "row", gap: 10 },
-  mode: {
-    flex: 1,
-    minHeight: 42,
-    borderWidth: 1,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  empty: {
-    minHeight: 72,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderRadius: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
-  runRow: {
-    minHeight: 72,
-    padding: 14,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  runTitle: { fontFamily: fonts.medium, fontWeight: 500, fontSize: 14 },
-  detail: { borderWidth: 1, borderRadius: 18, padding: 18, gap: 16 },
-  detailHead: { flexDirection: "row", alignItems: "center", gap: 12 },
-  refresh: {
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  steps: { gap: 10 },
-  step: {
-    minHeight: 64,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 13,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 11,
-  },
-  dot: { width: 7, height: 7, borderRadius: 4 },
-  output: { borderWidth: 1, borderRadius: 14, padding: 16 },
-  schemaFields: { gap: 14 },
+  schemaFields: { gap: 12 },
   schemaField: { gap: 7 },
   fieldHeading: {
     flexDirection: "row",
@@ -1088,47 +890,32 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   schemaInput: {
-    minHeight: 44,
+    minHeight: 34,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 13,
-    paddingVertical: 10,
+    borderRadius: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
     fontFamily: fonts.mono,
     fontSize: 12,
   },
-  schemaTextarea: { minHeight: 96, textAlignVertical: "top" },
-  optionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  schemaTextarea: { minHeight: 72, textAlignVertical: "top" },
+  optionRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   option: {
-    minHeight: 38,
+    minHeight: 32,
     borderWidth: 1,
-    borderRadius: 11,
-    paddingHorizontal: 12,
+    borderRadius: 6,
+    paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   toggle: {
-    minHeight: 42,
+    minHeight: 34,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 13,
+    borderRadius: 7,
+    paddingHorizontal: 10,
     flexDirection: "row",
     alignItems: "center",
     gap: 9,
   },
   toggleDot: { width: 8, height: 8, borderRadius: 4 },
-  sessionId: {
-    fontFamily: fonts.mono,
-    fontSize: 10,
-    lineHeight: "16px",
-    marginTop: 3,
-  },
-  preformatted: { whiteSpace: "pre-wrap" },
-  jsonOutput: {
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    lineHeight: "18px",
-    marginTop: 8,
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-  },
 });

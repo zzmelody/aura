@@ -3,3 +3,15 @@
 浏览器、Electron 与 Capacitor 共用的 Aura React Web 工作台，包含界面、导航、交互状态、Web Storage 和 HTTP transport。应用只提供 React DOM 运行时及少量宿主能力；本包只依赖 frontend/shared 库，不读取后端凭据，也不启动 DSH。
 
 移动端入口位于 `apps/mobile`，桌面端入口位于 `apps/desktop`。两端复用同一个 `App` 导出，平台启动、窗口和发布配置留在各自应用中。
+
+## 紧凑工作台
+
+默认打开 Flow 工作台，左侧常驻会话导航，中央为代码草稿/运行视图，右侧为可收起的生成助手。会话侧栏支持搜索、进行中筛选和后台生成状态；900px 以下改为抽屉，1180px 以下编辑区与助手单栏切换。
+
+会话各自保留当前访问期间未发送的消息草稿。每个会话持有独立取消控制器，切换不会停止其他会话，停止只影响当前会话。已有 `aura.workspace.v1` 持久化格式保持兼容；刷新后正在生成的回复仍恢复为「已停止」。
+
+Flow 代码草稿以 `aura.flow-draft.v1` 自动保存在本机，支持代码编辑、导入、导出和撤销替换。生成助手通过现有 DSH 对话链路接收当前代码上下文，完整的 `defineFlow` 代码块提供「放入 Flow 编辑器」操作；本地/DSH 演示模式不调用真实模型。上下文最多附带前 9000 字符，并明确标注截断。
+
+本地草稿与后端已注册的 Flow 是独立状态。当前后端 API 只提供目录、运行、取消和历史，不提供源码发布接口；导出的 `my-flow.flow.js` 需要按编排包规则注册到后端，随后在「运行与记录」选择。UI 不会把尚未发布的草稿当作已运行代码。
+
+验证命令：`pnpm --filter @aura/workbench typecheck`、`pnpm --filter @aura/workbench test`。浏览器回归范围见 [验证记录](../../../../docs/verification.md)。

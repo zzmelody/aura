@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "aura": { "layer": "frontend", "kind": "library" },
+  "aura": {
+    "layer": "frontend",
+    "kind": "library"
+  },
   "exports": {
     ".": "./src/App.tsx"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
   },
   "dependencies": {
     "@aura/core": "workspace:*",

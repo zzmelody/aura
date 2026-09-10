@@ -94,7 +94,7 @@ export function SettingsScreen({
         <Text
           style={[
             textType.body,
-            { color: colors.secondary, marginTop: 8, marginBottom: 30 },
+            { color: colors.secondary, marginTop: 8, marginBottom: 18 },
           ]}
         >
           让工作台，成为你的空间。
@@ -350,8 +350,8 @@ export function SettingsScreen({
               { color: colors.secondary, marginTop: 12, marginBottom: 18 },
             ]}
           >
-            本地模式无需联网。连接工作台后可以使用 DSH 演示；登录
-            Codex 后，真实回复仍由 DSH 的模型适配器与会话链路处理。
+            本地模式无需联网。连接工作台后可以使用 DSH 演示；登录 Codex
+            后，真实回复仍由 DSH 的模型适配器与会话链路处理。
           </Text>
           {workspace.state.provider !== "offline" ? (
             <Button
@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   themes: { flexDirection: "row", gap: 12 },
-  themeChoice: { flex: 1, borderRadius: 18, padding: 17 },
+  themeChoice: { flex: 1, borderRadius: 10, padding: 17 },
   miniApp: { marginBottom: 22, paddingHorizontal: 2 },
   row: {
     flexDirection: "row",
@@ -451,8 +451,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rowLabel: { flexDirection: "row", gap: 12, alignItems: "center" },
-  lab: { padding: 18, marginTop: 16, borderWidth: 1, borderRadius: 18 },
-  service: { padding: 20, borderRadius: 18, borderWidth: 1 },
+  lab: { padding: 18, marginTop: 16, borderWidth: 1, borderRadius: 10 },
+  service: { padding: 20, borderRadius: 10, borderWidth: 1 },
   address: {
     fontFamily: fonts.mono,
     fontSize: 13,

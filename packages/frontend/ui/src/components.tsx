@@ -102,7 +102,7 @@ export function Button({
         style={({ pressed }) => [
           styles.button,
           {
-            minHeight: compact ? 44 : 54,
+            minHeight: compact ? 34 : 40,
             backgroundColor: secondary ? colors.soft : colors.primary,
             transform: [{ scale: !reduced && pressed ? 0.975 : 1 }],
             transition: reduced
@@ -227,13 +227,7 @@ export function Orb({ compact = false }: { compact?: boolean }) {
             <stop offset="1" stopColor={colors.background} stopOpacity="0" />
           </radialGradient>
         </defs>
-        <ellipse
-          cx="180"
-          cy="110"
-          rx="150"
-          ry="109"
-          fill={`url(#${id}glow)`}
-        />
+        <ellipse cx="180" cy="110" rx="150" ry="109" fill={`url(#${id}glow)`} />
         {[60, 95, 130, 165, 200, 235, 270, 305].map((x) => (
           <line
             key={x}
@@ -280,15 +274,9 @@ export function Orb({ compact = false }: { compact?: boolean }) {
         <svg width="100%" height="100%" viewBox="0 0 210 210">
           <defs>
             <radialGradient id={`${id}core`} cx="35%" cy="25%" r="80%">
-              <stop
-                offset="0"
-                stopColor={dark ? "#E6D9FF" : "#E5D6FF"}
-              />
+              <stop offset="0" stopColor={dark ? "#E6D9FF" : "#E5D6FF"} />
               <stop offset="0.48" stopColor="#A076E7" />
-              <stop
-                offset="1"
-                stopColor={dark ? "#361362" : "#633397"}
-              />
+              <stop offset="1" stopColor={dark ? "#361362" : "#633397"} />
             </radialGradient>
           </defs>
           <g transform="rotate(-30 105 105)">
@@ -369,15 +357,15 @@ export function SectionHeading({
 
 const styles = StyleSheet.create({
   iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 34,
+    height: 34,
+    borderRadius: 7,
     justifyContent: "center",
     alignItems: "center",
   },
   button: {
-    paddingHorizontal: 20,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    borderRadius: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -387,6 +375,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 10,
   },
 });
