@@ -3,12 +3,16 @@ import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/cordis-plugin-loader";
 import type {} from "@deepseek-ai/dsh-agent-presets";
-import { FlowDiscovery } from "./discovery.ts";
+import { ActionDiscovery, FlowDiscovery } from "./discovery.ts";
 import { FlowEngine } from "./engine.ts";
 import { FlowRegistry } from "./registry.ts";
-import { FlowError, runSchema } from "./schema.ts";
+import { actionRunSchema, FlowError, runSchema } from "./schema.ts";
 import { dshSessions } from "./sessions.ts";
-import type { FlowDomain } from "./types.ts";
+import type { FlowDomain, Table } from "./types.ts";
+import type { ActionRun } from "@aura/protocol/types";
+import { ActionRegistry } from "./action-registry.ts";
+import { ActionRuntime } from "./actions.ts";
+import { ActionRuns } from "./action-runs.ts";
 
 export const name = "aura-orchestration";
 export const inject = [
@@ -20,6 +24,7 @@ export const inject = [
   "sdkAppStartup",
   "loader",
   "hmr",
+  "tools",
 ];
 
 const spec = defineDomain({
@@ -28,24 +33,55 @@ const spec = defineDomain({
   layout: "per-record",
   tables: { runs: domainTable(runSchema) },
 });
+const actionSpec = defineDomain({
+  name: "aura_code_actions",
+  version: 1,
+  layout: "per-record",
+  tables: { runs: domainTable(actionRunSchema) },
+});
 
 export async function apply(ctx: Context) {
   const flowRoot = process.env.AURA_FLOW_ROOT;
   if (!flowRoot) throw new Error("AURA_FLOW_ROOT is required");
+  const actionRoot = process.env.AURA_ACTION_ROOT;
+  if (!actionRoot) throw new Error("AURA_ACTION_ROOT is required");
 
   const registry = new FlowRegistry();
   ctx.provide("auraFlowRegistry", registry);
   const discovery = new FlowDiscovery(ctx.loader, registry, flowRoot);
+  const actionRegistry = new ActionRegistry();
+  ctx.provide("auraActionRegistry", actionRegistry);
+  const actionDiscovery = new ActionDiscovery(
+    ctx.loader,
+    actionRegistry,
+    actionRoot,
+  );
+  const actionRuntime = new ActionRuntime(ctx);
 
   const domain = await ctx.storageDomain.open(spec);
-  const refreshFlows = () => discovery.refresh();
+  const actionDomain = await ctx.storageDomain.open(actionSpec);
+  const refreshFlows = async () => {
+    await Promise.all([discovery.refresh(), actionDiscovery.refresh()]);
+  };
+  const actionRuns = new ActionRuns({
+    table: actionDomain.table("runs") as unknown as Table<ActionRun>,
+    registry: actionRegistry,
+    runtime: actionRuntime,
+    refresh: () => actionDiscovery.refresh(),
+    cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
+  });
   const engine = new FlowEngine({
     // DSH's generic Domain table projection erases values at this boundary;
     // the concrete zod schema above validates persisted records.
     domain: domain as unknown as FlowDomain,
-    sessions: dshSessions(ctx),
+    sessions: dshSessions(ctx, actionRuntime),
     registry,
     refreshFlows,
+    actions: {
+      registry: actionRegistry,
+      runtime: actionRuntime,
+      cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
+    },
     presets: async () =>
       (await ctx.agentPresets.list()).map(
         ({ id, name, description, broken }) => ({
@@ -57,6 +93,7 @@ export async function apply(ctx: Context) {
       ),
   });
   await engine.initialize();
+  await actionRuns.initialize();
 
   let lastActivity = Date.now();
   let exiting = false;
@@ -79,12 +116,16 @@ export async function apply(ctx: Context) {
       let data;
       switch (method) {
         case "initialize":
-          await discovery.refresh();
+          await refreshFlows();
           await ctx.get("loader")?.await();
-          data = { name: "aura-orchestration", version: 2 };
+          data = { name: "aura-orchestration", version: 3 };
           break;
         case "catalog":
           data = await engine.catalog();
+          break;
+        case "source":
+          await refreshFlows();
+          data = registry.source(id);
           break;
         case "list":
           data = engine.list();
@@ -101,6 +142,18 @@ export async function apply(ctx: Context) {
         case "cancel":
           data = await engine.cancel(id);
           break;
+        case "action/start":
+          data = await actionRuns.start(params);
+          break;
+        case "action/get":
+          data = actionRuns.get(id);
+          break;
+        case "action/wait":
+          data = await actionRuns.wait(id);
+          break;
+        case "action/cancel":
+          data = await actionRuns.cancel(id);
+          break;
         case "history":
           const beforeSeq = params.beforeSeq;
           if (
@@ -114,6 +167,7 @@ export async function apply(ctx: Context) {
           break;
         case "shutdown":
           await engine.close();
+          await actionRuns.close();
           data = { closed: true };
           setImmediate(() => void disposeAndExit());
           break;
@@ -136,20 +190,27 @@ export async function apply(ctx: Context) {
   ctx.effect(() => {
     transport.start();
     const scan = setInterval(
-      () => void discovery.refresh().catch(() => undefined),
+      () => void refreshFlows().catch(() => undefined),
       1_000,
     );
     const idle = setInterval(() => {
-      if (!engine.running.size && Date.now() - lastActivity > 300_000)
+      if (
+        !engine.running.size &&
+        !actionRuns.running.size &&
+        Date.now() - lastActivity > 300_000
+      )
         void disposeAndExit();
     }, 30_000);
     return async () => {
       clearInterval(scan);
       clearInterval(idle);
       await engine.close();
+      await actionRuns.close();
       await discovery.close();
+      await actionDiscovery.close();
       transport.close();
       await domain.close();
+      await actionDomain.close();
     };
   }, "aura-orchestration.serve");
 }

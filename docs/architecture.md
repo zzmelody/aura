@@ -46,6 +46,8 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 流程使用独立、长驻且空闲可回收的 `aura-flow` DSH profile。每次 `ctx.agent()` 都产生独立 preset/session，复用 DSH Session Controller、领域存储、JSONL、模型路由和取消；Cordis HMR 复用 DSH 已有模块依赖图与事务回滚。运行开始时固定代码定义和 Flow 目录内容 hash，后续热更新只影响新运行。客户端断开不取消流程；重启后未完成运行保留为 interrupted，不自动重放代码或工具副作用。Flow JS 是拥有完整 Node.js 权限的受信任后端代码。普通 `/chat` 链路仍保留原实现，流程不依赖客户端对话历史。实现、限制与扩展配置见 [编排包说明](../packages/backend/orchestration/README.md)。
 
+同包的 `action/<action-id>/<action-id>.action.js` 提供可热加载的工具扩展，公开 `@aura/orchestration/action` 和声明文件。Action 使用 DSH 工具 Schema DSL，复用 DSH ToolRuntime 的校验、策略、结果渲染和协作式超时；`ctx.agent({ actions: [...] })` 将固定版本注册到指定 Agent scope，默认不暴露任何 Action。`ctx.action()` 直接调用时保存独立 Action step 的 input/output，Agent 内部调用继续保留在 DSH session 日志中。Flow 开始时同时固定 Action 定义快照，所有步骤共享 ID 与并发限制。后端 `host.invokeAction()` 使用同一执行适配，独立记录写入 `aura_code_actions` domain，不提供通用 Action HTTP 执行接口。前端只渲染 catalog 和不同步骤 DTO；Action context 第一版不提供调用 Flow 的接口，完整 Node.js 权限仍按受信任代码处理。
+
 ## 当前取舍
 
 普通联网对话请求暂时各启动一个 DSH SDK 进程，客户端历史作为带标记的完整输入交给 DSH，响应结束或连接断开后回收进程。这保留了 DSH agent loop、provider、事件与取消链路，但普通对话仍不是长期运行的服务端权威会话；独立的「流程」链路已采用稳定的步骤到 DSH session 映射与持久化，不使用这一临时对话协议。

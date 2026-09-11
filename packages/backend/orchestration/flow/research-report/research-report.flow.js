@@ -53,6 +53,10 @@ export default defineFlow({
       }),
     });
 
+    if(coordinator.stepId > '100') {
+      return {report: ''}
+    }
+
     return { report: coordinator.output };
   },
 });

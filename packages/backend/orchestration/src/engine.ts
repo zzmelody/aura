@@ -3,22 +3,29 @@ import type {
   FlowContext,
   FlowAgentRequest,
   FlowAgentResult,
+  FlowActionRequest,
+  FlowActionResult,
 } from "./flow-api.ts";
 import type {
   FlowCatalog,
   FlowRun,
   FlowStep,
+  FlowAgentStep,
+  FlowActionStep,
   JsonValue,
 } from "@aura/protocol/types";
 import {
   active,
   agentRequestSchema,
+  actionRequestSchema,
+  jsonValue,
   FlowError,
   parse,
   parseJson,
   startSchema,
 } from "./schema.ts";
 import type { LoadedFlow } from "./registry.ts";
+import type { LoadedAction } from "./action-registry.ts";
 import type { EngineOptions, Table } from "./types.ts";
 
 class ConcurrencyGate {
@@ -81,10 +88,11 @@ interface ActiveRun {
   abort: AbortController;
   task: Promise<void>;
   flow: LoadedFlow;
+  actions: ReadonlyMap<string, LoadedAction>;
   gate: ConcurrencyGate;
   stepIds: Set<string>;
-  agentTasks: Set<Promise<unknown>>;
-  agentRecords: Array<{ observed: boolean; failure?: unknown }>;
+  stepTasks: Set<Promise<unknown>>;
+  stepRecords: Array<{ observed: boolean; failure?: unknown }>;
   cancelRequested: boolean;
 }
 
@@ -100,6 +108,7 @@ export class FlowEngine {
   registry: EngineOptions["registry"];
   refreshFlows: EngineOptions["refreshFlows"];
   presets: EngineOptions["presets"];
+  actions: EngineOptions["actions"];
   running = new Map<string, ActiveRun>();
   private admission: Promise<unknown> = Promise.resolve();
   private closing = false;
@@ -110,12 +119,14 @@ export class FlowEngine {
     registry,
     refreshFlows,
     presets,
+    actions,
   }: EngineOptions) {
     this.runs = domain.table("runs");
     this.sessions = sessions;
     this.registry = registry;
     this.refreshFlows = refreshFlows;
     this.presets = presets;
+    this.actions = actions;
   }
 
   async initialize() {
@@ -138,7 +149,11 @@ export class FlowEngine {
 
   async catalog(): Promise<FlowCatalog> {
     await this.refreshFlows();
-    return { flows: this.registry.catalog(), presets: await this.presets() };
+    return {
+      flows: this.registry.catalog(),
+      actions: this.actions?.registry.catalog() ?? [],
+      presets: await this.presets(),
+    };
   }
 
   list() {
@@ -208,10 +223,11 @@ export class FlowEngine {
       abort: new AbortController(),
       task: Promise.resolve(),
       flow,
+      actions: this.actions?.registry.snapshot() ?? new Map(),
       gate: new ConcurrencyGate(flow.concurrency),
       stepIds: new Set(),
-      agentTasks: new Set(),
-      agentRecords: [],
+      stepTasks: new Set(),
+      stepRecords: [],
       cancelRequested: false,
     };
     this.running.set(run.id, activeRun);
@@ -241,20 +257,23 @@ export class FlowEngine {
       runId: id,
       mode: this.get(id).mode,
       signal: activeRun.abort.signal,
-      agent: (request) => this.agent(id, activeRun, request),
+      agent: (request) =>
+        this.track(activeRun, () => this.executeAgent(id, activeRun, request)),
+      action: (request) =>
+        this.track(activeRun, () => this.executeAction(id, activeRun, request)),
     };
     try {
       const rawOutput = await activeRun.flow.run(context, this.get(id).input);
-      while (activeRun.agentTasks.size)
-        await Promise.allSettled([...activeRun.agentTasks]);
+      while (activeRun.stepTasks.size)
+        await Promise.allSettled([...activeRun.stepTasks]);
       activeRun.abort.signal.throwIfAborted();
-      const unobserved = activeRun.agentRecords.find(
+      const unobserved = activeRun.stepRecords.find(
         (record) => record.failure && !record.observed,
       );
       if (unobserved)
         throw unobserved.failure instanceof Error
           ? unobserved.failure
-          : new FlowError("未处理的 Agent 步骤失败。");
+          : new FlowError("未处理的 Flow 步骤失败。");
       const output = parseJson(
         activeRun.flow.outputSchema,
         rawOutput,
@@ -268,8 +287,8 @@ export class FlowEngine {
       }));
     } catch (error) {
       activeRun.abort.abort(error);
-      while (activeRun.agentTasks.size)
-        await Promise.allSettled([...activeRun.agentTasks]);
+      while (activeRun.stepTasks.size)
+        await Promise.allSettled([...activeRun.stepTasks]);
       const cancelled = activeRun.cancelRequested || this.closing;
       await this.runs.update(id, (run) => ({
         ...run,
@@ -284,23 +303,20 @@ export class FlowEngine {
     }
   }
 
-  private agent(
-    runId: string,
+  private track<T>(
     activeRun: ActiveRun,
-    input: FlowAgentRequest,
-  ): Promise<FlowAgentResult> {
-    const record: (typeof activeRun.agentRecords)[number] = {
+    execute: () => Promise<T>,
+  ): Promise<T> {
+    const record: (typeof activeRun.stepRecords)[number] = {
       observed: false,
     };
-    activeRun.agentRecords.push(record);
-    const task = this.executeAgent(runId, activeRun, input).catch((error) => {
+    activeRun.stepRecords.push(record);
+    const task = execute().catch((error) => {
       record.failure = error;
       throw error;
     });
-    activeRun.agentTasks.add(task);
-    task
-      .catch(() => undefined)
-      .finally(() => activeRun.agentTasks.delete(task));
+    activeRun.stepTasks.add(task);
+    task.catch(() => undefined).finally(() => activeRun.stepTasks.delete(task));
     return {
       [Symbol.toStringTag]: "Promise",
       then(onfulfilled, onrejected) {
@@ -314,7 +330,16 @@ export class FlowEngine {
       finally(onfinally) {
         return task.finally(onfinally);
       },
-    } as Promise<FlowAgentResult>;
+    } as Promise<T>;
+  }
+
+  private reserveStep(activeRun: ActiveRun, id: string) {
+    activeRun.abort.signal.throwIfAborted();
+    if (activeRun.stepIds.size >= 64)
+      throw new FlowError("单次 Flow 最多执行 64 个步骤。");
+    if (activeRun.stepIds.has(id))
+      throw new FlowError(`Flow 步骤 ID 不能重复：${id}`);
+    activeRun.stepIds.add(id);
   }
 
   private async executeAgent(
@@ -323,13 +348,10 @@ export class FlowEngine {
     input: FlowAgentRequest,
   ): Promise<FlowAgentResult> {
     const request = parse(agentRequestSchema, input);
-    if (activeRun.stepIds.size >= 64)
-      throw new FlowError("单次 Flow 最多执行 64 个 agent 步骤。");
-    if (activeRun.stepIds.has(request.id))
-      throw new FlowError(`Flow 步骤 ID 不能重复：${request.id}`);
-    activeRun.stepIds.add(request.id);
+    this.reserveStep(activeRun, request.id);
 
-    const step: FlowStep = {
+    const step: FlowAgentStep = {
+      kind: "agent",
       id: request.id,
       label: request.label,
       preset: request.preset,
@@ -343,6 +365,19 @@ export class FlowEngine {
 
     let release: (() => void) | undefined;
     try {
+      if (new Set(request.actions).size !== request.actions.length)
+        throw new FlowError("Agent actions 不可重复。");
+      const actionDefinitions = request.actions.map((id) => {
+        const action = activeRun.actions.get(id);
+        if (!action) throw new FlowError(`Action 不存在或不可用：${id}`);
+        return action;
+      });
+      await this.updateStep(runId, step.id, {
+        actions: actionDefinitions.map(({ id, sourceHash }) => ({
+          id,
+          sourceHash,
+        })),
+      });
       const preset = (await this.presets()).find(
         (item) => item.id === request.preset,
       );
@@ -359,6 +394,8 @@ export class FlowEngine {
         mode: this.get(runId).mode,
         timeoutMs: activeRun.flow.agentTimeoutMs,
         signal: activeRun.abort.signal,
+        runId,
+        actionDefinitions,
       });
       activeRun.abort.signal.throwIfAborted();
       if (!output.trim() || output.length > 80_000)
@@ -387,11 +424,79 @@ export class FlowEngine {
     }
   }
 
+  private async executeAction(
+    runId: string,
+    activeRun: ActiveRun,
+    input: FlowActionRequest,
+  ): Promise<FlowActionResult> {
+    const request = parse(actionRequestSchema, input);
+    this.reserveStep(activeRun, request.id);
+    const action = activeRun.actions.get(request.action);
+    const step: FlowActionStep = {
+      kind: "action",
+      id: request.id,
+      label: request.label ?? action?.title ?? request.action,
+      actionId: request.action,
+      ...(action ? { sourceHash: action.sourceHash } : {}),
+      input: null,
+      status: "queued",
+    };
+    await this.runs.update(runId, (run) => ({
+      ...run,
+      steps: [...run.steps, step],
+    }));
+    let release: (() => void) | undefined;
+    try {
+      const args = jsonValue(request.input, "Action 入参");
+      await this.updateStep(runId, step.id, { input: args });
+      if (!action || !this.actions)
+        throw new FlowError(`Action 不存在或不可用：${request.action}`);
+      release = await activeRun.gate.acquire(activeRun.abort.signal);
+      await this.updateStep(runId, step.id, {
+        status: "running",
+        startedAt: Date.now(),
+      });
+      const output = await this.actions.runtime.execute(
+        action,
+        args,
+        {
+          cwd: this.actions.cwd,
+          mode: this.get(runId).mode,
+          runId,
+          stepId: step.id,
+        },
+        activeRun.abort.signal,
+      );
+      activeRun.abort.signal.throwIfAborted();
+      await this.updateStep(runId, step.id, {
+        status: "completed",
+        output,
+        finishedAt: Date.now(),
+      });
+      return { stepId: step.id, actionId: action.id, output };
+    } catch (error) {
+      const cancelled = activeRun.abort.signal.aborted;
+      const message = cancelled
+        ? "Action 步骤已取消。"
+        : error instanceof FlowError
+          ? error.message
+          : "Action 执行失败。";
+      await this.updateStep(runId, step.id, {
+        status: cancelled ? "cancelled" : "failed",
+        error: message,
+        finishedAt: Date.now(),
+      });
+      throw new FlowError(message);
+    } finally {
+      release?.();
+    }
+  }
+
   private updateStep(id: string, stepId: string, patch: Partial<FlowStep>) {
     return this.runs.update(id, (run) => ({
       ...run,
       steps: run.steps.map((step) =>
-        step.id === stepId ? { ...step, ...patch } : step,
+        step.id === stepId ? ({ ...step, ...patch } as FlowStep) : step,
       ),
     }));
   }
@@ -418,6 +523,11 @@ export class FlowEngine {
       (candidate) => candidate.id === stepId,
     );
     if (!step) throw new FlowError("Flow 步骤不存在。", 404);
+    if (step.kind === "action")
+      throw new FlowError(
+        "Action 步骤没有 DSH session，请读取步骤的结构化输入和输出。",
+        400,
+      );
     return this.sessions.history(step, beforeSeq);
   }
 

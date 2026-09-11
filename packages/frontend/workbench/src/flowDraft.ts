@@ -5,21 +5,40 @@ export const starterFlow = `import { defineFlow, z } from "@aura/orchestration/f
 
 export default defineFlow({
   title: "我的第一个 Flow",
-  description: "分析任务，生成一份可执行的方案。",
+  description: "并行分析任务，并按复杂度决定是否综合结论。",
   input: z.object({
     task: z.string().trim().min(1),
   }),
   output: z.object({ report: z.string() }),
 
   async run(ctx, input) {
-    const result = await ctx.agent({
-      id: "research",
-      label: "方案分析",
-      preset: "researcher-v1",
-      prompt: input.task,
-    });
+    const [research, review] = await Promise.all([
+      ctx.agent({
+        id: "research",
+        label: "调研方案",
+        preset: "researcher-v1",
+        prompt: input.task,
+      }),
+      ctx.agent({
+        id: "review",
+        label: "评估风险",
+        preset: "reviewer-v1",
+        prompt: input.task,
+      }),
+    ]);
 
-    return { report: result.output };
+    let report = research.output + "\\n\\n" + review.output;
+    if (input.task.length > 80) {
+      const coordinator = await ctx.agent({
+        id: "coordinate",
+        label: "综合结论",
+        preset: "coordinator-v1",
+        prompt: report,
+      });
+      report = coordinator.output;
+    }
+
+    return { report };
   },
 });
 `;
@@ -41,7 +60,7 @@ export function extractFlowCode(text: string): string | undefined {
 }
 
 export function flowContext(code: string): string {
-  return `你是 Aura Flow 编写助手。根据用户需求生成或修改 Flow。返回完整的 javascript 代码块，可直接替换编辑器草稿。使用 import { defineFlow, z } from "@aura/orchestration/flow" 与 export default defineFlow({title, description, input: z.object(...), output: z.object(...), async run(ctx,input){...}})。ctx.agent({id,label,preset,prompt}) 返回 {stepId,sessionId,output:string}，可用 preset: researcher-v1、reviewer-v1、coordinator-v1。用 Promise.all 表达并行。不要声称已经部署或执行。当前编辑器的本地草稿${code.length > 9000 ? "（前 9000 字符，未包含全文）" : ""}：\n${code.slice(0, 9000)}`;
+  return `你是 Aura Flow 编写助手。根据用户需求生成或修改 Flow。返回完整的 javascript 代码块，可直接替换编辑器草稿。使用 import { defineFlow, z } from "@aura/orchestration/flow" 与 export default defineFlow({title, description, input: z.object(...), output: z.object(...), async run(ctx,input){...}})。ctx.agent({id,label,preset,prompt}) 返回 {stepId,sessionId,output:string}，可用 preset: researcher-v1、reviewer-v1、coordinator-v1；直接调用 Action 时使用 ctx.action({id,label,action,input})。用 Promise.all 表达并行。前端只会把 input、output、ctx.agent、ctx.action/工具调用、if/switch 和循环解析为流程图节点，变量处理、格式化、日志及辅助函数仍可正常编写，但不会显示为节点。不要声称已经部署或执行。当前编辑器的本地草稿${code.length > 9000 ? "（前 9000 字符，未包含全文）" : ""}：\n${code.slice(0, 9000)}`;
 }
 
 export function useFlowDraft() {

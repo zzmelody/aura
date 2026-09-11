@@ -1,5 +1,6 @@
 import type { Context, Plugin } from "@deepseek-ai/cordis";
 import { z } from "zod";
+import type { JsonValue } from "@aura/protocol/types";
 
 export { z };
 
@@ -10,6 +11,20 @@ export interface FlowAgentRequest {
   label: string;
   preset: string;
   prompt: string;
+  actions?: string[];
+}
+
+export interface FlowActionRequest {
+  id: string;
+  label?: string;
+  action: string;
+  input: unknown;
+}
+
+export interface FlowActionResult {
+  stepId: string;
+  actionId: string;
+  output: JsonValue;
 }
 
 export interface FlowAgentResult {
@@ -23,6 +38,7 @@ export interface FlowContext {
   readonly mode: FlowMode;
   readonly signal: AbortSignal;
   agent(request: FlowAgentRequest): Promise<FlowAgentResult>;
+  action(request: FlowActionRequest): Promise<FlowActionResult>;
 }
 
 export interface FlowDefinition<

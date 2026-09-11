@@ -2,11 +2,20 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import type { FlowRun } from "@aura/protocol/types";
+import type { ActionRun, FlowRun } from "@aura/protocol/types";
 import { z } from "zod";
 import { FlowEngine } from "../src/engine.ts";
 import type { LoadedFlow } from "../src/registry.ts";
-import type { FlowDomain, SessionPort, Table } from "../src/types.ts";
+import type {
+  EngineOptions,
+  FlowDomain,
+  SessionPort,
+  Table,
+} from "../src/types.ts";
+import type { LoadedAction } from "../src/action-registry.ts";
+import { ActionRegistry } from "../src/action-registry.ts";
+import { ActionRuns } from "../src/action-runs.ts";
+import type { ActionRuntime } from "../src/actions.ts";
 
 function table<T>(): Table<T> {
   const records = new Map<string, T>();
@@ -83,6 +92,7 @@ async function fixture(
     loaded?: LoadedFlow;
     execute?: SessionPort["execute"];
     runs?: Table<FlowRun>;
+    actions?: EngineOptions["actions"];
   } = {},
 ) {
   let loaded = options.loaded ?? standardFlow();
@@ -107,6 +117,7 @@ async function fixture(
       catalog: () => [],
     },
     refreshFlows: async () => undefined,
+    actions: options.actions,
     presets: async () =>
       ["researcher-v1", "reviewer-v1", "coordinator-v1"].map((id) => ({
         id,
@@ -124,6 +135,163 @@ const request = (input: unknown = { task: "测试任务" }) => ({
   flowId: "test-flow",
   input,
   mode: "demo" as const,
+});
+
+test("Action steps and Agents share admission, ids, version snapshots and failure tracking", async () => {
+  const old: LoadedAction = {
+    id: "probe",
+    title: "Probe",
+    description: "test",
+    sourceHash: hash(),
+    inputSchema: {},
+    outputSchema: {},
+    tool: () => {
+      throw new Error("unused adapter");
+    },
+  };
+  let current = old;
+  let release!: () => void;
+  const barrier = new Promise<void>((done) => {
+    release = done;
+  });
+  let inAgent = false;
+  const { engine } = await fixture({
+    loaded: flow(async (ctx) => {
+      await ctx.agent({
+        id: "barrier",
+        label: "Barrier",
+        preset: "researcher-v1",
+        prompt: "wait",
+        actions: ["probe"],
+      });
+      const output = await ctx.action({
+        id: "direct",
+        action: "probe",
+        input: { value: 1 },
+      });
+      try {
+        await ctx.action({ id: "optional", action: "missing", input: {} });
+      } catch {}
+      return { report: String(output.output) };
+    }),
+    execute: async (step) => {
+      assert.equal(step.actionDefinitions[0]?.sourceHash, hash());
+      inAgent = true;
+      await barrier;
+      return "ready";
+    },
+    actions: {
+      cwd: process.cwd(),
+      registry: {
+        catalog: () => [],
+        snapshot: () => new Map([[current.id, current]]),
+      },
+      runtime: { execute: async (action) => action.sourceHash },
+    },
+  });
+  const started = await engine.start(request());
+  while (!inAgent) await delay(1);
+  current = { ...old, sourceHash: hash("b") };
+  release();
+  const result = await engine.wait(started.id);
+  assert.equal(result.status, "completed");
+  assert.deepEqual(result.output, { report: hash() });
+  assert.deepEqual(
+    result.steps.map((s) => [s.kind, s.status]),
+    [
+      ["agent", "completed"],
+      ["action", "completed"],
+      ["action", "failed"],
+    ],
+  );
+  assert.equal(
+    result.steps[1]?.kind === "action" && result.steps[1].sourceHash,
+    hash(),
+  );
+  await assert.rejects(engine.history(result.id, "direct"), /没有 DSH session/);
+});
+
+test("unhandled Action failures and Agent/Action id collisions fail the Flow", async () => {
+  for (const observed of [false, true]) {
+    const { engine } = await fixture({
+      loaded: flow(async (ctx) => {
+        if (observed) {
+          await ctx.agent({
+            id: "same",
+            label: "Agent",
+            preset: "researcher-v1",
+            prompt: "test",
+          });
+          await ctx.action({ id: "same", action: "unknown", input: {} });
+        } else {
+          void ctx.action({ id: "forgotten", action: "unknown", input: {} });
+        }
+        return { report: "must fail" };
+      }),
+    });
+    const started = await engine.start(request());
+    const result = await engine.wait(started.id);
+    assert.equal(result.status, "failed");
+    assert.equal(result.steps.length, 1);
+    assert.match(result.error ?? "", observed ? /不能重复/ : /Action 不存在/);
+  }
+});
+
+test("cancellation drains an active Action and prevents queued Agent dispatch", async () => {
+  let startedAction = false;
+  let agentCalls = 0;
+  const action: LoadedAction = {
+    id: "slow",
+    title: "Slow",
+    description: "test",
+    sourceHash: hash(),
+    inputSchema: {},
+    outputSchema: {},
+    tool: () => {
+      throw new Error("unused");
+    },
+  };
+  const { engine } = await fixture({
+    loaded: flow(
+      async (ctx) => {
+        await Promise.all([
+          ctx.action({ id: "slow", action: "slow", input: {} }),
+          ctx.agent({
+            id: "queued",
+            label: "Queued",
+            preset: "researcher-v1",
+            prompt: "test",
+          }),
+        ]);
+        return { report: "never" };
+      },
+      { concurrency: 1 },
+    ),
+    execute: async () => {
+      agentCalls++;
+      return "unexpected";
+    },
+    actions: {
+      cwd: process.cwd(),
+      registry: {
+        catalog: () => [],
+        snapshot: () => new Map([[action.id, action]]),
+      },
+      runtime: {
+        execute: async (_action, _args, _binding, signal) => {
+          startedAction = true;
+          await delay(10_000, undefined, { signal });
+          return "done";
+        },
+      },
+    },
+  });
+  const started = await engine.start(request());
+  while (!startedAction) await delay(1);
+  const result = await engine.cancel(started.id);
+  assert.equal(result.status, "cancelled");
+  assert.equal(agentCalls, 0);
+  assert.ok(result.steps.every((s) => s.status === "cancelled"));
 });
 
 test("code Flow creates dynamic independent DSH sessions and aggregates output", async () => {
@@ -399,4 +567,61 @@ test("restart marks unfinished code runs interrupted and never replays them", as
   assert.equal(restored?.steps[0]?.status, "interrupted");
   assert.equal(calls, 0);
   assert.equal(engine.running.size, 0);
+});
+
+test("standalone Action restart never replays side effects; request ids retain completed records", async () => {
+  const records = table<ActionRun>();
+  const interrupted: ActionRun = {
+    id: randomUUID(),
+    requestId: randomUUID(),
+    actionId: "test",
+    sourceHash: hash(),
+    input: {},
+    mode: "demo",
+    status: "running",
+    createdAt: Date.now(),
+  };
+  await records.put(interrupted.id, interrupted);
+  const completed: ActionRun = {
+    ...interrupted,
+    id: randomUUID(),
+    requestId: randomUUID(),
+    status: "completed",
+    output: { value: 1 },
+  };
+  await records.put(completed.id, completed);
+  let calls = 0;
+  const runner = new ActionRuns({
+    table: records,
+    registry: new ActionRegistry(),
+    cwd: process.cwd(),
+    refresh: async () => {},
+    runtime: {
+      execute: async () => {
+        calls++;
+        return null;
+      },
+    } as unknown as ActionRuntime,
+  });
+  await runner.initialize();
+  assert.equal(runner.get(interrupted.id).status, "interrupted");
+  assert.deepEqual(runner.get(completed.id).output, { value: 1 });
+  const same = await runner.start({
+    actionId: "test",
+    requestId: completed.requestId,
+    input: {},
+    mode: "demo",
+  });
+  assert.equal(same.id, completed.id);
+  await assert.rejects(
+    runner.start({
+      actionId: "test",
+      requestId: completed.requestId,
+      input: { changed: true },
+      mode: "demo",
+    }),
+    /不同输入/,
+  );
+  assert.equal(calls, 0);
+  await runner.close();
 });

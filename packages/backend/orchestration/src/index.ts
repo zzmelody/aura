@@ -1,12 +1,17 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
-import type { FlowMode, FlowRun, JsonValue } from "@aura/protocol/types";
+import type { ActionRun, FlowMode, FlowRun } from "@aura/protocol/types";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { defaultFlowRoot, dshBin, provisionProfile } from "./profile.ts";
-import { FlowError } from "./schema.ts";
+import {
+  defaultActionRoot,
+  defaultFlowRoot,
+  dshBin,
+  provisionProfile,
+} from "./profile.ts";
+import { FlowError, jsonValue } from "./schema.ts";
 import type { FlowRpcResult, HostOptions } from "./types.ts";
 
 export interface InvokeFlowOptions {
@@ -22,8 +27,8 @@ export class OrchestrationHost {
   opening: ReturnType<OrchestrationHost["launch"]> | undefined;
   closed = false;
 
-  constructor({ root, dshHome, modelURL, codexModel, flowRoot }: HostOptions) {
-    this.options = { root, dshHome, modelURL, codexModel, flowRoot };
+  constructor(options: HostOptions) {
+    this.options = { ...options };
   }
 
   async open() {
@@ -38,7 +43,8 @@ export class OrchestrationHost {
   async launch() {
     const { root, dshHome, modelURL, codexModel } = this.options;
     const flowRoot = this.options.flowRoot ?? defaultFlowRoot;
-    await provisionProfile(dshHome, flowRoot);
+    const actionRoot = this.options.actionRoot ?? defaultActionRoot;
+    await provisionProfile(dshHome, flowRoot, actionRoot);
     const child = spawn(
       process.execPath,
       ["--expose-internals", dshBin, "--profile", "aura-flow"],
@@ -53,6 +59,7 @@ export class OrchestrationHost {
           DSH_TELEMETRY_DISABLED: "1",
           AURA_FLOW_CWD: root,
           AURA_FLOW_ROOT: flowRoot,
+          AURA_ACTION_ROOT: actionRoot,
           AURA_CODEX_MODEL: codexModel || "gpt-5.6-terra",
           AURA_DEMO_KEY: "demo-only-not-a-real-key",
           AURA_DEMO_BASE_URL: modelURL,
@@ -85,7 +92,7 @@ export class OrchestrationHost {
       if (
         !result.ok ||
         result.data.name !== "aura-orchestration" ||
-        result.data.version !== 2
+        result.data.version !== 3
       )
         throw new Error("Invalid host handshake");
       return { child, rpc, exited };
@@ -129,7 +136,7 @@ export class OrchestrationHost {
       requestId: options.requestId ?? randomUUID(),
       flowId,
       mode: options.mode,
-      input: options.input as JsonValue,
+      input: jsonValue(options.input, "Flow 入参"),
     });
     const signal = options.signal ?? new AbortController().signal;
     try {
@@ -156,6 +163,36 @@ export class OrchestrationHost {
     const timer = setTimeout(() => host.child.kill(), 3_000);
     await host.exited;
     clearTimeout(timer);
+  }
+
+  /** Local-only API. Same Action/DSH execution pipeline used by ctx.action(). */
+  async invokeAction(
+    actionId: string,
+    options: InvokeFlowOptions,
+  ): Promise<ActionRun> {
+    options.signal?.throwIfAborted();
+    const run = await this.request<ActionRun>("action/start", {
+      requestId: options.requestId ?? randomUUID(),
+      actionId,
+      mode: options.mode,
+      input: jsonValue(options.input, "Action 入参"),
+    });
+    const signal = options.signal ?? new AbortController().signal;
+    try {
+      return await this.request<ActionRun>(
+        "action/wait",
+        { id: run.id },
+        signal,
+      );
+    } catch (error) {
+      if (signal.aborted) {
+        await this.request("action/cancel", { id: run.id }).catch(
+          () => undefined,
+        );
+        throw signal.reason;
+      }
+      throw error;
+    }
   }
 }
 
@@ -190,6 +227,11 @@ export function createFlowApp(host: Pick<OrchestrationHost, "request">) {
     context.json(await host.request("catalog")),
   );
   app.get("/runs", async (context) => context.json(await host.request("list")));
+  app.get("/:flowId/source", async (context) =>
+    context.json(
+      await host.request("source", { id: context.req.param("flowId") }),
+    ),
+  );
   app.get("/runs/:id", async (context) =>
     context.json(await host.request("get", { id: context.req.param("id") })),
   );

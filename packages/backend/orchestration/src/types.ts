@@ -3,9 +3,11 @@ import type {
   FlowCatalogEntry,
   FlowHistory,
   FlowRun,
-  FlowStep,
+  FlowAgentStep,
 } from "@aura/protocol/types";
 import type { LoadedFlow } from "./registry.ts";
+import type { ActionRegistry, LoadedAction } from "./action-registry.ts";
+import type { ActionRuntime } from "./actions.ts";
 
 export interface HostOptions {
   root: string;
@@ -13,6 +15,7 @@ export interface HostOptions {
   modelURL: string;
   codexModel?: string;
   flowRoot?: string;
+  actionRoot?: string;
 }
 
 export type FlowRpcResult<T> =
@@ -31,14 +34,16 @@ export interface FlowDomain {
 
 export interface SessionPort {
   execute(
-    step: FlowStep & {
+    step: FlowAgentStep & {
       input: string;
       mode: "demo" | "codex";
       timeoutMs: number;
       signal: AbortSignal;
+      runId: string;
+      actionDefinitions: readonly LoadedAction[];
     },
   ): Promise<string>;
-  history(step: FlowStep, beforeSeq?: number): Promise<FlowHistory>;
+  history(step: FlowAgentStep, beforeSeq?: number): Promise<FlowHistory>;
 }
 
 export interface EngineOptions {
@@ -50,4 +55,9 @@ export interface EngineOptions {
   };
   refreshFlows(): Promise<void>;
   presets(): Promise<FlowCatalog["presets"]>;
+  actions?: {
+    registry: Pick<ActionRegistry, "snapshot" | "catalog">;
+    runtime: Pick<ActionRuntime, "execute">;
+    cwd: string;
+  };
 }

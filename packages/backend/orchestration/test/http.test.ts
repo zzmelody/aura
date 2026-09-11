@@ -34,6 +34,13 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
       input: { task: "x" },
     }),
   });
+  const source = await app.request("/research-report/source");
+  assert.equal(source.status, 200);
+  assert.deepEqual(await source.json(), {
+    method: "source",
+    params: { id: "research-report" },
+  });
+  assert.equal((await app.request("/missing/source")).status, 404);
   assert.equal(started.status, 202);
   assert.deepEqual(await started.json(), { runId: "started-run" });
   assert.deepEqual(calls.find(({ method }) => method === "start")?.params, {

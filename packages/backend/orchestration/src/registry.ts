@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
-import type { FlowCatalogEntry, JsonValue } from "@aura/protocol/types";
+import type {
+  FlowCatalogEntry,
+  FlowSource,
+  JsonValue,
+} from "@aura/protocol/types";
 import { z } from "zod";
 import type { FlowDefinition, FlowRegistrationConfig } from "./flow-api.ts";
 import { FlowError, parse } from "./schema.ts";
@@ -67,12 +71,14 @@ export async function hashFlowDirectory(directory: string): Promise<string> {
 /** Last-known-good Flow registry populated by Loader-managed Flow plugins. */
 export class FlowRegistry {
   private loaded = new Map<string, LoadedFlow>();
+  private sources = new Map<string, FlowSource>();
   private problems = new Map<string, string>();
   private warnings = new Map<string, string>();
 
   async register(config: FlowRegistrationConfig, input: FlowDefinition) {
     const definition = parse(definitionSchema, input);
     const sourceHash = await hashFlowDirectory(config.directory);
+    const code = await readFile(config.entry, "utf8");
     // Conversion happens at registration so unsupported schemas fail before use.
     const inputSchema = z.toJSONSchema(definition.input) as JsonValue;
     const outputSchema = z.toJSONSchema(definition.output) as JsonValue;
@@ -89,6 +95,12 @@ export class FlowRegistry {
     });
     this.problems.delete(config.flowId);
     this.warnings.delete(config.flowId);
+    this.sources.set(config.flowId, { id: config.flowId, code, sourceHash });
+  }
+
+  source(id: string): FlowSource {
+    this.get(id);
+    return { ...this.sources.get(id)! };
   }
 
   get(id: string): LoadedFlow {
@@ -102,12 +114,14 @@ export class FlowRegistry {
 
   remove(id: string) {
     this.loaded.delete(id);
+    this.sources.delete(id);
     this.problems.delete(id);
     this.warnings.delete(id);
   }
 
   problem(id: string, message: string) {
     this.loaded.delete(id);
+    this.sources.delete(id);
     this.problems.set(id, message);
   }
 

@@ -21,6 +21,7 @@ export interface FlowCatalogEntry {
 }
 export interface FlowCatalog {
   flows: FlowCatalogEntry[];
+  actions?: FlowCatalogEntry[];
   presets: {
     id: string;
     name: string;
@@ -28,16 +29,53 @@ export interface FlowCatalog {
     unavailable: boolean;
   }[];
 }
-export interface FlowStep {
+/** Entry source of the currently registered revision, for static UI previews. */
+export interface FlowSource {
+  id: string;
+  code: string;
+  sourceHash: string;
+}
+interface FlowStepBase {
   id: string;
   label: string;
-  preset: string;
-  sessionId: string;
   status: FlowPhase;
-  output?: string;
   error?: string;
   startedAt?: number;
   finishedAt?: number;
+}
+export interface ActionReference {
+  id: string;
+  sourceHash: string;
+}
+export interface FlowAgentStep extends FlowStepBase {
+  /** Absent only in records written before Action support. */
+  kind?: "agent";
+  preset: string;
+  sessionId: string;
+  actions?: ActionReference[];
+  output?: string;
+}
+export interface FlowActionStep extends FlowStepBase {
+  kind: "action";
+  actionId: string;
+  sourceHash?: string;
+  input: JsonValue;
+  output?: JsonValue;
+}
+export type FlowStep = FlowAgentStep | FlowActionStep;
+
+export interface ActionRun {
+  id: string;
+  requestId: string;
+  actionId: string;
+  sourceHash: string;
+  input: JsonValue;
+  output?: JsonValue;
+  mode: FlowMode;
+  status: FlowPhase;
+  createdAt: number;
+  finishedAt?: number;
+  error?: string;
 }
 export interface FlowRun {
   id: string;

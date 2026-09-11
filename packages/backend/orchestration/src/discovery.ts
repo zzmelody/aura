@@ -2,39 +2,60 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Loader } from "@deepseek-ai/cordis-plugin-loader";
-import type { FlowRegistrationConfig } from "./flow-api.ts";
 import { flowIdSchema } from "./schema.ts";
-import { hashFlowDirectory, FlowRegistry } from "./registry.ts";
+import { hashFlowDirectory, type FlowRegistry } from "./registry.ts";
+
+type DiscoveryRegistry = Pick<
+  FlowRegistry,
+  | "sourceHash"
+  | "remove"
+  | "problem"
+  | "clearProblem"
+  | "reloadProblem"
+  | "clearReloadProblem"
+>;
 
 interface MountedFlow {
   loaderId: string;
   entry: string;
 }
 
-async function flowEntries(directory: string): Promise<string[]> {
+async function flowEntries(
+  directory: string,
+  kind: "flow" | "action",
+): Promise<string[]> {
   const matches: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) matches.push(...(await flowEntries(path)));
-    if (entry.isFile() && entry.name.endsWith(".flow.js")) matches.push(path);
+    if (entry.isDirectory()) matches.push(...(await flowEntries(path, kind)));
+    if (entry.isFile() && entry.name.endsWith(`.${kind}.js`))
+      matches.push(path);
   }
   return matches;
 }
 
-/** Discovers flat Flow directories; module updates are delegated to Cordis HMR. */
-export class FlowDiscovery {
+/** Shared directory discovery; dependency tracking/reload belongs to Cordis HMR. */
+export class CodeDiscovery {
   private loader: Loader;
-  private registry: FlowRegistry;
+  private registry: DiscoveryRegistry;
+  private kind: "flow" | "action";
   readonly root: string;
   private mounted = new Map<string, MountedFlow>();
   private failures = new Map<string, string>();
   private issues = new Set<string>();
   private queue: Promise<void> = Promise.resolve();
 
-  constructor(loader: Loader, registry: FlowRegistry, root: string) {
+  constructor(
+    loader: Loader,
+    registry: DiscoveryRegistry,
+    root: string,
+    kind: "flow" | "action",
+  ) {
     this.loader = loader;
     this.registry = registry;
     this.root = root;
+    this.kind = kind;
   }
 
   refresh(): Promise<void> {
@@ -47,28 +68,38 @@ export class FlowDiscovery {
     const previousIssues = this.issues;
     const issues = new Set<string>();
     const discovered = new Set<string>();
-    const entries = await readdir(this.root, { withFileTypes: true });
+    const entries = await readdir(this.root, { withFileTypes: true }).catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      },
+    );
+    const title = this.kind === "flow" ? "Flow" : "Action";
 
     for (const child of entries) {
       if (!child.isDirectory()) continue;
       const flowId = child.name;
       discovered.add(flowId);
       const directory = join(this.root, flowId);
-      if (!flowIdSchema.safeParse(flowId).success) {
+      if (
+        !flowIdSchema.safeParse(flowId).success ||
+        (this.kind === "action" &&
+          (flowId === "run_code" || flowId.startsWith("aura_direct_")))
+      ) {
         issues.add(flowId);
         await this.unmount(flowId);
-        this.registry.problem(flowId, `无效的 Flow 目录名：${flowId}`);
+        this.registry.problem(flowId, `无效的 ${title} 目录名：${flowId}`);
         continue;
       }
 
-      const expected = join(directory, `${flowId}.flow.js`);
-      const candidates = await flowEntries(directory);
+      const expected = join(directory, `${flowId}.${this.kind}.js`);
+      const candidates = await flowEntries(directory, this.kind);
       if (candidates.length !== 1 || candidates[0] !== expected) {
         issues.add(flowId);
         await this.unmount(flowId);
         this.registry.problem(
           flowId,
-          `目录 ${flowId} 必须且只能包含入口 ${flowId}.flow.js。`,
+          `目录 ${flowId} 必须且只能包含入口 ${flowId}.${this.kind}.js。`,
         );
         continue;
       }
@@ -91,8 +122,8 @@ export class FlowDiscovery {
         issues.add(flowId);
         continue;
       }
-      const config: FlowRegistrationConfig = {
-        flowId,
+      const config = {
+        [this.kind === "flow" ? "flowId" : "actionId"]: flowId,
         directory,
         entry: expected,
       };
@@ -109,7 +140,7 @@ export class FlowDiscovery {
         this.failures.set(flowId, signature);
         this.registry.problem(
           flowId,
-          `Flow 加载失败：${error instanceof Error ? error.message : String(error)}`,
+          `${title} 加载失败，请检查入口及本地依赖。`,
         );
       }
     }
@@ -134,5 +165,17 @@ export class FlowDiscovery {
   async close() {
     await this.queue;
     for (const id of [...this.mounted.keys()]) await this.unmount(id);
+  }
+}
+
+export class FlowDiscovery extends CodeDiscovery {
+  constructor(loader: Loader, registry: DiscoveryRegistry, root: string) {
+    super(loader, registry, root, "flow");
+  }
+}
+
+export class ActionDiscovery extends CodeDiscovery {
+  constructor(loader: Loader, registry: DiscoveryRegistry, root: string) {
+    super(loader, registry, root, "action");
   }
 }

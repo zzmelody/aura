@@ -9,6 +9,7 @@ import type { ContentBlock } from "@deepseek-ai/dsh-llm/types";
 import type { FlowHistory } from "@aura/protocol/types";
 import type { SessionPort } from "./types.ts";
 import { FlowError } from "./schema.ts";
+import type { ActionRuntime } from "./actions.ts";
 
 const plainText = (content?: readonly ContentBlock[]) =>
   (content ?? [])
@@ -16,8 +17,17 @@ const plainText = (content?: readonly ContentBlock[]) =>
     .map((part) => part.text)
     .join("\n");
 
+function agentFailure(message?: string): FlowError {
+  const status = message?.match(/\bHTTP\s+(\d{3})\b/i)?.[1];
+  return new FlowError(
+    status
+      ? `DSH 模型请求失败（HTTP ${status}），请查看对应会话。`
+      : "DSH Agent 执行失败，请查看对应会话。",
+  );
+}
+
 /** Narrow public DSH Session Controller adapter; no parallel session engine. */
-export function dshSessions(ctx: Context): SessionPort {
+export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
   const controller = ctx.sessionController;
   return {
     async execute({
@@ -27,6 +37,9 @@ export function dshSessions(ctx: Context): SessionPort {
       mode,
       timeoutMs,
       signal,
+      runId,
+      id: stepId,
+      actionDefinitions,
     }) {
       const sessionId = SessionId(rawId);
       const timeout = AbortSignal.timeout(timeoutMs);
@@ -37,87 +50,105 @@ export function dshSessions(ctx: Context): SessionPort {
         agentPreset: preset,
         cwd: process.env.AURA_FLOW_CWD,
       });
-      await controller.selectModel({
-        sessionId,
-        provider: mode === "codex" ? "openai-codex" : "deepseek-official",
-        model:
-          mode === "codex"
-            ? process.env.AURA_CODEX_MODEL || "gpt-5.6-terra"
-            : "deepseek-v4-flash",
-        reasoningEffort: mode === "codex" ? "medium" : "off",
+      const agent = ctx.agents.get(sessionId);
+      if (!agent) throw new FlowError("DSH Agent 创建后不可用。");
+      const unmountActions = actions.mount(agent, actionDefinitions, {
+        cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
+        mode,
+        runId,
+        stepId,
+        sessionId: rawId,
       });
-      const requestId = randomUUID() as SessionRequestId;
-      let matchedTurn: number | undefined;
-      let turn: number | undefined;
-      const disposers: (() => void)[] = [];
-      let finish!: { resolve(): void; reject(reason: unknown): void };
-      const completed = new Promise<void>((resolve, reject) => {
-        finish = { resolve, reject };
-      });
-      completed.catch(() => {});
-      disposers.push(
-        ctx.on("session/event", (session, event) => {
-          if (session.id !== sessionId) return;
-          if (event.type === "turn/start") turn = event.data.turn;
-          if (
-            event.type === "user/message" &&
-            "rpcId" in event.data.source &&
-            event.data.source.rpcId === requestId
-          )
-            matchedTurn = turn;
-          if (
-            event.type === "turn/end" &&
-            matchedTurn !== undefined &&
-            event.data.turn === matchedTurn
-          ) {
-            if (event.data.reason.kind === "completed") finish.resolve();
-            else
-              finish.reject(
-                new FlowError("DSH 回合未成功完成，请查看该步骤的会话。"),
-              );
-          }
-        }),
-      );
-      disposers.push(
-        ctx.on("api-session/error", (id) => {
-          if (id === sessionId) finish.reject(new Error("DSH agent failed"));
-        }),
-      );
-      const onAbort = () => {
-        controller.cancel({ sessionId });
-        finish.reject(stop.reason);
-      };
-      stop.addEventListener("abort", onAbort, { once: true });
       try {
-        stop.throwIfAborted();
-        await controller.prompt(
-          {
-            sessionId,
-            requestId,
-            mode: "queue",
-            content: [{ type: "text", text: input }],
-          },
-          stop,
+        await controller.selectModel({
+          sessionId,
+          provider: mode === "codex" ? "openai-codex" : "deepseek-official",
+          model:
+            mode === "codex"
+              ? process.env.AURA_CODEX_MODEL || "gpt-5.6-terra"
+              : "deepseek-v4-flash",
+          reasoningEffort: mode === "codex" ? "medium" : "off",
+        });
+        const requestId = randomUUID() as SessionRequestId;
+        let matchedTurn: number | undefined;
+        let turn: number | undefined;
+        const disposers: (() => void)[] = [];
+        let finish!: { resolve(): void; reject(reason: unknown): void };
+        const completed = new Promise<void>((resolve, reject) => {
+          finish = { resolve, reject };
+        });
+        completed.catch(() => {});
+        disposers.push(
+          ctx.on("session/event", (session, event) => {
+            if (session.id !== sessionId) return;
+            if (event.type === "turn/start") turn = event.data.turn;
+            if (
+              event.type === "user/message" &&
+              "rpcId" in event.data.source &&
+              event.data.source.rpcId === requestId
+            )
+              matchedTurn = turn;
+            if (
+              event.type === "turn/end" &&
+              matchedTurn !== undefined &&
+              event.data.turn === matchedTurn
+            ) {
+              if (event.data.reason.kind === "completed") finish.resolve();
+              else
+                finish.reject(
+                  agentFailure(
+                    event.data.reason.kind === "error"
+                      ? event.data.reason.error.message
+                      : undefined,
+                  ),
+                );
+            }
+          }),
         );
-        await completed;
-        await ctx.agents.get(sessionId)?.whenIdle();
-        stop.throwIfAborted();
-        const session = ctx.sessions.get(sessionId);
-        if (!session || !(await ctx.sessions.flush(session)))
-          throw new Error("Session was not persisted");
-        const messages = session.deriveMessages();
-        return plainText(
-          messages.findLast((message) => message.role === "assistant")?.content,
+        disposers.push(
+          ctx.on("api-session/error", (id, message) => {
+            if (id === sessionId) finish.reject(agentFailure(message));
+          }),
         );
-      } finally {
-        stop.removeEventListener("abort", onAbort);
-        for (const dispose of disposers) dispose();
-        if (stop.aborted) {
+        const onAbort = () => {
           controller.cancel({ sessionId });
+          finish.reject(stop.reason);
+        };
+        stop.addEventListener("abort", onAbort, { once: true });
+        try {
+          stop.throwIfAborted();
+          await controller.prompt(
+            {
+              sessionId,
+              requestId,
+              mode: "queue",
+              content: [{ type: "text", text: input }],
+            },
+            stop,
+          );
+          await completed;
           await ctx.agents.get(sessionId)?.whenIdle();
+          stop.throwIfAborted();
+          const session = ctx.sessions.get(sessionId);
+          if (!session || !(await ctx.sessions.flush(session)))
+            throw new Error("Session was not persisted");
+          const messages = session.deriveMessages();
+          return plainText(
+            messages.findLast((message) => message.role === "assistant")
+              ?.content,
+          );
+        } finally {
+          stop.removeEventListener("abort", onAbort);
+          for (const dispose of disposers) dispose();
+          if (stop.aborted) {
+            controller.cancel({ sessionId });
+            await ctx.agents.get(sessionId)?.whenIdle();
+          }
+          const session = ctx.sessions.get(sessionId);
+          if (session) await ctx.sessions.flush(session);
         }
-        const session = ctx.sessions.get(sessionId);
-        if (session) await ctx.sessions.flush(session);
+      } finally {
+        unmountActions();
       }
     },
     async history(step, beforeSeq) {
@@ -172,7 +203,7 @@ export function dshSessions(ctx: Context): SessionPort {
           content?: ContentBlock[];
           message?: { content: ContentBlock[] };
           name?: string;
-          reason?: { kind: string };
+          reason?: { kind: string; error?: { message?: string } };
         };
         if (event.type === "user/message")
           entries.push({
@@ -198,12 +229,17 @@ export function dshSessions(ctx: Context): SessionPort {
             kind: "tool",
             text: "工具执行结束（完整结果保留在 DSH 会话日志）。",
           });
-        if (event.type === "turn/end")
+        if (event.type === "turn/end") {
+          const status =
+            data.reason?.error?.message?.match(/\bHTTP\s+(\d{3})\b/i)?.[1];
           entries.push({
             seq: event.seq,
             kind: "event",
-            text: `回合结束：${data.reason?.kind}`,
+            text: `回合结束：${data.reason?.kind}${
+              status ? `（模型请求失败，HTTP ${status}）` : ""
+            }`,
           });
+        }
       }
       return {
         sessionId: step.sessionId,

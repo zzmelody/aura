@@ -1,23 +1,53 @@
+const flowPrefix = "AURA_FLOW_INPUT_V1\n";
+const historyPrefix = "AURA_HISTORY_V1\n";
+const runtimeContextPrefix = "Current runtime context.";
+
+function messageText(message: unknown): string | undefined {
+  if (
+    typeof message !== "object" ||
+    message === null ||
+    !("role" in message) ||
+    message.role !== "user" ||
+    !("content" in message)
+  )
+    return undefined;
+  if (typeof message.content === "string") return message.content;
+  if (!Array.isArray(message.content)) return undefined;
+  return message.content
+    .filter(
+      (part): part is { type: "text"; text: string } =>
+        typeof part === "object" &&
+        part !== null &&
+        "type" in part &&
+        part.type === "text" &&
+        "text" in part &&
+        typeof part.text === "string",
+    )
+    .map((part) => part.text)
+    .join("");
+}
+
 /** Deterministic fake-provider output, still executed through real DSH sessions. */
 export function flowDemoReply(messages: unknown): string | undefined {
-  const prefix = "AURA_FLOW_INPUT_V1\n";
   if (!Array.isArray(messages)) return undefined;
-  const input = messages
-    .filter((message) => message?.role === "user")
-    .map((message) =>
-      typeof message.content === "string"
-        ? message.content
-        : Array.isArray(message.content)
-          ? message.content
-              .filter((part: { type?: string }) => part?.type === "text")
-              .map((part: { text: string }) => part.text)
-              .join("")
-          : undefined,
-    )
+  const userMessages = messages
+    .map(messageText)
+    .filter((text): text is string => typeof text === "string");
+  const input = [...userMessages]
     .reverse()
-    .find((text: string | undefined) => text?.startsWith(prefix));
-  if (!input) return undefined;
-  const { task, nodeId, inputs } = JSON.parse(input.slice(prefix.length)) as {
+    .find((text) => text.startsWith(flowPrefix));
+  if (!input) {
+    if (userMessages.some((text) => text.startsWith(historyPrefix)))
+      return undefined;
+    const prompt = [...userMessages]
+      .reverse()
+      .find((text) => text.trim() && !text.startsWith(runtimeContextPrefix));
+    if (!prompt) return undefined;
+    return `演示模式 · Agent\n\n已处理以下任务：\n${prompt.trim()}\n\n这是本地规则输出，不包含真实模型研究。`;
+  }
+  const { task, nodeId, inputs } = JSON.parse(
+    input.slice(flowPrefix.length),
+  ) as {
     task: string;
     nodeId: string;
     inputs: { nodeId: string; sessionId: string; output: string }[];

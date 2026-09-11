@@ -5,7 +5,9 @@ import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
 import type { Loader } from "@deepseek-ai/cordis-plugin-loader";
 import { z } from "zod";
-import { FlowDiscovery } from "../src/discovery.ts";
+import { ActionDiscovery, FlowDiscovery } from "../src/discovery.ts";
+import { ActionRegistry } from "../src/action-registry.ts";
+import type { ActionRegistrationConfig } from "../src/action-api.ts";
 import type {
   FlowDefinition,
   FlowRegistrationConfig,
@@ -138,4 +140,83 @@ test("directory hash includes nested helper names and contents", async () =>
     assert.notEqual(first, second);
     assert.equal(first.length, 64);
     assert.equal(second.length, 64);
+  }));
+
+test("source preview stays with the registered revision until a successful reload", async () =>
+  withRoot(async (root) => {
+    const directory = await addEntry(root, "preview");
+    const entry = join(directory, "preview.flow.js");
+    const config = { flowId: "preview", directory, entry };
+    const registry = new FlowRegistry();
+    await registry.register(config, definition);
+    const first = registry.source("preview");
+    assert.equal(first.code, "export default {};\n");
+    assert.equal(first.sourceHash, registry.catalog()[0].sourceHash);
+    await writeFile(entry, "export default { version: 2 };\n");
+    registry.reloadProblem("preview", "reload pending");
+    assert.deepEqual(registry.source("preview"), first);
+    await registry.register(config, definition);
+    assert.match(registry.source("preview").code, /version: 2/);
+    assert.notEqual(registry.source("preview").sourceHash, first.sourceHash);
+    assert.throws(() => registry.source("../preview"), /不存在/);
+    registry.remove("preview");
+    assert.throws(() => registry.source("preview"), /不存在/);
+  }));
+
+test("Action discovery enforces directory ids and exactly one matching entry", async () =>
+  withRoot(async (root) => {
+    const registry = new ActionRegistry();
+    const removed: string[] = [];
+    const loader = {
+      async create({ config }: { config: ActionRegistrationConfig }) {
+        await registry.register(config, {
+          title: "Test",
+          description: "Test action",
+          tool: (name) => ({
+            name,
+            description: "Test",
+            parameters: { type: "object" },
+            output: { schema: { type: "string" }, render: () => [] },
+            timeoutMs: 1000,
+            execute: async () => "ok",
+          }),
+        });
+        return config.actionId;
+      },
+      async remove(id: string) {
+        removed.push(id);
+      },
+    } as unknown as Loader;
+    const discovery = new ActionDiscovery(loader, registry, root);
+    for (const id of ["valid", "bad id", "mismatch", "duplicate", "run_code"]) {
+      await mkdir(join(root, id));
+      await writeFile(
+        join(root, id, `${id === "mismatch" ? "other" : id}.action.js`),
+        "export default {};",
+      );
+    }
+    await mkdir(join(root, "duplicate", "lib"));
+    await writeFile(
+      join(root, "duplicate", "lib", "extra.action.js"),
+      "export default {};",
+    );
+    await discovery.refresh();
+    assert.deepEqual(
+      registry
+        .catalog()
+        .filter((a) => a.available)
+        .map((a) => a.id),
+      ["valid"],
+    );
+    assert.equal(registry.catalog().filter((a) => !a.available).length, 4);
+    const entry = join(root, "valid", "valid.action.js");
+    assert.equal(dirname(resolve(entry)), resolve(root, "valid"));
+    await rm(entry);
+    await discovery.refresh();
+    assert.deepEqual(removed, ["valid"]);
+    assert.equal(
+      registry.catalog().find((a) => a.id === "valid")?.available,
+      false,
+    );
+    await discovery.close();
   }));

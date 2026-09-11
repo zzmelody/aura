@@ -52,7 +52,7 @@ export default function App() {
   const [systemReduced, setSystemReduced] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [assistantOpen, setAssistantOpen] = useState(() => innerWidth >= 1180);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [onlyRunning, setOnlyRunning] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);

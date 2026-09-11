@@ -1,5 +1,10 @@
 {
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": { "types": ["node"], "lib": ["ES2023", "DOM"] },
-  "include": ["src/**/*.ts", "types/**/*.d.ts", "flow/**/*.js"]
+  "include": [
+    "src/**/*.ts",
+    "types/**/*.d.ts",
+    "flow/**/*.js",
+    "action/**/*.js"
+  ]
 }

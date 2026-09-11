@@ -10,15 +10,14 @@ import {
 import {
   ChevronRight,
   Clock3,
-  GitBranch,
   Play,
   RefreshCw,
   Square,
+  Wrench,
 } from "lucide-react";
 import { Label, useTheme } from "@aura/ui/components";
 import { fonts, type as textType } from "@aura/ui/theme";
 import type {
-  FlowCatalog,
   FlowHistory,
   FlowMode,
   FlowPhase,
@@ -26,6 +25,7 @@ import type {
   FlowRunSummary,
   JsonValue,
 } from "@aura/protocol/types";
+import type { FlowCatalogController } from "../flowCatalog";
 
 const phaseLabels: Record<FlowPhase, string> = {
   queued: "等待执行",
@@ -304,10 +304,17 @@ function SchemaInputEditor({
 }
 
 /** UI-only Flow client; discovery, validation and execution stay in DSH. */
-export function FlowsScreen({ endpoint }: { endpoint: string }) {
+export function FlowsScreen({
+  endpoint,
+  catalogState,
+  flowId,
+}: {
+  endpoint: string;
+  catalogState: FlowCatalogController;
+  flowId: string;
+}) {
   const { colors } = useTheme();
-  const [catalog, setCatalog] = useState<FlowCatalog>();
-  const [flowId, setFlowId] = useState("");
+  const { catalog } = catalogState;
   const [input, setInput] = useState('{\n  "task": ""\n}');
   const [inputView, setInputView] = useState<"form" | "json">("form");
   const [mode, setMode] = useState<FlowMode>("demo");
@@ -321,31 +328,31 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const selectedFlow = catalog?.flows.find((item) => item.id === flowId);
+  const selectedStep = run?.steps.find((step) => step.id === historyStep);
+  const visibleRuns = runs.filter((item) => item.flowId === flowId);
+  const selectionRef = useRef("");
+  selectionRef.current = `${endpoint}\n${flowId}`;
   const endpointRef = useRef(endpoint);
   const inputFlowRef = useRef("");
   const inputDrafts = useRef(new Map<string, string>());
   const historyRequest = useRef(0);
   endpointRef.current = endpoint;
 
-  async function refresh(signal?: AbortSignal) {
-    const [nextCatalog, nextRuns] = await Promise.all([
-      api<FlowCatalog>(endpoint, "/catalog", undefined, signal),
-      api<FlowRunSummary[]>(endpoint, "/runs", undefined, signal),
-    ]);
-    if (signal?.aborted || endpoint !== endpointRef.current) return;
-    setCatalog(nextCatalog);
-    setRuns(nextRuns);
-    setFlowId((current) =>
-      nextCatalog.flows.some((item) => item.id === current)
-        ? current
-        : (nextCatalog.flows.find((item) => item.available)?.id ?? ""),
+  async function refreshRuns(signal?: AbortSignal) {
+    const nextRuns = await api<FlowRunSummary[]>(
+      endpoint,
+      "/runs",
+      undefined,
+      signal,
     );
+    if (signal?.aborted || endpoint !== endpointRef.current) return;
+    setRuns(nextRuns);
   }
 
   useEffect(() => {
     const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    setCatalog(undefined);
+    inputDrafts.current.clear();
+    inputFlowRef.current = "";
     setSelectedId("");
     setRun(undefined);
     setRuns([]);
@@ -353,37 +360,21 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
     setHistory(undefined);
     historyRequest.current++;
     setError("");
-    const pollCatalog = async () => {
-      try {
-        const next = await api<FlowCatalog>(
-          endpoint,
-          "/catalog",
-          undefined,
-          abort.signal,
-        );
-        setCatalog(next);
-        setFlowId((current) =>
-          next.flows.some((item) => item.id === current)
-            ? current
-            : (next.flows.find((item) => item.available)?.id ?? ""),
-        );
-      } catch (cause) {
-        if (!abort.signal.aborted) setError(errorText(cause));
-      }
-      if (!abort.signal.aborted) timer = setTimeout(pollCatalog, 1_500);
-    };
-    void refresh(abort.signal)
-      .then(() => {
-        if (!abort.signal.aborted) timer = setTimeout(pollCatalog, 1_500);
-      })
-      .catch((cause) => {
-        if (!abort.signal.aborted) setError(errorText(cause));
-      });
-    return () => {
-      abort.abort();
-      if (timer) clearTimeout(timer);
-    };
+    void refreshRuns(abort.signal).catch((cause) => {
+      if (!abort.signal.aborted) setError(errorText(cause));
+    });
+    return () => abort.abort();
   }, [endpoint]);
+
+  useEffect(() => {
+    setSelectedId("");
+    setRun(undefined);
+    setHistoryStep("");
+    setHistory(undefined);
+    setHistoryBusy(false);
+    historyRequest.current++;
+    setError("");
+  }, [flowId]);
 
   useEffect(() => {
     if (!selectedFlow || inputFlowRef.current === selectedFlow.id) return;
@@ -451,6 +442,7 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
 
   async function start() {
     if (!selectedFlow?.available || parsed.error || busy) return;
+    const selection = selectionRef.current;
     setBusy(true);
     historyRequest.current++;
     setError("");
@@ -462,9 +454,11 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
         `/${encodeURIComponent(flowId)}/runs`,
         { requestId: requestId(), input: parsed.value, mode },
       );
-      setSelectedId(next.runId);
-      setRun(undefined);
-      await refresh();
+      if (selection === selectionRef.current) {
+        setSelectedId(next.runId);
+        setRun(undefined);
+      }
+      await Promise.all([refreshRuns(), catalogState.refresh()]);
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -483,7 +477,7 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
         {},
       );
       setRun(next);
-      await refresh();
+      await Promise.all([refreshRuns(), catalogState.refresh()]);
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -497,6 +491,10 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
     setHistoryStep(stepId);
     setHistory(undefined);
     setError("");
+    if (run.steps.find((step) => step.id === stepId)?.kind === "action") {
+      setHistoryBusy(false);
+      return;
+    }
     setHistoryBusy(true);
     try {
       const next = await api<FlowHistory>(
@@ -555,22 +553,6 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
 
   return (
     <div className="flow-runtime">
-      <div className="runtime-heading">
-        <div>
-          <h2>运行已注册的 Flow</h2>
-          <p>配置输入，查看运行结果和每个 Agent 的会话。</p>
-        </div>
-        <button
-          className="icon-control"
-          aria-label="刷新 Flow 目录"
-          onClick={() => {
-            setError("");
-            void refresh().catch((cause) => setError(errorText(cause)));
-          }}
-        >
-          <RefreshCw size={15} />
-        </button>
-      </div>
       {error ? (
         <div className="workspace-notice" role="alert">
           {error}
@@ -578,45 +560,12 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
       ) : null}
       <div className="runtime-columns">
         <section className="runtime-config" aria-label="Flow 运行配置">
-          <div className="panel-heading">
-            <GitBranch size={14} />
-            <strong>选择 Flow</strong>
-            <span className="count">{catalog?.flows.length ?? 0}</span>
-          </div>
-          {!catalog ? (
+          {!selectedFlow?.available ? (
             <div className="runtime-empty">
-              {error ? (
-                <span>无法连接 Flow 服务，启动服务后点击刷新。</span>
-              ) : (
-                <>
-                  <ActivityIndicator color={colors.accent} />
-                  正在读取 Flow 目录…
-                </>
-              )}
-            </div>
-          ) : !catalog.flows.length ? (
-            <div className="runtime-empty">
-              暂无已注册的 Flow，可先在代码草稿中编写。
+              当前 Flow 不可运行，请从列表选择可用的 Flow。
             </div>
           ) : (
             <>
-              <div className="compact-catalog">
-                {catalog.flows.map((flow) => (
-                  <button
-                    key={flow.id}
-                    className={`catalog-item${flowId === flow.id ? " selected" : ""}`}
-                    aria-pressed={flowId === flow.id}
-                    disabled={!flow.available}
-                    onClick={() => setFlowId(flow.id)}
-                  >
-                    <span>
-                      <GitBranch size={14} />
-                      <strong>{flow.title}</strong>
-                    </span>
-                    <small>{flow.error || flow.description}</small>
-                  </button>
-                ))}
-              </div>
               <div className="panel-heading input-heading">
                 <strong>运行参数</strong>
                 <div className="segmented" aria-label="参数编辑方式">
@@ -702,25 +651,39 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
           <div className="panel-heading">
             <Clock3 size={14} />
             <strong>运行记录</strong>
-            <span className="count">{runs.length}</span>
-          </div>
-          <div className="run-picker">
-            <select
-              aria-label="选择运行记录"
-              value={selectedId}
-              onChange={(event) => selectRun(event.target.value)}
+            <span className="count">{visibleRuns.length}</span>
+            <button
+              className="icon-control"
+              aria-label="刷新运行记录"
+              onClick={() =>
+                void refreshRuns().catch((cause) => setError(errorText(cause)))
+              }
             >
-              <option value="">
-                {runs.length ? "选择一条运行记录" : "暂无运行记录"}
-              </option>
-              {runs.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {phaseLabels[item.status]} · {item.title} ·{" "}
-                  {new Date(item.createdAt).toLocaleString("zh-CN")}
-                </option>
-              ))}
-            </select>
+              <RefreshCw size={13} />
+            </button>
           </div>
+          {visibleRuns.length ? (
+            <div className="run-list" aria-label="当前 Flow 的运行记录">
+              {visibleRuns.map((item) => (
+                <button
+                  key={item.id}
+                  className={selectedId === item.id ? "selected" : ""}
+                  aria-pressed={selectedId === item.id}
+                  title={item.inputPreview}
+                  onClick={() => selectRun(item.id)}
+                >
+                  <span className={`phase phase-${item.status}`}>
+                    {phaseLabels[item.status]}
+                  </span>
+                  <span>
+                    {new Date(item.createdAt).toLocaleString("zh-CN")}
+                  </span>
+                  <small>{item.mode === "demo" ? "演示" : "Codex"}</small>
+                  <ChevronRight size={12} />
+                </button>
+              ))}
+            </div>
+          ) : null}
           {!selectedId ? (
             <div className="runtime-empty result-empty">
               <Play size={25} strokeWidth={1.3} />
@@ -763,26 +726,40 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
                 </button>
               ) : null}
               <div className="agent-steps">
-                {run.steps.map((step, index) => (
-                  <button
-                    key={step.id}
-                    className={`agent-step${historyStep === step.id ? " selected" : ""}`}
-                    aria-label={`查看 ${step.label} 会话`}
-                    aria-pressed={historyStep === step.id}
-                    onClick={() => void openHistory(step.id)}
-                  >
-                    <span className={`step-number phase-${step.status}`}>
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span>
-                      <strong>{step.label}</strong>
-                      <small>
-                        {phaseLabels[step.status]} · {step.preset}
-                      </small>
-                    </span>
-                    <ChevronRight size={14} />
-                  </button>
-                ))}
+                {run.steps.map((step, index) => {
+                  const action = step.kind === "action";
+                  return (
+                    <button
+                      key={step.id}
+                      className={`agent-step${historyStep === step.id ? " selected" : ""}`}
+                      aria-label={
+                        action
+                          ? `${step.label} Action 步骤`
+                          : `查看 ${step.label} 会话`
+                      }
+                      aria-pressed={historyStep === step.id}
+                      onClick={() => {
+                        void openHistory(step.id);
+                      }}
+                    >
+                      <span className={`step-number phase-${step.status}`}>
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <span>
+                        <strong>{step.label}</strong>
+                        <small>
+                          {phaseLabels[step.status]} ·{" "}
+                          {action ? step.actionId : step.preset}
+                        </small>
+                      </span>
+                      {action ? (
+                        <Wrench size={14} />
+                      ) : (
+                        <ChevronRight size={14} />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
               {run.error ? (
                 <p className="error" role="alert">
@@ -807,8 +784,8 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
                 <div className="step-history">
                   <div className="panel-heading">
                     <strong>
-                      {run.steps.find((step) => step.id === historyStep)?.label}{" "}
-                      · 会话
+                      {selectedStep?.label} ·{" "}
+                      {selectedStep?.kind === "action" ? "Action" : "会话"}
                     </strong>
                     <button
                       className="text-control"
@@ -821,15 +798,40 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
                     >
                       查看输出
                     </button>
-                    <button
-                      className="text-control"
-                      disabled={historyBusy}
-                      onClick={() => void openHistory(historyStep)}
-                    >
-                      刷新
-                    </button>
+                    {selectedStep?.kind !== "action" ? (
+                      <button
+                        className="text-control"
+                        disabled={historyBusy}
+                        onClick={() => void openHistory(historyStep)}
+                      >
+                        刷新
+                      </button>
+                    ) : null}
                   </div>
-                  {!history ? (
+                  {selectedStep?.error ? (
+                    <p className="error" role="alert">
+                      {selectedStep.error}
+                    </p>
+                  ) : null}
+                  {selectedStep?.kind === "action" ? (
+                    <>
+                      <small className="session-identifier">
+                        {selectedStep.actionId} ·{" "}
+                        {selectedStep.sourceHash?.slice(0, 12) ?? "版本不可用"}{" "}
+                        · {phaseLabels[selectedStep.status]}
+                      </small>
+                      <details open>
+                        <summary>输入</summary>
+                        <pre>{outputText(selectedStep.input)}</pre>
+                      </details>
+                      {selectedStep.output !== undefined ? (
+                        <details open>
+                          <summary>输出</summary>
+                          <pre>{outputText(selectedStep.output)}</pre>
+                        </details>
+                      ) : null}
+                    </>
+                  ) : !history ? (
                     <div className="runtime-empty">
                       {historyBusy
                         ? "正在读取会话…"
@@ -840,6 +842,17 @@ export function FlowsScreen({ endpoint }: { endpoint: string }) {
                       <small className="session-identifier">
                         {history.preset} · {history.sessionId}
                       </small>
+                      {selectedStep?.actions?.length ? (
+                        <small className="session-identifier">
+                          Actions：
+                          {selectedStep.actions
+                            .map(
+                              (action) =>
+                                `${action.id}@${action.sourceHash.slice(0, 12)}`,
+                            )
+                            .join("、")}
+                        </small>
+                      ) : null}
                       {history.hasMore ? (
                         <button
                           className="tool-button"

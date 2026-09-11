@@ -9,7 +9,8 @@ Runtime 使用 TypeScript 源码并按职责拆分：
 - `api-server.ts`：Hono HTTP 边界、并发准入和对话路由；
 - `codex-auth-routes.ts`：DSH 授权状态的脱敏 HTTP 投影；
 - `dsh-session-runner.ts`：DSH SDK 子进程、JSON-RPC、事件流与取消；
-- `demo-model.ts`：仅监听 loopback 的开发演示模型；
+- `demo-model.ts`：仅监听 loopback 的开发演示模型；聊天历史与结构化 Flow
+  输入使用各自的内部标记，代码 Flow 传入普通自然语言提示时返回确定性的通用演示结果；
 - `http-server.ts`：Hono Node 适配器生命周期与本地 Origin 策略；
 - `validation.ts`：运行时无关的基础类型守卫。
 

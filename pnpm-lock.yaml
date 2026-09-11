@@ -244,6 +244,12 @@ importers:
       '@deepseek-ai/dsh-storage-domain':
         specifier: 0.1.2-rc.1
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-storage@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))
+      '@deepseek-ai/dsh-tools':
+        specifier: 0.1.2-rc.1
+        version: 0.1.2-rc.1(de5e1ff2d608fbe22667925341ad1dfc)
+      '@deepseek-ai/dsh-util-values':
+        specifier: 0.1.2-rc.1
+        version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-workspace':
         specifier: 0.1.2-rc.1
         version: 0.1.2-rc.1(c4f266c8456c2e5dc1e1d3e663271a2c)
@@ -349,6 +355,9 @@ importers:
       '@fontsource/manrope':
         specifier: 5.3.0
         version: 5.3.0
+      acorn:
+        specifier: 8.18.0
+        version: 8.18.0
       lucide-react:
         specifier: 1.43.0
         version: 1.43.0(react@19.2.3)
@@ -8129,8 +8138,7 @@ snapshots:
       mime-types: 3.0.2
       negotiator: 1.1.0
 
-  acorn@8.18.0:
-    optional: true
+  acorn@8.18.0: {}
 
   agent-base@7.1.4: {}
 

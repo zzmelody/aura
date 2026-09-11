@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL, URL } from "node:url";
 import { writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
 
@@ -12,12 +12,27 @@ export const dshBin = join(
 export const defaultFlowRoot = fileURLToPath(
   new URL("../flow", import.meta.url),
 );
+export const defaultActionRoot = fileURLToPath(
+  new URL("../action", import.meta.url),
+);
 
 export async function provisionProfile(
   dshHome: string,
   flowRoot = defaultFlowRoot,
+  actionRoot = defaultActionRoot,
 ) {
   const dir = join(dshHome, "profiles", "aura-flow");
+  // A sibling root must not be watched as ../action: ignored dot directories
+  // would otherwise suppress it. Different-drive roots stay absolute.
+  let watchBase = dirname(resolve(flowRoot));
+  while (
+    relative(watchBase, resolve(actionRoot)).startsWith("..") &&
+    !isAbsolute(relative(watchBase, resolve(actionRoot)))
+  ) {
+    const parent = dirname(watchBase);
+    if (parent === watchBase) break;
+    watchBase = parent;
+  }
   const disabled = [
     "tool-bash",
     "tool-pwsh",
@@ -53,8 +68,8 @@ export async function provisionProfile(
 - id: hmr
   disabled: false
   config:
-    base: ${JSON.stringify(pathToFileURL(flowRoot).href)}
-    root: ['.']
+    base: ${JSON.stringify(pathToFileURL(watchBase).href)}
+    root: ${JSON.stringify([flowRoot, actionRoot])}
     ignored: ['**/node_modules', '**/.*']
     debounce: 100
 - id: sdk-app-startup
