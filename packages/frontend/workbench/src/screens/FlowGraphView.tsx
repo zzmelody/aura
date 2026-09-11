@@ -18,7 +18,6 @@ import {
   Minus,
   Plus,
   Repeat2,
-  Route,
   X,
   Wrench,
 } from "lucide-react";
@@ -79,7 +78,7 @@ export function FlowGraphView({
     return () => observer.disconnect();
   }, [Boolean(graph.error)]);
   const fit = Math.max(
-    0.3,
+    0.7,
     Math.min(
       1,
       (size.width - 24) / layout.width,

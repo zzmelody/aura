@@ -422,7 +422,7 @@ export default function App() {
                     : "工作区就绪"}
                 </span>
                 <span>
-                  Flow · {flowDraft.saveError ? "草稿未保存" : "本地草稿"}
+                  {flowDraft.saveError ? "本地草稿未保存" : "本地草稿已保存"}
                 </span>
               </footer>
             </main>

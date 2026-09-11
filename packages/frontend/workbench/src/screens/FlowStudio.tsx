@@ -80,6 +80,8 @@ export function FlowStudio({
         .includes(query.trim().toLowerCase()),
   );
   const file = useRef<HTMLInputElement>(null);
+  const libraryToggle = useRef<HTMLButtonElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const menu = useRef<HTMLDetailsElement>(null);
   const gutter = useRef<HTMLDivElement>(null);
   const codeInput = useRef<HTMLTextAreaElement>(null);
@@ -95,6 +97,16 @@ export function FlowStudio({
     setSelection(null);
     setView("graph");
   }, [endpoint]);
+  useEffect(() => {
+    if (!libraryOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setLibraryOpen(false);
+      requestAnimationFrame(() => libraryToggle.current?.focus());
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [libraryOpen]);
 
   function selectFlow(id: string) {
     setSelection(id);
@@ -102,6 +114,8 @@ export function FlowStudio({
     setLibraryOpen(false);
     setNotice("");
     if (menu.current) menu.current.open = false;
+    if (libraryOpen)
+      requestAnimationFrame(() => libraryToggle.current?.focus());
   }
   function openCode(targetLine = 1) {
     setView("code");
@@ -139,7 +153,16 @@ export function FlowStudio({
       className={`flow-studio${libraryOpen ? " library-open" : ""}`}
       aria-label="Flow 编辑与运行"
     >
-      <aside className="flow-library" aria-label="Flow 列表">
+      <aside
+        className="flow-library"
+        aria-label="Flow 列表"
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && libraryOpen) {
+            setLibraryOpen(false);
+            requestAnimationFrame(() => libraryToggle.current?.focus());
+          }
+        }}
+      >
         <div className="flow-library-heading">
           <strong>全部 Flow</strong>
           <span className="count">
@@ -156,7 +179,10 @@ export function FlowStudio({
           <button
             className="icon-control flow-library-close"
             aria-label="关闭 Flow 列表"
-            onClick={() => setLibraryOpen(false)}
+            onClick={() => {
+              setLibraryOpen(false);
+              requestAnimationFrame(() => libraryToggle.current?.focus());
+            }}
           >
             <X size={16} />
           </button>
@@ -164,6 +190,7 @@ export function FlowStudio({
         <label className="flow-search">
           <Search size={14} />
           <input
+            ref={searchInput}
             aria-label="搜索 Flow"
             placeholder="搜索名称或描述…"
             value={query}
@@ -173,7 +200,10 @@ export function FlowStudio({
             <button
               className="icon-control"
               aria-label="清空 Flow 搜索"
-              onClick={() => setQuery("")}
+              onClick={() => {
+                setQuery("");
+                searchInput.current?.focus();
+              }}
             >
               <X size={12} />
             </button>
@@ -290,8 +320,12 @@ export function FlowStudio({
         <header className="flow-content-heading">
           <button
             className="tool-button flow-library-toggle"
+            ref={libraryToggle}
             aria-expanded={libraryOpen}
-            onClick={() => setLibraryOpen(true)}
+            onClick={() => {
+              setLibraryOpen(true);
+              requestAnimationFrame(() => searchInput.current?.focus());
+            }}
           >
             <List size={15} />
             <span>全部 Flow</span>
@@ -377,11 +411,34 @@ export function FlowStudio({
           className="studio-tabs"
           role="tablist"
           aria-label="Flow 工作区视图"
+          onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+              return;
+            const tabs = Array.from(
+              event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                '[role="tab"]',
+              ),
+            );
+            const index = tabs.indexOf(event.target as HTMLButtonElement);
+            if (index < 0) return;
+            event.preventDefault();
+            const next =
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? tabs.length - 1
+                  : (index +
+                      (event.key === "ArrowRight" ? 1 : tabs.length - 1)) %
+                    tabs.length;
+            tabs[next]?.focus();
+            tabs[next]?.click();
+          }}
         >
           <button
             id="graph-tab"
             role="tab"
             aria-selected={view === "graph"}
+            tabIndex={view === "graph" ? 0 : -1}
             aria-controls="graph-panel"
             onClick={() => setView("graph")}
           >
@@ -392,6 +449,7 @@ export function FlowStudio({
             id="code-tab"
             role="tab"
             aria-selected={view === "code"}
+            tabIndex={view === "code" ? 0 : -1}
             aria-controls="code-panel"
             onClick={() => setView("code")}
           >
@@ -403,6 +461,7 @@ export function FlowStudio({
               id="runs-tab"
               role="tab"
               aria-selected={view === "runs"}
+              tabIndex={view === "runs" ? 0 : -1}
               aria-controls="runs-panel"
               onClick={() => setView("runs")}
             >

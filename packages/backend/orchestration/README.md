@@ -176,6 +176,7 @@ const actionRun = await host.invokeAction("text-stats", {
 | 方法 | 路径                                                   | 作用                                                |
 | ---- | ------------------------------------------------------ | --------------------------------------------------- |
 | GET  | `/flows/catalog`                                       | `flows`、`actions`、JSON Schema、版本 hash、加载错误与 preset |
+| GET  | `/flows/:flowId/source`                                | 当前已注册版本的入口源码、ID 与 hash，供静态预览 |
 | POST | `/flows/:flowId/runs`                                  | 提交 `{requestId, mode, input}`，202 返回 `{runId}` |
 | GET  | `/flows/runs`                                          | 最近 100 次运行摘要                                 |
 | GET  | `/flows/runs/:runId`                                   | 结构化 input/output 和动态 steps                    |

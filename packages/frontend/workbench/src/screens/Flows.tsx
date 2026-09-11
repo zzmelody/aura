@@ -327,6 +327,7 @@ export function FlowsScreen({
   const [historyBusy, setHistoryBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [runsError, setRunsError] = useState("");
   const selectedFlow = catalog?.flows.find((item) => item.id === flowId);
   const selectedStep = run?.steps.find((step) => step.id === historyStep);
   const visibleRuns = runs.filter((item) => item.flowId === flowId);
@@ -347,10 +348,12 @@ export function FlowsScreen({
     );
     if (signal?.aborted || endpoint !== endpointRef.current) return;
     setRuns(nextRuns);
+    setRunsError("");
   }
 
   useEffect(() => {
     const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     inputDrafts.current.clear();
     inputFlowRef.current = "";
     setSelectedId("");
@@ -360,10 +363,19 @@ export function FlowsScreen({
     setHistory(undefined);
     historyRequest.current++;
     setError("");
-    void refreshRuns(abort.signal).catch((cause) => {
-      if (!abort.signal.aborted) setError(errorText(cause));
-    });
-    return () => abort.abort();
+    const poll = async () => {
+      try {
+        await refreshRuns(abort.signal);
+      } catch (cause) {
+        if (!abort.signal.aborted) setRunsError(errorText(cause));
+      }
+      if (!abort.signal.aborted) timer = setTimeout(poll, 2500);
+    };
+    void poll();
+    return () => {
+      abort.abort();
+      if (timer) clearTimeout(timer);
+    };
   }, [endpoint]);
 
   useEffect(() => {
@@ -383,7 +395,7 @@ export function FlowsScreen({
       inputDrafts.current.get(selectedFlow.id) ??
         JSON.stringify(schemaInitialValue(selectedFlow.inputSchema), null, 2),
     );
-  }, [selectedFlow?.id]);
+  }, [selectedFlow?.id, endpoint]);
 
   useEffect(() => {
     if (flowId && inputFlowRef.current === flowId)
@@ -553,9 +565,9 @@ export function FlowsScreen({
 
   return (
     <div className="flow-runtime">
-      {error ? (
+      {error || runsError ? (
         <div className="workspace-notice" role="alert">
-          {error}
+          {error || runsError}
         </div>
       ) : null}
       <div className="runtime-columns">
