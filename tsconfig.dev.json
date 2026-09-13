@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "types": ["node", "vite/client"] },
+  "include": [
+    "scripts/dev-renderer.ts",
+    "scripts/vite-live-reload.ts",
+    "scripts/vite-live-reload-client.ts"
+  ]
+}

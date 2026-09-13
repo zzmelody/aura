@@ -1,4 +1,4 @@
-import type { Message, Session, Workspace } from "./types.ts";
+import type { Message, Session, Workspace, WorkflowBinding } from "./types.ts";
 
 /** Version-one storage key; moving modules does not migrate or erase records. */
 export const STORAGE_KEY = "aura.workspace.v1";
@@ -27,7 +27,7 @@ export function restoreState(value: unknown): Workspace {
     return initialState();
   const sessions: Session[] = [];
   for (const s of value.sessions) {
-    if (sessions.length === 60) break;
+    if (sessions.length === 100) break;
     if (
       !isRecord(s) ||
       typeof s.id !== "string" ||
@@ -37,6 +37,32 @@ export function restoreState(value: unknown): Workspace {
     )
       continue;
     const messages: Message[] = [];
+    const binding = isRecord(s.workflow) ? s.workflow : undefined;
+    const workflow: WorkflowBinding | undefined =
+      binding &&
+      typeof binding.id === "string" &&
+      typeof binding.title === "string" &&
+      typeof binding.endpoint === "string" &&
+      validateEndpoint(binding.endpoint)
+        ? {
+            id: binding.id,
+            title: binding.title,
+            endpoint: validateEndpoint(binding.endpoint)!,
+            ...(binding.inputSchema && typeof binding.inputSchema === "object"
+              ? {
+                  inputSchema:
+                    binding.inputSchema as WorkflowBinding["inputSchema"],
+                }
+              : {}),
+            ...(isRecord(binding.pending) &&
+            typeof binding.pending.requestId === "string" &&
+            (binding.pending.mode === "demo" ||
+              binding.pending.mode === "codex") &&
+            binding.pending.input !== undefined
+              ? { pending: binding.pending as WorkflowBinding["pending"] }
+              : {}),
+          }
+        : undefined;
     for (const m of s.messages) {
       if (
         !isRecord(m) ||
@@ -55,6 +81,21 @@ export function restoreState(value: unknown): Workspace {
             : m.status === "stopped" || m.status === "error"
               ? m.status
               : "complete",
+        ...(workflow && typeof m.workflowRunId === "string"
+          ? { workflowRunId: m.workflowRunId }
+          : {}),
+        ...(workflow &&
+        typeof m.workflowPhase === "string" &&
+        [
+          "queued",
+          "running",
+          "completed",
+          "failed",
+          "cancelled",
+          "interrupted",
+        ].includes(m.workflowPhase)
+          ? { workflowPhase: m.workflowPhase as Message["workflowPhase"] }
+          : {}),
       });
     }
     sessions.push({
@@ -62,6 +103,7 @@ export function restoreState(value: unknown): Workspace {
       title: s.title,
       updatedAt: s.updatedAt,
       messages: messages.slice(-200),
+      ...(workflow ? { workflow } : {}),
     });
   }
   return {
@@ -77,6 +119,13 @@ export function restoreState(value: unknown): Workspace {
         ? value.provider
         : "offline",
     sessions,
+    ...(Array.isArray(value.hiddenWorkflowRuns)
+      ? {
+          hiddenWorkflowRuns: value.hiddenWorkflowRuns
+            .filter((item): item is string => typeof item === "string")
+            .slice(-500),
+        }
+      : {}),
   };
 }
 

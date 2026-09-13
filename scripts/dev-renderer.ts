@@ -1,0 +1,69 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createServer } from "vite";
+import { liveReloadFallback } from "./vite-live-reload.ts";
+
+const target = process.argv[2];
+if (target !== "web" && target !== "desktop")
+  throw new Error("Usage: dev-renderer.ts <web|desktop>");
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const appRoot = resolve(root, "apps", target);
+const server = await createServer({
+  root: appRoot,
+  configFile: resolve(appRoot, "vite.config.ts"),
+  plugins: [liveReloadFallback()],
+});
+let desktop: ChildProcess | undefined;
+let closing: Promise<void> | undefined;
+
+function close() {
+  return (closing ??= (async () => {
+    clearInterval(parentWatch);
+    if (desktop?.exitCode === null) desktop.kill();
+    await server.close();
+  })());
+}
+
+const parentPid = Number(process.env.AURA_LAUNCHER_PID ?? process.ppid);
+const parentWatch = setInterval(() => {
+  try {
+    process.kill(parentPid, 0);
+  } catch {
+    void close().finally(() => process.exit(0));
+  }
+}, 1000);
+parentWatch.unref();
+for (const signal of ["SIGINT", "SIGTERM"] as const)
+  process.once(signal, () => void close().finally(() => process.exit(0)));
+
+try {
+  await server.listen();
+  server.printUrls();
+  if (target === "desktop") {
+    const pnpm = process.env.npm_execpath;
+    if (!pnpm)
+      throw new Error("Start desktop development through pnpm run desktop.");
+    desktop = spawn(
+      process.execPath,
+      [pnpm, "--filter", "@aura/desktop", "exec", "electron", ".", "--dev"],
+      {
+        cwd: root,
+        stdio: "inherit",
+        windowsHide: true,
+        env: { ...process.env, AURA_DEV_PARENT_PID: String(process.pid) },
+      },
+    );
+    desktop.once("error", (error) => {
+      console.error(error.message);
+      void close().finally(() => process.exit(1));
+    });
+    desktop.once("exit", (code) => {
+      void close().finally(() => process.exit(code ?? 0));
+    });
+  }
+} catch (error) {
+  await close();
+  throw error;
+}

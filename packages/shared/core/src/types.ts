@@ -1,4 +1,9 @@
-import type { ChatMessage } from "@aura/protocol/types";
+import type {
+  ChatMessage,
+  FlowPhase,
+  FlowMode,
+  JsonValue,
+} from "@aura/protocol/types";
 
 /** Theme preference persisted independently of the system theme. */
 export type ThemeMode = "dark" | "light" | "system";
@@ -6,6 +11,15 @@ export type ThemeMode = "dark" | "light" | "system";
 export type Message = ChatMessage & {
   id: string;
   status: "streaming" | "complete" | "stopped" | "error";
+  workflowRunId?: string;
+  workflowPhase?: FlowPhase;
+};
+export type WorkflowBinding = {
+  id: string;
+  title: string;
+  endpoint: string;
+  inputSchema?: JsonValue;
+  pending?: { requestId: string; input: JsonValue; mode: FlowMode };
 };
 /** A locally stored conversation. */
 export type Session = {
@@ -13,6 +27,7 @@ export type Session = {
   title: string;
   updatedAt: number;
   messages: Message[];
+  workflow?: WorkflowBinding;
 };
 /** Version-one client storage; contains no model credentials. */
 export type Workspace = {
@@ -22,4 +37,5 @@ export type Workspace = {
   endpoint: string;
   provider: "offline" | "dsh" | "codex";
   sessions: Session[];
+  hiddenWorkflowRuns?: string[];
 };

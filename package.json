@@ -18,7 +18,8 @@
     "web": "pnpm --filter @aura/web run dev",
     "mobile": "pnpm --filter @aura/mobile run dev",
     "mobile:sync": "pnpm --filter @aura/mobile run sync",
-    "desktop": "pnpm --filter @aura/desktop run start",
+    "desktop": "pnpm --filter @aura/desktop run dev",
+    "desktop:preview": "pnpm --filter @aura/desktop run start",
     "runtime": "pnpm --filter @aura/server run start",
     "build": "pnpm run build:web && pnpm run build:desktop && pnpm run build:mobile",
     "build:web": "pnpm --filter @aura/web run build",
@@ -26,8 +27,9 @@
     "build:mobile": "pnpm --filter @aura/mobile run build",
     "build:android": "powershell -ExecutionPolicy Bypass -File scripts/build-android.ps1",
     "preview": "tsx scripts/run-with-runtime.ts preview",
-    "typecheck": "pnpm -r --if-present run typecheck",
-    "test": "pnpm -r --if-present run test && tsx --test tests/workspaces.test.ts",
+    "typecheck": "pnpm run typecheck:dev && pnpm -r --if-present run typecheck",
+    "typecheck:dev": "tsc --noEmit --project tsconfig.dev.json",
+    "test": "pnpm -r --if-present run test && tsx --test tests/*.test.ts",
     "check:workspaces": "tsx scripts/check-workspaces.ts",
     "check": "pnpm run check:workspaces && pnpm run typecheck && pnpm run test",
     "test:runtime": "tsx scripts/smoke-runtime.ts"
@@ -38,6 +40,7 @@
     "prettier": "3.9.6",
     "sharp": "0.35.4",
     "tsx": "4.23.13",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "vite": "8.2.2"
   }
 }

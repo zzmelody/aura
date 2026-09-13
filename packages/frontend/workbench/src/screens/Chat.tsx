@@ -98,7 +98,7 @@ function MessageView({
               }}
             >
               <FileCode2 size={13} />
-              {applied ? "已放入编辑器" : "放入 Flow 编辑器"}
+              {applied ? "已放入编辑器" : "放入 工作流编辑器"}
             </button>
           ) : null}
           {copyError ? (
@@ -147,11 +147,12 @@ export function ChatScreen({
   return (
     <section
       className="chat-screen"
-      aria-label={flowMode ? "Flow 生成对话" : "会话内容"}
+      aria-label={flowMode ? "工作流生成对话" : "会话内容"}
     >
       <div className="chat-title">
         <strong title={workspace.active?.title}>
-          {workspace.active?.title ?? (flowMode ? "一起构建 Flow" : "新的对话")}
+          {workspace.active?.title ??
+            (flowMode ? "一起构建工作流" : "新的对话")}
         </strong>
         <span className="badge">
           <span

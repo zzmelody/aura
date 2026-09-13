@@ -776,7 +776,7 @@ export function layoutFlowGraph(graph: FlowGraph) {
     1,
     ...[...columns.values()].map((nodes) => nodes.length),
   );
-  const height = Math.max(390, maxRows * 126 + 116);
+  const height = Math.max(220, maxRows * 126 + 94);
   const width = Math.max(760, (Math.max(...columns.keys()) + 1) * 232 + 88);
   const nodes: FlowGraphLayoutNode[] = [];
   for (const [level, column] of columns) {

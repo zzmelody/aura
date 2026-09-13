@@ -13,6 +13,21 @@ const repoRoot = resolve(sourceDir, "..", "..", "..");
 const rendererRoot = resolve(appDir, "dist");
 let ownedRuntime: Awaited<ReturnType<typeof startAuraRuntime>> | null = null;
 let renderer: ServerType | null = null;
+const development = !app.isPackaged && process.argv.includes("--dev");
+if (development) {
+  const parentPid = Number(process.env.AURA_DEV_PARENT_PID);
+  if (Number.isInteger(parentPid) && parentPid > 0) {
+    const parentWatch = setInterval(() => {
+      try {
+        process.kill(parentPid, 0);
+      } catch {
+        app.quit();
+      }
+    }, 1000);
+    parentWatch.unref();
+    app.once("will-quit", () => clearInterval(parentWatch));
+  }
+}
 
 async function runtimeIsReady(): Promise<boolean> {
   try {
@@ -45,6 +60,9 @@ async function ensureRuntime() {
 }
 
 async function serveRenderer(): Promise<string> {
+  if (development) {
+    return "http://127.0.0.1:8082";
+  }
   const rendererApp = new Hono();
   rendererApp.use("*", secureHeaders());
   rendererApp.use("*", async (context, next) => {

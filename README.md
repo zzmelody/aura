@@ -5,6 +5,7 @@ Aura 是独立应用项目，不是 DeepSeek Harness 源码副本。项目采用
 ## 当前能力
 
 - 本地会话、历史恢复、逐字回复、停止、复制、失败重试，以及深浅色和减少动态效果。
+- 工作流卡片浏览与内联节点预览、独立流程图/代码详情；运行在绑定工作流的会话中进行，步骤记录与结果随会话保存，支持拖拽节点和画布。
 - 离线规则演示，以及通过官方 DSH profile 运行的服务端演示。
 - 右上角「登录 Codex」入口：由 DSH 的授权与凭据服务完成 OpenAI OAuth，登录后对话通过 DSH 的 `openai-codex` provider 使用 ChatGPT Plus/Pro 订阅。
 - Vite 浏览器构建、Electron 桌面窗口、Capacitor Android/iOS 容器和 Android 内测包脚本。
@@ -43,7 +44,11 @@ npm install --prefix .tools/pnpm pnpm@10.17.1
 .\scripts\aura.ps1 run desktop
 ```
 
-桌面命令会用 Vite 构建 renderer、启动 DSH runtime 并打开 Electron 窗口；应用退出时会回收它启动的本地服务。移动端在 `apps/mobile` 使用 Capacitor：
+桌面命令默认进入开发模式：启动 Vite（`http://127.0.0.1:8082`）、DSH runtime 并打开 Electron 窗口；应用退出时会回收它启动的本地服务。Web 与 Desktop 都会监听共享 React、CSS 和前端依赖，修改后自动更新。正常连接使用 React Fast Refresh；若内嵌浏览器的 Vite WebSocket 无法连接，开发客户端会通过同源 HTTP 每秒检查版本并自动刷新，隐藏标签页在切回时检查。自动整页刷新会从已保存的会话和草稿恢复，组件临时状态可能重置。
+
+运行 `pnpm run desktop:preview` 可构建并查看静态桌面产物；它与 `pnpm run preview` 一样不监听源码。Electron 主进程、启动脚本和后端 TypeScript 修改仍需重启对应进程，工作流/Action 文件继续使用后端已有的热加载。Web 与 Desktop 固定使用 8081/8082；端口占用时明确报错，避免浏览器停留在另一个旧服务。
+
+移动端在 `apps/mobile` 使用 Capacitor：
 
 ```powershell
 .\scripts\aura.ps1 run mobile:sync

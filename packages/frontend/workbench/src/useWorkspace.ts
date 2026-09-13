@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { initialState, restoreState, STORAGE_KEY } from "@aura/core";
 import { reply } from "./transport";
 import type { Message, Workspace } from "@aura/core/types";
+import type { FlowCatalogEntry } from "@aura/protocol/types";
+import { useWorkflowSessions } from "./useWorkflowSessions";
+import { isWorkflowActive, workflowRunKey } from "./workflowSessions";
 
 const id = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -18,6 +21,19 @@ export function useWorkspace() {
   activeIdRef.current = activeId;
   const stateRef = useRef(state);
   stateRef.current = state;
+  const workflows = useWorkflowSessions(state, setState, ready);
+  const workflowRunning = state.sessions
+    .filter(
+      (session) =>
+        session.workflow &&
+        session.messages.some((message) =>
+          isWorkflowActive(message.workflowPhase),
+        ),
+    )
+    .map((session) => session.id);
+  const allRunningIds = [
+    ...new Set([...runningIds, ...workflowRunning, ...workflows.submitting]),
+  ];
   useEffect(() => {
     let mounted = true;
     try {
@@ -67,6 +83,11 @@ export function useWorkspace() {
   async function send(text: string, retryLast = false, context?: string) {
     if (!text.trim() || text.length > 4000) return;
     const current = stateRef.current;
+    if (
+      current.sessions.find((session) => session.id === activeIdRef.current)
+        ?.workflow
+    )
+      return;
     const draftKey = activeIdRef.current ?? "new";
     const sessionId = activeIdRef.current ?? id();
     if (controllers.current.has(sessionId)) return;
@@ -100,7 +121,7 @@ export function useWorkspace() {
       sessions: [
         next,
         ...s.sessions.filter((item) => item.id !== sessionId),
-      ].slice(0, 60),
+      ].slice(0, 100),
     }));
     setActiveId(sessionId);
     activeIdRef.current = sessionId;
@@ -156,11 +177,35 @@ export function useWorkspace() {
     ready,
     saveError,
     active,
-    busy: activeId !== null && runningIds.includes(activeId),
-    runningIds,
+    busy: activeId !== null && allRunningIds.includes(activeId),
+    runningIds: allRunningIds,
+    workflows,
+    newWorkflowChat: (flow: FlowCatalogEntry, endpoint: string) => {
+      const sessionId = id();
+      const session = {
+        id: sessionId,
+        title: flow.title,
+        updatedAt: Date.now(),
+        messages: [],
+        workflow: {
+          id: flow.id,
+          title: flow.title,
+          endpoint,
+          inputSchema: flow.inputSchema,
+        },
+      };
+      setState((current) => ({
+        ...current,
+        sessions: [session, ...current.sessions].slice(0, 100),
+      }));
+      activeIdRef.current = sessionId;
+      setActiveId(sessionId);
+    },
     draft: drafts[activeId ?? "new"] ?? "",
-    setDraft: (value: string) =>
-      setDrafts((current) => ({ ...current, [activeId ?? "new"]: value })),
+    setDraft: (value: string) => {
+      const key = activeIdRef.current ?? "new";
+      setDrafts((current) => ({ ...current, [key]: value }));
+    },
     send,
     retry: (context?: string) => {
       const messages = active?.messages ?? [];
@@ -182,7 +227,7 @@ export function useWorkspace() {
       setActiveId(value);
     },
     removeChat: (value: string) => {
-      if (!controllers.current.has(value)) {
+      if (!allRunningIds.includes(value)) {
         if (value === activeId) {
           activeIdRef.current = null;
           setActiveId(null);
@@ -194,6 +239,21 @@ export function useWorkspace() {
         });
         setState((s) => ({
           ...s,
+          hiddenWorkflowRuns: [
+            ...(s.hiddenWorkflowRuns ?? []),
+            ...s.sessions
+              .filter((session) => session.id === value && session.workflow)
+              .flatMap((session) =>
+                session.messages
+                  .filter((message) => message.workflowRunId)
+                  .map((message) =>
+                    workflowRunKey(
+                      session.workflow!.endpoint,
+                      message.workflowRunId!,
+                    ),
+                  ),
+              ),
+          ].slice(-500),
           sessions: s.sessions.filter((item) => item.id !== value),
         }));
       }

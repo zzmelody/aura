@@ -13,6 +13,7 @@ import {
   Clock3,
   Lightbulb,
   MessageCircle,
+  GitBranch,
   Plus,
   Sun,
   Trash2,
@@ -50,7 +51,11 @@ export function SessionRow({
       ]}
     >
       <View style={[styles.sessionIcon, { backgroundColor: colors.soft }]}>
-        <MessageCircle size={18} color={colors.accent} strokeWidth={1.5} />
+        {session.workflow ? (
+          <GitBranch size={18} color={colors.accent} aria-label="工作流会话" />
+        ) : (
+          <MessageCircle size={18} color={colors.accent} strokeWidth={1.5} />
+        )}
       </View>
       <View style={{ flex: 1, gap: 5 }}>
         <Text
@@ -64,7 +69,8 @@ export function SessionRow({
             month: "long",
             day: "numeric",
           })}{" "}
-          · {session.messages.filter((m) => m.role === "user").length} 条消息
+          {session.workflow ? "· 工作流 " : "· "}
+          {session.messages.filter((m) => m.role === "user").length} 条消息
         </Text>
       </View>
       <ChevronRight size={16} color={colors.muted} />

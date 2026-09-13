@@ -5,7 +5,7 @@
   "type": "module",
   "aura": { "kind": "app", "platform": "web" },
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 8081",
+    "dev": "tsx ../../scripts/dev-renderer.ts web",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "tsc --noEmit"

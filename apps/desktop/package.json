@@ -6,6 +6,7 @@
   "aura": { "kind": "app", "platform": "desktop" },
   "main": "src/main.ts",
   "scripts": {
+    "dev": "tsx ../../scripts/dev-renderer.ts desktop",
     "start": "pnpm run build:renderer && electron .",
     "build": "pnpm run build:renderer",
     "build:renderer": "vite build",

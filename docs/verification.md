@@ -48,3 +48,28 @@ Codex 架构固定为 `Aura → DSH authorization/agent loop → dsh-llm-pi-ai �
 - `pnpm run check`、`pnpm run build` 通过；Playwright 验证真实 Action 示例的 DSH 演示运行完成、输出、当前 Flow 的运行记录过滤和跨 Flow 输入保留。
 - 使用浏览器端受控 catalog 验证 30 条长名称 Flow 的独立滚动、搜索、可运行筛选及无结果提示。1440、1024、900、768、390、320px 页面均无整体横向溢出；小屏整页列表选择、Escape 返回与焦点恢复通过。
 - 检查只读源码、节点详情关闭、键盘切换视图、复制到草稿与撤销，以及深浅主题。浏览器检查脚本和截图位于 `output/playwright/verify-flow-*.ts` 与 `output/playwright/flow-layout-*.png`；这些是共享 Web 界面验证，未重打包 Android APK。
+
+## 工作流卡片与会话运行（2026-09-13）
+
+- 首页改为工作流卡片，显示用途、可用状态与编辑/运行图标。点击当前卡片展开节点预览，编辑打开流程图/代码详情；主导航返回卡片列表。节点与画布支持拖拽，连线同步，背景改为纯色。
+- 运行入口打开绑定工作流的会话，输入、结果、完整 JSON 输出、步骤详情与 Agent 历史集中在会话中。原有后端记录自动进入侧栏与全部记录，均有工作流来源图标。
+- `pnpm run check`、`pnpm run build` 通过。新增 6 项测试覆盖工作流绑定恢复、待确认请求保留、运行合并去重、跨服务隔离、删除记录隐藏与完整结果恢复。
+- Playwright 使用真实 DSH 演示验证 Action 工作流运行、两个步骤的输入/输出与 Agent 历史、同会话二次运行、导航切换和刷新恢复。模拟响应丢失后重试，确认已接受的请求继续绑定原 run ID；Schema 拒绝后允许修改输入。受控接口验证后台切换和取消运行。
+- 验证卡片搜索无结果、键盘切换详情页签、普通会话与生成助手导航；1440、1024、768、390、320px 卡片页及 1024、390、320px 编辑页无整页横向溢出，390px 运行会话无溢出。节点拖拽后位置和连线改变，画布拖拽与重置、深浅主题均已检查。
+- 检查脚本与截图保存在忽略目录 `output/playwright/verify-workflow-*.ts` 和 `output/playwright/workflow-*.png`。未调用真实 Codex 模型或重新打包 Android APK；浏览器日志除已有 favicon 404 与主动模拟的失败请求外，无应用错误。
+
+## 侧栏与画布手势（2026-09-13）
+
+- 左侧改为单行会话与可折叠工作流分组，搜索按需展开，工作流会话使用输入任务作为显示标题；保留自定义会话标题与来源图标，已完成记录不额外占用状态行。
+- 新增 5 项聚焦测试覆盖分组、跨服务隔离、任务标题、缩放锚点、双指中心移动、缩放范围和滚轮增量分类；Workbench 共 18 项测试通过。
+- Playwright 检查搜索/清除、分组展开/收起、会话选择，真实浏览器滚轮缩放的指针锚点、页面缩放不变；通过 WheelEvent 模拟触摸板平移/捏合，通过 Chromium CDP 多点触摸验证双指缩放后继续单指平移，保留节点拖动与连线更新。未使用物理触摸板或触屏设备验证。
+- 已检查深浅主题、1440px 桌面与 390px 会话抽屉。脚本位于 `output/playwright/verify-sidebar-gestures.ts`，截图为 `output/playwright/sidebar-gestures-*.png`。
+- `pnpm run check` 与 Web、Electron renderer、Capacitor 三端构建通过。
+
+## Web / Desktop 开发热更新（2026-09-13）
+
+- 定位到原 Desktop 命令只加载静态构建产物；现有 Web 标签页的日志记录了 Vite WebSocket 初始连接失败。`pnpm run desktop` 现使用 Vite 开发服务，静态桌面预览迁至 `desktop:preview`。
+- 新增 6 项聚焦测试覆盖正常 HMR 不强制刷新、初始连接失败的 HTTP 恢复、服务重启、隐藏标签页恢复、监听清理及真实 Vite 版本端点。端点忽略后端和产物变化，虚拟客户端输出已转译为浏览器可执行 JavaScript。
+- Playwright 同时打开 Edge、Electron 和阻断 WebSocket 的浏览器。实际修改共享 CSS 与 React 侧栏组件，两个正常客户端无需导航即可更新并保留搜索状态；断连客户端通过 HTTP 自动刷新。重启 Desktop Vite 服务后，Electron 窗口自动恢复。
+- 实际执行 `pnpm run desktop`，验证 Vite 8082 与 Electron `--dev` 启动；结束开发入口后窗口和 8082 服务自动退出，已存在的 Web runtime 保留。用户原有 Web 标签页已接入新服务，并记录到共享 CSS / TSX 热更新。
+- `pnpm run check` 与 `pnpm run build` 通过；Web 和 Desktop 静态产物均不包含开发版本轮询。验证脚本位于 `output/playwright/verify-hot-reload.ts`，截图位于 `output/playwright/electron-hmr.png`。主进程、开发启动脚本和后端 TypeScript 修改仍需重启对应进程。

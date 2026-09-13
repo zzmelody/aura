@@ -38,7 +38,7 @@ Aura 只有一套 React Web 界面。`@aura/workbench` 负责页面、状态与 
 
 每个客户端独立构建同一个 library，而不是让应用依赖另一个应用的 `dist`。这样 workspace 依赖方向保持单向，Electron/Capacitor 的宿主能力也不会渗入公共页面。宿主只通过 `window.auraHost` 暴露最小的平台标识与打开系统浏览器能力；会话继续使用 Web Storage，OAuth token 仍只属于后端 DSH。
 
-Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动 Vite 和 Aura runtime，解决页面存在但 4311 服务缺失的问题。Electron 主进程也会先检查并启动 runtime，再显示 renderer；所有由入口启动的子进程在入口退出时回收。Capacitor 原生应用不能内嵌 Node/DSH，真机通过设置中的局域网地址连接电脑端 runtime。后端 Origin 策略仅额外接受 Capacitor 固定的 `https://localhost` / `capacitor://localhost` 来源。
+Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动页面服务和 Aura runtime，解决页面存在但 4311 服务缺失的问题。`scripts/dev-renderer.ts` 在根开发工具层统一启动 Web / Desktop 的 Vite 服务（固定 8081/8082），应用配置继续留在各自入口。Desktop 开发模式加载 Vite URL，静态预览仍由 Electron 使用 Hono 提供构建产物。根工具的 Vite 插件只在开发期注入 HTTP 版本检查，Vite WebSocket 不可用时以整页刷新恢复；HTTP 路由通过 Hono 官方适配器接入 Vite Connect，不进入发布产物，也不引入 frontend → backend 依赖。Electron 主进程会先检查并启动 runtime，再显示 renderer；开发入口和窗口退出时回收自己启动的服务。Capacitor 原生应用不能内嵌 Node/DSH，真机通过设置中的局域网地址连接电脑端 runtime。后端 Origin 策略仅额外接受 Capacitor 固定的 `https://localhost` / `capacitor://localhost` 来源。
 
 ## 后端 Agent 流程编排
 
@@ -50,7 +50,9 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 ## 当前取舍
 
-Flow 工作台按需通过 `/flows/:flowId/source` 读取当前已注册版本的入口源码，前端只进行静态节点解析。注册时保留源码快照，热加载失败时预览与运行均继续使用最后可用版本；接口按目录 ID 查注册表，不接受文件路径，不返回辅助文件或凭据。源码预览不具备发布或修改后端代码的能力。
+「工作流」首页用卡片展示用途与可用状态，点击卡片按需通过 `/flows/:flowId/source` 读取已注册入口源码，在卡片下方静态解析节点；编辑入口进入流程图/代码详情。画布与节点支持拖拽，位置只影响当前预览，不修改代码。注册时保留源码快照，热加载失败时预览与运行均继续使用最后可用版本；接口按目录 ID 查注册表，不接受文件路径，不返回辅助文件或凭据。源码预览不具备发布或修改后端代码的能力。
+
+运行入口创建带 `workflow` 绑定的工作区会话，输入、结果和步骤记录都在会话内查看。绑定保存工作流 ID、标题、服务 origin 和输入 Schema，每个结果引用原有后端 run ID；不会把工作流输入提交到普通 `/chat` 链路。同一会话支持多次独立运行，后台轮询同步状态，原有服务端运行记录自动进入历史列表。待确认提交保留 requestId，网络失败后重试复用同一请求；本地删除会话记录隐藏 run ID，避免轮询重新导入。后端执行和持久化协议保持不变。
 
 普通联网对话请求暂时各启动一个 DSH SDK 进程，客户端历史作为带标记的完整输入交给 DSH，响应结束或连接断开后回收进程。这保留了 DSH agent loop、provider、事件与取消链路，但普通对话仍不是长期运行的服务端权威会话；独立的「流程」链路已采用稳定的步骤到 DSH session 映射与持久化，不使用这一临时对话协议。
 
