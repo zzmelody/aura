@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { ArrowUp, GitBranch, Square } from "lucide-react";
+import React, { useEffect, useId, useRef, useState } from "react";
+import { GitBranch, LoaderCircle, Play, Plus, X } from "lucide-react";
 import type {
   FlowCatalogEntry,
   FlowMode,
@@ -7,8 +7,13 @@ import type {
 } from "@aura/protocol/types";
 import type { WorkspaceController } from "../useWorkspace";
 import { workflowRunKey } from "../workflowSessions";
+import {
+  storedWorkflowValue,
+  workflowExecutions,
+} from "../workflowPresentation";
 import { WorkflowInput, schemaInitialValue } from "./WorkflowInput";
 import { WorkflowRunResult } from "./WorkflowRun";
+import { WorkflowData } from "./WorkflowValue";
 
 export function WorkflowChat({
   workspace,
@@ -34,35 +39,86 @@ export function WorkflowChat({
   const [inputError, setInputError] = useState("");
   const scroll = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const runButton = useRef<HTMLButtonElement>(null);
+  const dialogTitle = useId();
+  const initiallyEmpty = useRef(
+    session.messages.length === 0 && !binding.pending,
+  );
   const pending = binding.pending;
+  const submitting = workspace.workflows.submitting.includes(session.id);
+  const executions = workflowExecutions(session.messages);
+  const runCount = executions.filter(
+    ({ message }) => message.workflowRunId,
+  ).length;
+  const error = workspace.workflows.errors[session.id];
   useEffect(() => {
     if (nearBottom.current && scroll.current)
       scroll.current.scrollTop = scroll.current.scrollHeight;
   }, [session.messages]);
-  async function submit() {
+  useEffect(() => {
+    const modal = dialog.current;
+    if (initiallyEmpty.current) modal?.showModal();
+    return () => modal?.close();
+  }, []);
+  function openComposer() {
+    setInputError("");
+    dialog.current?.showModal();
+  }
+  function closeComposer() {
+    dialog.current?.close();
+    runButton.current?.focus();
+  }
+  async function submit(input?: JsonValue, runMode = mode) {
     if (workspace.busy) return;
-    let input: JsonValue;
     try {
-      input = JSON.parse(text);
+      if (input === undefined) input = JSON.parse(text);
     } catch {
       setInputError("请输入有效的 JSON。");
       return;
     }
     setInputError("");
     nearBottom.current = true;
-    await workspace.workflows.start(session.id, input, mode);
+    const accepted = await workspace.workflows.start(
+      session.id,
+      input!,
+      runMode,
+    );
+    if (accepted) {
+      dialog.current?.close();
+      requestAnimationFrame(() =>
+        scroll.current
+          ?.querySelector<HTMLElement>(
+            `[data-run-id="${CSS.escape(accepted)}"]`,
+          )
+          ?.focus(),
+      );
+    }
   }
+  let executionIndex = 0;
   return (
     <section className="chat-screen workflow-chat" aria-label="工作流会话">
-      <header className="chat-title">
-        <strong>{session.title}</strong>
-        <span
-          className="workflow-binding"
-          title={`绑定工作流：${binding.title}`}
+      <header className="chat-title workflow-chat-title">
+        <div className="workflow-chat-identity">
+          <strong>{session.title}</strong>
+          <span
+            className="workflow-binding"
+            title={`绑定工作流：${binding.title}`}
+          >
+            <GitBranch size={13} />
+            <span>{binding.title}</span>
+          </span>
+        </div>
+        <button
+          ref={runButton}
+          type="button"
+          className="tool-button workflow-new-run"
+          onClick={openComposer}
+          disabled={workspace.busy || flow?.available === false}
         >
-          <GitBranch size={14} />
-          <span>工作流 · {binding.title}</span>
-        </span>
+          <Plus size={14} />
+          {pending ? "检查提交" : runCount ? "再次运行" : "运行工作流"}
+        </button>
       </header>
       <div
         className="chat-scroll"
@@ -75,7 +131,7 @@ export function WorkflowChat({
         }}
       >
         <div className="workflow-conversation">
-          {!session.messages.length ? (
+          {!executions.length && !pending ? (
             <div className="workflow-chat-empty">
               <span className="workflow-empty-icon">
                 <GitBranch size={24} />
@@ -83,32 +139,103 @@ export function WorkflowChat({
               <h2>{binding.title}</h2>
               <p>
                 {flow?.description ||
-                  "填写本次输入，工作流的执行过程和结果会保留在这个会话中。"}
+                  "每次执行的输入、进度和结果，都会完整保留在这里。"}
               </p>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={openComposer}
+                disabled={flow?.available === false}
+              >
+                <Play size={14} />
+                填写输入，开始运行
+              </button>
             </div>
           ) : null}
-          {session.messages.map((message) =>
+          {executions.map(({ message, input }) =>
             message.workflowRunId ? (
               <WorkflowRunResult
                 key={message.id}
                 endpoint={binding.endpoint}
                 message={message}
+                input={input}
+                index={++executionIndex}
+                inputSchema={schema}
                 cached={
                   workspace.workflows.runs[
                     workflowRunKey(binding.endpoint, message.workflowRunId)
                   ]
                 }
                 receive={workspace.workflows.receive}
+                onCancel={() => void workspace.workflows.cancel(session.id)}
               />
             ) : (
-              <article className="chat-message from-user" key={message.id}>
-                <div className="message-body">{message.text}</div>
+              <article
+                className="workflow-run-card workflow-legacy-record"
+                key={message.id}
+                aria-label="保留的会话内容"
+              >
+                <h3 className="workflow-section-label">
+                  {message.role === "user" ? "输入" : "记录"}
+                </h3>
+                <WorkflowData value={storedWorkflowValue(message.text)} />
               </article>
             ),
           )}
+          {pending ? (
+            <article
+              className="workflow-run-card workflow-pending-card"
+              aria-label="待确认的执行"
+            >
+              <div className="workflow-pending-heading">
+                <GitBranch size={17} />
+                <strong>
+                  {submitting ? "正在提交工作流" : "这次执行待确认"}
+                </strong>
+                <span role="status">{submitting ? "提交中" : "待确认"}</span>
+              </div>
+              <h3 className="workflow-section-label">输入</h3>
+              <WorkflowData value={pending.input} schema={schema} />
+              <p className="muted">
+                {submitting
+                  ? "正在创建本次执行记录…"
+                  : "服务尚未确认提交结果。重试会继续确认同一次执行。"}
+              </p>
+              {error ? (
+                <p role="alert" className="error">
+                  {error}
+                </p>
+              ) : null}
+              {!submitting ? (
+                <button
+                  type="button"
+                  className="tool-button"
+                  onClick={() => void submit(pending.input, pending.mode)}
+                >
+                  重试提交
+                </button>
+              ) : null}
+            </article>
+          ) : error ? (
+            <p className="workflow-session-error error" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {flow?.available === false ? (
+            <p className="workflow-session-note">
+              此工作流当前不可运行，历史记录仍可查看。
+            </p>
+          ) : null}
         </div>
       </div>
-      <div className="workflow-compose-wrap">
+      <dialog
+        ref={dialog}
+        className="workflow-run-dialog"
+        aria-labelledby={dialogTitle}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) closeComposer();
+        }}
+      >
         <form
           className="workflow-composer"
           onSubmit={(event) => {
@@ -116,19 +243,29 @@ export function WorkflowChat({
             void submit();
           }}
         >
+          <div className="workflow-dialog-heading">
+            <div>
+              <h2 id={dialogTitle}>
+                {runCount ? "再次运行工作流" : "运行工作流"}
+              </h2>
+              <p>{binding.title}</p>
+            </div>
+            <button
+              type="button"
+              className="icon-control"
+              aria-label="关闭运行输入"
+              onClick={closeComposer}
+            >
+              <X size={18} />
+            </button>
+          </div>
           {pending && !workspace.busy ? (
             <div className="workflow-pending" role="status">
               上次提交尚未确认，重试会继续同一次运行。
               <button
                 type="button"
                 className="text-control"
-                onClick={() =>
-                  void workspace.workflows.start(
-                    session.id,
-                    pending.input,
-                    pending.mode,
-                  )
-                }
+                onClick={() => void submit(pending.input, pending.mode)}
               >
                 重试提交
               </button>
@@ -140,9 +277,9 @@ export function WorkflowChat({
             disabled={workspace.busy || Boolean(pending)}
             onChange={workspace.setDraft}
           />
-          {inputError || workspace.workflows.errors[session.id] ? (
+          {inputError || error ? (
             <p role="alert" className="error">
-              {inputError || workspace.workflows.errors[session.id]}
+              {inputError || error}
             </p>
           ) : null}
           <div className="workflow-compose-actions">
@@ -164,36 +301,26 @@ export function WorkflowChat({
               {jsonMode ? "表单输入" : "JSON"}
             </button>
             <span className="workflow-compose-spacer" />
-            {workspace.busy ? (
-              <button
-                type="button"
-                className="tool-button"
-                disabled={workspace.workflows.submitting.includes(session.id)}
-                onClick={() => void workspace.workflows.cancel(session.id)}
-              >
-                <Square size={13} />
-                {workspace.workflows.submitting.includes(session.id)
-                  ? "提交中…"
-                  : "停止运行"}
-              </button>
-            ) : (
-              <button
-                className="primary-button"
-                type="submit"
-                disabled={Boolean(pending) || flow?.available === false}
-              >
-                <ArrowUp size={15} />
-                运行工作流
-              </button>
-            )}
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={
+                workspace.busy || Boolean(pending) || flow?.available === false
+              }
+            >
+              {submitting ? (
+                <LoaderCircle size={14} className="workflow-spinner" />
+              ) : (
+                <Play size={14} />
+              )}
+              {submitting ? "提交中…" : "开始执行"}
+            </button>
           </div>
+          <p className="workflow-compose-note">
+            输入与结果将保存在当前会话中。
+          </p>
         </form>
-        <p className="workflow-compose-note">
-          {flow?.available === false
-            ? "此工作流当前不可运行，历史记录仍可查看。"
-            : "每次运行都会使用新的输入，结果保存在当前会话。"}
-        </p>
-      </div>
+      </dialog>
     </section>
   );
 }

@@ -73,3 +73,12 @@ Codex 架构固定为 `Aura → DSH authorization/agent loop → dsh-llm-pi-ai �
 - Playwright 同时打开 Edge、Electron 和阻断 WebSocket 的浏览器。实际修改共享 CSS 与 React 侧栏组件，两个正常客户端无需导航即可更新并保留搜索状态；断连客户端通过 HTTP 自动刷新。重启 Desktop Vite 服务后，Electron 窗口自动恢复。
 - 实际执行 `pnpm run desktop`，验证 Vite 8082 与 Electron `--dev` 启动；结束开发入口后窗口和 8082 服务自动退出，已存在的 Web runtime 保留。用户原有 Web 标签页已接入新服务，并记录到共享 CSS / TSX 热更新。
 - `pnpm run check` 与 `pnpm run build` 通过；Web 和 Desktop 静态产物均不包含开发版本轮询。验证脚本位于 `output/playwright/verify-hot-reload.ts`，截图位于 `output/playwright/electron-hmr.png`。主进程、开发启动脚本和后端 TypeScript 修改仍需重启对应进程。
+
+## 工作流执行记录与输入弹窗（2026-09-13）
+
+- 每次执行按 run ID 配对输入与输出，归入一张带状态、时间、当前步骤与进度的卡片；原有会话存储和运行协议保持兼容。输入框改为运行时的原生弹窗，确认提交后关闭，历史浏览不常驻表单；关闭和 Escape 保留草稿，待确认请求仍复用原 requestId。
+- 输入、工具结果与工作流输出按字段、列表、数值指标和表格展示；Markdown 支持标题、列表、表格、引用与代码块，JSON 按需展开。空报告与有效的 0 / false 分开处理；原始 HTML 不执行，危险 URL 使用渲染器默认过滤。Markdown 依赖随工作流会话独立加载。
+- Workbench 类型检查和 22 项单元测试通过，新增 4 项覆盖执行输入配对、孤立消息保留、空值语义、结构化内容恢复、并行步骤进度与耗时。Web、Electron renderer、Capacitor 构建通过。
+- Playwright 受控接口验证多次执行归组、运行/取消状态、Markdown 与对象数组表格、工具与 Agent 历史、弹窗开启/关闭/草稿保留、校验失败、请求结果未知后的幂等重试、JSON 展开、空报告、刷新恢复；1440、1024、768、390、320px 与深浅主题通过。真实 DSH demo 的 Action 示例也验证了输入、两步执行、结构化输出和 Agent 历史；未调用真实 Codex 模型。
+- `pnpm run check` 的工作区规则与所有类型检查通过，但两次全量运行均在后端 `test/action-dsh.test.ts:257` 的热加载轮询遇到 503 编排连接中断；该集成测试单独运行通过。本轮未修改这项后端测试或对应后端实现，因此不将全量检查标为通过。
+- 脚本位于 `output/playwright/verify-execution-records.ts`、`verify-execution-live.ts` 和 `verify-execution-live-finish.ts`，截图为 `execution-records-*.png`、`execution-start-dialog.png`、`execution-live-desktop.png`；全量失败日志位于 `output/workflow-records-check.log`。用户原有的小提琴学习工具执行记录已在当前浏览器中显示新卡片。

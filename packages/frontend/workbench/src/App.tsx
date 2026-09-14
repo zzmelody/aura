@@ -28,11 +28,16 @@ import { HomeScreen, HistoryScreen } from "./screens/Home";
 import { ChatScreen } from "./screens/Chat";
 import { SettingsScreen } from "./screens/Settings";
 import { Workflows } from "./screens/Workflows";
-import { WorkflowChat } from "./screens/WorkflowChat";
 import { useFlowCatalog } from "./flowCatalog";
 import { flowContext, useFlowDraft } from "./flowDraft";
 import type { Tab } from "./types";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
+
+const WorkflowChat = React.lazy(() =>
+  import("./screens/WorkflowChat").then((module) => ({
+    default: module.WorkflowChat,
+  })),
+);
 
 export default function App() {
   const workspace = useWorkspace();
@@ -270,16 +275,24 @@ export default function App() {
                     </div>
                   ) : null}
                   {workspace.active?.workflow ? (
-                    <WorkflowChat
-                      key={workspace.active.id}
-                      workspace={workspace}
-                      flow={catalogState.catalog?.flows.find(
-                        (flow) =>
-                          flow.id === workspace.active?.workflow?.id &&
-                          workspace.active.workflow.endpoint ===
-                            codexAuth.endpoint,
-                      )}
-                    />
+                    <React.Suspense
+                      fallback={
+                        <div className="workspace-loading">
+                          正在打开执行记录…
+                        </div>
+                      }
+                    >
+                      <WorkflowChat
+                        key={workspace.active.id}
+                        workspace={workspace}
+                        flow={catalogState.catalog?.flows.find(
+                          (flow) =>
+                            flow.id === workspace.active?.workflow?.id &&
+                            workspace.active.workflow.endpoint ===
+                              codexAuth.endpoint,
+                        )}
+                      />
+                    </React.Suspense>
                   ) : (
                     <ChatScreen
                       workspace={workspace}

@@ -131,12 +131,14 @@ export function useWorkflowSessions(
           : item,
       ),
     }));
+    let acceptedRunId: string | undefined;
     try {
       const { runId } = await workflowApi<{ runId: string }>(
         binding.endpoint,
         `/${encodeURIComponent(binding.id)}/runs`,
         pending,
       );
+      acceptedRunId = runId;
       setState((current) => ({
         ...current,
         sessions: current.sessions
@@ -206,6 +208,7 @@ export function useWorkflowSessions(
       submittingRef.current.delete(sessionId);
       setSubmitting([...submittingRef.current]);
     }
+    return acceptedRunId;
   }
   async function cancel(sessionId: string) {
     const session = stateRef.current.sessions.find(
