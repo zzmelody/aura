@@ -6,6 +6,9 @@ import {
   applyWorkflowRun,
   mergeWorkflowRuns,
   workflowRunKey,
+  isWorkflowActive,
+  isWorkflowOpen,
+  workflowPhaseLabels,
 } from "../src/workflowSessions.ts";
 
 const endpoint = "http://localhost:4311";
@@ -18,6 +21,29 @@ const summary: FlowRunSummary = {
   mode: "demo",
   createdAt: 100,
 };
+
+test("human waits remain resumable without presenting a running spinner", () => {
+  for (const status of [
+    "paused",
+    "waiting_input",
+    "needs_attention",
+  ] as const) {
+    assert.equal(isWorkflowOpen(status), true);
+    assert.equal(isWorkflowActive(status), false);
+    const state = mergeWorkflowRuns(
+      initialState(),
+      [{ ...summary, status }],
+      endpoint,
+    );
+    assert.equal(
+      state.sessions[0].messages[1].text,
+      workflowPhaseLabels[status],
+    );
+    assert.equal(state.sessions[0].messages[1].status, "complete");
+  }
+  assert.equal(isWorkflowActive("pausing"), true);
+  assert.equal(isWorkflowOpen("failed"), false);
+});
 
 test("server history becomes workflow conversations and polling preserves identity", () => {
   const state = mergeWorkflowRuns(initialState(), [summary], endpoint);

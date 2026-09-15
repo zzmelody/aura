@@ -42,6 +42,9 @@ const kindMeta: Record<
   input: { eyebrow: "INPUT", type: "流程入口", aria: "输入节点" },
   agent: { eyebrow: "AGENT", type: "Agent 调用", aria: "Agent 节点" },
   tool: { eyebrow: "TOOL", type: "工具调用", aria: "工具节点" },
+  scope: { eyebrow: "SCOPE", type: "结构化作用域", aria: "作用域节点" },
+  memo: { eyebrow: "MEMO", type: "持久化结果", aria: "存档节点" },
+  checkpoint: { eyebrow: "CHECKPOINT", type: "人工输入", aria: "人工断点节点" },
   condition: { eyebrow: "IF", type: "条件分支", aria: "条件节点" },
   loop: { eyebrow: "LOOP", type: "循环控制", aria: "循环节点" },
   output: { eyebrow: "OUTPUT", type: "流程结果", aria: "输出节点" },
@@ -302,7 +305,8 @@ export function FlowGraphView({
           >
             <div className="graph-caption">
               <span>
-                {orchestrationNodes.length} 个节点 · {agentCount} Agent
+                只读静态投影 · {orchestrationNodes.length} 个节点 · {agentCount}{" "}
+                Agent
                 {toolCount ? ` · ${toolCount} 工具` : ""}
               </span>
               <span>滚轮缩放 · 双指平移 / 捏合</span>

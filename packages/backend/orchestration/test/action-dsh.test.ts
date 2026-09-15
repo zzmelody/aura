@@ -42,6 +42,8 @@ export default defineAction({
   timeoutMs: 3000, isConcurrencySafe: () => true,
   async execute(ctx, input) {
     if ("flow" in ctx || "agent" in ctx) throw new Error("Unexpected orchestration capability");
+    if (ctx.stepId && !ctx.stepId.startsWith("main/")) throw new Error("Missing scoped step identity");
+    if (ctx.stepId && !ctx.sessionId && !ctx.idempotencyKey) throw new Error("Missing durable Action key");
     await delay(input.delayMs ?? 1, undefined, { signal: ctx.signal });
     if (input.value === "bad-schema") return 42;
     if (input.value === "oversize") return "x".repeat(300000);
@@ -57,12 +59,14 @@ export default defineFlow({
   title: "Actions integration", input: z.object({}), output: z.object({ direct: z.json(), report: z.string() }),
   concurrency: 3,
   async run(ctx) {
-    const [direct, agent] = await Promise.all([
-      ctx.action({ id: "direct", action: "probe-action", input: { value: "direct", delayMs: 2000 } }),
-      ctx.agent({ id: "allowed", label: "Allowed", preset: "researcher-v1", actions: ["probe-action"], prompt: "USE_ACTION" }),
-      ctx.agent({ id: "default", label: "Default", preset: "reviewer-v1", prompt: "NO_ACTION" }),
-    ]);
+    return ctx.sequence({ id: "main" }, async (flow) => {
+    const { direct, agent } = await flow.parallel({ id: "batch", branches: {
+      direct: (branch) => branch.action({ id: "direct", action: "probe-action", input: { value: "direct", delayMs: 2000 } }),
+      agent: (branch) => branch.agent({ id: "allowed", label: "Allowed", preset: "researcher-v1", actions: ["probe-action"], prompt: "USE_ACTION" }),
+      default: (branch) => branch.agent({ id: "default", label: "Default", preset: "reviewer-v1", prompt: "NO_ACTION" }),
+    }});
     return { direct: direct.output, report: agent.output };
+    });
   },
 });
 `;
@@ -87,6 +91,8 @@ test(
       flowSource,
     );
     const requests: Array<{ user: string; tools: string[] }> = [];
+    let holdToolResult = false;
+    let releaseToolResult: (() => void) | undefined;
     const app = new Hono();
     app.post("/v1/chat/completions", async (c) => {
       const input = (await c.req.json()) as {
@@ -99,6 +105,10 @@ test(
       const names = input.tools?.map((t) => t.function.name) ?? [];
       requests.push({ user, tools: names });
       const result = input.messages.findLast((m) => m.role === "tool");
+      if (holdToolResult && result)
+        await new Promise<void>((resolve) => {
+          releaseToolResult = resolve;
+        });
       const call = user.includes("USE_ACTION") && !result;
       return streamSSE(c, async (s) => {
         await s.writeSSE({
@@ -200,7 +210,7 @@ test(
       ]);
       const history = await host.request<FlowHistory>("history", {
         id: run.id,
-        stepId: "allowed",
+        stepId: "main/batch/agent/allowed",
       });
       assert.ok(
         history.entries.some(
@@ -208,7 +218,10 @@ test(
         ),
       );
       await assert.rejects(
-        host.request("history", { id: run.id, stepId: "direct" }),
+        host.request("history", {
+          id: run.id,
+          stepId: "main/batch/direct/direct",
+        }),
         /没有 DSH session/,
       );
 
@@ -332,9 +345,51 @@ test(
       );
       const cold = await host.request<FlowHistory>("history", {
         id: run.id,
-        stepId: "allowed",
+        stepId: "main/batch/agent/allowed",
       });
       assert.ok(cold.entries.some((e) => e.kind === "tool"));
+      // A finished tool effect does not make an unfinished Agent turn safe to repeat.
+      holdToolResult = true;
+      const crash = await host.request<FlowRun>("start", {
+        requestId: randomUUID(),
+        flowId: "action-check",
+        mode: "demo",
+        input: {},
+      });
+      await eventually(async () => Boolean(releaseToolResult), Boolean);
+      const childHost = await host.open();
+      childHost.child.kill("SIGKILL");
+      await childHost.exited;
+      holdToolResult = false;
+      releaseToolResult!();
+      host = new OrchestrationHost(options);
+      const recovered = await host.request<FlowRun>("get", { id: crash.id });
+      assert.equal(
+        recovered.status,
+        "needs_attention",
+        JSON.stringify(recovered),
+      );
+      const unknownAgent = recovered.steps.find(
+        (step) => step.id === "allowed",
+      )!;
+      assert.equal(unknownAgent.status, "unknown");
+      assert.equal(unknownAgent.attempts?.length, 1);
+      const unknownAction = recovered.steps.find(
+        (step) => step.kind === "action",
+      )!;
+      assert.equal(unknownAction.status, "unknown");
+      const terminated = await host.request<FlowRun>("resolve", {
+        id: crash.id,
+        stepKey: unknownAgent.stepKey,
+        requestId: randomUUID(),
+        action: "terminate",
+      });
+      assert.equal(terminated.status, "cancelled");
+      assert.equal(
+        terminated.steps.find((step) => step.id === "allowed")!.attempts![0]!
+          .status,
+        "unknown",
+      );
       assert.equal(dirname(resolve(entry)), resolve(directory));
       await rm(entry);
       await eventually(catalog, (c) => !probe(c)?.available);
@@ -346,6 +401,7 @@ test(
         /入口|不存在/,
       );
     } finally {
+      releaseToolResult?.();
       await host.close();
       await new Promise<void>((done) => model.close(() => done()));
       assert.equal(dirname(resolve(root)), resolve(tmpdir()));

@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL, URL } from "node:url";
 import { writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
@@ -22,12 +23,19 @@ export async function provisionProfile(
   actionRoot = defaultActionRoot,
 ) {
   const dir = join(dshHome, "profiles", "aura-flow");
+  // HMR compares watched paths with canonical Node module URLs (not /var symlinks).
+  const flowWatchRoot = await realpath(resolve(flowRoot)).catch(() =>
+    resolve(flowRoot),
+  );
+  const actionWatchRoot = await realpath(resolve(actionRoot)).catch(() =>
+    resolve(actionRoot),
+  );
   // A sibling root must not be watched as ../action: ignored dot directories
   // would otherwise suppress it. Different-drive roots stay absolute.
-  let watchBase = dirname(resolve(flowRoot));
+  let watchBase = dirname(flowWatchRoot);
   while (
-    relative(watchBase, resolve(actionRoot)).startsWith("..") &&
-    !isAbsolute(relative(watchBase, resolve(actionRoot)))
+    relative(watchBase, actionWatchRoot).startsWith("..") &&
+    !isAbsolute(relative(watchBase, actionWatchRoot))
   ) {
     const parent = dirname(watchBase);
     if (parent === watchBase) break;
@@ -69,7 +77,7 @@ export async function provisionProfile(
   disabled: false
   config:
     base: ${JSON.stringify(pathToFileURL(watchBase).href)}
-    root: ${JSON.stringify([flowRoot, actionRoot])}
+    root: ${JSON.stringify([flowWatchRoot, actionWatchRoot])}
     ignored: ['**/node_modules', '**/.*']
     debounce: 100
 - id: sdk-app-startup

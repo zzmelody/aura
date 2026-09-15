@@ -6,6 +6,14 @@ export const flowIdSchema = z
   .string()
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
 const text = z.string().trim().min(1).max(180_000);
+export const retrySchema = z
+  .object({
+    maxAttempts: z.number().int().min(1).max(10).default(1),
+    initialDelayMs: z.number().int().min(0).max(600_000).default(1000),
+    multiplier: z.number().min(1).max(10).default(2),
+    maxDelayMs: z.number().int().min(0).max(600_000).default(30_000),
+  })
+  .strict();
 
 export const startSchema = z
   .object({
@@ -23,6 +31,7 @@ export const agentRequestSchema = z
     preset: flowIdSchema,
     prompt: text,
     actions: z.array(flowIdSchema).max(64).default([]),
+    retry: retrySchema.optional(),
   })
   .strict();
 
@@ -34,11 +43,53 @@ export const phaseSchema = z.enum([
   "cancelled",
   "interrupted",
 ]);
+export const runPhaseSchema = z.enum([
+  ...phaseSchema.options,
+  "pausing",
+  "paused",
+  "waiting_input",
+  "needs_attention",
+]);
+export const stepPhaseSchema = z.enum([
+  ...phaseSchema.options,
+  "waiting_input",
+  "unknown",
+]);
+export const recoveryEventSchema = z.object({
+  at: z.number(),
+  reason: z.string(),
+  action: z.enum(["retry", "submit_output", "terminate"]).optional(),
+  requestId: z.uuid().optional(),
+});
+export const attemptSchema = z.object({
+  number: z.number().int().positive(),
+  status: z.enum([
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+    "interrupted",
+    "unknown",
+  ]),
+  startedAt: z.number(),
+  finishedAt: z.number().optional(),
+  sessionId: z.uuid().optional(),
+  requestId: z.uuid().optional(),
+  error: z.string().optional(),
+});
 
 const stepBase = {
   id: flowIdSchema,
   label: z.string(),
-  status: phaseSchema,
+  status: stepPhaseSchema,
+  stepKey: z.string().optional(),
+  scopePath: z.array(flowIdSchema).optional(),
+  requestHash: z.string().length(64).optional(),
+  attempts: z.array(attemptSchema).optional(),
+  retry: retrySchema.optional(),
+  extraAttempts: z.number().int().nonnegative().optional(),
+  nextAttemptAt: z.number().optional(),
+  recoveryEvents: z.array(recoveryEventSchema).optional(),
   error: z.string().optional(),
   startedAt: z.number().optional(),
   finishedAt: z.number().optional(),
@@ -54,6 +105,7 @@ export const stepSchema = z.union([
     kind: z.literal("agent").default("agent"),
     preset: flowIdSchema,
     sessionId: z.uuid(),
+    requestId: z.uuid().optional(),
     actions: z.array(actionRefSchema).optional(),
     output: z.string().optional(),
   }),
@@ -64,6 +116,22 @@ export const stepSchema = z.union([
     sourceHash: z.string().length(64).optional(),
     input: z.json(),
     output: z.json().optional(),
+    outputSchema: z.json().optional(),
+    recovery: z.enum(["manual", "idempotent"]).optional(),
+    idempotencyKey: z.uuid().optional(),
+  }),
+  z.object({
+    ...stepBase,
+    kind: z.literal("memo"),
+    outputSchema: z.json(),
+    output: z.json().optional(),
+  }),
+  z.object({
+    ...stepBase,
+    kind: z.literal("checkpoint"),
+    prompt: z.string(),
+    outputSchema: z.json(),
+    output: z.json().optional(),
   }),
 ]);
 
@@ -73,6 +141,7 @@ export const actionRequestSchema = z
     label: z.string().trim().min(1).max(100).optional(),
     action: flowIdSchema,
     input: z.unknown(),
+    retry: retrySchema.optional(),
   })
   .strict();
 
@@ -110,7 +179,23 @@ export const runSchema = z.object({
   }),
   input: z.json(),
   mode: z.enum(["demo", "codex"]),
-  status: phaseSchema,
+  status: runPhaseSchema,
+  durableVersion: z.literal(1).optional(),
+  requestInputHash: z.string().length(64).optional(),
+  actionVersions: z.array(actionRefSchema).optional(),
+  queuedAt: z.number().optional(),
+  updatedAt: z.number().optional(),
+  recoveryEvents: z.array(recoveryEventSchema).optional(),
+  commands: z
+    .array(
+      z.object({
+        requestId: z.uuid(),
+        fingerprint: z.string(),
+        status: runPhaseSchema,
+        at: z.number(),
+      }),
+    )
+    .optional(),
   createdAt: z.number(),
   finishedAt: z.number().optional(),
   steps: z.array(stepSchema),

@@ -259,6 +259,9 @@ importers:
       '@deepseek-ai/dsh-workspace':
         specifier: 0.1.2-rc.1
         version: 0.1.2-rc.1(c4f266c8456c2e5dc1e1d3e663271a2c)
+      acorn:
+        specifier: 8.18.0
+        version: 8.18.0
       hono:
         specifier: 4.13.7
         version: 4.13.7

@@ -4,7 +4,11 @@ import { reply } from "./transport";
 import type { Message, Workspace } from "@aura/core/types";
 import type { FlowCatalogEntry } from "@aura/protocol/types";
 import { useWorkflowSessions } from "./useWorkflowSessions";
-import { isWorkflowActive, workflowRunKey } from "./workflowSessions";
+import {
+  isWorkflowActive,
+  isWorkflowOpen,
+  workflowRunKey,
+} from "./workflowSessions";
 
 const id = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -177,7 +181,14 @@ export function useWorkspace() {
     ready,
     saveError,
     active,
-    busy: activeId !== null && allRunningIds.includes(activeId),
+    busy:
+      (activeId !== null && allRunningIds.includes(activeId)) ||
+      Boolean(
+        active?.workflow &&
+        active.messages.some((message) =>
+          isWorkflowOpen(message.workflowPhase),
+        ),
+      ),
     runningIds: allRunningIds,
     workflows,
     newWorkflowChat: (flow: FlowCatalogEntry, endpoint: string) => {

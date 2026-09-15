@@ -44,6 +44,10 @@ export interface SessionPort {
     },
   ): Promise<string>;
   history(step: FlowAgentStep, beforeSeq?: number): Promise<FlowHistory>;
+  reconcile?(step: FlowAgentStep): Promise<{
+    output?: string;
+    actionStarted: boolean;
+  }>;
 }
 
 export interface EngineOptions {

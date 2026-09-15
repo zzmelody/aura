@@ -43,6 +43,7 @@
     "@deepseek-ai/dsh-persona": "0.1.2-rc.1",
     "@deepseek-ai/dsh-storage-domain": "0.1.2-rc.1",
     "@deepseek-ai/dsh-atomic-write": "0.1.2-rc.1",
+    "acorn": "8.18.0",
     "hono": "4.13.7",
     "zod": "^4.3.6"
   },

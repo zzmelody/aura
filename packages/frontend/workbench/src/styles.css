@@ -2235,11 +2235,25 @@ textarea {
   white-space: nowrap;
 }
 .workflow-run-input,
+.workflow-run-controls,
 .workflow-run-output {
   padding: 20px 24px;
   border-top: 1px solid var(--border);
   min-width: 0;
 }
+.workflow-human-step {
+  padding: 16px;
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.workflow-human-step h4 { margin: 0 0 8px; }
+.workflow-human-step form { display: grid; gap: 12px; margin-top: 12px; }
+.workflow-run-controls:empty { display: none; }
+.workflow-run-controls .workflow-history-actions { flex-wrap: wrap; gap: 10px; }
+.phase-waiting_input, .phase-needs_attention, .phase-unknown { color: #ab6519; }
+.phase-paused, .phase-pausing { color: var(--muted); }
 .workflow-run-input {
   background: color-mix(in srgb, var(--surface) 55%, transparent);
 }

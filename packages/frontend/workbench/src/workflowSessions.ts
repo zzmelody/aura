@@ -1,18 +1,33 @@
 import type { Message, Workspace } from "@aura/core/types";
-import type { FlowPhase, FlowRun, FlowRunSummary } from "@aura/protocol/types";
+import type {
+  FlowPhase,
+  FlowStepPhase,
+  FlowRun,
+  FlowRunSummary,
+} from "@aura/protocol/types";
 
-export const workflowPhaseLabels: Record<FlowPhase, string> = {
+export const workflowPhaseLabels: Record<FlowPhase | FlowStepPhase, string> = {
   queued: "等待执行",
   running: "正在运行",
   completed: "已完成",
   failed: "运行失败",
   cancelled: "已取消",
   interrupted: "已中断",
+  pausing: "正在暂停",
+  paused: "已暂停",
+  waiting_input: "等待输入",
+  needs_attention: "需要处理",
+  unknown: "结果待确认",
 };
 export const workflowRunKey = (endpoint: string, id: string) =>
   `${endpoint}/${id}`;
 export const isWorkflowActive = (phase?: FlowPhase) =>
-  phase === "queued" || phase === "running";
+  phase === "queued" || phase === "running" || phase === "pausing";
+export const isWorkflowOpen = (phase?: FlowPhase) =>
+  isWorkflowActive(phase) ||
+  phase === "paused" ||
+  phase === "waiting_input" ||
+  phase === "needs_attention";
 const messageStatus = (phase: FlowPhase): Message["status"] =>
   isWorkflowActive(phase)
     ? "streaming"

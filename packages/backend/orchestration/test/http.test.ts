@@ -58,6 +58,45 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
     stepId: "research",
     beforeSeq: 10,
   });
+  for (const method of ["pause", "resume", "cancel"]) {
+    const response = await app.request(`/runs/run-id/${method}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: "command" }),
+    });
+    assert.deepEqual(await response.json(), {
+      method,
+      params: { id: "run-id", requestId: "command" },
+    });
+  }
+  for (const method of ["answer", "resolve"]) {
+    const response = await app.request(
+      `/runs/run-id/steps/main%2Fapproval/${method}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId: "command", output: true }),
+      },
+    );
+    assert.deepEqual(await response.json(), {
+      method,
+      params: {
+        id: "run-id",
+        stepKey: "main/approval",
+        requestId: "command",
+        output: true,
+      },
+    });
+  }
+  const attemptHistory = await app.request(
+    "/runs/run-id/steps/main%2Fagent/history?attempt=2&beforeSeq=10",
+  );
+  assert.deepEqual((await attemptHistory.json()).params, {
+    id: "run-id",
+    stepId: "main/agent",
+    attempt: 2,
+    beforeSeq: 10,
+  });
   assert.equal((await app.request("/runs/missing")).status, 404);
   const error = await app.request("/runs/private");
   assert.equal(error.status, 500);

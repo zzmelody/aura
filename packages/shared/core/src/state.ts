@@ -93,6 +93,10 @@ export function restoreState(value: unknown): Workspace {
           "failed",
           "cancelled",
           "interrupted",
+          "pausing",
+          "paused",
+          "waiting_input",
+          "needs_attention",
         ].includes(m.workflowPhase)
           ? { workflowPhase: m.workflowPhase as Message["workflowPhase"] }
           : {}),

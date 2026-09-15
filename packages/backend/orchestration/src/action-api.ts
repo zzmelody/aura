@@ -30,6 +30,7 @@ export interface ActionContext {
   readonly runId?: string;
   readonly stepId?: string;
   readonly sessionId?: string;
+  readonly idempotencyKey?: string;
 }
 
 export type ActionBinding = Omit<
@@ -42,6 +43,7 @@ export type ActionDefinition<
   O extends ValueSchemaSpec,
 > = Omit<DefineToolOptions<S, O>, "name" | "execute"> & {
   title: string;
+  recovery?: "manual" | "idempotent";
   execute(
     context: ActionContext,
     input: InferArgs<S>,
@@ -57,6 +59,7 @@ export interface ActionRegistrationConfig {
 export interface ActionRegistration {
   title: string;
   description: string;
+  recovery?: "manual" | "idempotent";
   tool(name: string, binding: ActionBinding): ToolDefinition;
 }
 
@@ -90,6 +93,7 @@ export function defineAction<
       await ctx.auraActionRegistry.register(config, {
         title: definition.title,
         description: definition.description,
+        recovery: definition.recovery ?? "manual",
         tool(name, binding) {
           const options = {
             ...definition,

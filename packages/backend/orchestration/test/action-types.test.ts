@@ -14,6 +14,7 @@ defineAction({
   async execute(ctx, input) {
     ctx.signal.throwIfAborted();
     ctx.cwd.toUpperCase();
+    ctx.idempotencyKey?.toUpperCase();
     // @ts-expect-error Actions have no Flow invocation API.
     ctx.flow("nested");
     // @ts-expect-error Input is inferred from DSH parameters.

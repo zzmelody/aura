@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { ActionRun, FlowRun } from "@aura/protocol/types";
 import { z } from "zod";
 import { FlowEngine } from "../src/engine.ts";
+import type { FlowScope } from "../src/flow-api.ts";
 import type { LoadedFlow } from "../src/registry.ts";
 import type {
   EngineOptions,
@@ -43,7 +44,7 @@ function table<T>(): Table<T> {
 const hash = (character = "a") => character.repeat(64);
 
 function flow(
-  run: LoadedFlow["run"],
+  run: (scope: FlowScope, input: unknown) => unknown,
   options: Partial<LoadedFlow> = {},
 ): LoadedFlow {
   return {
@@ -55,7 +56,8 @@ function flow(
     outputSchema: z.object({ report: z.string() }),
     concurrency: 2,
     agentTimeoutMs: 1_000,
-    run,
+    run: (ctx, input) =>
+      ctx.sequence({ id: "main" }, (scope) => run(scope, input)),
     ...options,
   };
 }
@@ -63,20 +65,25 @@ function flow(
 function standardFlow(): LoadedFlow {
   return flow(async (ctx, input) => {
     const task = (input as { task: string }).task;
-    const [research, review] = await Promise.all([
-      ctx.agent({
-        id: "research",
-        label: "研究",
-        preset: "researcher-v1",
-        prompt: `research:${task}`,
-      }),
-      ctx.agent({
-        id: "review",
-        label: "审阅",
-        preset: "reviewer-v1",
-        prompt: `review:${task}`,
-      }),
-    ]);
+    const { research, review } = await ctx.parallel({
+      id: "analysis",
+      branches: {
+        research: (ctx) =>
+          ctx.agent({
+            id: "research",
+            label: "研究",
+            preset: "researcher-v1",
+            prompt: `research:${task}`,
+          }),
+        review: (ctx) =>
+          ctx.agent({
+            id: "review",
+            label: "审阅",
+            preset: "reviewer-v1",
+            prompt: `review:${task}`,
+          }),
+      },
+    });
     const coordinator = await ctx.agent({
       id: "coordinator",
       label: "汇总",
@@ -106,6 +113,7 @@ async function fixture(
         sessionId: step.sessionId,
         preset: step.preset,
         entries: [],
+        hasMore: false,
         beforeSeq,
       }),
     },
@@ -208,7 +216,10 @@ test("Action steps and Agents share admission, ids, version snapshots and failur
     result.steps[1]?.kind === "action" && result.steps[1].sourceHash,
     hash(),
   );
-  await assert.rejects(engine.history(result.id, "direct"), /没有 DSH session/);
+  await assert.rejects(
+    engine.history(result.id, "main/direct"),
+    /没有 DSH session/,
+  );
 });
 
 test("unhandled Action failures and Agent/Action id collisions fail the Flow", async () => {
@@ -232,8 +243,8 @@ test("unhandled Action failures and Agent/Action id collisions fail the Flow", a
     const started = await engine.start(request());
     const result = await engine.wait(started.id);
     assert.equal(result.status, "failed");
-    assert.equal(result.steps.length, 1);
-    assert.match(result.error ?? "", observed ? /不能重复/ : /Action 不存在/);
+    assert.equal(result.steps.length, observed ? 1 : 0);
+    assert.match(result.error ?? "", observed ? /不能重复/ : /未 await/);
   }
 });
 
@@ -254,15 +265,20 @@ test("cancellation drains an active Action and prevents queued Agent dispatch", 
   const { engine } = await fixture({
     loaded: flow(
       async (ctx) => {
-        await Promise.all([
-          ctx.action({ id: "slow", action: "slow", input: {} }),
-          ctx.agent({
-            id: "queued",
-            label: "Queued",
-            preset: "researcher-v1",
-            prompt: "test",
-          }),
-        ]);
+        await ctx.parallel({
+          id: "batch",
+          branches: {
+            slow: (ctx) =>
+              ctx.action({ id: "slow", action: "slow", input: {} }),
+            queued: (ctx) =>
+              ctx.agent({
+                id: "queued",
+                label: "Queued",
+                preset: "researcher-v1",
+                prompt: "test",
+              }),
+          },
+        });
         return { report: "never" };
       },
       { concurrency: 1 },
@@ -312,24 +328,40 @@ test("code Flow creates dynamic independent DSH sessions and aggregates output",
     ["research", "review", "coordinator"],
   );
   assert.equal(calls[2]?.input, "research output|review output");
-  assert.equal(new Set(run.steps.map(({ sessionId }) => sessionId)).size, 3);
   assert.equal(
-    (await engine.history(run.id, "research")).preset,
+    new Set(
+      run.steps.map((step) =>
+        "sessionId" in step ? step.sessionId : undefined,
+      ),
+    ).size,
+    3,
+  );
+  assert.equal(
+    (await engine.history(run.id, "main/analysis/research/research")).preset,
     "researcher-v1",
   );
 });
 
-test("native Promise.all is bounded by the Flow concurrency setting", async () => {
+test("structured parallel is bounded by the Flow concurrency setting", async () => {
   let active = 0;
   let maximum = 0;
   const loaded = flow(
     async (ctx) => {
-      const outputs = await Promise.all(
-        ["one", "two", "three"].map((id) =>
-          ctx.agent({ id, label: id, preset: "researcher-v1", prompt: id }),
+      const outputs = await ctx.parallel({
+        id: "batch",
+        branches: Object.fromEntries(
+          ["one", "two", "three"].map((id) => [
+            id,
+            (ctx: FlowScope) =>
+              ctx.agent({ id, label: id, preset: "researcher-v1", prompt: id }),
+          ]),
         ),
-      );
-      return { report: outputs.map(({ output }) => output).join(",") };
+      });
+      return {
+        report: Object.values(outputs)
+          .map(({ output }) => output)
+          .join(","),
+      };
     },
     { concurrency: 2 },
   );
@@ -399,25 +431,24 @@ test("an unobserved agent rejection still fails the Flow run", async () => {
   const started = await engine.start(request());
   const run = await engine.wait(started.id);
   assert.equal(run.status, "failed");
-  assert.equal(run.steps[0]?.status, "failed");
+  assert.equal(run.steps.length, 0);
+  assert.match(run.error ?? "", /未 await/);
 });
 
 test("duplicate step ids fail the run and preserve the first step", async () => {
   const loaded = flow(async (ctx) => {
-    await Promise.all([
-      ctx.agent({
-        id: "same",
-        label: "一",
-        preset: "researcher-v1",
-        prompt: "one",
-      }),
-      ctx.agent({
-        id: "same",
-        label: "二",
-        preset: "reviewer-v1",
-        prompt: "two",
-      }),
-    ]);
+    await ctx.agent({
+      id: "same",
+      label: "一",
+      preset: "researcher-v1",
+      prompt: "one",
+    });
+    await ctx.agent({
+      id: "same",
+      label: "二",
+      preset: "reviewer-v1",
+      prompt: "two",
+    });
     return { report: "never" };
   });
   const { engine } = await fixture({ loaded });
@@ -458,20 +489,25 @@ test("cancellation aborts running and queued agents without dispatching later wo
   const calls: string[] = [];
   const loaded = flow(
     async (ctx) => {
-      await Promise.all([
-        ctx.agent({
-          id: "one",
-          label: "一",
-          preset: "researcher-v1",
-          prompt: "one",
-        }),
-        ctx.agent({
-          id: "two",
-          label: "二",
-          preset: "reviewer-v1",
-          prompt: "two",
-        }),
-      ]);
+      await ctx.parallel({
+        id: "batch",
+        branches: {
+          one: (ctx) =>
+            ctx.agent({
+              id: "one",
+              label: "一",
+              preset: "researcher-v1",
+              prompt: "one",
+            }),
+          two: (ctx) =>
+            ctx.agent({
+              id: "two",
+              label: "二",
+              preset: "reviewer-v1",
+              prompt: "two",
+            }),
+        },
+      });
       await ctx.agent({
         id: "later",
         label: "稍后",

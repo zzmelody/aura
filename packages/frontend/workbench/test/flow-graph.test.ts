@@ -16,6 +16,40 @@ const wrap = (run: string) => `
   });
 `;
 
+test("structured scopes project stable execution paths, parallel branches, memo and checkpoint", () => {
+  const graph = buildFlowGraph(
+    wrap(`return ctx.sequence({id:"main"}, async flow => {
+    const values = await flow.parallel({id:"batch",branches:{
+      a: branch => branch.agent({id:"call",label:"A",preset:"test",prompt:"a"}),
+      b: branch => branch.action({id:"call",action:"write",input:{}})
+    }});
+    const approved = await flow.checkpoint({id:"approve",prompt:"?",schema:z.boolean()});
+    return flow.memo({id:"result",schema:z.json(),compute:()=>values});
+  });`),
+  );
+  assert.equal(graph.error, undefined);
+  assert.deepEqual(
+    graph.nodes
+      .filter((node) =>
+        ["agent", "tool", "memo", "checkpoint"].includes(node.kind),
+      )
+      .map((node) => node.id),
+    ["main/batch/a/call", "main/batch/b/call", "main/approve", "main/result"],
+  );
+  assert.ok(
+    graph.nodes.find((node) => node.id === "main/batch/a/call")?.parallel,
+  );
+  assert.equal(
+    graph.edges.filter((edge) => edge.target === "main/approve").length,
+    2,
+  );
+  assert.ok(
+    graph.edges.some(
+      (edge) => edge.source === "main/result" && edge.target === "$output",
+    ),
+  );
+});
+
 test("ignores ordinary JavaScript while preserving agent order", () => {
   const graph = buildFlowGraph(
     wrap(`

@@ -32,14 +32,16 @@ export default defineFlow({
   concurrency: 2,
   agentTimeoutMs: 30000,
   async run(ctx, input) {
-    const [research, review] = await Promise.all([
-      ctx.agent({ id: "research", label: "Research", preset: "researcher-v1", prompt: prompt(input.task, "research") }),
-      ctx.agent({ id: "review", label: "Review", preset: "reviewer-v1", prompt: prompt(input.task, "review") }),
-    ]);
-    const coordinator = await ctx.agent({
+    return ctx.sequence({ id: "main" }, async (flow) => {
+    const { research, review } = await flow.parallel({ id: "analysis", branches: {
+      research: (branch) => branch.agent({ id: "research", label: "Research", preset: "researcher-v1", prompt: prompt(input.task, "research"), retry: { maxAttempts: 2, initialDelayMs: 0 } }),
+      review: (branch) => branch.agent({ id: "review", label: "Review", preset: "reviewer-v1", prompt: prompt(input.task, "review"), retry: { maxAttempts: 2, initialDelayMs: 0 } }),
+    }});
+    const coordinator = await flow.agent({
       id: "coordinator",
       label: "Coordinator",
       preset: "coordinator-v1",
+      retry: { maxAttempts: 2, initialDelayMs: 0 },
       prompt: prompt(input.task, "coordinator", [research, review].map((item) => ({
         nodeId: item.stepId,
         sessionId: item.sessionId,
@@ -47,6 +49,7 @@ export default defineFlow({
       }))),
     });
     return { report: coordinator.output };
+    });
   },
 });
 `;
@@ -90,10 +93,23 @@ test(
     );
 
     const calls: ModelRequest[] = [];
+    let holdCoordinator = false;
+    let releaseCoordinator: (() => void) | undefined;
     const modelApp = new Hono();
     modelApp.post("/v1/chat/completions", async (context) => {
       const request = (await context.req.json()) as ModelRequest;
       calls.push(request);
+      if (
+        holdCoordinator &&
+        request.messages.some(
+          (message) =>
+            typeof message.content === "string" &&
+            message.content.includes('"nodeId":"coordinator"'),
+        )
+      )
+        await new Promise<void>((resolve) => {
+          releaseCoordinator = resolve;
+        });
       return streamSSE(context, async (output) => {
         await output.writeSSE({
           data: JSON.stringify({
@@ -152,7 +168,7 @@ test(
 
       const history = await host.request<FlowHistory>("history", {
         id: run.id,
-        stepId: "coordinator",
+        stepId: "main/coordinator",
       });
       assert.ok(history.entries.some(({ kind }) => kind === "assistant"));
 
@@ -219,11 +235,51 @@ test(
       assert.deepEqual(restored.output, run.output);
       const coldHistory = await host.request<FlowHistory>("history", {
         id: run.id,
-        stepId: "research",
+        stepId: "main/analysis/research/research",
       });
       assert.equal(coldHistory.preset, "researcher-v1");
       assert.ok(coldHistory.entries.some(({ kind }) => kind === "assistant"));
+
+      // Kill the actual DSH host after earlier steps commit and the final model call starts.
+      holdCoordinator = true;
+      const crashing = await host.request<FlowRun>("start", {
+        requestId: randomUUID(),
+        flowId: "hmr-check",
+        input: { task: "crash-recovery" },
+        mode: "demo",
+      });
+      const deadline = Date.now() + 15_000;
+      while (!releaseCoordinator && Date.now() < deadline) await delay(20);
+      assert.ok(
+        releaseCoordinator,
+        "coordinator model call should be in flight",
+      );
+      const beforeCrash = await host.request<FlowRun>("get", {
+        id: crashing.id,
+      });
+      assert.equal(
+        beforeCrash.steps.filter((step) => step.status === "completed").length,
+        2,
+      );
+      const childHost = await host.open();
+      childHost.child.kill("SIGKILL");
+      await childHost.exited;
+      holdCoordinator = false;
+      releaseCoordinator();
+      host = new OrchestrationHost(options);
+      const resumed = await host.request<FlowRun>("wait", { id: crashing.id });
+      assert.equal(resumed.status, "completed", JSON.stringify(resumed));
+      assert.deepEqual(
+        resumed.steps.map((step) => step.attempts?.length),
+        [1, 1, 2],
+      );
+      assert.deepEqual(
+        resumed.steps.slice(0, 2).map((step) => step.output),
+        beforeCrash.steps.slice(0, 2).map((step) => step.output),
+      );
+      assert.match(JSON.stringify(resumed.recoveryEvents), /重新启动/);
     } finally {
+      releaseCoordinator?.();
       await host.close();
       await new Promise<void>((resolveClose, reject) => {
         model.close((error) => (error ? reject(error) : resolveClose()));

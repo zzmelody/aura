@@ -5,8 +5,51 @@ export type ChatMessage = { role: "user" | "assistant"; text: string };
 export type JsonValue =
   null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
-export type FlowPhase =
-  "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+export type FlowRunPhase =
+  | "queued"
+  | "running"
+  | "pausing"
+  | "paused"
+  | "waiting_input"
+  | "needs_attention"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+/** Compatibility name for stored workspace messages; steps have their own phase. */
+export type FlowPhase = FlowRunPhase;
+export type FlowStepPhase =
+  | "queued"
+  | "running"
+  | "waiting_input"
+  | "unknown"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
+export type FlowAttemptPhase =
+  "running" | "completed" | "failed" | "cancelled" | "interrupted" | "unknown";
+export interface FlowRetry {
+  maxAttempts: number;
+  initialDelayMs?: number;
+  multiplier?: number;
+  maxDelayMs?: number;
+}
+export interface FlowAttempt {
+  number: number;
+  status: FlowAttemptPhase;
+  startedAt: number;
+  finishedAt?: number;
+  sessionId?: string;
+  requestId?: string;
+  error?: string;
+}
+export interface FlowRecoveryEvent {
+  at: number;
+  reason: string;
+  action?: "retry" | "submit_output" | "terminate";
+  requestId?: string;
+}
 export type FlowMode = "demo" | "codex";
 
 export interface FlowCatalogEntry {
@@ -38,7 +81,16 @@ export interface FlowSource {
 interface FlowStepBase {
   id: string;
   label: string;
-  status: FlowPhase;
+  status: FlowStepPhase;
+  /** Absent on pre-durable records. Local id remains available for display. */
+  stepKey?: string;
+  scopePath?: string[];
+  requestHash?: string;
+  attempts?: FlowAttempt[];
+  retry?: FlowRetry;
+  extraAttempts?: number;
+  nextAttemptAt?: number;
+  recoveryEvents?: FlowRecoveryEvent[];
   error?: string;
   startedAt?: number;
   finishedAt?: number;
@@ -52,6 +104,7 @@ export interface FlowAgentStep extends FlowStepBase {
   kind?: "agent";
   preset: string;
   sessionId: string;
+  requestId?: string;
   actions?: ActionReference[];
   output?: string;
 }
@@ -61,8 +114,23 @@ export interface FlowActionStep extends FlowStepBase {
   sourceHash?: string;
   input: JsonValue;
   output?: JsonValue;
+  outputSchema?: JsonValue;
+  recovery?: "manual" | "idempotent";
+  idempotencyKey?: string;
 }
-export type FlowStep = FlowAgentStep | FlowActionStep;
+export interface FlowMemoStep extends FlowStepBase {
+  kind: "memo";
+  outputSchema: JsonValue;
+  output?: JsonValue;
+}
+export interface FlowCheckpointStep extends FlowStepBase {
+  kind: "checkpoint";
+  prompt: string;
+  outputSchema: JsonValue;
+  output?: JsonValue;
+}
+export type FlowStep =
+  FlowAgentStep | FlowActionStep | FlowMemoStep | FlowCheckpointStep;
 
 export interface ActionRun {
   id: string;
@@ -94,6 +162,19 @@ export interface FlowRun {
   steps: FlowStep[];
   output?: JsonValue;
   error?: string;
+  durableVersion?: 1;
+  requestInputHash?: string;
+  actionVersions?: ActionReference[];
+  queuedAt?: number;
+  updatedAt?: number;
+  recoveryEvents?: FlowRecoveryEvent[];
+  /** Command receipts commit with the state change, never before it. */
+  commands?: {
+    requestId: string;
+    fingerprint: string;
+    status: FlowRunPhase;
+    at: number;
+  }[];
 }
 export interface FlowRunSummary {
   id: string;
@@ -103,6 +184,7 @@ export interface FlowRunSummary {
   status: FlowPhase;
   mode: FlowMode;
   createdAt: number;
+  updatedAt?: number;
 }
 export interface FlowHistory {
   sessionId: string;

@@ -24,8 +24,10 @@ import {
   workflowProgress,
 } from "../workflowPresentation";
 import { WorkflowData, WorkflowJson, WorkflowRichText } from "./WorkflowValue";
+import { WorkflowControls } from "./WorkflowControls";
 import {
   isWorkflowActive,
+  isWorkflowOpen,
   workflowApi,
   workflowPhaseLabels,
 } from "../workflowSessions";
@@ -43,9 +45,10 @@ function StepHistory({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
-  const path = `/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(step.id)}/history`;
+  const [attempt, setAttempt] = useState(step.attempts?.at(-1)?.number);
+  const path = `/runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(step.stepKey ?? step.id)}/history${attempt ? `?attempt=${attempt}` : ""}`;
   useEffect(() => {
-    if (step.kind === "action") return;
+    if (step.kind && step.kind !== "agent") return;
     const abort = new AbortController();
     setBusy(true);
     setError("");
@@ -69,7 +72,7 @@ function StepHistory({
         Math.min(...history.entries.map((entry) => entry.seq));
       const page = await workflowApi<FlowHistory>(
         endpoint,
-        `${path}?beforeSeq=${before}`,
+        `${path}${path.includes("?") ? "&" : "?"}beforeSeq=${before}`,
       );
       setHistory({
         ...page,
@@ -89,11 +92,47 @@ function StepHistory({
   return (
     <div className="workflow-step-detail">
       {step.error ? <p className="error">{step.error}</p> : null}
-      {step.kind === "action" ? (
+      {step.scopePath?.length ? (
+        <p className="muted">执行路径：{step.stepKey}</p>
+      ) : null}
+      {step.attempts?.length ? (
+        <label>
+          执行尝试{" "}
+          <select
+            aria-label="执行尝试"
+            value={attempt}
+            onChange={(event) => {
+              setHistory(undefined);
+              setAttempt(Number(event.target.value));
+            }}
+          >
+            {step.attempts.map((value) => (
+              <option key={value.number} value={value.number}>
+                第 {value.number} 次 · {workflowPhaseLabels[value.status]}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {step.attempts?.find((value) => value.number === attempt)?.error ? (
+        <p className="muted">
+          {step.attempts.find((value) => value.number === attempt)?.error}
+        </p>
+      ) : null}
+      {step.recoveryEvents?.map((event, index) => (
+        <p className="muted" key={index}>
+          {new Date(event.at).toLocaleString()} · {event.reason}
+        </p>
+      ))}
+      {step.kind && step.kind !== "agent" ? (
         <>
-          <h4>工具输入</h4>
-          <WorkflowData value={step.input} />
-          <h4>工具输出</h4>
+          {step.kind === "action" ? (
+            <>
+              <h4>工具输入</h4>
+              <WorkflowData value={step.input} />
+            </>
+          ) : null}
+          <h4>{step.kind === "checkpoint" ? "已提交答案" : "步骤输出"}</h4>
           {step.output === undefined ? (
             <p className="muted">等待输出</p>
           ) : (
@@ -189,7 +228,7 @@ export function WorkflowRunResult({
         if (abort.signal.aborted) return;
         setError("");
         receive(endpoint, run);
-        if (isWorkflowActive(run.status)) timer = setTimeout(poll, 1800);
+        if (isWorkflowOpen(run.status)) timer = setTimeout(poll, 1800);
       } catch (cause) {
         if (!abort.signal.aborted)
           setError(cause instanceof Error ? cause.message : "读取失败");
@@ -202,7 +241,9 @@ export function WorkflowRunResult({
     };
   }, [endpoint, id, revision, receive]);
   const phase = cached?.status ?? message.workflowPhase ?? "queued";
-  const selected = cached?.steps.find((step) => step.id === stepId);
+  const selected = cached?.steps.find(
+    (step) => (step.stepKey ?? step.id) === stepId,
+  );
   const active = isWorkflowActive(phase);
   const progress = workflowProgress(cached);
   const inputValue = cached
@@ -284,6 +325,9 @@ export function WorkflowRunResult({
             重试
           </button>
         </div>
+      ) : null}
+      {cached ? (
+        <WorkflowControls endpoint={endpoint} run={cached} receive={receive} />
       ) : null}
       <section className="workflow-run-input" aria-label="本次输入">
         <h3 className="workflow-section-label">
@@ -368,11 +412,17 @@ export function WorkflowRunResult({
           <div className="workflow-steps">
             {cached.steps.map((step) => (
               <button
-                key={step.id}
-                className={step.id === stepId ? "selected" : ""}
-                aria-expanded={step.id === stepId}
+                key={step.stepKey ?? step.id}
+                className={
+                  (step.stepKey ?? step.id) === stepId ? "selected" : ""
+                }
+                aria-expanded={(step.stepKey ?? step.id) === stepId}
                 onClick={() =>
-                  setStepId(step.id === stepId ? undefined : step.id)
+                  setStepId(
+                    (step.stepKey ?? step.id) === stepId
+                      ? undefined
+                      : (step.stepKey ?? step.id),
+                  )
                 }
               >
                 <span className="workflow-step-label">
@@ -387,7 +437,7 @@ export function WorkflowRunResult({
           </div>
           {selected ? (
             <StepHistory
-              key={selected.id}
+              key={selected.stepKey ?? selected.id}
               endpoint={endpoint}
               runId={id}
               step={selected}

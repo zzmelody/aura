@@ -1,8 +1,9 @@
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Loader } from "@deepseek-ai/cordis-plugin-loader";
-import { flowIdSchema } from "./schema.ts";
+import { flowIdSchema, FlowError } from "./schema.ts";
+import { validateFlowSource } from "./flow-diagnostics.ts";
 import { hashFlowDirectory, type FlowRegistry } from "./registry.ts";
 
 type DiscoveryRegistry = Pick<
@@ -106,6 +107,20 @@ export class CodeDiscovery {
 
       const signature = await hashFlowDirectory(directory);
       const current = this.mounted.get(flowId);
+      if (this.kind === "flow") {
+        try {
+          validateFlowSource(await readFile(expected, "utf8"));
+        } catch (error) {
+          const message =
+            error instanceof FlowError
+              ? error.message
+              : "Flow 源码语法错误，请检查入口文件。";
+          issues.add(flowId);
+          if (current) this.registry.reloadProblem(flowId, message);
+          else this.registry.problem(flowId, message);
+          continue;
+        }
+      }
       if (current?.entry === expected) {
         if (this.registry.sourceHash(flowId) === signature)
           this.registry.clearReloadProblem(flowId);

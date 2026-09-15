@@ -10,6 +10,7 @@ import type {
 import {
   applyWorkflowRun,
   isWorkflowActive,
+  isWorkflowOpen,
   mergeWorkflowRuns,
   workflowApi,
   workflowRunKey,
@@ -63,7 +64,7 @@ export function useWorkflowSessions(
                 .filter(
                   (message) =>
                     message.workflowRunId &&
-                    (isWorkflowActive(message.workflowPhase) ||
+                    (isWorkflowOpen(message.workflowPhase) ||
                       message.status === "streaming"),
                 )
                 .map((message) => message.workflowRunId),
@@ -110,9 +111,7 @@ export function useWorkflowSessions(
     if (
       !binding ||
       submittingRef.current.has(sessionId) ||
-      session.messages.some((message) =>
-        isWorkflowActive(message.workflowPhase),
-      )
+      session.messages.some((message) => isWorkflowOpen(message.workflowPhase))
     )
       return;
     const pending = binding.pending ?? {
@@ -217,9 +216,7 @@ export function useWorkflowSessions(
     const id = session?.messages
       .slice()
       .reverse()
-      .find((message) =>
-        isWorkflowActive(message.workflowPhase),
-      )?.workflowRunId;
+      .find((message) => isWorkflowOpen(message.workflowPhase))?.workflowRunId;
     if (!id || !session?.workflow) return;
     try {
       receive(
@@ -227,7 +224,7 @@ export function useWorkflowSessions(
         await workflowApi<FlowRun>(
           session.workflow.endpoint,
           `/runs/${encodeURIComponent(id)}/cancel`,
-          {},
+          { requestId: crypto.randomUUID() },
         ),
       );
     } catch (cause) {

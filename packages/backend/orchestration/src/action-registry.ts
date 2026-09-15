@@ -25,6 +25,7 @@ export class ActionRegistry {
     definition: ActionRegistration,
   ) {
     const id = parse(flowIdSchema, config.actionId);
+    parse(z.enum(["manual", "idempotent"]), definition.recovery ?? "manual");
     if (id === "run_code" || id.startsWith("aura_direct_"))
       throw new FlowError("Action ID 为内部保留名称。");
     const title = parse(z.string().trim().min(1).max(100), definition.title);

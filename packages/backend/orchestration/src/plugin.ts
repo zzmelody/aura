@@ -92,7 +92,6 @@ export async function apply(ctx: Context) {
         }),
       ),
   });
-  await engine.initialize();
   await actionRuns.initialize();
 
   let lastActivity = Date.now();
@@ -118,7 +117,8 @@ export async function apply(ctx: Context) {
         case "initialize":
           await refreshFlows();
           await ctx.get("loader")?.await();
-          data = { name: "aura-orchestration", version: 3 };
+          await engine.initialize();
+          data = { name: "aura-orchestration", version: 4 };
           break;
         case "catalog":
           data = await engine.catalog();
@@ -140,8 +140,19 @@ export async function apply(ctx: Context) {
           data = await engine.wait(id);
           break;
         case "cancel":
-          data = await engine.cancel(id);
+        case "pause":
+        case "resume":
+        case "answer":
+        case "resolve": {
+          const { id: _id, stepKey: key, ...body } = params;
+          data = await engine.command(
+            id,
+            method,
+            body,
+            typeof key === "string" ? key : undefined,
+          );
           break;
+        }
         case "action/start":
           data = await actionRuns.start(params);
           break;
@@ -163,7 +174,15 @@ export async function apply(ctx: Context) {
               beforeSeq < 0)
           )
             throw new FlowError("无效的历史游标。");
-          data = await engine.history(id, stepId, beforeSeq);
+          const attempt = params.attempt;
+          if (
+            attempt !== undefined &&
+            (typeof attempt !== "number" ||
+              !Number.isSafeInteger(attempt) ||
+              attempt < 1)
+          )
+            throw new FlowError("无效的 attempt。");
+          data = await engine.history(id, stepId, beforeSeq, attempt);
           break;
         case "shutdown":
           await engine.close();

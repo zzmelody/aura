@@ -43,17 +43,17 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 ## 后端 Agent 流程编排
 
-`packages/backend/orchestration`（`@aura/orchestration`）统一拥有代码 Flow 的发现、Cordis Loader/HMR 注册、执行、动态步骤/session 映射、运行持久化和 `/flows/*` API。Flow 位于该包的 `flow/<flow-id>/<flow-id>.flow.js`，用 JavaScript 的条件、循环和 `Promise.all()` 表达控制流，并通过 `@aura/orchestration/flow` 获得 `defineFlow`、Zod 与声明文件补全。`@aura/runtime` 只创建并关闭宿主、转交 HTTP 命名空间；前端「流程」页面只根据后端 JSON Schema 收集参数并渲染 DTO。shared/protocol 仅包含通信类型，不执行 Flow 或装配 prompt。
+`packages/backend/orchestration`（`@aura/orchestration`）统一拥有代码 Flow 的发现、Cordis Loader/HMR 注册、执行、动态步骤/session 映射、运行持久化和 `/flows/*` API。Flow 位于该包的 `flow/<flow-id>/<flow-id>.flow.js`，用 JavaScript 条件、循环和 `sequence/parallel` 回调作用域表达控制流，并通过 `@aura/orchestration/flow` 获得 `defineFlow`、Zod 与声明文件补全。`@aura/runtime` 只创建并关闭宿主、转交 HTTP 命名空间；前端「流程」页面只根据后端 JSON Schema 收集参数并渲染 DTO。shared/protocol 仅包含通信类型，不执行 Flow 或装配 prompt。
 
-流程使用独立、长驻且空闲可回收的 `aura-flow` DSH profile。每次 `ctx.agent()` 都产生独立 preset/session，复用 DSH Session Controller、领域存储、JSONL、模型路由和取消；Cordis HMR 复用 DSH 已有模块依赖图与事务回滚。运行开始时固定代码定义和 Flow 目录内容 hash，后续热更新只影响新运行。客户端断开不取消流程；重启后未完成运行保留为 interrupted，不自动重放代码或工具副作用。Flow JS 是拥有完整 Node.js 权限的受信任后端代码。普通 `/chat` 链路仍保留原实现，流程不依赖客户端对话历史。实现、限制与扩展配置见 [编排包说明](../packages/backend/orchestration/README.md)。
+流程使用独立、长驻且空闲可回收的 `aura-flow` DSH profile。每个 `scope.agent()` attempt 都产生独立 preset/session，复用 DSH Session Controller、领域存储、JSONL、模型路由和取消；Cordis HMR 复用 DSH 已有模块依赖图与事务回滚。运行开始时固定代码定义和 Flow 目录内容 hash，后续热更新只影响新运行。客户端断开不取消流程。Run 先持久化排队，最多同时执行两个；暂停、人工 checkpoint 和未知结果等待不占并发槽。重启先加载定义并校验同一 source hash，再从脚本入口重放；完成步骤按作用域路径及请求指纹返回存档输出，DSH 完成回合可认领输出，未知副作用等待人工处理。旧 active 记录缺少 durable identity 时标记 `legacy_unrecoverable`，已完成历史保持可读。Flow JS 是拥有完整 Node.js 权限的受信任后端代码。普通 `/chat` 链路仍保留原实现，流程不依赖客户端对话历史。实现、恢复约束与扩展配置见 [编排包说明](../packages/backend/orchestration/README.md)。
 
-同包的 `action/<action-id>/<action-id>.action.js` 提供可热加载的工具扩展，公开 `@aura/orchestration/action` 和声明文件。Action 使用 DSH 工具 Schema DSL，复用 DSH ToolRuntime 的校验、策略、结果渲染和协作式超时；`ctx.agent({ actions: [...] })` 将固定版本注册到指定 Agent scope，默认不暴露任何 Action。`ctx.action()` 直接调用时保存独立 Action step 的 input/output，Agent 内部调用继续保留在 DSH session 日志中。Flow 开始时同时固定 Action 定义快照，所有步骤共享 ID 与并发限制。后端 `host.invokeAction()` 使用同一执行适配，独立记录写入 `aura_code_actions` domain，不提供通用 Action HTTP 执行接口。前端只渲染 catalog 和不同步骤 DTO；Action context 第一版不提供调用 Flow 的接口，完整 Node.js 权限仍按受信任代码处理。
+同包的 `action/<action-id>/<action-id>.action.js` 提供可热加载的工具扩展，公开 `@aura/orchestration/action` 和声明文件。Action 使用 DSH 工具 Schema DSL，复用 DSH ToolRuntime 的校验、策略、结果渲染和协作式超时；`scope.agent({ actions: [...] })` 将固定版本注册到指定 Agent scope，默认不暴露任何 Action。`scope.action()` 直接调用时保存独立 Action step 的 input/output，Agent 内部调用继续保留在 DSH session 日志中。Flow 开始时同时固定 Action 定义快照，步骤身份为作用域路径加本地 ID，共享调用并发限制。重试由调用声明，默认不重试；仅声明 `recovery: "idempotent"` 的直接 Action 可自动重试，跨 attempt 使用同一 idempotency key。普通 Action 中断后需人工重试、提交结果或终止。Agent 已启动工具而回合未完成时同样需要人工处理。后端 `host.invokeAction()` 使用同一执行适配，独立记录写入 `aura_code_actions` domain，不提供通用 Action HTTP 执行接口。前端只渲染 catalog 和不同步骤 DTO；Action context 第一版不提供调用 Flow 的接口，完整 Node.js 权限仍按受信任代码处理。
 
 ## 当前取舍
 
 「工作流」首页用卡片展示用途与可用状态，点击卡片按需通过 `/flows/:flowId/source` 读取已注册入口源码，在卡片下方静态解析节点；编辑入口进入流程图/代码详情。画布与节点支持拖拽，位置只影响当前预览，不修改代码。注册时保留源码快照，热加载失败时预览与运行均继续使用最后可用版本；接口按目录 ID 查注册表，不接受文件路径，不返回辅助文件或凭据。源码预览不具备发布或修改后端代码的能力。
 
-运行入口创建带 `workflow` 绑定的工作区会话，输入、结果和步骤记录都在会话内查看。绑定保存工作流 ID、标题、服务 origin 和输入 Schema，每个结果引用原有后端 run ID；不会把工作流输入提交到普通 `/chat` 链路。同一会话支持多次独立运行，后台轮询同步状态，原有服务端运行记录自动进入历史列表。前端按 run ID 将原有输入/结果消息配成执行卡片，不改变存储格式；富文本及结构化数据由 workbench 的浏览器组件渲染，Markdown 依赖随工作流会话按需加载。执行表单改为弹窗，确认接收后关闭。待确认提交保留 requestId，网络失败后重试复用同一请求；本地删除会话记录隐藏 run ID，避免轮询重新导入。后端执行和持久化协议保持不变。
+运行入口创建带 `workflow` 绑定的工作区会话，输入、结果和步骤记录都在会话内查看。绑定保存工作流 ID、标题、服务 origin 和输入 Schema，每个结果引用原有后端 run ID；不会把工作流输入提交到普通 `/chat` 链路。同一会话支持多次独立运行，后台轮询同步状态，原有服务端运行记录自动进入历史列表。前端按 run ID 将原有输入/结果消息配成执行卡片，不改变存储格式；富文本及结构化数据由 workbench 的浏览器组件渲染，Markdown 依赖随工作流会话按需加载。执行表单改为弹窗，确认接收后关闭。待确认提交保留 requestId，网络失败后重试复用同一请求；本地删除会话记录隐藏 run ID，避免轮询重新导入。运行卡片提供暂停/继续、checkpoint 输入、未知结果处理、attempt 历史和恢复记录；图是代码的只读静态投影，运行记录另行展示实际执行路径。
 
 普通联网对话请求暂时各启动一个 DSH SDK 进程，客户端历史作为带标记的完整输入交给 DSH，响应结束或连接断开后回收进程。这保留了 DSH agent loop、provider、事件与取消链路，但普通对话仍不是长期运行的服务端权威会话；独立的「流程」链路已采用稳定的步骤到 DSH session 映射与持久化，不使用这一临时对话协议。
 

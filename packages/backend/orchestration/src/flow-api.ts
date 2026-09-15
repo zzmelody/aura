@@ -1,6 +1,7 @@
 import type { Context, Plugin } from "@deepseek-ai/cordis";
 import { z } from "zod";
-import type { JsonValue } from "@aura/protocol/types";
+import type { JsonValue, FlowRetry } from "@aura/protocol/types";
+export type { FlowRetry } from "@aura/protocol/types";
 
 export { z };
 
@@ -12,6 +13,7 @@ export interface FlowAgentRequest {
   preset: string;
   prompt: string;
   actions?: string[];
+  retry?: FlowRetry;
 }
 
 export interface FlowActionRequest {
@@ -19,26 +21,54 @@ export interface FlowActionRequest {
   label?: string;
   action: string;
   input: unknown;
+  retry?: FlowRetry;
 }
 
 export interface FlowActionResult {
   stepId: string;
   actionId: string;
   output: JsonValue;
+  attempt?: number;
+  recovered?: boolean;
 }
 
 export interface FlowAgentResult {
   stepId: string;
   sessionId: string;
   output: string;
+  attempt?: number;
+  recovered?: boolean;
 }
 
 export interface FlowContext {
   readonly runId: string;
   readonly mode: FlowMode;
   readonly signal: AbortSignal;
+  sequence<T>(
+    options: { id: string },
+    run: (scope: FlowScope) => T | Promise<T>,
+  ): Promise<T>;
+}
+
+export interface FlowScope extends FlowContext {
   agent(request: FlowAgentRequest): Promise<FlowAgentResult>;
   action(request: FlowActionRequest): Promise<FlowActionResult>;
+  parallel<B extends Record<string, (scope: FlowScope) => unknown>>(options: {
+    id: string;
+    branches: B;
+  }): Promise<{ [K in keyof B]: Awaited<ReturnType<B[K]>> }>;
+  memo<S extends z.ZodType>(request: {
+    id: string;
+    label?: string;
+    schema: S;
+    compute(): z.input<S> | Promise<z.input<S>>;
+  }): Promise<z.output<S>>;
+  checkpoint<S extends z.ZodType>(request: {
+    id: string;
+    label?: string;
+    prompt: string;
+    schema: S;
+  }): Promise<z.output<S>>;
 }
 
 export interface FlowDefinition<

@@ -1,87 +1,78 @@
 # @aura/orchestration
 
-Aura 的代码 Flow 编排包。Flow / Action 的发现、加载、执行、动态步骤、持久化与 HTTP 边界都在后端；前端只读取 catalog、提交参数并渲染运行结果。
+Aura 的 durable workflow script 引擎。脚本负责控制流；Graph 是只读静态投影。恢复从 `run()` 入口重放，完成的关键调用返回存档结果。运行时不保存 JS 栈、闭包、Promise 或任意局部变量。
 
 ## 编写 Flow
 
-Flow 固定放在本包的 `flow/` 目录中。该目录只允许一级 Flow 目录，目录名就是稳定 ID；入口必须严格命名为 `<flow-id>.flow.js`，一个目录只能有一个 `*.flow.js`：
-
-```text
-flow/
-  research-report/
-    research-report.flow.js
-    prompts.js
-    lib/
-  code-review/
-    code-review.flow.js
-```
-
-入口使用公开的 `@aura/orchestration/flow` 接口。包导出的声明文件会为 JavaScript Flow 提供 `checkJs` 校验和编辑器补全：
+Flow 入口为 `flow/<flow-id>/<flow-id>.flow.js`，每个一级目录只允许一个同名入口；本地辅助模块可以嵌套。使用公开 `@aura/orchestration/flow` 导出获得 checkJs/编辑器类型推导。
 
 ```js
 import { defineFlow, z } from "@aura/orchestration/flow";
 
 export default defineFlow({
-  title: "多角度分析",
-  description: "分析、审阅并汇总结果",
+  title: "调研并确认",
   input: z.object({ task: z.string().min(1) }),
-  output: z.object({ report: z.string() }),
+  output: z.object({ report: z.string(), approved: z.boolean() }),
   concurrency: 2,
-  agentTimeoutMs: 180_000,
-
   async run(ctx, input) {
-    const [research, review] = await Promise.all([
-      ctx.agent({
-        id: "research",
-        label: "方案分析",
-        preset: "researcher-v1",
-        prompt: `分析：${input.task}`,
-      }),
-      ctx.agent({
-        id: "review",
-        label: "风险审阅",
-        preset: "reviewer-v1",
-        prompt: `审阅：${input.task}`,
-      }),
-    ]);
-    const coordinator = await ctx.agent({
-      id: "coordinator",
-      label: "最终报告",
-      preset: "coordinator-v1",
-      prompt: JSON.stringify({
-        task: input.task,
-        research: research.output,
-        review: review.output,
-      }),
+    return ctx.sequence({ id: "main" }, async (flow) => {
+      const results = await flow.parallel({
+        id: "analysis",
+        branches: {
+          research: (branch) => branch.agent({
+            id: "call", label: "方案分析", preset: "researcher-v1",
+            prompt: input.task, retry: { maxAttempts: 2 },
+          }),
+          review: (branch) => branch.agent({
+            id: "call", label: "风险审阅", preset: "reviewer-v1",
+            prompt: input.task,
+          }),
+        },
+      });
+      const approved = await flow.checkpoint({
+        id: "approval", label: "确认报告", prompt: "是否采纳这份报告？",
+        schema: z.boolean(),
+      });
+      return { report: results.research.output + results.review.output, approved };
     });
-    return { report: coordinator.output };
   },
 });
 ```
 
-`ctx.agent()` 返回 `{ stepId, sessionId, output }`。每次调用都会创建一个有独立 preset 和 session 的动态 step；同一次运行不能重复 step ID。并行关系直接用 JavaScript 的 `Promise.all()`、循环和条件表达，真正进入 DSH 的并发由 `concurrency` 限制。Agent 错误会先持久化失败 step 再抛出，Flow 可以捕获并降级，也可以让整个运行失败。
+根 `ctx` 只暴露 `runId`、`mode`、`signal` 和 `sequence({id}, callback)`。作用域回调收到的 `flow` 还提供以下调用：
 
-`input` 和 `output` 先经过各自的 Zod schema，再检查是否为大小受限、可持久化的 JSON。取消通过 `ctx.signal` 传给 Flow，并同时取消活跃 DSH session。任意 Flow 代码或工具副作用都不会在 runtime 重启后自动重放。
+| 调用 | 返回值 / 语义 |
+| --- | --- |
+| `agent({id,label,preset,prompt,actions?,retry?})` | `{stepId,sessionId,output:string,attempt,recovered}`；每个 attempt 使用独立 DSH session |
+| `action({id,label?,action,input,retry?})` | `{stepId,actionId,output,attempt,recovered}` |
+| `sequence({id}, callback)` | 串行子作用域，返回 callback 的结果 |
+| `parallel({id,branches:{name: callback}})` | 每个具名分支是独立串行作用域，返回同键结果对象，等待所有分支结束后汇合 |
+| `memo({id,label?,schema,compute})` | 保存 schema 校验后的 JSON 结果；完成后重放不会调用 compute |
+| `checkpoint({id,label?,prompt,schema})` | 持久化输入要求，等待人工答案，重放返回已校验的答案 |
 
-Flow JS 是部署时安装的受信任后端代码，不是 DSH agent 工具沙箱中的脚本。它拥有完整 Node.js 文件、网络与环境变量权限；HTTP 只能按已发现的 Flow ID 调用，不能上传代码或指定任意磁盘路径。
+所有作用域调用必须 `await` 或 `return`。串行作用域不能重叠调用；并发统一使用 `parallel`。同级 ID 唯一（1–64 个字母、数字、下划线或连字符，首字符为字母/数字）。步骤的 `stepKey` 为作用域路径加本地 ID，例如 `main/analysis/research/call`；返回的 `stepId` 就是这个完整 key，记录中的 `id` 仍为本地 ID。循环须用稳定业务键创建子作用域或步骤 ID。单 Run 最多 64 个 durable 步骤；并发调用数由 `concurrency` 控制（1–4，默认 2）。Graph 无法静态展开的动态分支会显示提示，实际路径见运行记录。
 
-## 编写 Action
+V1 不支持 parallel 分支内的 checkpoint。运行时暂停会退出作用域；即使脚本捕获了内部暂停异常，也不能继续发起关键调用或提交完成结果。
 
-可扩展工具放在本包的 `action/<action-id>/<action-id>.action.js`，与 Flow 一样，只允许一级 Action 目录、一个同名入口；辅助 JS 可以放进任意嵌套子目录。ID 使用字母、数字、下划线和连字符，首字符为字母或数字，最长 64 字符；`run_code` 与 `aura_direct_` 前缀为内部保留名。新增目录无需重启，入口和本地 ESM 依赖由同一个 Cordis Loader/HMR 热加载。
+`memo` 可封装时间、随机数和只读计算，必须返回 JSON；在结果落盘前崩溃时允许重新计算。外部写副作用必须通过 Action。普通 JS 代码每次重放都会重新执行，必须保证它基于固定输入、已存档结果和相同代码走出一致路径。重放时同一步骤的请求指纹变化，或完成时存在未访问的历史步骤，都会以 `FLOW_REPLAY_MISMATCH` 中断。
+
+输入、输出、memo 和人工答案使用不超过 256 KiB 的 JSON；Agent 输出为 1–80,000 字符。checkpoint/memo 的 Zod Schema 必须能转换为可存档和重新校验的 JSON Schema；依赖执行代码的 transforms、refine/superRefine、overwrite（包括 trim）等规则会在持久化前明确报错，避免恢复时丢失校验。
+
+## Action 与重试
+
+Action 入口为 `action/<action-id>/<action-id>.action.js`。Action 使用 DSH 原生工具 Schema DSL；`output.render` 给模型呈现结果，`execute` 返回结构化 JSON。
 
 ```js
 import { defineAction } from "@aura/orchestration/action";
 
 export default defineAction({
-  title: "转为大写",
-  description: "将输入文本转为大写。",
+  title: "转为大写", description: "纯字符串转换，可安全重复。",
+  recovery: "idempotent",
   parameters: { text: { type: "string", required: true } },
   output: {
     schema: { type: "string" },
     render: (_input, output) => [{ type: "text", text: output }],
   },
-  timeoutMs: 5_000,
-  isConcurrencySafe: () => true,
   async execute(ctx, input) {
     ctx.signal.throwIfAborted();
     return input.text.toUpperCase();
@@ -89,109 +80,57 @@ export default defineAction({
 });
 ```
 
-Action 直接使用 DSH 的工具 Schema DSL 和 `defineTool` 校验，不做 Zod 到工具 Schema 的有损转换；支持 scalar、object、array、json 和 oneOf。`output.render` 决定 DSH 会话中模型看到的结果，`execute` 返回已声明的结构化 JSON 值。`@aura/orchestration/action` 的 `.d.ts` 提供参数、输出、context 与 render 的 `checkJs` 推导。
+Action `recovery` 默认为 `manual`。只有显式 `idempotent` 的直接 Action 才能自动重试。网络写操作需要把 `ctx.idempotencyKey` 交给支持去重的服务；编排器传递稳定 key，无法单独保证 exactly-once。
 
-同一个定义可以从 Flow 调用，也可以显式授予某个 Agent：
+`retry` 配置在每次 `agent/action` 调用上：`maxAttempts` 默认 1、最大 10；`initialDelayMs` 默认 1000、`multiplier` 默认 2、`maxDelayMs` 默认 30000。预算包含第一次调用、失败尝试和崩溃中断的 attempt；退避截止时间被持久化。预算耗尽的失败可被脚本捕获并降级；重放遇到同一失败再次抛出保存的错误。整个 Run 进入 failed 后为终态，只能新建 Run。
 
-```js
-const stats = await ctx.action({
-  id: "statistics",
-  label: "统计文本",
-  action: "text-stats",
-  input: { text: input.text },
-}); // { stepId, actionId, output }
+`ctx` 还提供 `signal`、`cwd`、Action 目录 `directory`、每次工具调用的 `callId`、`mode`，以及调用方存在时的 `runId`、`stepId`、`sessionId`。直接 Flow Action 的 `idempotencyKey` 跨 attempt 和重启保持不变。Agent 内部 Action 调用由 DSH 记录和调度，不是单独的 Flow durable step；未完成 Agent 一旦调用过工具，就需人工处理，不能自动重跑整个 Agent。
 
-const review = await ctx.agent({
-  id: "review",
-  label: "审阅",
-  preset: "reviewer-v1",
-  actions: ["text-stats"],
-  prompt: `审阅以下文本，可按需使用 text-stats：${input.text}`,
-});
-```
+默认不向 Agent 暴露 Action；用 `flow.agent({actions:["text-stats"],...})` 显式授予，名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。Action 超时默认 30 秒、最大 10 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
 
-`actions` 默认为空，Agent 使用的 DSH 工具名就是 Action ID。工具只注册到选定 Agent 的 scope；与 preset 已有工具重名会使步骤失败，不覆盖原工具。普通 preset 工具保持由 DSH 管理。Agent 内部工具调用由 DSH 自己调度、记录到该 session；直接 `ctx.action()` 则产生 `kind: "action"` 的独立步骤，保存 Action ID、版本 hash、结构化 input/output 与错误，不创建虚假的 session。Agent 步骤为 `kind: "agent"`，额外保存获授 Action 的 ID 与版本。
+## 队列、恢复与人工处理
 
-Flow 开始时固定所有当前可用 Action 定义；之后即使热更新或删除 Action，该运行仍使用固定版本。直接 Action 和 Agent 步骤共同占用 `concurrency`（1–4，默认 2），共用 step ID 命名空间和单次 64 步上限。Agent 内部工具调用复用 DSH 的 `isConcurrencySafe` 调度；Flow 的直接调用是否并行由作者的 `Promise.all()` 决定。异常会先留下失败步骤再抛出，Flow 可捕获并降级。
+Run 创建时先写入持久化 FIFO，最多同时执行两个 Run。queued、running、pausing 属于活动执行；paused、waiting_input、needs_attention 释放运行槽。进程关闭保留 active durable 状态，下次启动协调；用户显式取消才进入 cancelled。
 
-Action 的入参和出参须为不超过 256 KiB 的可持久化 JSON；DSH 负责 Schema 校验与策略执行。`timeoutMs` 默认 30 秒、最大 10 分钟，由 profile 已有的 DSH timeout-policy 执行。取消和超时都是协作式的：实现必须把 `ctx.signal` 传给文件、网络或等待操作；任意阻塞 JS 不会被强制打断。`ctx` 还提供 `cwd`、Action `directory`、`callId`、`mode` 以及调用方存在时的 `runId`、`stepId`、`sessionId`。
+启动时先完成 Loader、Flow/Action discovery，再恢复记录：
 
-Action 与 Flow 都是完整 Node.js 权限的受信任代码。第一版的 Action context 不提供 `flow()`、`agent()`、自动重试或嵌套 Action；这是 API 分工，不是安全沙箱。可运行示例见 `flow/action-example/` 和 `action/text-stats/`。
+- 校验 Flow hash 和已引用 Action hash，版本不符标记 `revision_mismatch`，要求新建运行。不保存旧可执行版本；运行中仍固定当次加载定义与 Action 快照。
+- completed 步骤复用输出；queued 尚未开始的步骤重新调度。
+- Agent 根据预先保存的 sessionId/requestId 核对 DSH 持久事件；已完成回合直接认领输出。没有工具调用的中断 attempt 按 retry 剩余预算重试，预算耗尽则失败。
+- Agent 已发起工具调用、DSH 记录无法核对，或普通 Action 执行期间中断：步骤变为 unknown，Run 进入 needs_attention。
+- idempotent Action 在剩余预算内使用同一 key 重试；memo 未完成可重新计算。
+- 升级前 active 记录没有 durable identity，标记 `legacy_unrecoverable`；旧 completed 记录继续可读。`aura_code_flows` domain 保持 version 1，新增字段向后兼容。
 
-## 发现与热加载
+暂停采用 cooperative drain：queued 立即 paused；running 先 pausing，停止发起新步骤，让已开始步骤完成，再退出为 paused。继续运行从入口重放并复用结果。checkpoint 提交答案后重新排队。
 
-`FlowDiscovery` 在首次启动、catalog 读取、运行开始前和后台短周期扫描时检查 `flow/` 的直接子目录。非法 ID、入口名不一致、缺少入口或多个 `*.flow.js` 都会作为不可用项进入 catalog。
+unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算）、`submit_output`（校验 Action 输出 Schema 或 Agent 字符串）、`terminate`（取消 Run，保留未知 attempt 审计）。一个 parallel 可能产生多个 unknown，全部处理完毕才继续。
 
-每个合法入口由 DSH 已有的 Cordis Loader 注册为独立插件。DSH Cordis HMR 跟踪入口及其本地 ESM 依赖图，因此修改入口、`prompts.js` 或嵌套的 `lib/*.js` 都会重载对应 Flow。新目录自动挂载，删除目录或入口会注销 Flow。
+## API
 
-HMR 导入或应用失败时保留最后一个成功版本，并在 catalog 返回加载警告；修复后自动切换。开始运行时会固定当前定义函数和整个 Flow 目录的 SHA-256 内容 hash，热更新或删除不会取消已经开始的运行，只影响后续运行。
+RPC handshake 为 v4。所有 HTTP 写操作携带 UUID `requestId`；命令身份和状态变更在同一个 Run 记录中提交。重试相同命令不会再次执行副作用，返回该 Run 的当前状态；同 requestId 不得改目标或输入。路径中的 `stepKey` 必须 URL 编码，包括 `/`。
 
-## DSH 复用边界
+| 方法 | `/flows` 下路径 | 内容 |
+| --- | --- | --- |
+| GET | `/catalog`、`/:flowId/source` | catalog 或只读源码 |
+| POST | `/:flowId/runs` | `{requestId,mode,input}`，202 返回 `{runId}` |
+| GET | `/runs`、`/runs/:id` | 最近 100 次摘要或完整运行 |
+| POST | `/runs/:id/pause`、`resume`、`cancel` | `{requestId}` |
+| POST | `/runs/:id/steps/:stepKey/answer` | `{requestId,output}` |
+| POST | `/runs/:id/steps/:stepKey/resolve` | `{requestId,action:"retry"|"submit_output"|"terminate",output?}` |
+| GET | `/runs/:id/steps/:stepKey/history?attempt=2&beforeSeq=…` | Agent attempt 历史；默认最新 attempt |
 
-```text
-HTTP / host.invokeFlow
-          ↓
-discovery → Cordis Loader/HMR → code Flow registry
-                                  ↓ ctx.agent()
-                        DSH Session Controller
-                                  ↓
-                  DSH session JSONL + storage domain
-```
+对应 RPC 为 `start/get/list/pause/resume/cancel/answer/resolve/history/wait`。`wait` 和 `host.invokeFlow()` 等待当前执行片段进入 paused、waiting_input、needs_attention 或终态，并返回 Run；调用方必须检查 status。
 
-- `flow-api.ts` / `action-api.ts`：公开的代码定义接口、DSH 工具适配与 JavaScript 类型补全。
-- `discovery.ts` / `registry.ts`：目录约束、Loader entry、last-known-good 定义和内容 hash。
-- `engine.ts`：代码 Flow 运行、动态 step、并发、取消、幂等与恢复。
-- `action-registry.ts` / `actions.ts`：Action 版本快照、Agent scoped 注册与 DSH ToolRuntime 直接执行适配；不新增工具运行时。
-- `action-runs.ts`：本地独立 Action 调用的持久化记录和取消生命周期。
-- `sessions.ts`：DSH Session Controller 适配，复用 create/selectModel/prompt/cancel/follow/page。
-- `plugin.ts`：DSH 插件组合、RPC 和新的 `aura_code_flows` storage domain。
-- `profile.ts`：DSH profile、Cordis HMR、preset roots 和模型路由。
-- `index.ts`：长驻 DSH 子进程、本地调用与 Hono HTTP 路由。
+`host.invokeAction()` 使用独立 `aura_code_actions` domain，仍保持重启后 active 标记 interrupted、不自动重放的行为，也不新增通用 Action HTTP 执行端点。
 
-Aura 不复制 DSH agent、session、模型、工具、skill、MCP 或会话历史实现。每个 agent step 只保存它和 DSH session 的映射；历史仍从 DSH Controller 分页读取。用户 preset 位于 `.aura/dsh/.agent-presets/<preset-id>/`，由 DSH 原生 composition 和健康检查加载。
+## 实现与部署
 
-运行记录使用全新的 `aura_code_flows` domain，只保存 Flow 元数据、内容 hash、结构化 input/output、状态、动态 steps、preset、session ID、输出和安全错误。旧 JSON DAG 定义与旧运行记录不读取，也不会因此递归删除原 DSH session 日志。
+`engine.ts` 为执行门面和命令提交；`scheduler.ts` 从 Run 表调度；`scopes.ts` 管理结构化调用；`execution.ts` 执行重放和 attempts；`recovery.ts` 协调中断状态；`sessions.ts` 适配 DSH Controller；`actions.ts` 复用 DSH ToolRuntime。没有另建 Agent 引擎或修改 DSH 依赖。
 
-## 调用
+Flow/Action 是部署时安装的、拥有完整 Node.js 权限的受信任代码。HTTP 仅按已发现 ID 调用，不能上传代码或指定路径。仅支持单进程调度；服务仍是受信任局域网开发服务。凭据继续由 DSH 后端保存，不进入运行 DTO 或日志投影。
 
-后端本地调用和 HTTP 调用进入同一执行、校验与持久化链路：
-
-```ts
-const run = await host.invokeFlow("research-report", {
-  input: { task: "..." },
-  mode: "codex",
-  signal,
-});
-
-const actionRun = await host.invokeAction("text-stats", {
-  input: { text: "hello\nworld" },
-  mode: "demo",
-  signal,
-});
-// 检查 actionRun.status / error；成功时 actionRun.output 为结构化值。
-```
-
-`invokeAction` 是本地后端接口，不提供通用 Action HTTP 执行端点。独立调用与 `ctx.action()` 使用同一 DSH 执行链路，记录保存到独立的 `aura_code_actions` storage domain。可传 `requestId` 去重，断线或重启不自动重放副作用；未完成记录重启后标记为 `interrupted`。本地可用 `host.request("action/get", { id })` 重读记录。
-
-| 方法 | 路径                                                   | 作用                                                |
-| ---- | ------------------------------------------------------ | --------------------------------------------------- |
-| GET  | `/flows/catalog`                                       | `flows`、`actions`、JSON Schema、版本 hash、加载错误与 preset |
-| GET  | `/flows/:flowId/source`                                | 当前已注册版本的入口源码、ID 与 hash，供静态预览 |
-| POST | `/flows/:flowId/runs`                                  | 提交 `{requestId, mode, input}`，202 返回 `{runId}` |
-| GET  | `/flows/runs`                                          | 最近 100 次运行摘要                                 |
-| GET  | `/flows/runs/:runId`                                   | 结构化 input/output 和动态 steps                    |
-| POST | `/flows/runs/:runId/cancel`                            | 显式取消运行                                        |
-| GET  | `/flows/runs/:runId/steps/:stepId/history?beforeSeq=…` | DSH 会话历史分页                                    |
-
-历史接口只能访问该运行实际产生的 Agent step ID，不接受任意 session ID；Action 步骤从运行详情读取 input/output。前端定期刷新 Actions catalog，并区分 Action 详情与 DSH 会话历史。当前 Aura runtime 是受信任局域网开发服务，不应直接暴露到公网。
+Discovery 对旧根 `ctx.agent/action` 和原生 Promise 并发给出行号诊断，Runtime 作用域兜底校验。内置示例、默认草稿和 AI 编写提示已采用结构化 API，旧脚本需迁移。Cordis HMR 跟踪入口和本地依赖，失败保留最后可用版本；监听路径使用 canonical realpath。
 
 ## 验证
 
-```powershell
-pnpm --filter @aura/orchestration typecheck
-pnpm --filter @aura/orchestration test
-pnpm run check
-pnpm run build:web
-```
-
-真实 DSH/HMR 集成测试使用临时 Flow / Action 目录、独立 DSH home 和本地模拟 provider，不读取个人凭据或调用付费模型。测试覆盖 Agent 工具可见性、真实工具调用、直接调用、持久化、嵌套辅助文件 HMR、回滚、执行中版本固定、JSON 校验、超时、取消与冷历史；定向测试还验证共享步骤并发、失败捕获、重启不重放和 `.d.ts` 的正反向 checkJs 检查。DSH 与原生 TypeScript 加载要求仓库规定的 Node.js 24 或更高版本。
+执行 `pnpm --filter @aura/orchestration typecheck`、`pnpm --filter @aura/orchestration test`，再运行 `pnpm run check` 和 Web build。测试覆盖 FIFO、作用域、暂停、checkpoint、retry、未知结果、版本冲突和写盘故障；真实 DSH 测试使用临时目录及本地模拟模型，强制 SIGKILL 验证无工具 Agent 恢复、工具副作用隔离、历史读取和 HMR，不调用付费模型。

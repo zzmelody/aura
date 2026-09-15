@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Context } from "@deepseek-ai/cordis";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import type {
@@ -38,8 +37,10 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
       timeoutMs,
       signal,
       runId,
-      id: stepId,
+      id: localId,
+      stepKey,
       actionDefinitions,
+      requestId: savedRequestId,
     }) {
       const sessionId = SessionId(rawId);
       const timeout = AbortSignal.timeout(timeoutMs);
@@ -56,7 +57,7 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
         cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
         mode,
         runId,
-        stepId,
+        stepId: stepKey ?? localId,
         sessionId: rawId,
       });
       try {
@@ -69,7 +70,9 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
               : "deepseek-v4-flash",
           reasoningEffort: mode === "codex" ? "medium" : "off",
         });
-        const requestId = randomUUID() as SessionRequestId;
+        if (!savedRequestId)
+          throw new FlowError("Agent attempt 缺少持久化 requestId。");
+        const requestId = savedRequestId as SessionRequestId;
         let matchedTurn: number | undefined;
         let turn: number | undefined;
         const disposers: (() => void)[] = [];
@@ -150,6 +153,55 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
       } finally {
         unmountActions();
       }
+    },
+    async reconcile(step) {
+      if (!step.requestId)
+        throw new FlowError("Agent attempt 缺少持久化 requestId。");
+      let inspection;
+      try {
+        inspection = await controller.inspect(
+          SessionId(step.sessionId),
+          AbortSignal.timeout(15_000),
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.name === "SessionPersistenceNotFoundError"
+        )
+          return { actionStarted: false };
+        throw error;
+      }
+      let turn: number | undefined;
+      let matched: number | undefined;
+      let output: string | undefined;
+      let completed = false;
+      let actionStarted = false;
+      for (const event of inspection.events) {
+        if (event.type === "turn/start") turn = event.data.turn;
+        if (
+          event.type === "user/message" &&
+          "rpcId" in event.data.source &&
+          event.data.source.rpcId === step.requestId
+        )
+          matched = turn;
+        if (matched === undefined) continue;
+        if (event.type === "tool/call" && event.data.turn === matched)
+          actionStarted = true;
+        if (
+          event.type === "assistant/message" &&
+          event.data.turn === matched &&
+          !event.data.interrupted
+        )
+          output = plainText(event.data.message.content);
+        if (event.type === "turn/end" && event.data.turn === matched)
+          completed = event.data.reason.kind === "completed";
+      }
+      return {
+        actionStarted,
+        ...(completed && output?.trim() && output.length <= 80_000
+          ? { output }
+          : {}),
+      };
     },
     async history(step, beforeSeq) {
       if (

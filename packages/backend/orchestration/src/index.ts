@@ -92,7 +92,7 @@ export class OrchestrationHost {
       if (
         !result.ok ||
         result.data.name !== "aura-orchestration" ||
-        result.data.version !== 3
+        result.data.version !== 4
       )
         throw new Error("Invalid host handshake");
       return { child, rpc, exited };
@@ -143,7 +143,10 @@ export class OrchestrationHost {
       return await this.request<FlowRun>("wait", { id: run.id }, signal);
     } catch (error) {
       if (signal.aborted) {
-        await this.request("cancel", { id: run.id }).catch(() => undefined);
+        await this.request("cancel", {
+          id: run.id,
+          requestId: randomUUID(),
+        }).catch(() => undefined);
         throw signal.reason;
       }
       throw error;
@@ -235,16 +238,34 @@ export function createFlowApp(host: Pick<OrchestrationHost, "request">) {
   app.get("/runs/:id", async (context) =>
     context.json(await host.request("get", { id: context.req.param("id") })),
   );
-  app.post("/runs/:id/cancel", async (context) =>
-    context.json(await host.request("cancel", { id: context.req.param("id") })),
-  );
+  for (const method of ["cancel", "pause", "resume"] as const)
+    app.post(`/runs/:id/${method}`, async (context) =>
+      context.json(
+        await host.request(method, {
+          ...(await readBody(context)),
+          id: context.req.param("id"),
+        }),
+      ),
+    );
+  for (const method of ["answer", "resolve"] as const)
+    app.post(`/runs/:id/steps/:stepKey/${method}`, async (context) =>
+      context.json(
+        await host.request(method, {
+          ...(await readBody(context)),
+          id: context.req.param("id"),
+          stepKey: context.req.param("stepKey"),
+        }),
+      ),
+    );
   app.get("/runs/:id/steps/:stepId/history", async (context) => {
     const beforeSeq = context.req.query("beforeSeq");
+    const attempt = context.req.query("attempt");
     return context.json(
       await host.request("history", {
         id: context.req.param("id"),
         stepId: context.req.param("stepId"),
         ...(beforeSeq === undefined ? {} : { beforeSeq: Number(beforeSeq) }),
+        ...(attempt === undefined ? {} : { attempt: Number(attempt) }),
       }),
     );
   });

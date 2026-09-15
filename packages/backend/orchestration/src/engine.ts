@@ -1,545 +1,501 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import type {
-  FlowContext,
-  FlowAgentRequest,
-  FlowAgentResult,
-  FlowActionRequest,
-  FlowActionResult,
-} from "./flow-api.ts";
-import type {
-  FlowCatalog,
   FlowRun,
   FlowStep,
+  FlowCatalog,
   FlowAgentStep,
-  FlowActionStep,
-  JsonValue,
 } from "@aura/protocol/types";
+import type { EngineOptions, Table } from "./types.ts";
+import type { LoadedFlow } from "./registry.ts";
+import type { LoadedAction } from "./action-registry.ts";
 import {
-  active,
-  agentRequestSchema,
-  actionRequestSchema,
-  jsonValue,
   FlowError,
   parse,
   parseJson,
   startSchema,
+  jsonValue,
 } from "./schema.ts";
-import type { LoadedFlow } from "./registry.ts";
-import type { LoadedAction } from "./action-registry.ts";
-import type { EngineOptions, Table } from "./types.ts";
+import {
+  executable,
+  fingerprint,
+  stepKey,
+  StorageFailure,
+  terminal,
+  validateSaved,
+} from "./durable.ts";
+import { FlowExecution } from "./execution.ts";
+import { FlowScheduler } from "./scheduler.ts";
+import { recoverRun } from "./recovery.ts";
 
-class ConcurrencyGate {
-  private limit: number;
-  private active = 0;
-  private waiting: Array<{
-    signal: AbortSignal;
-    resolve(release: () => void): void;
-    reject(reason: unknown): void;
-    abort(): void;
-  }> = [];
-
-  constructor(limit: number) {
-    this.limit = limit;
-  }
-
-  acquire(signal: AbortSignal): Promise<() => void> {
-    if (signal.aborted) return Promise.reject(signal.reason);
-    return new Promise((resolve, reject) => {
-      const waiter = {
-        signal,
-        resolve,
-        reject,
-        abort: () => {
-          this.waiting = this.waiting.filter((item) => item !== waiter);
-          reject(signal.reason);
-        },
-      };
-      if (this.active < this.limit) this.admit(waiter);
-      else {
-        this.waiting.push(waiter);
-        signal.addEventListener("abort", waiter.abort, { once: true });
-      }
-    });
-  }
-
-  private admit(waiter: (typeof this.waiting)[number]) {
-    waiter.signal.removeEventListener("abort", waiter.abort);
-    if (waiter.signal.aborted) return waiter.reject(waiter.signal.reason);
-    this.active++;
-    let released = false;
-    waiter.resolve(() => {
-      if (released) return;
-      released = true;
-      this.active--;
-      while (this.waiting.length) {
-        const next = this.waiting.shift()!;
-        if (next.signal.aborted) {
-          next.reject(next.signal.reason);
-          continue;
-        }
-        this.admit(next);
-        break;
-      }
-    });
-  }
-}
-
-interface ActiveRun {
-  abort: AbortController;
-  task: Promise<void>;
+const mutationSchema = z
+  .object({
+    requestId: z.uuid(),
+    action: z.enum(["retry", "submit_output", "terminate"]).optional(),
+    output: z.unknown().optional(),
+  })
+  .strict();
+type Operation = "pause" | "resume" | "cancel" | "answer" | "resolve";
+type Revision = {
   flow: LoadedFlow;
   actions: ReadonlyMap<string, LoadedAction>;
-  gate: ConcurrencyGate;
-  stepIds: Set<string>;
-  stepTasks: Set<Promise<unknown>>;
-  stepRecords: Array<{ observed: boolean; failure?: unknown }>;
-  cancelRequested: boolean;
-}
-
-const preview = (input: JsonValue) => {
-  const text = JSON.stringify(input);
-  return text.length > 140 ? `${text.slice(0, 137)}…` : text;
 };
 
-/** Backend-only code Flow runner; DSH owns agents, presets and transcripts. */
+/** Public engine facade; durable records own both queue admission and command receipts. */
 export class FlowEngine {
-  runs: Table<FlowRun>;
-  sessions: EngineOptions["sessions"];
-  registry: EngineOptions["registry"];
-  refreshFlows: EngineOptions["refreshFlows"];
-  presets: EngineOptions["presets"];
-  actions: EngineOptions["actions"];
-  running = new Map<string, ActiveRun>();
-  private admission: Promise<unknown> = Promise.resolve();
-  private closing = false;
-
-  constructor({
-    domain,
-    sessions,
-    registry,
-    refreshFlows,
-    presets,
-    actions,
-  }: EngineOptions) {
-    this.runs = domain.table("runs");
-    this.sessions = sessions;
-    this.registry = registry;
-    this.refreshFlows = refreshFlows;
-    this.presets = presets;
-    this.actions = actions;
+  readonly runs: Table<FlowRun>;
+  readonly running = new Map<string, FlowExecution>();
+  private options: EngineOptions;
+  private scheduler: FlowScheduler;
+  private revisions = new Map<string, Revision>();
+  private operations: Promise<unknown> = Promise.resolve();
+  private closed = false;
+  private initialized = false;
+  private storageFailures = new Set<string>();
+  private queueTime() {
+    return Math.max(
+      Date.now(),
+      ...[...this.runs.entries()].map(([, run]) => (run.queuedAt ?? 0) + 1),
+    );
   }
-
+  constructor(options: EngineOptions) {
+    this.options = options;
+    this.runs = options.domain.table("runs");
+    this.scheduler = new FlowScheduler(
+      () =>
+        [...this.runs.entries()]
+          .map(([, run]) => run)
+          .filter(
+            (run) =>
+              run.status === "queued" && !this.storageFailures.has(run.id),
+          )
+          .sort(
+            (a, b) =>
+              (a.queuedAt ?? a.createdAt) - (b.queuedAt ?? b.createdAt) ||
+              a.id.localeCompare(b.id),
+          )
+          .map((run) => run.id),
+      (id) => this.execute(id),
+    );
+  }
+  private serialize<T>(work: () => Promise<T>): Promise<T> {
+    const task = this.operations.then(work);
+    this.operations = task.catch(() => undefined);
+    return task;
+  }
+  private async update(id: string, change: (run: FlowRun) => FlowRun) {
+    try {
+      const run = await this.runs.update(id, (current) => ({
+        ...change(current),
+        updatedAt: Date.now(),
+      }));
+      this.scheduler.notify();
+      return run;
+    } catch {
+      this.storageFailures.add(id);
+      throw new StorageFailure();
+    }
+  }
   async initialize() {
-    // Never replay arbitrary code or tool side effects after an uncertain exit.
-    for (const [id, run] of this.runs.entries())
-      if (active(run.status)) {
-        await this.runs.put(id, {
-          ...run,
-          status: "interrupted",
-          finishedAt: Date.now(),
-          error: "运行时曾中断。保留已有输出和会话，请明确重新运行。",
-          steps: run.steps.map((step) =>
-            active(step.status)
-              ? { ...step, status: "interrupted", finishedAt: Date.now() }
-              : step,
-          ),
-        });
-      }
+    if (this.initialized) return;
+    await this.options.refreshFlows();
+    for (const [id, run] of this.runs.entries()) {
+      if (!executable(run.status)) continue;
+      if (run.durableVersion && !(await this.revision(id))) continue;
+      const recovered = await recoverRun(run, this.options.sessions);
+      await this.update(id, () => recovered);
+    }
+    this.initialized = true;
+    this.scheduler.kick();
   }
-
   async catalog(): Promise<FlowCatalog> {
-    await this.refreshFlows();
+    await this.options.refreshFlows();
     return {
-      flows: this.registry.catalog(),
-      actions: this.actions?.registry.catalog() ?? [],
-      presets: await this.presets(),
+      flows: this.options.registry.catalog(),
+      actions: this.options.actions?.registry.catalog() ?? [],
+      presets: await this.options.presets(),
     };
   }
-
   list() {
     return [...this.runs.entries()]
       .map(([, run]) => ({
         id: run.id,
         flowId: run.flow.id,
         title: run.flow.title,
-        inputPreview: preview(run.input),
+        inputPreview:
+          JSON.stringify(run.input).length > 140
+            ? `${JSON.stringify(run.input).slice(0, 137)}…`
+            : JSON.stringify(run.input),
         status: run.status,
         mode: run.mode,
         createdAt: run.createdAt,
+        updatedAt: run.updatedAt,
       }))
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 100);
   }
-
   get(id: string) {
     const run = this.runs.get(id);
     if (!run) throw new FlowError("Flow 运行不存在。", 404);
     return run;
   }
-
   start(input: unknown) {
-    const task = this.admission.then(() => this.admit(input));
-    this.admission = task.catch(() => undefined);
-    return task;
-  }
-
-  private async admit(input: unknown) {
-    const request = parse(startSchema, input);
-    await this.refreshFlows();
-    const flow = this.registry.get(request.flowId);
-    const parsedInput = parseJson(flow.inputSchema, request.input, "Flow 入参");
-    const previous = [...this.runs.entries()].find(
-      ([, run]) => run.requestId === request.requestId,
-    )?.[1];
-    if (previous) {
-      if (
-        previous.flow.id !== request.flowId ||
-        previous.mode !== request.mode ||
-        JSON.stringify(previous.input) !== JSON.stringify(parsedInput)
-      )
-        throw new FlowError("同一请求 ID 不能用于不同输入。", 409);
-      return previous;
-    }
-    if (this.closing || this.running.size >= 2)
-      throw new FlowError("已有两个 Flow 在运行，请稍后再试。", 503);
-
-    const run: FlowRun = {
-      id: randomUUID(),
-      requestId: request.requestId,
-      flow: {
-        id: flow.id,
-        title: flow.title,
-        description: flow.description,
-        sourceHash: flow.sourceHash,
-      },
-      input: parsedInput,
-      mode: request.mode,
-      status: "queued",
-      createdAt: Date.now(),
-      steps: [],
-    };
-    await this.runs.put(run.id, run);
-    const activeRun: ActiveRun = {
-      abort: new AbortController(),
-      task: Promise.resolve(),
-      flow,
-      actions: this.actions?.registry.snapshot() ?? new Map(),
-      gate: new ConcurrencyGate(flow.concurrency),
-      stepIds: new Set(),
-      stepTasks: new Set(),
-      stepRecords: [],
-      cancelRequested: false,
-    };
-    this.running.set(run.id, activeRun);
-    activeRun.task = this.execute(run.id, activeRun)
-      .catch(async () => {
-        activeRun.abort.abort();
-        await this.runs.update(run.id, (current) => ({
-          ...current,
-          status: "failed",
-          finishedAt: Date.now(),
-          error: "Flow 状态提交失败，请检查后端存储。",
-          steps: current.steps.map((step) =>
-            active(step.status)
-              ? { ...step, status: "interrupted", finishedAt: Date.now() }
-              : step,
-          ),
-        }));
-      })
-      .finally(() => this.running.delete(run.id));
-    activeRun.task.catch(() => undefined);
-    return run;
-  }
-
-  private async execute(id: string, activeRun: ActiveRun) {
-    await this.runs.update(id, (run) => ({ ...run, status: "running" }));
-    const context: FlowContext = {
-      runId: id,
-      mode: this.get(id).mode,
-      signal: activeRun.abort.signal,
-      agent: (request) =>
-        this.track(activeRun, () => this.executeAgent(id, activeRun, request)),
-      action: (request) =>
-        this.track(activeRun, () => this.executeAction(id, activeRun, request)),
-    };
-    try {
-      const rawOutput = await activeRun.flow.run(context, this.get(id).input);
-      while (activeRun.stepTasks.size)
-        await Promise.allSettled([...activeRun.stepTasks]);
-      activeRun.abort.signal.throwIfAborted();
-      const unobserved = activeRun.stepRecords.find(
-        (record) => record.failure && !record.observed,
-      );
-      if (unobserved)
-        throw unobserved.failure instanceof Error
-          ? unobserved.failure
-          : new FlowError("未处理的 Flow 步骤失败。");
-      const output = parseJson(
-        activeRun.flow.outputSchema,
-        rawOutput,
-        "Flow 出参",
-      );
-      await this.runs.update(id, (run) => ({
-        ...run,
-        status: "completed",
-        output,
-        finishedAt: Date.now(),
-      }));
-    } catch (error) {
-      activeRun.abort.abort(error);
-      while (activeRun.stepTasks.size)
-        await Promise.allSettled([...activeRun.stepTasks]);
-      const cancelled = activeRun.cancelRequested || this.closing;
-      await this.runs.update(id, (run) => ({
-        ...run,
-        status: cancelled ? "cancelled" : "failed",
-        finishedAt: Date.now(),
-        error: cancelled
-          ? "Flow 已取消。"
-          : error instanceof FlowError
-            ? error.message
-            : "Flow 代码执行失败，请检查后端日志。",
-      }));
-    }
-  }
-
-  private track<T>(
-    activeRun: ActiveRun,
-    execute: () => Promise<T>,
-  ): Promise<T> {
-    const record: (typeof activeRun.stepRecords)[number] = {
-      observed: false,
-    };
-    activeRun.stepRecords.push(record);
-    const task = execute().catch((error) => {
-      record.failure = error;
-      throw error;
-    });
-    activeRun.stepTasks.add(task);
-    task.catch(() => undefined).finally(() => activeRun.stepTasks.delete(task));
-    return {
-      [Symbol.toStringTag]: "Promise",
-      then(onfulfilled, onrejected) {
-        record.observed = true;
-        return task.then(onfulfilled, onrejected);
-      },
-      catch(onrejected) {
-        record.observed = true;
-        return task.catch(onrejected);
-      },
-      finally(onfinally) {
-        return task.finally(onfinally);
-      },
-    } as Promise<T>;
-  }
-
-  private reserveStep(activeRun: ActiveRun, id: string) {
-    activeRun.abort.signal.throwIfAborted();
-    if (activeRun.stepIds.size >= 64)
-      throw new FlowError("单次 Flow 最多执行 64 个步骤。");
-    if (activeRun.stepIds.has(id))
-      throw new FlowError(`Flow 步骤 ID 不能重复：${id}`);
-    activeRun.stepIds.add(id);
-  }
-
-  private async executeAgent(
-    runId: string,
-    activeRun: ActiveRun,
-    input: FlowAgentRequest,
-  ): Promise<FlowAgentResult> {
-    const request = parse(agentRequestSchema, input);
-    this.reserveStep(activeRun, request.id);
-
-    const step: FlowAgentStep = {
-      kind: "agent",
-      id: request.id,
-      label: request.label,
-      preset: request.preset,
-      sessionId: randomUUID(),
-      status: "queued",
-    };
-    await this.runs.update(runId, (run) => ({
-      ...run,
-      steps: [...run.steps, step],
-    }));
-
-    let release: (() => void) | undefined;
-    try {
-      if (new Set(request.actions).size !== request.actions.length)
-        throw new FlowError("Agent actions 不可重复。");
-      const actionDefinitions = request.actions.map((id) => {
-        const action = activeRun.actions.get(id);
-        if (!action) throw new FlowError(`Action 不存在或不可用：${id}`);
-        return action;
-      });
-      await this.updateStep(runId, step.id, {
-        actions: actionDefinitions.map(({ id, sourceHash }) => ({
+    return this.serialize(async () => {
+      if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
+      const request = parse(startSchema, input);
+      const previous = [...this.runs.entries()].find(
+        ([, run]) => run.requestId === request.requestId,
+      )?.[1];
+      if (previous) {
+        if (
+          previous.flow.id !== request.flowId ||
+          previous.mode !== request.mode ||
+          (previous.requestInputHash ?? fingerprint(previous.input)) !==
+            fingerprint(jsonValue(request.input, "Flow 入参"))
+        )
+          throw new FlowError("同一请求 ID 不能用于不同输入。", 409);
+        return previous;
+      }
+      await this.options.refreshFlows();
+      const flow = this.options.registry.get(request.flowId);
+      const args = parseJson(flow.inputSchema, request.input, "Flow 入参");
+      const actions =
+        this.options.actions?.registry.snapshot() ??
+        new Map<string, LoadedAction>();
+      const run: FlowRun = {
+        id: randomUUID(),
+        requestId: request.requestId,
+        flow: {
+          id: flow.id,
+          title: flow.title,
+          description: flow.description,
+          sourceHash: flow.sourceHash,
+        },
+        input: args,
+        mode: request.mode,
+        status: "queued",
+        createdAt: Date.now(),
+        queuedAt: this.queueTime(),
+        updatedAt: Date.now(),
+        steps: [],
+        durableVersion: 1,
+        requestInputHash: fingerprint(jsonValue(request.input, "Flow 入参")),
+        actionVersions: [...actions.values()].map(({ id, sourceHash }) => ({
           id,
           sourceHash,
         })),
-      });
-      const preset = (await this.presets()).find(
-        (item) => item.id === request.preset,
-      );
-      if (!preset || preset.unavailable)
-        throw new FlowError(`Preset 不存在或不可用：${request.preset}`);
-      release = await activeRun.gate.acquire(activeRun.abort.signal);
-      await this.updateStep(runId, step.id, {
-        status: "running",
-        startedAt: Date.now(),
-      });
-      const output = await this.sessions.execute({
-        ...step,
-        input: request.prompt,
-        mode: this.get(runId).mode,
-        timeoutMs: activeRun.flow.agentTimeoutMs,
-        signal: activeRun.abort.signal,
-        runId,
-        actionDefinitions,
-      });
-      activeRun.abort.signal.throwIfAborted();
-      if (!output.trim() || output.length > 80_000)
-        throw new FlowError("Agent 输出为空或超过 80,000 字符限制。");
-      await this.updateStep(runId, step.id, {
-        status: "completed",
-        output,
-        finishedAt: Date.now(),
-      });
-      return { stepId: step.id, sessionId: step.sessionId, output };
-    } catch (error) {
-      const cancelled = activeRun.abort.signal.aborted;
-      const message = cancelled
-        ? "Agent 步骤已取消。"
-        : error instanceof FlowError
-          ? error.message
-          : "DSH Agent 执行失败或超时，请查看对应会话。";
-      await this.updateStep(runId, step.id, {
-        status: cancelled ? "cancelled" : "failed",
-        error: message,
-        finishedAt: Date.now(),
-      });
-      throw new FlowError(message);
-    } finally {
-      release?.();
-    }
+      };
+      await this.runs.put(run.id, run);
+      this.revisions.set(run.id, { flow, actions });
+      this.scheduler.kick();
+      return run;
+    });
   }
-
-  private async executeAction(
-    runId: string,
-    activeRun: ActiveRun,
-    input: FlowActionRequest,
-  ): Promise<FlowActionResult> {
-    const request = parse(actionRequestSchema, input);
-    this.reserveStep(activeRun, request.id);
-    const action = activeRun.actions.get(request.action);
-    const step: FlowActionStep = {
-      kind: "action",
-      id: request.id,
-      label: request.label ?? action?.title ?? request.action,
-      actionId: request.action,
-      ...(action ? { sourceHash: action.sourceHash } : {}),
-      input: null,
-      status: "queued",
-    };
-    await this.runs.update(runId, (run) => ({
-      ...run,
-      steps: [...run.steps, step],
-    }));
-    let release: (() => void) | undefined;
+  private async revision(
+    id: string,
+    rejectedCommand?: { requestId: string; fingerprint: string },
+  ): Promise<Revision | undefined> {
+    const run = this.get(id);
     try {
-      const args = jsonValue(request.input, "Action 入参");
-      await this.updateStep(runId, step.id, { input: args });
-      if (!action || !this.actions)
-        throw new FlowError(`Action 不存在或不可用：${request.action}`);
-      release = await activeRun.gate.acquire(activeRun.abort.signal);
-      await this.updateStep(runId, step.id, {
-        status: "running",
-        startedAt: Date.now(),
-      });
-      const output = await this.actions.runtime.execute(
-        action,
-        args,
-        {
-          cwd: this.actions.cwd,
-          mode: this.get(runId).mode,
-          runId,
-          stepId: step.id,
-        },
-        activeRun.abort.signal,
-      );
-      activeRun.abort.signal.throwIfAborted();
-      await this.updateStep(runId, step.id, {
-        status: "completed",
-        output,
+      const flow = this.options.registry.get(run.flow.id);
+      const actions =
+        this.options.actions?.registry.snapshot() ??
+        new Map<string, LoadedAction>();
+      if (flow.sourceHash !== run.flow.sourceHash) throw new Error("Flow");
+      for (const step of run.steps) {
+        const refs =
+          step.kind === "action" && step.sourceHash
+            ? [{ id: step.actionId, sourceHash: step.sourceHash }]
+            : step.kind === "agent" || step.kind === undefined
+              ? (step.actions ?? [])
+              : [];
+        for (const ref of refs)
+          if (actions.get(ref.id)?.sourceHash !== ref.sourceHash)
+            throw new Error("Action");
+      }
+      return { flow, actions };
+    } catch {
+      await this.update(id, (current) => ({
+        ...current,
+        status: "interrupted",
         finishedAt: Date.now(),
-      });
-      return { stepId: step.id, actionId: action.id, output };
-    } catch (error) {
-      const cancelled = activeRun.abort.signal.aborted;
-      const message = cancelled
-        ? "Action 步骤已取消。"
-        : error instanceof FlowError
-          ? error.message
-          : "Action 执行失败。";
-      await this.updateStep(runId, step.id, {
-        status: cancelled ? "cancelled" : "failed",
-        error: message,
-        finishedAt: Date.now(),
-      });
-      throw new FlowError(message);
+        error:
+          "revision_mismatch: Flow 或已引用 Action 的代码已变化，请新建运行。",
+        commands: rejectedCommand
+          ? [
+              ...(current.commands ?? []),
+              { ...rejectedCommand, status: "interrupted", at: Date.now() },
+            ]
+          : current.commands,
+      }));
+      return undefined;
+    }
+  }
+  private async execute(id: string) {
+    if (this.closed || this.get(id).status !== "queued") return;
+    const revision = this.revisions.get(id) ?? (await this.revision(id));
+    if (!revision || this.closed || this.get(id).status !== "queued") return;
+    this.revisions.delete(id);
+    const execution = new FlowExecution({
+      ...revision,
+      ports: this.options,
+      get: () => this.get(id),
+      update: (change) => this.update(id, change),
+    });
+    this.running.set(id, execution);
+    try {
+      await execution.run();
     } finally {
-      release?.();
+      this.running.delete(id);
+      this.scheduler.notify();
     }
   }
-
-  private updateStep(id: string, stepId: string, patch: Partial<FlowStep>) {
-    return this.runs.update(id, (run) => ({
-      ...run,
-      steps: run.steps.map((step) =>
-        step.id === stepId ? ({ ...step, ...patch } as FlowStep) : step,
-      ),
-    }));
-  }
-
   async wait(id: string) {
-    this.get(id);
-    await this.running.get(id)?.task;
-    return this.get(id);
-  }
-
-  async cancel(id: string) {
-    this.get(id);
-    const entry = this.running.get(id);
-    if (entry) {
-      entry.cancelRequested = true;
-      entry.abort.abort(new Error("cancelled"));
-      await entry.task;
+    while (executable(this.get(id).status)) {
+      if (this.storageFailures.has(id))
+        throw new FlowError(
+          "Flow 状态存档失败，请修复存储并重启运行时恢复。",
+          503,
+        );
+      if (this.closed) break;
+      const changed = this.scheduler.changed();
+      this.scheduler.kick();
+      await changed;
     }
     return this.get(id);
   }
-
-  async history(id: string, stepId: string, beforeSeq?: number) {
+  async command(
+    id: string,
+    operation: Operation,
+    input: unknown,
+    key?: string,
+  ) {
+    const request = parse(mutationSchema, input);
+    if ((operation === "answer" || operation === "resolve") && !key)
+      throw new FlowError("缺少 stepKey。");
+    if (operation === "resolve" && !request.action)
+      throw new FlowError("缺少处理方式。");
+    if (request.action && operation !== "resolve")
+      throw new FlowError("此操作不接受 action。");
+    const bodyHash = fingerprint({ operation, key, ...request });
+    const result = await this.serialize(async () => {
+      if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
+      const current = this.get(id);
+      const receipt = current.commands?.find(
+        (item) => item.requestId === request.requestId,
+      );
+      if (receipt) {
+        if (receipt.fingerprint !== bodyHash)
+          throw new FlowError("同一请求 ID 不能用于不同操作。", 409);
+        return current;
+      }
+      if (terminal(current.status) && operation !== "cancel")
+        throw new FlowError("此运行已结束，请新建运行。", 409);
+      if (operation === "resume") {
+        if (current.status !== "paused")
+          throw new FlowError("仅 paused 运行可以恢复。", 409);
+        await this.options.refreshFlows();
+        if (
+          !(await this.revision(id, {
+            requestId: request.requestId,
+            fingerprint: bodyHash,
+          }))
+        )
+          return this.get(id);
+      }
+      let next = current;
+      if (operation === "pause") {
+        if (
+          !["queued", "running", "pausing", "paused"].includes(current.status)
+        )
+          throw new FlowError("当前状态不能暂停。", 409);
+        next = {
+          ...current,
+          status:
+            current.status !== "paused" && this.running.has(id)
+              ? "pausing"
+              : "paused",
+        };
+      }
+      if (operation === "resume")
+        next = { ...current, status: "queued", queuedAt: this.queueTime() };
+      if (operation === "cancel")
+        next = terminal(current.status)
+          ? current
+          : {
+              ...current,
+              status: "cancelled",
+              finishedAt: Date.now(),
+              error: "Flow 已取消。",
+            };
+      if (operation === "answer" || operation === "resolve") {
+        const step = current.steps.find((step) => stepKey(step) === key);
+        if (!step) throw new FlowError("Flow 步骤不存在。", 404);
+        if (
+          operation === "answer" &&
+          (current.status !== "waiting_input" ||
+            step.kind !== "checkpoint" ||
+            step.status !== "waiting_input")
+        )
+          throw new FlowError("该 checkpoint 当前不等待输入。", 409);
+        if (
+          operation === "resolve" &&
+          (current.status !== "needs_attention" || step.status !== "unknown")
+        )
+          throw new FlowError("该步骤当前不等待人工处理。", 409);
+        let changed: FlowStep = step;
+        if (operation === "answer" || request.action === "submit_output") {
+          const output =
+            step.kind === "agent" || step.kind === undefined
+              ? parseJson(
+                  z.string().trim().min(1).max(80_000),
+                  request.output,
+                  "Agent 输出",
+                )
+              : validateSaved(
+                  "outputSchema" in step ? (step.outputSchema ?? {}) : {},
+                  request.output,
+                );
+          changed = {
+            ...step,
+            status: "completed",
+            output,
+            finishedAt: Date.now(),
+            error: undefined,
+          } as FlowStep;
+        }
+        if (request.action === "retry")
+          changed = {
+            ...step,
+            status: "queued",
+            error: undefined,
+            nextAttemptAt: undefined,
+            extraAttempts: (step.extraAttempts ?? 0) + 1,
+          };
+        changed = {
+          ...changed,
+          recoveryEvents: [
+            ...(step.recoveryEvents ?? []),
+            {
+              at: Date.now(),
+              requestId: request.requestId,
+              ...(request.action ? { action: request.action } : {}),
+              reason:
+                operation === "answer"
+                  ? "已提交 checkpoint 答案。"
+                  : `人工处理：${request.action}`,
+            },
+          ],
+        };
+        const steps = current.steps.map((item) =>
+          stepKey(item) === key ? changed : item,
+        );
+        next = {
+          ...current,
+          steps,
+          error: undefined,
+          status:
+            request.action === "terminate"
+              ? "cancelled"
+              : steps.some((item) => item.status === "unknown")
+                ? "needs_attention"
+                : "queued",
+          queuedAt: this.queueTime(),
+          finishedAt: request.action === "terminate" ? Date.now() : undefined,
+        };
+      }
+      // Step completions may interleave with pause/cancel. Preserve their latest records.
+      const updated = await this.update(id, (latest) => {
+        if (
+          (operation === "pause" || operation === "cancel") &&
+          terminal(latest.status)
+        )
+          next = latest;
+        return {
+          ...latest,
+          status: next.status,
+          queuedAt: next.queuedAt,
+          finishedAt: next.finishedAt,
+          error: next.error,
+          ...(operation === "answer" || operation === "resolve"
+            ? { steps: next.steps }
+            : {}),
+          commands: [
+            ...(latest.commands ?? []),
+            {
+              requestId: request.requestId,
+              fingerprint: bodyHash,
+              status: next.status,
+              at: Date.now(),
+            },
+          ],
+        };
+      });
+      if (operation === "pause" && updated.status === "pausing")
+        this.running.get(id)?.pause();
+      if (operation === "cancel" || request.action === "terminate") {
+        const execution = this.running.get(id);
+        if (execution) {
+          execution.cancelRequested = true;
+          execution.abort.abort(new Error("cancelled"));
+        } else this.revisions.delete(id);
+      }
+      this.scheduler.kick();
+      return updated;
+    });
+    if (operation === "cancel")
+      await this.scheduler.running.get(id)?.catch(() => undefined);
+    return operation === "cancel" ? this.get(id) : result;
+  }
+  pause(id: string, requestId = randomUUID()) {
+    return this.command(id, "pause", { requestId });
+  }
+  resume(id: string, requestId = randomUUID()) {
+    return this.command(id, "resume", { requestId });
+  }
+  cancel(id: string, requestId = randomUUID()) {
+    return this.command(id, "cancel", { requestId });
+  }
+  async history(
+    id: string,
+    key: string,
+    beforeSeq?: number,
+    attemptNumber?: number,
+  ) {
     const step = this.get(id).steps.find(
-      (candidate) => candidate.id === stepId,
+      (candidate) =>
+        stepKey(candidate) === key ||
+        (!candidate.stepKey && candidate.id === key),
     );
     if (!step) throw new FlowError("Flow 步骤不存在。", 404);
-    if (step.kind === "action")
+    if (step.kind && step.kind !== "agent")
       throw new FlowError(
-        "Action 步骤没有 DSH session，请读取步骤的结构化输入和输出。",
+        "该步骤没有 DSH session，请读取结构化输入和输出。",
         400,
       );
-    return this.sessions.history(step, beforeSeq);
-  }
-
-  async close() {
-    this.closing = true;
-    await this.admission;
-    for (const entry of this.running.values()) {
-      entry.cancelRequested = true;
-      entry.abort.abort(new Error("runtime closing"));
+    let agent = step as FlowAgentStep;
+    if (attemptNumber !== undefined) {
+      const attempt = step.attempts?.find(
+        (value) => value.number === attemptNumber,
+      );
+      if (!attempt?.sessionId)
+        throw new FlowError("Agent attempt 不存在。", 404);
+      agent = {
+        ...agent,
+        sessionId: attempt.sessionId,
+        startedAt: attempt.startedAt,
+      };
     }
-    await Promise.allSettled(
-      [...this.running.values()].map((entry) => entry.task),
-    );
+    return this.options.sessions.history(agent, beforeSeq);
+  }
+  async close() {
+    this.closed = true;
+    this.scheduler.stop();
+    await this.operations;
+    for (const execution of this.running.values()) {
+      execution.closing = true;
+      execution.abort.abort(new Error("runtime closing"));
+    }
+    await Promise.allSettled([...this.scheduler.running.values()]);
   }
 }

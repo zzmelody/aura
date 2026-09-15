@@ -9,6 +9,7 @@ import type {
 import { z } from "zod";
 import type { FlowDefinition, FlowRegistrationConfig } from "./flow-api.ts";
 import { FlowError, parse } from "./schema.ts";
+import { validateFlowSource } from "./flow-diagnostics.ts";
 
 export interface LoadedFlow {
   id: string;
@@ -79,6 +80,7 @@ export class FlowRegistry {
     const definition = parse(definitionSchema, input);
     const sourceHash = await hashFlowDirectory(config.directory);
     const code = await readFile(config.entry, "utf8");
+    validateFlowSource(code);
     // Conversion happens at registration so unsupported schemas fail before use.
     const inputSchema = z.toJSONSchema(definition.input) as JsonValue;
     const outputSchema = z.toJSONSchema(definition.output) as JsonValue;

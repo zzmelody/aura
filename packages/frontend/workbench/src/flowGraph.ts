@@ -4,7 +4,16 @@ type AstNode = Node & Record<string, unknown>;
 
 export type FlowGraphNode = {
   id: string;
-  kind: "input" | "agent" | "tool" | "condition" | "loop" | "output";
+  kind:
+    | "input"
+    | "agent"
+    | "tool"
+    | "condition"
+    | "loop"
+    | "output"
+    | "scope"
+    | "memo"
+    | "checkpoint";
   label: string;
   subtitle: string;
   preset?: string;
@@ -149,7 +158,7 @@ function isAgentCall(node: AstNode) {
   if (node.callee.type !== "MemberExpression") return false;
   return (
     isNode(node.callee.object) &&
-    identifier(node.callee.object) === "ctx" &&
+    Boolean(identifier(node.callee.object)) &&
     isNode(node.callee.property) &&
     propertyName(node.callee.property) === "agent"
   );
@@ -161,7 +170,7 @@ function toolName(node: AstNode) {
   const contextCall =
     node.callee.type === "MemberExpression" &&
     isNode(node.callee.object) &&
-    identifier(node.callee.object) === "ctx";
+    Boolean(identifier(node.callee.object));
   const directCall = node.callee.type === "Identifier";
   if (
     (contextCall || directCall) &&
@@ -280,7 +289,11 @@ function visibleCalls(root: AstNode) {
       return;
     const next = [...ancestors, node];
     for (const child of childNodes(node)) visit(child, next, false);
-    if (isAgentCall(node) || isToolCall(node))
+    if (
+      isAgentCall(node) ||
+      isToolCall(node) ||
+      ["memo", "checkpoint"].includes(callName(node) ?? "")
+    )
       calls.push({ call: node, ancestors });
   };
   visit(root, [], true);
@@ -447,6 +460,7 @@ export function buildFlowGraph(source: string): FlowGraph {
 
   let generatedAgent = 0;
   let generatedTool = 0;
+  let scopePath: string[] = [];
   const connect = (incoming: FlowSource[], target: string) => {
     for (const sourceNode of incoming)
       addEdge(sourceNode.id, target, sourceNode.label);
@@ -458,6 +472,19 @@ export function buildFlowGraph(source: string): FlowGraph {
         ? call.arguments[0]
         : undefined;
     const binding = bindingFor(call, ancestors);
+    const primitive = callName(call);
+    if (primitive === "memo" || primitive === "checkpoint") {
+      const id =
+        literal(objectProperty(config, "id")) ?? `line-${call.loc?.start.line}`;
+      return {
+        id: uniqueId([...scopePath, String(id)].join("/")),
+        kind: primitive,
+        label: String(literal(objectProperty(config, "label")) ?? id),
+        subtitle: primitive === "memo" ? "持久化结果" : "等待人工输入",
+        line: call.loc?.start.line,
+        prompt: sourceText(source, objectProperty(config, "prompt")),
+      };
+    }
     if (isAgentCall(call)) {
       generatedAgent++;
       const staticId = literal(objectProperty(config, "id"));
@@ -470,7 +497,7 @@ export function buildFlowGraph(source: string): FlowGraph {
       if (typeof staticId !== "string")
         graph.warnings.push(`第 ${generatedAgent} 个 Agent 使用动态 ID。`);
       return {
-        id: uniqueId(base),
+        id: uniqueId([...scopePath, base].join("/")),
         kind: "agent",
         label: typeof label === "string" ? label : base,
         subtitle: typeof preset === "string" ? preset : "Agent",
@@ -491,7 +518,14 @@ export function buildFlowGraph(source: string): FlowGraph {
         ? call.arguments[1]
         : undefined);
     return {
-      id: uniqueId(`tool-${name}`),
+      id: uniqueId(
+        scopePath.length
+          ? [
+              ...scopePath,
+              String(literal(objectProperty(config, "id")) ?? name),
+            ].join("/")
+          : `tool-${name}`,
+      ),
       kind: "tool",
       label: typeof label === "string" ? label : name,
       subtitle: "工具调用",
@@ -575,6 +609,98 @@ export function buildFlowGraph(source: string): FlowGraph {
   ): FlowSource[] {
     if (statement.type === "BlockStatement")
       return processBlock(statements(statement), incoming, flowReturn);
+
+    // Find the outer structured operation without walking into its callbacks.
+    let structured: AstNode | undefined;
+    const findStructured = (node: AstNode) => {
+      if (
+        structured ||
+        [
+          "FunctionExpression",
+          "ArrowFunctionExpression",
+          "FunctionDeclaration",
+        ].includes(node.type)
+      )
+        return;
+      if (["sequence", "parallel"].includes(callName(node) ?? "")) {
+        structured = node;
+        return;
+      }
+      for (const child of childNodes(node)) findStructured(child);
+    };
+    if (
+      [
+        "ReturnStatement",
+        "ExpressionStatement",
+        "VariableDeclaration",
+      ].includes(statement.type)
+    )
+      findStructured(statement);
+    if (structured) {
+      const args = Array.isArray(structured.arguments)
+        ? structured.arguments.filter(isNode)
+        : [];
+      const config = args[0];
+      const primitive = callName(structured);
+      const staticId = literal(objectProperty(config, "id"));
+      const id = String(
+        staticId ??
+          sourceText(source, objectProperty(config, "id"), 48) ??
+          "dynamic",
+      );
+      if (staticId === undefined)
+        graph.warnings.push(
+          `第 ${structured.loc?.start.line} 行作用域使用动态 ID；执行路径以运行记录为准。`,
+        );
+      const group: FlowGraphNode = {
+        id: uniqueId(`scope-${[...scopePath, id].join("/")}`),
+        kind: "scope",
+        label: id,
+        subtitle: primitive === "parallel" ? "并行作用域" : "串行作用域",
+        line: structured.loc?.start.line,
+      };
+      graph.nodes.push(group);
+      connect(incoming, group.id);
+      const previousPath = scopePath;
+      scopePath = [...scopePath, id];
+      const body = (callback: AstNode | undefined, sources: FlowSource[]) =>
+        callback && isNode(callback.body)
+          ? processStatement(callback.body, sources, false)
+          : sources;
+      let exits: FlowSource[];
+      if (primitive === "sequence") exits = body(args[1], [{ id: group.id }]);
+      else {
+        const branches = objectProperty(config, "branches");
+        exits = [];
+        if (
+          branches?.type === "ObjectExpression" &&
+          Array.isArray(branches.properties)
+        ) {
+          for (const branch of branches.properties.filter(isNode)) {
+            const key = propertyName(branch.key as AstNode) ?? "dynamic";
+            scopePath = [...previousPath, id, key];
+            const before = graph.nodes.length;
+            exits.push(
+              ...body(isNode(branch.value) ? branch.value : undefined, [
+                { id: group.id, label: key },
+              ]),
+            );
+            for (const node of graph.nodes.slice(before)) node.parallel = true;
+          }
+        } else
+          graph.warnings.push(
+            `并行作用域 ${id} 的分支由运行时生成，静态图无法展开。`,
+          );
+        if (!exits.length) exits = [{ id: group.id }];
+      }
+      scopePath = previousPath;
+      if (statement.type === "ReturnStatement" && flowReturn) {
+        for (const exit of exits) addEdge(exit.id, output.id, exit.label);
+        outputConnected = true;
+        return [];
+      }
+      return exits;
+    }
 
     if (statement.type === "IfStatement" && isNode(statement.test)) {
       const condition: FlowGraphNode = {
