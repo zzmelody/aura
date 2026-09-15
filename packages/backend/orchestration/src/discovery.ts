@@ -5,6 +5,7 @@ import type { Loader } from "@deepseek-ai/cordis-plugin-loader";
 import { flowIdSchema, FlowError } from "./schema.ts";
 import { validateFlowSource } from "./flow-diagnostics.ts";
 import { hashFlowDirectory, type FlowRegistry } from "./registry.ts";
+import type { ContributionRoot } from "./types.ts";
 
 type DiscoveryRegistry = Pick<
   FlowRegistry,
@@ -42,6 +43,8 @@ export class CodeDiscovery {
   private registry: DiscoveryRegistry;
   private kind: "flow" | "action";
   readonly root: string;
+  readonly namespace?: string;
+  readonly plugin?: ContributionRoot["plugin"];
   private mounted = new Map<string, MountedFlow>();
   private failures = new Map<string, string>();
   private issues = new Set<string>();
@@ -50,12 +53,14 @@ export class CodeDiscovery {
   constructor(
     loader: Loader,
     registry: DiscoveryRegistry,
-    root: string,
+    root: string | ContributionRoot,
     kind: "flow" | "action",
   ) {
     this.loader = loader;
     this.registry = registry;
-    this.root = root;
+    this.root = typeof root === "string" ? root : root.root;
+    this.namespace = typeof root === "string" ? undefined : root.namespace;
+    this.plugin = typeof root === "string" ? undefined : root.plugin;
     this.kind = kind;
   }
 
@@ -63,6 +68,18 @@ export class CodeDiscovery {
     const task = this.queue.then(() => this.scan());
     this.queue = task.catch(() => undefined);
     return task;
+  }
+
+  descriptor(): ContributionRoot {
+    return {
+      root: this.root,
+      ...(this.namespace ? { namespace: this.namespace } : {}),
+      ...(this.plugin ? { plugin: this.plugin } : {}),
+    };
+  }
+
+  hasUnavailableContributions(): boolean {
+    return [...this.issues].some((id) => !this.mounted.has(id));
   }
 
   private async scan() {
@@ -79,13 +96,14 @@ export class CodeDiscovery {
 
     for (const child of entries) {
       if (!child.isDirectory()) continue;
-      const flowId = child.name;
+      const localId = child.name;
+      const flowId = this.namespace ? `${this.namespace}/${localId}` : localId;
       discovered.add(flowId);
-      const directory = join(this.root, flowId);
+      const directory = join(this.root, localId);
       if (
-        !flowIdSchema.safeParse(flowId).success ||
+        !flowIdSchema.safeParse(localId).success ||
         (this.kind === "action" &&
-          (flowId === "run_code" || flowId.startsWith("aura_direct_")))
+          (localId === "run_code" || localId.startsWith("aura_direct_")))
       ) {
         issues.add(flowId);
         await this.unmount(flowId);
@@ -93,14 +111,14 @@ export class CodeDiscovery {
         continue;
       }
 
-      const expected = join(directory, `${flowId}.${this.kind}.js`);
+      const expected = join(directory, `${localId}.${this.kind}.js`);
       const candidates = await flowEntries(directory, this.kind);
       if (candidates.length !== 1 || candidates[0] !== expected) {
         issues.add(flowId);
         await this.unmount(flowId);
         this.registry.problem(
           flowId,
-          `目录 ${flowId} 必须且只能包含入口 ${flowId}.${this.kind}.js。`,
+          `目录 ${localId} 必须且只能包含入口 ${localId}.${this.kind}.js。`,
         );
         continue;
       }
@@ -109,7 +127,9 @@ export class CodeDiscovery {
       const current = this.mounted.get(flowId);
       if (this.kind === "flow") {
         try {
-          validateFlowSource(await readFile(expected, "utf8"));
+          validateFlowSource(await readFile(expected, "utf8"), {
+            allowRootOperations: Boolean(this.plugin),
+          });
         } catch (error) {
           const message =
             error instanceof FlowError
@@ -141,6 +161,7 @@ export class CodeDiscovery {
         [this.kind === "flow" ? "flowId" : "actionId"]: flowId,
         directory,
         entry: expected,
+        plugin: this.plugin,
       };
       try {
         const loaderId = await this.loader.create({
@@ -153,9 +174,15 @@ export class CodeDiscovery {
       } catch (error) {
         issues.add(flowId);
         this.failures.set(flowId, signature);
+        const missing =
+          error instanceof Error
+            ? error.message.match(/Cannot find package '([^']+)'/u)?.[1]
+            : undefined;
         this.registry.problem(
           flowId,
-          `${title} 加载失败，请检查入口及本地依赖。`,
+          missing
+            ? `${title} 加载失败：依赖 ${missing} 不可解析。`
+            : `${title} 加载失败，请检查入口及本地依赖。`,
         );
       }
     }
@@ -180,17 +207,31 @@ export class CodeDiscovery {
   async close() {
     await this.queue;
     for (const id of [...this.mounted.keys()]) await this.unmount(id);
+    for (const id of this.issues) {
+      this.registry.clearProblem(id);
+      this.registry.clearReloadProblem(id);
+    }
+    this.issues.clear();
+    this.failures.clear();
   }
 }
 
 export class FlowDiscovery extends CodeDiscovery {
-  constructor(loader: Loader, registry: DiscoveryRegistry, root: string) {
+  constructor(
+    loader: Loader,
+    registry: DiscoveryRegistry,
+    root: string | ContributionRoot,
+  ) {
     super(loader, registry, root, "flow");
   }
 }
 
 export class ActionDiscovery extends CodeDiscovery {
-  constructor(loader: Loader, registry: DiscoveryRegistry, root: string) {
+  constructor(
+    loader: Loader,
+    registry: DiscoveryRegistry,
+    root: string | ContributionRoot,
+  ) {
     super(loader, registry, root, "action");
   }
 }

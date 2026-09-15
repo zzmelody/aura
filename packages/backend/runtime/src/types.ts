@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   CodexAuthStatus,
   CodexLoginRequest,
+  AuraPluginSettingsState,
 } from "@aura/protocol/types";
 import type { TripoRegion } from "@aura/tripo";
 
@@ -11,6 +12,8 @@ export interface AuraRuntimeOptions {
   root?: string;
   host?: string;
   port?: number;
+  /** Defaults to <root>/.aura/plugins.json. */
+  pluginConfigPath?: string;
 }
 
 /** Handle owned by the server or desktop application entrypoint. */
@@ -30,6 +33,7 @@ export interface RuntimeConfig {
   codexModel: string;
   tripoCredentialPath: string;
   tripoRegion: TripoRegion;
+  pluginConfigPath: string;
 }
 
 export type RuntimeMode = "demo" | "codex-subscription";
@@ -67,6 +71,12 @@ export interface DshSessionPort {
     route: DshRoute,
     signal: AbortSignal,
   ): Promise<void>;
+}
+
+/** Fixed-path plugin configuration exposed only by a loopback runtime. */
+export interface AuraPluginSettingsPort {
+  settings(): Promise<AuraPluginSettingsState>;
+  updateSettings(source: unknown): Promise<AuraPluginSettingsState>;
 }
 
 export interface ChatCommand {

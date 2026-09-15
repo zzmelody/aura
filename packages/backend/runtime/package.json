@@ -16,6 +16,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@aura/extensions": "workspace:*",
     "@aura/orchestration": "workspace:*",
     "@aura/dsh-auth": "workspace:*",
     "@aura/demo": "workspace:*",

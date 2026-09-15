@@ -13,7 +13,10 @@ function children(root: Ast): Ast[] {
     );
 }
 /** Early diagnostics only; runtime scopes enforce the actual capability boundary. */
-export function validateFlowSource(code: string) {
+export function validateFlowSource(
+  code: string,
+  options: { allowRootOperations?: boolean } = {},
+) {
   const ast = parse(code, {
     ecmaVersion: "latest",
     sourceType: "module",
@@ -57,6 +60,7 @@ export function validateFlowSource(code: string) {
           `第 ${root.loc?.start.line} 行：Flow 并发请使用 scope.parallel，旧 Promise.${property} 写法已停用。`,
         );
       if (
+        !options.allowRootOperations &&
         !shadowed &&
         object === context &&
         ["agent", "action", "memo", "checkpoint", "parallel"].includes(

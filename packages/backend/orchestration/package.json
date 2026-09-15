@@ -17,6 +17,7 @@
       "types": "./types/action.d.ts",
       "default": "./src/action-api.ts"
     },
+    "./local-ai": "./src/local-ai/api.ts",
     "./plugin": "./src/plugin.ts",
     "./demo": "./src/demo.ts"
   },
@@ -32,6 +33,9 @@
     "@deepseek-ai/dsh-agent": "0.1.2-rc.1",
     "@deepseek-ai/dsh-tools": "0.1.2-rc.1",
     "@deepseek-ai/dsh-util-values": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-subprocess": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-subprocess-local": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-win32-process": "0.1.2-rc.1",
     "@deepseek-ai/dsh-llm": "0.1.2-rc.1",
     "@deepseek-ai/dsh": "0.1.2-rc.1",
     "@deepseek-ai/dsh-base": "0.1.2-rc.1",

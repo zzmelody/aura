@@ -5,6 +5,8 @@ import type {
   FlowStep,
   FlowCatalog,
   FlowAgentStep,
+  AuraPluginIdentity,
+  AuraPluginStatus,
 } from "@aura/protocol/types";
 import type { EngineOptions, Table } from "./types.ts";
 import type { LoadedFlow } from "./registry.ts";
@@ -29,6 +31,17 @@ import { FlowScheduler } from "./scheduler.ts";
 import { recoverRun } from "./recovery.ts";
 import { agentDefaults } from "./agent-config.ts";
 
+function samePlugin(
+  left: LoadedFlow["plugin"] | LoadedAction["plugin"],
+  right: LoadedFlow["plugin"] | LoadedAction["plugin"],
+) {
+  return (
+    left?.id === right?.id &&
+    left?.version === right?.version &&
+    Boolean(left) === Boolean(right)
+  );
+}
+
 const mutationSchema = z
   .object({
     requestId: z.uuid(),
@@ -40,6 +53,7 @@ type Operation = "pause" | "resume" | "cancel" | "answer" | "resolve";
 type Revision = {
   flow: LoadedFlow;
   actions: ReadonlyMap<string, LoadedAction>;
+  pluginEpochs: ReadonlyMap<string, number>;
 };
 
 /** Public engine facade; durable records own both queue admission and command receipts. */
@@ -49,6 +63,7 @@ export class FlowEngine {
   private options: EngineOptions;
   private scheduler: FlowScheduler;
   private revisions = new Map<string, Revision>();
+  private pluginEpochs = new Map<string, number>();
   private operations: Promise<unknown> = Promise.resolve();
   private closed = false;
   private initialized = false;
@@ -114,8 +129,14 @@ export class FlowEngine {
     return {
       flows: this.options.registry.catalog(),
       actions: this.options.actions?.registry.catalog() ?? [],
+      plugins: this.options.plugins ?? [],
       presets: await this.options.presets(),
     };
+  }
+  setPlugins(plugins: AuraPluginStatus[], changedPluginIds: string[] = []) {
+    for (const id of changedPluginIds)
+      this.pluginEpochs.set(id, (this.pluginEpochs.get(id) ?? 0) + 1);
+    this.options.plugins = plugins;
   }
   list() {
     return [...this.runs.entries()]
@@ -171,6 +192,7 @@ export class FlowEngine {
           title: flow.title,
           description: flow.description,
           sourceHash: flow.sourceHash,
+          plugin: flow.plugin,
         },
         input: args,
         mode: request.mode,
@@ -186,13 +208,20 @@ export class FlowEngine {
           flow.agentTimeoutMs,
         ),
         requestInputHash: fingerprint(jsonValue(request.input, "Flow 入参")),
-        actionVersions: [...actions.values()].map(({ id, sourceHash }) => ({
-          id,
-          sourceHash,
-        })),
+        actionVersions: [...actions.values()].map(
+          ({ id, sourceHash, plugin }) => ({
+            id,
+            sourceHash,
+            plugin,
+          }),
+        ),
       };
       await this.runs.put(run.id, run);
-      this.revisions.set(run.id, { flow, actions });
+      this.revisions.set(run.id, {
+        flow,
+        actions,
+        pluginEpochs: new Map(this.pluginEpochs),
+      });
       this.scheduler.kick();
       return run;
     });
@@ -201,7 +230,20 @@ export class FlowEngine {
     id: string,
     rejectedCommand?: { requestId: string; fingerprint: string },
   ): Promise<Revision | undefined> {
+    const pinned = this.revisions.get(id);
     const run = this.get(id);
+    const pluginDetached = (plugin: AuraPluginIdentity | undefined) =>
+      Boolean(plugin) &&
+      Boolean(pinned) &&
+      (pinned!.pluginEpochs.get(plugin!.id) !==
+        (this.pluginEpochs.get(plugin!.id) ?? 0) ||
+        !this.options.plugins?.some(
+          (status) =>
+            status.enabled &&
+            status.available &&
+            status.id === plugin!.id &&
+            status.version === plugin!.version,
+        ));
     const missingConfig =
       Boolean(run.durableVersion) &&
       (!run.agentDefaults ||
@@ -210,11 +252,27 @@ export class FlowEngine {
         ));
     try {
       if (missingConfig) throw new Error("Missing pinned Agent configuration");
-      const flow = this.options.registry.get(run.flow.id);
+      let flow: LoadedFlow;
+      try {
+        flow = this.options.registry.get(run.flow.id);
+      } catch (error) {
+        if (pinned && pluginDetached(run.flow.plugin)) return pinned;
+        throw error;
+      }
       const actions =
         this.options.actions?.registry.snapshot() ??
         new Map<string, LoadedAction>();
-      if (flow.sourceHash !== run.flow.sourceHash) throw new Error("Flow");
+      if (
+        flow.sourceHash !== run.flow.sourceHash ||
+        !samePlugin(flow.plugin, run.flow.plugin)
+      ) {
+        if (pinned && pluginDetached(run.flow.plugin)) return pinned;
+        throw new Error("Flow");
+      }
+      let usePinned = Boolean(
+        pinned &&
+        run.actionVersions?.some(({ plugin }) => pluginDetached(plugin)),
+      );
       for (const step of run.steps) {
         const refs =
           step.kind === "action" && step.sourceHash
@@ -222,11 +280,27 @@ export class FlowEngine {
             : step.kind === "agent" || step.kind === undefined
               ? (step.actions ?? [])
               : [];
-        for (const ref of refs)
-          if (actions.get(ref.id)?.sourceHash !== ref.sourceHash)
+        for (const ref of refs) {
+          if (
+            actions.get(ref.id)?.sourceHash !== ref.sourceHash ||
+            !samePlugin(actions.get(ref.id)?.plugin, ref.plugin)
+          ) {
+            const pinnedAction = pinned?.actions.get(ref.id);
+            if (
+              pinnedAction?.sourceHash === ref.sourceHash &&
+              samePlugin(pinnedAction.plugin, ref.plugin) &&
+              pluginDetached(ref.plugin)
+            ) {
+              usePinned = true;
+              continue;
+            }
             throw new Error("Action");
+          }
+        }
       }
-      return { flow, actions };
+      return usePinned
+        ? pinned
+        : { flow, actions, pluginEpochs: new Map(this.pluginEpochs) };
     } catch {
       await this.update(id, (current) => ({
         ...current,
@@ -247,9 +321,8 @@ export class FlowEngine {
   }
   private async execute(id: string) {
     if (this.closed || this.get(id).status !== "queued") return;
-    const revision = this.revisions.get(id) ?? (await this.revision(id));
+    const revision = await this.revision(id);
     if (!revision || this.closed || this.get(id).status !== "queued") return;
-    this.revisions.delete(id);
     const execution = new FlowExecution({
       ...revision,
       ports: this.options,
@@ -261,6 +334,7 @@ export class FlowEngine {
       await execution.run();
     } finally {
       this.running.delete(id);
+      if (terminal(this.get(id).status)) this.revisions.delete(id);
       this.scheduler.notify();
     }
   }

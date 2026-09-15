@@ -5,6 +5,18 @@ import { snapshotJsonValue } from "@deepseek-ai/dsh-util-values";
 export const flowIdSchema = z
   .string()
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
+export const contributionIdSchema = z
+  .string()
+  .regex(
+    /^(?:[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}|[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?\/[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?)$/u,
+  );
+const pluginIdentitySchema = z
+  .object({
+    id: z.string().regex(/^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$/u),
+    name: z.string().min(1).max(80),
+    version: z.string().min(1).max(100),
+  })
+  .strict();
 const text = z.string().trim().min(1).max(180_000);
 export const retrySchema = z
   .object({
@@ -18,7 +30,7 @@ export const retrySchema = z
 export const startSchema = z
   .object({
     requestId: z.uuid(),
-    flowId: flowIdSchema,
+    flowId: contributionIdSchema,
     input: z.unknown(),
     mode: z.enum(["demo", "codex"]),
   })
@@ -53,7 +65,7 @@ export const agentRequestSchema = z
     label: z.string().trim().min(1).max(100),
     preset: flowIdSchema,
     prompt: text,
-    actions: z.array(flowIdSchema).max(64).default([]),
+    actions: z.array(contributionIdSchema).max(64).default([]),
     retry: retrySchema.optional(),
   })
   .strict();
@@ -119,8 +131,9 @@ const stepBase = {
 };
 
 const actionRefSchema = z.object({
-  id: flowIdSchema,
+  id: contributionIdSchema,
   sourceHash: z.string().length(64),
+  plugin: pluginIdentitySchema.optional(),
 });
 export const stepSchema = z.union([
   z.object({
@@ -136,8 +149,9 @@ export const stepSchema = z.union([
   z.object({
     ...stepBase,
     kind: z.literal("action"),
-    actionId: flowIdSchema,
+    actionId: contributionIdSchema,
     sourceHash: z.string().length(64).optional(),
+    plugin: pluginIdentitySchema.optional(),
     input: z.json(),
     output: z.json().optional(),
     outputSchema: z.json().optional(),
@@ -163,7 +177,7 @@ export const actionRequestSchema = z
   .object({
     id: flowIdSchema,
     label: z.string().trim().min(1).max(100).optional(),
-    action: flowIdSchema,
+    action: contributionIdSchema,
     input: z.unknown(),
     retry: retrySchema.optional(),
   })
@@ -172,7 +186,7 @@ export const actionRequestSchema = z
 export const actionStartSchema = z
   .object({
     requestId: z.uuid(),
-    actionId: flowIdSchema,
+    actionId: contributionIdSchema,
     input: z.unknown(),
     mode: z.enum(["demo", "codex"]),
   })
@@ -181,8 +195,9 @@ export const actionStartSchema = z
 export const actionRunSchema = z.object({
   id: z.uuid(),
   requestId: z.uuid(),
-  actionId: flowIdSchema,
+  actionId: contributionIdSchema,
   sourceHash: z.string().length(64),
+  plugin: pluginIdentitySchema.optional(),
   input: z.json(),
   output: z.json().optional(),
   mode: z.enum(["demo", "codex"]),
@@ -196,10 +211,11 @@ export const runSchema = z.object({
   id: z.uuid(),
   requestId: z.uuid(),
   flow: z.object({
-    id: flowIdSchema,
+    id: contributionIdSchema,
     title: z.string(),
     description: z.string(),
     sourceHash: z.string().length(64),
+    plugin: pluginIdentitySchema.optional(),
   }),
   input: z.json(),
   mode: z.enum(["demo", "codex"]),

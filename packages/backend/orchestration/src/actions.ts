@@ -6,6 +6,7 @@ import type {} from "@deepseek-ai/dsh-tools";
 import type { ActionBinding } from "./action-api.ts";
 import type { LoadedAction } from "./action-registry.ts";
 import { FlowError, jsonValue } from "./schema.ts";
+import type { LocalAIClient } from "./local-ai/api.ts";
 
 const internalPrefix = "aura_direct_";
 
@@ -13,9 +14,11 @@ const internalPrefix = "aura_direct_";
 export class ActionRuntime {
   private ctx: Context;
   private directMasks = new Map<string, Array<() => void>>();
+  private localAI?: LocalAIClient;
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, localAI?: LocalAIClient) {
     this.ctx = ctx;
+    this.localAI = localAI;
     // Direct calls require an unscoped DSH registration. Keep these short-lived,
     // pinned definitions out of every Agent's model surface, without changing presets.
     const hideDirectTools = (agent: Agent) => {
@@ -38,9 +41,13 @@ export class ActionRuntime {
     const dispose: Array<() => void> = [];
     try {
       for (const action of actions) {
-        if (agent.ctx.tools.get(action.id, agent))
+        if (agent.ctx.tools.get(action.toolName, agent))
           throw new FlowError(`Action 与已有 DSH 工具重名：${action.id}`);
-        dispose.push(agent.ctx.tools.register(action.tool(action.id, binding)));
+        dispose.push(
+          agent.ctx.tools.register(
+            action.tool(action.toolName, { ...binding, localAI: this.localAI }),
+          ),
+        );
       }
     } catch (error) {
       for (const remove of dispose.reverse()) remove();
@@ -61,7 +68,9 @@ export class ActionRuntime {
     const args = jsonValue(input, "Action 入参");
     const callId = ToolCallId(randomUUID());
     const name = `${internalPrefix}${callId.replaceAll("-", "")}`;
-    const dispose = this.ctx.tools.register(action.tool(name, binding));
+    const dispose = this.ctx.tools.register(
+      action.tool(name, { ...binding, localAI: this.localAI }),
+    );
     const masks: Array<() => void> = [];
     this.directMasks.set(name, masks);
     try {

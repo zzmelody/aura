@@ -31,6 +31,7 @@ import { fonts, palettes, type as textType } from "@aura/ui/theme";
 import { validateEndpoint } from "@aura/core";
 import type { WorkspaceController } from "../useWorkspace";
 import type { ThemeMode } from "@aura/core/types";
+import { PluginDirectorySettings } from "./PluginDirectorySettings.tsx";
 
 export function SettingsScreen({
   workspace,
@@ -419,6 +420,12 @@ export function SettingsScreen({
             </Text>
           ) : null}
         </View>
+      </View>
+      <View style={{ marginTop: 34 }}>
+        <SectionHeading title="外部插件" meta="03 / EXTENSIONS" />
+        <PluginDirectorySettings
+          endpoint={workspace.state.endpoint || "http://127.0.0.1:4311"}
+        />
       </View>
       <View style={{ alignItems: "center", marginTop: 32, gap: 6 }}>
         <Label>AURA / VERSION 0.1.0</Label>

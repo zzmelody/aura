@@ -88,6 +88,32 @@ test("discovery accepts one exact entry and tracks add/remove without restart", 
     assert.deepEqual(mock.removed, ["loader-1"]);
   }));
 
+test("external roots register canonical plugin ids and metadata", async () =>
+  withRoot(async (root) => {
+    await addEntry(root, "brief");
+    const registry = new FlowRegistry();
+    const mock = loaderFor(registry);
+    const plugin = {
+      id: "example.creative",
+      name: "Example Creative",
+      version: "1.2.3",
+    };
+    const discovery = new FlowDiscovery(mock.loader, registry, {
+      root,
+      namespace: plugin.id,
+      plugin,
+    });
+    await discovery.refresh();
+    assert.equal(mock.created[0]?.flowId, "example.creative/brief");
+    assert.deepEqual(mock.created[0]?.plugin, plugin);
+    assert.deepEqual(registry.catalog()[0]?.plugin, plugin);
+    assert.equal(
+      registry.source("example.creative/brief").id,
+      "example.creative/brief",
+    );
+    await discovery.close();
+  }));
+
 test("discovery reports illegal ids, mismatched names and nested extra entries", async () =>
   withRoot(async (root) => {
     await addEntry(root, "valid");

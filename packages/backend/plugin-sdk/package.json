@@ -1,0 +1,27 @@
+{
+  "name": "@aura/plugin-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "aura": {
+    "kind": "library",
+    "layer": "backend"
+  },
+  "exports": {
+    "./action": "./src/action.ts",
+    "./flow": "./src/flow.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@aura/orchestration": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "tsx": "4.23.13",
+    "typescript": "~5.9.2"
+  }
+}

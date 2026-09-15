@@ -69,6 +69,50 @@ export interface FlowRecoveryEvent {
 }
 export type FlowMode = "demo" | "codex";
 
+export interface AuraPluginIdentity {
+  id: string;
+  name: string;
+  version: string;
+}
+
+export interface AuraPluginStatus {
+  id?: string;
+  name: string;
+  version?: string;
+  enabled: boolean;
+  available: boolean;
+  error?: string;
+}
+
+/** Persisted trusted-local plugin entry. Paths are interpreted by the backend. */
+export interface AuraPluginConfigurationEntry {
+  path: string;
+  enabled: boolean;
+  trust: "local";
+}
+
+export interface AuraPluginConfiguration {
+  version: 1;
+  plugins: AuraPluginConfigurationEntry[];
+}
+
+/** Editable projection returned by the local runtime configuration endpoint. */
+export interface AuraPluginSettingsEntry extends AuraPluginConfigurationEntry {
+  status: AuraPluginStatus;
+}
+
+export interface AuraPluginSettingsState {
+  configPath: string;
+  plugins: AuraPluginSettingsEntry[];
+  active: AuraPluginStatus[];
+  /** The fixed config file changed outside this runtime and has not been applied yet. */
+  applyRequired: boolean;
+}
+
+export interface AuraPluginSettingsUpdate {
+  plugins: Array<Pick<AuraPluginConfigurationEntry, "path" | "enabled">>;
+}
+
 export interface FlowCatalogEntry {
   id: string;
   title: string;
@@ -78,11 +122,13 @@ export interface FlowCatalogEntry {
   inputSchema?: JsonValue;
   outputSchema?: JsonValue;
   agentDefaults?: FlowAgentOptions;
+  plugin?: AuraPluginIdentity;
   error?: string;
 }
 export interface FlowCatalog {
   flows: FlowCatalogEntry[];
   actions?: FlowCatalogEntry[];
+  plugins?: AuraPluginStatus[];
   presets: {
     id: string;
     name: string;
@@ -116,6 +162,7 @@ interface FlowStepBase {
 export interface ActionReference {
   id: string;
   sourceHash: string;
+  plugin?: AuraPluginIdentity;
 }
 export interface FlowAgentStep extends FlowStepBase {
   /** Absent only in records written before Action support. */
@@ -132,6 +179,7 @@ export interface FlowActionStep extends FlowStepBase {
   kind: "action";
   actionId: string;
   sourceHash?: string;
+  plugin?: AuraPluginIdentity;
   input: JsonValue;
   output?: JsonValue;
   outputSchema?: JsonValue;
@@ -157,6 +205,7 @@ export interface ActionRun {
   requestId: string;
   actionId: string;
   sourceHash: string;
+  plugin?: AuraPluginIdentity;
   input: JsonValue;
   output?: JsonValue;
   mode: FlowMode;
@@ -173,6 +222,7 @@ export interface FlowRun {
     title: string;
     description: string;
     sourceHash: string;
+    plugin?: AuraPluginIdentity;
   };
   input: JsonValue;
   mode: FlowMode;

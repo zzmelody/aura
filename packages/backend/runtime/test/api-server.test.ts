@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createApiApp } from "../src/api-server.ts";
 import { TripoService, type TripoPort } from "@aura/tripo";
-import type { CodexAuthPort, DshSessionPort } from "../src/types.ts";
+import type {
+  AuraPluginSettingsPort,
+  CodexAuthPort,
+  DshSessionPort,
+} from "../src/types.ts";
 
 const codexAuth: CodexAuthPort = {
   modelId: "gpt-test",
@@ -62,6 +66,72 @@ const tripo: TripoPort = {
     };
   },
 };
+
+const pluginState = {
+  configPath: "F:\\aura\\.aura\\plugins.json",
+  plugins: [
+    {
+      path: "F:/creative/aura-plugin",
+      enabled: true,
+      trust: "local" as const,
+      status: {
+        id: "zzmelody.veya",
+        name: "Veya Creative",
+        version: "0.1.1",
+        enabled: true,
+        available: true,
+      },
+    },
+  ],
+  active: [],
+  applyRequired: true,
+};
+
+test("Hono API restricts and delegates trusted plugin configuration", async () => {
+  let updated: unknown;
+  const pluginSettings: AuraPluginSettingsPort = {
+    async settings() {
+      return pluginState;
+    },
+    async updateSettings(source) {
+      updated = source;
+      return pluginState;
+    },
+  };
+  const app = createApiApp({ codexAuth, dsh, pluginSettings });
+  const status = await app.request("/plugins/config");
+  assert.equal(status.status, 200);
+  assert.deepEqual(await status.json(), pluginState);
+
+  const update = {
+    plugins: [{ path: "F:/creative/aura-plugin", enabled: true }],
+  };
+  const saved = await app.request("/plugins/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(update),
+  });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(updated, update);
+  assert.equal(
+    (
+      await app.request("/plugins/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "not-json",
+      })
+    ).status,
+    400,
+  );
+
+  const lan = createApiApp({
+    codexAuth,
+    dsh,
+    pluginSettings,
+    pluginSettingsAccessible: false,
+  });
+  assert.equal((await lan.request("/plugins/config")).status, 403);
+});
 
 test("Hono API serves health, enforces origin policy and streams NDJSON", async () => {
   const app = createApiApp({ codexAuth, dsh });

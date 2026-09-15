@@ -20,6 +20,16 @@ function resolveTripoRegion(value: string | undefined): "global" | "china" {
   return region;
 }
 
+/** Trusted plugin code may be configured only when the runtime is not LAN-bound. */
+export function isLoopbackRuntimeHost(host: string): boolean {
+  return new Set(["localhost", "127.0.0.1", "::1"]).has(
+    host
+      .trim()
+      .toLowerCase()
+      .replace(/^\[(.*)\]$/u, "$1"),
+  );
+}
+
 /** Resolves environment overrides once at the composition boundary. */
 export function resolveRuntimeConfig(
   options: AuraRuntimeOptions = {},
@@ -40,6 +50,9 @@ export function resolveRuntimeConfig(
     codexModel: process.env.AURA_CODEX_MODEL ?? "gpt-5.6-terra",
     tripoCredentialPath: join(root, ".aura", "tripo", "api-key"),
     tripoRegion: resolveTripoRegion(process.env.AURA_TRIPO_REGION),
+    pluginConfigPath: resolve(
+      options.pluginConfigPath ?? join(root, ".aura", "plugins.json"),
+    ),
   };
 }
 

@@ -40,6 +40,11 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
     method: "source",
     params: { id: "research-report" },
   });
+  const pluginSource = await app.request("/example.creative%2Fbrief/source");
+  assert.deepEqual(await pluginSource.json(), {
+    method: "source",
+    params: { id: "example.creative/brief" },
+  });
   assert.equal((await app.request("/missing/source")).status, 404);
   assert.equal(started.status, 202);
   assert.deepEqual(await started.json(), { runId: "started-run" });

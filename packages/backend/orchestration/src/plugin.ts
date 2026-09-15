@@ -2,17 +2,183 @@ import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/cordis-plugin-loader";
+import { realpath } from "node:fs/promises";
+import { resolve } from "node:path";
+import { z } from "zod";
 import type {} from "@deepseek-ai/dsh-agent-presets";
 import { ActionDiscovery, FlowDiscovery } from "./discovery.ts";
 import { FlowEngine } from "./engine.ts";
 import { FlowRegistry } from "./registry.ts";
 import { actionRunSchema, FlowError, runSchema } from "./schema.ts";
 import { dshSessions } from "./sessions.ts";
-import type { FlowDomain, Table } from "./types.ts";
-import type { ActionRun } from "@aura/protocol/types";
+import type { ContributionRoot, FlowDomain, Table } from "./types.ts";
+import type { ActionRun, AuraPluginStatus } from "@aura/protocol/types";
 import { ActionRegistry } from "./action-registry.ts";
 import { ActionRuntime } from "./actions.ts";
 import { ActionRuns } from "./action-runs.ts";
+import { LocalAIManager } from "./local-ai/manager.ts";
+
+const pluginIdentitySchema = z
+  .object({
+    id: z.string().trim().min(1).max(64),
+    name: z.string().trim().min(1).max(80),
+    version: z.string().trim().min(1).max(64),
+  })
+  .strict();
+const contributionRootSchema = z
+  .object({
+    root: z.string().trim().min(1).max(4_096),
+    namespace: z.string().trim().min(1).max(64).optional(),
+    plugin: pluginIdentitySchema.optional(),
+  })
+  .strict()
+  .refine(
+    (value) => Boolean(value.namespace) === Boolean(value.plugin),
+    "namespace and plugin metadata must be provided together",
+  );
+const pluginStatusSchema = z
+  .object({
+    id: z.string().optional(),
+    name: z.string(),
+    version: z.string().optional(),
+    enabled: z.boolean(),
+    available: z.boolean(),
+    error: z.string().optional(),
+  })
+  .strict();
+const contributionConfigurationSchema = z
+  .object({
+    flowRoots: z.array(contributionRootSchema).max(65),
+    actionRoots: z.array(contributionRootSchema).max(65),
+    plugins: z.array(pluginStatusSchema).max(64),
+  })
+  .strict();
+
+function rootKey(root: ContributionRoot): string {
+  const path = resolve(root.root);
+  return JSON.stringify([
+    process.platform === "win32" ? path.toLowerCase() : path,
+    root.namespace ?? null,
+    root.plugin ?? null,
+  ]);
+}
+
+function changedPluginIds(
+  previous: {
+    flowRoots: ContributionRoot[];
+    actionRoots: ContributionRoot[];
+  },
+  next: {
+    flowRoots: ContributionRoot[];
+    actionRoots: ContributionRoot[];
+  },
+): string[] {
+  const signatures = (configuration: typeof previous) => {
+    const result = new Map<string, string[]>();
+    for (const [kind, roots] of [
+      ["flow", configuration.flowRoots],
+      ["action", configuration.actionRoots],
+    ] as const) {
+      for (const root of roots) {
+        if (!root.plugin) continue;
+        const list = result.get(root.plugin.id) ?? [];
+        list.push(`${kind}:${rootKey(root)}`);
+        result.set(root.plugin.id, list);
+      }
+    }
+    return new Map(
+      [...result].map(([id, values]) => [id, values.sort().join("\n")]),
+    );
+  };
+  const before = signatures(previous);
+  const after = signatures(next);
+  return [...new Set([...before.keys(), ...after.keys()])].filter(
+    (id) => before.get(id) !== after.get(id),
+  );
+}
+
+class ContributionDiscoveries {
+  readonly #discoveries = new Map<string, FlowDiscovery | ActionDiscovery>();
+  readonly #create: (root: ContributionRoot) => FlowDiscovery | ActionDiscovery;
+
+  constructor(
+    roots: ContributionRoot[],
+    create: (root: ContributionRoot) => FlowDiscovery | ActionDiscovery,
+  ) {
+    this.#create = create;
+    for (const root of roots) this.add(root);
+  }
+
+  private add(root: ContributionRoot) {
+    const key = rootKey(root);
+    if (this.#discoveries.has(key))
+      throw new FlowError("插件贡献目录重复。", 400);
+    this.#discoveries.set(key, this.#create(root));
+  }
+
+  descriptors(): ContributionRoot[] {
+    return [...this.#discoveries.values()].map((item) => item.descriptor());
+  }
+
+  async refresh(): Promise<void> {
+    await Promise.all(
+      [...this.#discoveries.values()].map((item) => item.refresh()),
+    );
+  }
+
+  hasUnavailableContributions(): boolean {
+    return [...this.#discoveries.values()].some((item) =>
+      item.hasUnavailableContributions(),
+    );
+  }
+
+  async replace(roots: ContributionRoot[]): Promise<void> {
+    const next = new Map<string, ContributionRoot>();
+    for (const root of roots) {
+      const key = rootKey(root);
+      if (next.has(key)) throw new FlowError("插件贡献目录重复。", 400);
+      next.set(key, root);
+    }
+    for (const [key, discovery] of [...this.#discoveries]) {
+      if (next.has(key)) continue;
+      await discovery.close();
+      this.#discoveries.delete(key);
+    }
+    for (const [key, root] of next) {
+      if (this.#discoveries.has(key)) continue;
+      const discovery = this.#create(root);
+      this.#discoveries.set(key, discovery);
+      await discovery.refresh();
+    }
+  }
+
+  async close(): Promise<void> {
+    await Promise.all(
+      [...this.#discoveries.values()].map((item) => item.close()),
+    );
+    this.#discoveries.clear();
+  }
+}
+
+async function extendHmrRoots(ctx: Context, roots: ContributionRoot[]) {
+  const paths = await Promise.all(
+    roots.map(({ root }) => realpath(resolve(root)).catch(() => resolve(root))),
+  );
+  type DynamicHmr = {
+    config: { root: string[] };
+    watcher?: { add(paths: string[]): unknown };
+  };
+  const hmr = (ctx as Context & { hmr: DynamicHmr }).hmr;
+  if (!hmr.watcher)
+    throw new FlowError("插件热加载服务尚未就绪，请稍后重试。", 503);
+  const normalize = (path: string) =>
+    process.platform === "win32" ? path.toLowerCase() : path;
+  const watched = new Set(hmr.config.root.map(normalize));
+  const added = paths.filter((path) => !watched.has(normalize(path)));
+  if (!added.length) return;
+  hmr.config.root.push(...added);
+  hmr.watcher.add(added);
+}
 
 export const name = "aura-orchestration";
 export const inject = [
@@ -26,7 +192,36 @@ export const inject = [
   "hmr",
   "tools",
   "llm",
+  "subprocess",
 ];
+
+function contributionRoots(
+  name: "AURA_FLOW_ROOTS" | "AURA_ACTION_ROOTS",
+  legacy: string,
+): ContributionRoot[] {
+  const value = process.env[name];
+  if (!value) return [{ root: legacy }];
+  const parsed = JSON.parse(value) as unknown;
+  if (!Array.isArray(parsed)) throw new Error(`${name} must be an array`);
+  return parsed.map((item) => {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      typeof (item as { root?: unknown }).root !== "string"
+    )
+      throw new Error(`${name} contains an invalid root`);
+    return item as ContributionRoot;
+  });
+}
+
+function pluginStatuses(): AuraPluginStatus[] {
+  const value = process.env.AURA_PLUGIN_STATUSES;
+  if (!value) return [];
+  const parsed = JSON.parse(value) as unknown;
+  if (!Array.isArray(parsed))
+    throw new Error("AURA_PLUGIN_STATUSES must be an array");
+  return parsed as AuraPluginStatus[];
+}
 
 const spec = defineDomain({
   name: "aura_code_flows",
@@ -46,29 +241,45 @@ export async function apply(ctx: Context) {
   if (!flowRoot) throw new Error("AURA_FLOW_ROOT is required");
   const actionRoot = process.env.AURA_ACTION_ROOT;
   if (!actionRoot) throw new Error("AURA_ACTION_ROOT is required");
+  const flowRoots = contributionRoots("AURA_FLOW_ROOTS", flowRoot);
+  const actionRoots = contributionRoots("AURA_ACTION_ROOTS", actionRoot);
 
   const registry = new FlowRegistry();
   ctx.provide("auraFlowRegistry", registry);
-  const discovery = new FlowDiscovery(ctx.loader, registry, flowRoot);
+  const discoveries = new ContributionDiscoveries(
+    flowRoots,
+    (root) => new FlowDiscovery(ctx.loader, registry, root),
+  );
   const actionRegistry = new ActionRegistry();
   ctx.provide("auraActionRegistry", actionRegistry);
-  const actionDiscovery = new ActionDiscovery(
-    ctx.loader,
-    actionRegistry,
-    actionRoot,
+  const actionDiscoveries = new ContributionDiscoveries(
+    actionRoots,
+    (root) => new ActionDiscovery(ctx.loader, actionRegistry, root),
   );
-  const actionRuntime = new ActionRuntime(ctx);
+  const localAI = new LocalAIManager(
+    ctx.subprocess,
+    process.env.AURA_FLOW_CWD ?? process.cwd(),
+  );
+  // This owner survives individual Action Loader/HMR fibers.
+  ctx.effect(() => () => localAI.close(), "aura-local-ai.lifecycle");
+  const actionRuntime = new ActionRuntime(ctx, localAI);
 
   const domain = await ctx.storageDomain.open(spec);
   const actionDomain = await ctx.storageDomain.open(actionSpec);
+  let reconfiguration: Promise<unknown> = Promise.resolve();
   const refreshFlows = async () => {
-    await Promise.all([discovery.refresh(), actionDiscovery.refresh()]);
+    await reconfiguration;
+    await Promise.all([discoveries.refresh(), actionDiscoveries.refresh()]);
+  };
+  const refreshActions = async () => {
+    await reconfiguration;
+    await actionDiscoveries.refresh();
   };
   const actionRuns = new ActionRuns({
     table: actionDomain.table("runs") as unknown as Table<ActionRun>,
     registry: actionRegistry,
     runtime: actionRuntime,
-    refresh: () => actionDiscovery.refresh(),
+    refresh: refreshActions,
     cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
   });
   const engine = new FlowEngine({
@@ -83,6 +294,7 @@ export async function apply(ctx: Context) {
       runtime: actionRuntime,
       cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
     },
+    plugins: pluginStatuses(),
     presets: async () =>
       (await ctx.agentPresets.list()).map(
         ({ id, name, description, broken }) => ({
@@ -95,15 +307,69 @@ export async function apply(ctx: Context) {
   });
   await actionRuns.initialize();
 
+  let activePlugins = pluginStatuses();
+  const applyConfiguration = async (
+    source: z.infer<typeof contributionConfigurationSchema>,
+  ) => {
+    const previous = {
+      flowRoots: discoveries.descriptors(),
+      actionRoots: actionDiscoveries.descriptors(),
+      plugins: activePlugins,
+    };
+    const changedPlugins = changedPluginIds(previous, source);
+    try {
+      await extendHmrRoots(ctx, [...source.flowRoots, ...source.actionRoots]);
+      await discoveries.replace(source.flowRoots);
+      await actionDiscoveries.replace(source.actionRoots);
+      await ctx.loader.await();
+      await Promise.all([discoveries.refresh(), actionDiscoveries.refresh()]);
+      if (
+        discoveries.hasUnavailableContributions() ||
+        actionDiscoveries.hasUnavailableContributions()
+      )
+        throw new FlowError("插件贡献加载失败，当前运行配置保持不变。", 422);
+      activePlugins = source.plugins;
+      engine.setPlugins(activePlugins, changedPlugins);
+    } catch (error) {
+      try {
+        await discoveries.replace(previous.flowRoots);
+        await actionDiscoveries.replace(previous.actionRoots);
+        await ctx.loader.await();
+        await Promise.all([discoveries.refresh(), actionDiscoveries.refresh()]);
+        activePlugins = previous.plugins;
+        engine.setPlugins(activePlugins);
+      } catch {
+        throw new FlowError(
+          "插件贡献加载失败，且运行时回滚失败；请重新保存当前配置。",
+          503,
+        );
+      }
+      throw error instanceof FlowError
+        ? error
+        : new FlowError("插件贡献加载失败，当前运行配置保持不变。", 422);
+    }
+  };
+  const configure = (source: unknown) => {
+    const parsed = contributionConfigurationSchema.safeParse(source);
+    if (!parsed.success)
+      throw new FlowError("插件运行配置不符合 Aura 规则。", 400);
+    const task = reconfiguration.then(() => applyConfiguration(parsed.data));
+    reconfiguration = task.catch(() => undefined);
+    return task;
+  };
+
   let lastActivity = Date.now();
   let exiting = false;
   const transport = new JsonRpcLineTransport(process.stdin, process.stdout);
   const disposeAndExit = async () => {
     if (exiting) return;
     exiting = true;
-    await transport.flush();
-    await ctx.root.fiber.dispose();
-    process.exit(0);
+    try {
+      await transport.flush();
+    } finally {
+      await ctx.root.fiber.dispose();
+      process.exit(0);
+    }
   };
 
   transport.onRequest(async (method, params) => {
@@ -123,6 +389,10 @@ export async function apply(ctx: Context) {
           break;
         case "catalog":
           data = await engine.catalog();
+          break;
+        case "plugins/configure":
+          await configure(params);
+          data = { applied: true };
           break;
         case "source":
           await refreshFlows();
@@ -188,6 +458,7 @@ export async function apply(ctx: Context) {
         case "shutdown":
           await engine.close();
           await actionRuns.close();
+          await localAI.close();
           data = { closed: true };
           setImmediate(() => void disposeAndExit());
           break;
@@ -209,6 +480,12 @@ export async function apply(ctx: Context) {
 
   ctx.effect(() => {
     transport.start();
+    // Parent death closes stdin. Do not keep model/tool work alive until idle expiry.
+    const disconnected = () => {
+      void disposeAndExit().catch(() => process.exit(1));
+    };
+    process.stdin.on("end", disconnected);
+    process.stdin.on("error", disconnected);
     const scan = setInterval(
       () => void refreshFlows().catch(() => undefined),
       1_000,
@@ -222,12 +499,14 @@ export async function apply(ctx: Context) {
         void disposeAndExit();
     }, 30_000);
     return async () => {
+      process.stdin.off("end", disconnected);
+      process.stdin.off("error", disconnected);
       clearInterval(scan);
       clearInterval(idle);
       await engine.close();
       await actionRuns.close();
-      await discovery.close();
-      await actionDiscovery.close();
+      await localAI.close();
+      await Promise.all([discoveries.close(), actionDiscoveries.close()]);
       transport.close();
       await domain.close();
       await actionDomain.close();

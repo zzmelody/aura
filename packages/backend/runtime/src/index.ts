@@ -1,12 +1,17 @@
 /** Composition root shared by Aura's server and desktop application outputs. */
 import { CodexSubscriptionAuth } from "@aura/dsh-auth";
+import { AuraPluginManager } from "@aura/extensions";
 import { OrchestrationHost } from "@aura/orchestration";
 import { createTripoService } from "@aura/tripo";
 import { startApiServer } from "./api-server.ts";
 import { startDemoModel } from "./demo-model.ts";
 import { DshSessionRunner } from "./dsh-session-runner.ts";
 import { configureRuntimeNetwork } from "./network-proxy.ts";
-import { prepareDshProfile, resolveRuntimeConfig } from "./runtime-config.ts";
+import {
+  isLoopbackRuntimeHost,
+  prepareDshProfile,
+  resolveRuntimeConfig,
+} from "./runtime-config.ts";
 import type {
   ApiServerHandle,
   AuraRuntimeHandle,
@@ -33,6 +38,12 @@ export async function startAuraRuntime(
   const config = resolveRuntimeConfig(options);
   await configureRuntimeNetwork();
   await prepareDshProfile(config);
+  const pluginManager = await AuraPluginManager.create({
+    configPath: config.pluginConfigPath,
+    auraVersion: "0.1.0",
+    pluginSdkVersion: "1.0.0",
+  });
+  const plugins = pluginManager.resolution;
 
   const codexAuth = await CodexSubscriptionAuth.create({
     credentialPath: config.credentialPath,
@@ -61,8 +72,44 @@ export async function startAuraRuntime(
       dshHome: config.dshHome,
       modelURL: demoModel.url,
       codexModel: config.codexModel,
+      flowRoots: plugins.flowRoots.map(({ path, namespace, plugin }) => ({
+        root: path,
+        namespace,
+        plugin,
+      })),
+      actionRoots: plugins.actionRoots.map(({ path, namespace, plugin }) => ({
+        root: path,
+        namespace,
+        plugin,
+      })),
+      plugins: plugins.plugins,
     });
-    api = await startApiServer({ config, codexAuth, dsh, tripo, flows });
+    pluginManager.setActivator((resolution) =>
+      flows!.configureContributions({
+        flowRoots: resolution.flowRoots.map(({ path, namespace, plugin }) => ({
+          root: path,
+          namespace,
+          plugin,
+        })),
+        actionRoots: resolution.actionRoots.map(
+          ({ path, namespace, plugin }) => ({
+            root: path,
+            namespace,
+            plugin,
+          }),
+        ),
+        plugins: resolution.plugins,
+      }),
+    );
+    api = await startApiServer({
+      config,
+      codexAuth,
+      dsh,
+      tripo,
+      flows,
+      pluginSettings: pluginManager,
+      pluginSettingsAccessible: isLoopbackRuntimeHost(config.host),
+    });
   } catch (error) {
     const cleanups: Promise<void>[] = [codexAuth.close()];
     if (api) cleanups.push(api.close());

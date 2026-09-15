@@ -10,7 +10,9 @@ import {
   type ValueSchemaSpec,
 } from "@deepseek-ai/dsh-tools";
 import type { FlowMode } from "@aura/protocol/types";
+import type { AuraPluginIdentity } from "@aura/protocol/types";
 import { jsonValue } from "./schema.ts";
+import type { LocalAIClient } from "./local-ai/api.ts";
 
 export type { InferArgs, InferValue, ParameterSchemaSpec, ValueSchemaSpec };
 
@@ -31,6 +33,8 @@ export interface ActionContext {
   readonly stepId?: string;
   readonly sessionId?: string;
   readonly idempotencyKey?: string;
+  /** Host-owned local model lifecycle; absent in hosts without this capability. */
+  readonly localAI?: LocalAIClient;
 }
 
 export type ActionBinding = Omit<
@@ -54,6 +58,7 @@ export interface ActionRegistrationConfig {
   actionId: string;
   directory: string;
   entry: string;
+  plugin?: AuraPluginIdentity;
 }
 
 export interface ActionRegistration {

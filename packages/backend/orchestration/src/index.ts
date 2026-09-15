@@ -12,7 +12,11 @@ import {
   provisionProfile,
 } from "./profile.ts";
 import { FlowError, jsonValue } from "./schema.ts";
-import type { FlowRpcResult, HostOptions } from "./types.ts";
+import type {
+  ContributionConfiguration,
+  FlowRpcResult,
+  HostOptions,
+} from "./types.ts";
 
 export interface InvokeFlowOptions {
   input: unknown;
@@ -44,7 +48,16 @@ export class OrchestrationHost {
     const { root, dshHome, modelURL, codexModel } = this.options;
     const flowRoot = this.options.flowRoot ?? defaultFlowRoot;
     const actionRoot = this.options.actionRoot ?? defaultActionRoot;
-    await provisionProfile(dshHome, flowRoot, actionRoot);
+    const flowRoots = [{ root: flowRoot }, ...(this.options.flowRoots ?? [])];
+    const actionRoots = [
+      { root: actionRoot },
+      ...(this.options.actionRoots ?? []),
+    ];
+    await provisionProfile(
+      dshHome,
+      flowRoots.map(({ root }) => root),
+      actionRoots.map(({ root }) => root),
+    );
     const child = spawn(
       process.execPath,
       ["--expose-internals", dshBin, "--profile", "aura-flow"],
@@ -60,6 +73,9 @@ export class OrchestrationHost {
           AURA_FLOW_CWD: root,
           AURA_FLOW_ROOT: flowRoot,
           AURA_ACTION_ROOT: actionRoot,
+          AURA_FLOW_ROOTS: JSON.stringify(flowRoots),
+          AURA_ACTION_ROOTS: JSON.stringify(actionRoots),
+          AURA_PLUGIN_STATUSES: JSON.stringify(this.options.plugins ?? []),
           AURA_CODEX_MODEL: codexModel || "gpt-5.6-terra",
           AURA_DEMO_KEY: "demo-only-not-a-real-key",
           AURA_DEMO_BASE_URL: modelURL,
@@ -151,6 +167,31 @@ export class OrchestrationHost {
       }
       throw error;
     }
+  }
+
+  /** Atomically applies trusted plugin contribution roots to this live host. */
+  async configureContributions(
+    configuration: ContributionConfiguration,
+  ): Promise<void> {
+    const flowRoot = this.options.flowRoot ?? defaultFlowRoot;
+    const actionRoot = this.options.actionRoot ?? defaultActionRoot;
+    const next = {
+      flowRoots: [{ root: flowRoot }, ...configuration.flowRoots],
+      actionRoots: [{ root: actionRoot }, ...configuration.actionRoots],
+      plugins: configuration.plugins,
+    };
+    await this.request("plugins/configure", next, AbortSignal.timeout(60_000));
+    this.options.flowRoots = configuration.flowRoots.map((root) => ({
+      ...root,
+      ...(root.plugin ? { plugin: { ...root.plugin } } : {}),
+    }));
+    this.options.actionRoots = configuration.actionRoots.map((root) => ({
+      ...root,
+      ...(root.plugin ? { plugin: { ...root.plugin } } : {}),
+    }));
+    this.options.plugins = configuration.plugins.map((plugin) => ({
+      ...plugin,
+    }));
   }
 
   async close() {

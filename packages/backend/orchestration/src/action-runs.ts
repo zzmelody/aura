@@ -86,6 +86,7 @@ export class ActionRuns {
       requestId: request.requestId,
       actionId: action.id,
       sourceHash: action.sourceHash,
+      plugin: action.plugin,
       input: args,
       mode: request.mode,
       status: "queued",

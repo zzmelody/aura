@@ -14,11 +14,13 @@ import {
 } from "./http-server.ts";
 import type {
   ApiServerHandle,
+  AuraPluginSettingsPort,
   CodexAuthPort,
   DshRoute,
   DshSessionPort,
   RuntimeConfig,
 } from "./types.ts";
+import { createPluginSettingsApp } from "./plugin-settings-routes.ts";
 import { createTripoApp } from "./tripo-routes.ts";
 import { isRecord } from "./validation.ts";
 
@@ -28,6 +30,8 @@ interface ApiServerOptions {
   dsh: DshSessionPort;
   tripo: TripoPort;
   flows?: OrchestrationHost;
+  pluginSettings?: AuraPluginSettingsPort;
+  pluginSettingsAccessible?: boolean;
 }
 
 interface ApiLifecycle {
@@ -107,6 +111,8 @@ export function createApiApp({
   dsh,
   tripo,
   flows,
+  pluginSettings,
+  pluginSettingsAccessible = true,
   lifecycle = { shuttingDown: false, admittedRequests: 0 },
 }: Omit<ApiServerOptions, "config" | "tripo"> & {
   tripo?: TripoPort;
@@ -126,6 +132,11 @@ export function createApiApp({
   app.route("/auth/codex", createCodexAuthApp(codexAuth));
   if (tripo) app.route("/tripo", createTripoApp(tripo));
   if (flows) app.route("/flows", createFlowApp(flows));
+  if (pluginSettings)
+    app.route(
+      "/plugins/config",
+      createPluginSettingsApp(pluginSettings, pluginSettingsAccessible),
+    );
 
   registerChatRoute(
     app,
@@ -175,12 +186,22 @@ export async function startApiServer({
   dsh,
   tripo,
   flows,
+  pluginSettings,
+  pluginSettingsAccessible,
 }: ApiServerOptions): Promise<ApiServerHandle> {
   const lifecycle: ApiLifecycle = {
     shuttingDown: false,
     admittedRequests: 0,
   };
-  const app = createApiApp({ codexAuth, dsh, tripo, flows, lifecycle });
+  const app = createApiApp({
+    codexAuth,
+    dsh,
+    tripo,
+    flows,
+    pluginSettings,
+    pluginSettingsAccessible,
+    lifecycle,
+  });
   const { server, port } = await startHonoServer(app, config.host, config.port);
 
   return {

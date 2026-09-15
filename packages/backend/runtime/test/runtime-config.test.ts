@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { formatHttpUrl } from "../src/http-server.ts";
-import { resolveRuntimeConfig } from "../src/runtime-config.ts";
+import {
+  isLoopbackRuntimeHost,
+  resolveRuntimeConfig,
+} from "../src/runtime-config.ts";
 
 test("runtime configuration resolves paths and validates network settings", () => {
   const root = resolve("fixture-runtime-root");
@@ -21,7 +24,12 @@ test("runtime configuration resolves paths and validates network settings", () =
     resolve(root, ".aura", "tripo", "api-key"),
   );
   assert.equal(config.tripoRegion, "global");
+  assert.equal(config.pluginConfigPath, resolve(root, ".aura", "plugins.json"));
   assert.equal(formatHttpUrl(config.host, config.port), "http://[::1]:4321");
+  assert.equal(isLoopbackRuntimeHost("::1"), true);
+  assert.equal(isLoopbackRuntimeHost("[::1]"), true);
+  assert.equal(isLoopbackRuntimeHost("127.0.0.1"), true);
+  assert.equal(isLoopbackRuntimeHost("0.0.0.0"), false);
   assert.throws(() => resolveRuntimeConfig({ port: 0 }), /port is invalid/);
   assert.throws(() => resolveRuntimeConfig({ host: " " }), /cannot be empty/);
 });

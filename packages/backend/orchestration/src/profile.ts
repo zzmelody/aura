@@ -19,28 +19,32 @@ export const defaultActionRoot = fileURLToPath(
 
 export async function provisionProfile(
   dshHome: string,
-  flowRoot = defaultFlowRoot,
-  actionRoot = defaultActionRoot,
+  flowRoots: readonly string[] = [defaultFlowRoot],
+  actionRoots: readonly string[] = [defaultActionRoot],
 ) {
   const dir = join(dshHome, "profiles", "aura-flow");
   // HMR compares watched paths with canonical Node module URLs (not /var symlinks).
-  const flowWatchRoot = await realpath(resolve(flowRoot)).catch(() =>
-    resolve(flowRoot),
+  const flowWatchRoots = await Promise.all(
+    flowRoots.map((root) => realpath(resolve(root)).catch(() => resolve(root))),
   );
-  const actionWatchRoot = await realpath(resolve(actionRoot)).catch(() =>
-    resolve(actionRoot),
+  const actionWatchRoots = await Promise.all(
+    actionRoots.map((root) =>
+      realpath(resolve(root)).catch(() => resolve(root)),
+    ),
   );
+  const watchRoots = [...flowWatchRoots, ...actionWatchRoots];
   // A sibling root must not be watched as ../action: ignored dot directories
   // would otherwise suppress it. Different-drive roots stay absolute.
-  let watchBase = dirname(flowWatchRoot);
-  while (
-    relative(watchBase, actionWatchRoot).startsWith("..") &&
-    !isAbsolute(relative(watchBase, actionWatchRoot))
-  ) {
-    const parent = dirname(watchBase);
-    if (parent === watchBase) break;
-    watchBase = parent;
-  }
+  let watchBase = dirname(watchRoots[0] ?? resolve(dshHome));
+  for (const watchRoot of watchRoots.slice(1))
+    while (
+      relative(watchBase, watchRoot).startsWith("..") &&
+      !isAbsolute(relative(watchBase, watchRoot))
+    ) {
+      const parent = dirname(watchBase);
+      if (parent === watchBase) break;
+      watchBase = parent;
+    }
   const disabled = [
     "tool-bash",
     "tool-pwsh",
@@ -77,7 +81,7 @@ export async function provisionProfile(
   disabled: false
   config:
     base: ${JSON.stringify(pathToFileURL(watchBase).href)}
-    root: ${JSON.stringify([flowWatchRoot, actionWatchRoot])}
+    root: ${JSON.stringify(watchRoots)}
     ignored: ['**/node_modules', '**/.*']
     debounce: 100
 - id: sdk-app-startup

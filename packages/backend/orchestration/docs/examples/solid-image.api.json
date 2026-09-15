@@ -1,0 +1,14 @@
+{
+  "source": {
+    "class_type": "EmptyImage",
+    "inputs": { "width": 64, "height": 64, "batch_size": 1, "color": 2250116 }
+  },
+  "saved": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["source", 0], "filename_prefix": "custom/solid" }
+  },
+  "preview": {
+    "class_type": "PreviewImage",
+    "inputs": { "images": ["source", 0] }
+  }
+}

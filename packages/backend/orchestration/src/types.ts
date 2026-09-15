@@ -5,6 +5,8 @@ import type {
   FlowRun,
   FlowAgentStep,
   FlowAgentConfig,
+  AuraPluginIdentity,
+  AuraPluginStatus,
 } from "@aura/protocol/types";
 import type { LoadedFlow } from "./registry.ts";
 import type { ActionRegistry, LoadedAction } from "./action-registry.ts";
@@ -17,6 +19,21 @@ export interface HostOptions {
   codexModel?: string;
   flowRoot?: string;
   actionRoot?: string;
+  flowRoots?: ContributionRoot[];
+  actionRoots?: ContributionRoot[];
+  plugins?: AuraPluginStatus[];
+}
+
+export interface ContributionRoot {
+  root: string;
+  namespace?: string;
+  plugin?: AuraPluginIdentity;
+}
+
+export interface ContributionConfiguration {
+  flowRoots: ContributionRoot[];
+  actionRoots: ContributionRoot[];
+  plugins: AuraPluginStatus[];
 }
 
 export type FlowRpcResult<T> =
@@ -62,6 +79,7 @@ export interface EngineOptions {
   };
   refreshFlows(): Promise<void>;
   presets(): Promise<FlowCatalog["presets"]>;
+  plugins?: AuraPluginStatus[];
   actions?: {
     registry: Pick<ActionRegistry, "snapshot" | "catalog">;
     runtime: Pick<ActionRuntime, "execute">;

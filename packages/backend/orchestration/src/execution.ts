@@ -47,6 +47,17 @@ interface ExecutionOptions {
   ports: Pick<EngineOptions, "sessions" | "presets" | "actions">;
 }
 
+function samePlugin(
+  left: LoadedAction["plugin"],
+  right: LoadedAction["plugin"],
+) {
+  return (
+    left?.id === right?.id &&
+    left?.version === right?.version &&
+    Boolean(left) === Boolean(right)
+  );
+}
+
 /** One replay segment; only durable operations cross this object's boundary. */
 export class FlowExecution {
   readonly abort = new AbortController();
@@ -143,7 +154,9 @@ export class FlowExecution {
       .actionVersions?.find((ref) => ref.id === id);
     if (
       (action || version) &&
-      (!version || version.sourceHash !== action?.sourceHash)
+      (!version ||
+        version.sourceHash !== action?.sourceHash ||
+        !samePlugin(version.plugin, action?.plugin))
     ) {
       this.fatalError = new ReplayMismatch(
         `Action ${id} 不再是运行创建时的版本。`,
@@ -320,7 +333,7 @@ export class FlowExecution {
     const definitions = request.actions.map((id) => this.actionDefinition(id));
     const refs = definitions
       .filter((action): action is LoadedAction => Boolean(action))
-      .map(({ id, sourceHash }) => ({ id, sourceHash }));
+      .map(({ id, sourceHash, plugin }) => ({ id, sourceHash, plugin }));
     const prepared = await this.prepare(
       path,
       {
@@ -398,6 +411,7 @@ export class FlowExecution {
         label: request.label ?? action?.title ?? request.action,
         actionId: request.action,
         sourceHash: action?.sourceHash,
+        plugin: action?.plugin,
         input: args,
         status: "queued",
         recovery: action?.recovery ?? "manual",

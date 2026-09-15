@@ -6,10 +6,16 @@ import type {
   FlowSource,
   JsonValue,
   FlowAgentOptions,
+  AuraPluginIdentity,
 } from "@aura/protocol/types";
 import { z } from "zod";
 import type { FlowDefinition, FlowRegistrationConfig } from "./flow-api.ts";
-import { FlowError, parse, agentOptionsSchema } from "./schema.ts";
+import {
+  contributionIdSchema,
+  FlowError,
+  parse,
+  agentOptionsSchema,
+} from "./schema.ts";
 import { validateFlowSource } from "./flow-diagnostics.ts";
 
 export interface LoadedFlow {
@@ -22,6 +28,7 @@ export interface LoadedFlow {
   concurrency: number;
   agentTimeoutMs: number;
   agentDefaults?: FlowAgentOptions;
+  plugin?: AuraPluginIdentity;
   run: FlowDefinition["run"];
 }
 
@@ -80,15 +87,18 @@ export class FlowRegistry {
   private warnings = new Map<string, string>();
 
   async register(config: FlowRegistrationConfig, input: FlowDefinition) {
+    const id = parse(contributionIdSchema, config.flowId);
     const definition = parse(definitionSchema, input);
     const sourceHash = await hashFlowDirectory(config.directory);
     const code = await readFile(config.entry, "utf8");
-    validateFlowSource(code);
+    validateFlowSource(code, {
+      allowRootOperations: Boolean(config.plugin),
+    });
     // Conversion happens at registration so unsupported schemas fail before use.
     const inputSchema = z.toJSONSchema(definition.input) as JsonValue;
     const outputSchema = z.toJSONSchema(definition.output) as JsonValue;
-    this.loaded.set(config.flowId, {
-      id: config.flowId,
+    this.loaded.set(id, {
+      id,
       title: definition.title,
       description: definition.description,
       sourceHash,
@@ -97,11 +107,12 @@ export class FlowRegistry {
       concurrency: definition.concurrency,
       agentTimeoutMs: definition.agentTimeoutMs,
       agentDefaults: definition.agentDefaults,
+      plugin: config.plugin,
       run: definition.run,
     });
-    this.problems.delete(config.flowId);
-    this.warnings.delete(config.flowId);
-    this.sources.set(config.flowId, { id: config.flowId, code, sourceHash });
+    this.problems.delete(id);
+    this.warnings.delete(id);
+    this.sources.set(id, { id, code, sourceHash });
   }
 
   source(id: string): FlowSource {
@@ -157,6 +168,7 @@ export class FlowRegistry {
       inputSchema: z.toJSONSchema(flow.inputSchema) as JsonValue,
       outputSchema: z.toJSONSchema(flow.outputSchema) as JsonValue,
       ...(flow.agentDefaults ? { agentDefaults: flow.agentDefaults } : {}),
+      ...(flow.plugin ? { plugin: flow.plugin } : {}),
       ...(this.warnings.has(flow.id)
         ? { error: this.warnings.get(flow.id) }
         : {}),

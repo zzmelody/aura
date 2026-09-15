@@ -4,14 +4,25 @@ import type {
   ActionRegistrationConfig,
 } from "./action-api.ts";
 import { hashFlowDirectory } from "./registry.ts";
-import { FlowError, flowIdSchema, jsonValue, parse } from "./schema.ts";
+import { contributionIdSchema, FlowError, jsonValue, parse } from "./schema.ts";
 import { z } from "zod";
+import { createHash } from "node:crypto";
+import type { AuraPluginIdentity } from "@aura/protocol/types";
 
 export interface LoadedAction extends ActionRegistration {
   id: string;
   sourceHash: string;
   inputSchema: JsonValue;
   outputSchema: JsonValue;
+  toolName: string;
+  plugin?: AuraPluginIdentity;
+}
+
+function toolName(id: string): string {
+  if (!id.includes("/")) return id;
+  const readable = id.replace(/[^a-zA-Z0-9_]/gu, "_").slice(0, 48);
+  const suffix = createHash("sha256").update(id).digest("hex").slice(0, 10);
+  return `aura_${readable}_${suffix}`;
 }
 
 /** Stores definitions only. Model visibility is granted in an individual Agent scope. */
@@ -24,7 +35,7 @@ export class ActionRegistry {
     config: ActionRegistrationConfig,
     definition: ActionRegistration,
   ) {
-    const id = parse(flowIdSchema, config.actionId);
+    const id = parse(contributionIdSchema, config.actionId);
     parse(z.enum(["manual", "idempotent"]), definition.recovery ?? "manual");
     if (id === "run_code" || id.startsWith("aura_direct_"))
       throw new FlowError("Action ID 为内部保留名称。");
@@ -34,7 +45,8 @@ export class ActionRegistry {
       definition.description,
     );
     // defineTool performs DSH's native schema compilation before committing a version.
-    const tool = definition.tool(id, {
+    const dshToolName = toolName(id);
+    const tool = definition.tool(dshToolName, {
       cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
       mode: "demo",
     });
@@ -55,6 +67,8 @@ export class ActionRegistry {
       sourceHash,
       inputSchema,
       outputSchema,
+      toolName: dshToolName,
+      plugin: config.plugin,
     });
     this.problems.delete(id);
     this.warnings.delete(id);
@@ -103,6 +117,7 @@ export class ActionRegistry {
           sourceHash,
           inputSchema,
           outputSchema,
+          plugin,
         }) => ({
           id,
           title,
@@ -110,6 +125,7 @@ export class ActionRegistry {
           sourceHash,
           inputSchema,
           outputSchema,
+          ...(plugin ? { plugin } : {}),
           available: true,
           ...(this.warnings.has(id) ? { error: this.warnings.get(id) } : {}),
         }),

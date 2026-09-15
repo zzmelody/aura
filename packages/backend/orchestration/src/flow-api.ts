@@ -1,6 +1,7 @@
 import type { Context, Plugin } from "@deepseek-ai/cordis";
 import { z } from "zod";
 import type {
+  AuraPluginIdentity,
   JsonValue,
   FlowRetry,
   FlowAgentOptions,
@@ -101,6 +102,7 @@ export interface FlowRegistrationConfig {
   flowId: string;
   directory: string;
   entry: string;
+  plugin?: AuraPluginIdentity;
 }
 
 export interface FlowRegistrationPort {

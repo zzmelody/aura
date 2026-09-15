@@ -19,21 +19,33 @@ export default defineFlow({
       const results = await flow.parallel({
         id: "analysis",
         branches: {
-          research: (branch) => branch.agent({
-            id: "call", label: "方案分析", preset: "researcher-v1",
-            prompt: input.task, retry: { maxAttempts: 2 },
-          }),
-          review: (branch) => branch.agent({
-            id: "call", label: "风险审阅", preset: "reviewer-v1",
-            prompt: input.task,
-          }),
+          research: (branch) =>
+            branch.agent({
+              id: "call",
+              label: "方案分析",
+              preset: "researcher-v1",
+              prompt: input.task,
+              retry: { maxAttempts: 2 },
+            }),
+          review: (branch) =>
+            branch.agent({
+              id: "call",
+              label: "风险审阅",
+              preset: "reviewer-v1",
+              prompt: input.task,
+            }),
         },
       });
       const approved = await flow.checkpoint({
-        id: "approval", label: "确认报告", prompt: "是否采纳这份报告？",
+        id: "approval",
+        label: "确认报告",
+        prompt: "是否采纳这份报告？",
         schema: z.boolean(),
       });
-      return { report: results.research.output + results.review.output, approved };
+      return {
+        report: results.research.output + results.review.output,
+        approved,
+      };
     });
   },
 });
@@ -41,14 +53,14 @@ export default defineFlow({
 
 根 `ctx` 只暴露 `runId`、`mode`、`signal` 和 `sequence({id}, callback)`。作用域回调收到的 `flow` 还提供以下调用：
 
-| 调用 | 返回值 / 语义 |
-| --- | --- |
+| 调用                                                                                                         | 返回值 / 语义                                                                           |
+| ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
 | `agent({id,label,preset,prompt,actions?,retry?,model?,reasoningEffort?,maxTokens?,temperature?,timeoutMs?})` | `{stepId,sessionId,output:string,attempt,recovered}`；每个 attempt 使用独立 DSH session |
-| `action({id,label?,action,input,retry?})` | `{stepId,actionId,output,attempt,recovered}` |
-| `sequence({id}, callback)` | 串行子作用域，返回 callback 的结果 |
-| `parallel({id,branches:{name: callback}})` | 每个具名分支是独立串行作用域，返回同键结果对象，等待所有分支结束后汇合 |
-| `memo({id,label?,schema,compute})` | 保存 schema 校验后的 JSON 结果；完成后重放不会调用 compute |
-| `checkpoint({id,label?,prompt,schema})` | 持久化输入要求，等待人工答案，重放返回已校验的答案 |
+| `action({id,label?,action,input,retry?})`                                                                    | `{stepId,actionId,output,attempt,recovered}`                                            |
+| `sequence({id}, callback)`                                                                                   | 串行子作用域，返回 callback 的结果                                                      |
+| `parallel({id,branches:{name: callback}})`                                                                   | 每个具名分支是独立串行作用域，返回同键结果对象，等待所有分支结束后汇合                  |
+| `memo({id,label?,schema,compute})`                                                                           | 保存 schema 校验后的 JSON 结果；完成后重放不会调用 compute                              |
+| `checkpoint({id,label?,prompt,schema})`                                                                      | 持久化输入要求，等待人工答案，重放返回已校验的答案                                      |
 
 所有作用域调用必须 `await` 或 `return`。串行作用域不能重叠调用；并发统一使用 `parallel`。同级 ID 唯一（1–64 个字母、数字、下划线或连字符，首字符为字母/数字）。步骤的 `stepKey` 为作用域路径加本地 ID，例如 `main/analysis/research/call`；返回的 `stepId` 就是这个完整 key，记录中的 `id` 仍为本地 ID。循环须用稳定业务键创建子作用域或步骤 ID。单 Run 最多 64 个 durable 步骤；并发调用数由 `concurrency` 控制（1–4，默认 2）。Graph 无法静态展开的动态分支会显示提示，实际路径见运行记录。
 
@@ -69,15 +81,21 @@ export default defineFlow({
   output: z.object({ report: z.string() }),
   agentDefaults: { timeoutMs: 180_000 },
   async run(ctx, input) {
-    return ctx.sequence({ id: "main" }, async flow => {
+    return ctx.sequence({ id: "main" }, async (flow) => {
       const research = await flow.agent({
-        id: "research", label: "调研", preset: "researcher-v1", prompt: input.task,
+        id: "research",
+        label: "调研",
+        preset: "researcher-v1",
+        prompt: input.task,
         // provider 由 Run.mode 决定；Demo 只调用本地模拟服务。
         model: ctx.mode === "codex" ? "gpt-5.6-terra" : "deepseek-v4-flash",
         reasoningEffort: ctx.mode === "codex" ? "medium" : "off",
       });
       const review = await flow.agent({
-        id: "review", label: "深度审阅", preset: "reviewer-v1", prompt: research.output,
+        id: "review",
+        label: "深度审阅",
+        preset: "reviewer-v1",
+        prompt: research.output,
         reasoningEffort: ctx.mode === "codex" ? "high" : "off",
         timeoutMs: 240_000,
       });
@@ -87,13 +105,13 @@ export default defineFlow({
 });
 ```
 
-| 参数 | 范围与默认行为 |
-| --- | --- |
-| `model` | 当前模式 provider 下的模型 ID，1–200 字符。Codex 默认 `AURA_CODEX_MODEL` 或 `gpt-5.6-terra`；Demo 默认 `deepseek-v4-flash` |
-| `reasoningEffort` | DSH 对所选模型支持的准确档位；Codex 默认 `medium`，Demo profile 仅支持 `off`。不做静默降档或别名转换 |
-| `temperature` | 0–2；不设置时交给供应商默认。透传到 DSH，请求是否接受该参数由具体模型决定 |
-| `maxTokens` | 1–1,000,000 的整数，具体模型还可能有更低限制。Demo 默认 4096。**当前锁定版本的 Codex 适配器不转发此字段，因此 Codex 模式显式设置会报 `AGENT_OPTION_UNSUPPORTED`，不承诺伪造的硬上限** |
-| `timeoutMs` | 1,000–600,000 的整数；默认 180,000。限制每次 Agent attempt 的总时长，不是整个 Run 或单次模型请求的时长 |
+| 参数              | 范围与默认行为                                                                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`           | 当前模式 provider 下的模型 ID，1–200 字符。Codex 默认 `AURA_CODEX_MODEL` 或 `gpt-5.6-terra`；Demo 默认 `deepseek-v4-flash`                                                            |
+| `reasoningEffort` | DSH 对所选模型支持的准确档位；Codex 默认 `medium`，Demo profile 仅支持 `off`。不做静默降档或别名转换                                                                                  |
+| `temperature`     | 0–2；不设置时交给供应商默认。透传到 DSH，请求是否接受该参数由具体模型决定                                                                                                             |
+| `maxTokens`       | 1–1,000,000 的整数，具体模型还可能有更低限制。Demo 默认 4096。**当前锁定版本的 Codex 适配器不转发此字段，因此 Codex 模式显式设置会报 `AGENT_OPTION_UNSUPPORTED`，不承诺伪造的硬上限** |
+| `timeoutMs`       | 1,000–600,000 的整数；默认 180,000。限制每次 Agent attempt 的总时长，不是整个 Run 或单次模型请求的时长                                                                                |
 
 不开放脚本级 `provider`、API key、base URL 或任意 provider 参数；凭据和路由仍在后端 DSH profile 中管理。选择 `preset` 用于角色/工具环境，不能覆盖本次已固定的模型参数。模型配置的元数据校验在创建 Agent attempt 前执行；不支持的模型或思考档位给出明确错误，不自动换模型。
 
@@ -111,7 +129,8 @@ Action 入口为 `action/<action-id>/<action-id>.action.js`。Action 使用 DSH 
 import { defineAction } from "@aura/orchestration/action";
 
 export default defineAction({
-  title: "转为大写", description: "纯字符串转换，可安全重复。",
+  title: "转为大写",
+  description: "纯字符串转换，可安全重复。",
   recovery: "idempotent",
   parameters: { text: { type: "string", required: true } },
   output: {
@@ -150,19 +169,31 @@ Run 创建时先写入持久化 FIFO，最多同时执行两个 Run。queued、r
 
 unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算）、`submit_output`（校验 Action 输出 Schema 或 Agent 字符串）、`terminate`（取消 Run，保留未知 attempt 审计）。一个 parallel 可能产生多个 unknown，全部处理完毕才继续。
 
+### 本地模型 Actions
+
+`comfy-workflow` 支持由 Aura 调用 ComfyUI 自定义 API workflow：传 JSON 对象或本地文件、按节点覆盖入参、收集保存/预览产物和非文件输出。`local-image` / `local-video` 复用同一执行器作为默认模板；每次执行独立目录，取消和结束后回收受管服务及中间文件。完整参数和可运行示例见 [本地模型 Actions](docs/local-ai-actions.md#自定义-comfyui-workflow)。
+
+`local-image`、`local-video`、`local-tts` 分别访问已部署的 Qwen-Image-2512、MiniMax H3 和 Qwen3-TTS，另有 `local-ai-service` 管理启停和状态。它们是可供未来 Flow / Agent 复用的独立 Action，不新增 Workflow。后端统一串行使用 GPU，生成结束、取消或失败后回收受管进程，单独启动有 60 秒空闲期限。配置、参数、调用示例及 Windows 异常退出资源所有权见 [本地模型 Actions](docs/local-ai-actions.md)。
+
+### Flow / Action 定义
+
+`FlowDiscovery` 在首次启动、catalog 读取、运行开始前和后台短周期扫描时检查内置及已启用外部根的直接子目录。非法 ID、入口名不一致、缺少入口或多个 `*.flow.js` 都会作为不可用项进入 catalog。外部贡献使用 `<plugin-id>/<local-id>` 规范 ID，内置贡献保持原有 ID；DSH 工具名由后端映射为安全名称，持久化和公开接口始终保留规范 ID。
+
+外部插件的 manifest、信任和根目录由 `@aura/extensions` 在进入编排宿主前校验，插件代码只通过 `@aura/plugin-sdk/action` 与 `@aura/plugin-sdk/flow` 接入。运行时可通过内部 `plugins/configure` RPC 动态替换多根发现器并扩展 HMR 监听；加载失败会恢复上一组根。插件版本和贡献目录 hash 会随定义固定到运行记录，因此目录启停与插件内容 HMR 只影响新运行，已创建运行继续使用固定版本。Aura 不替插件执行安装、构建或生命周期脚本。
+
 ## API
 
 RPC handshake 为 v4。所有 HTTP 写操作携带 UUID `requestId`；命令身份和状态变更在同一个 Run 记录中提交。重试相同命令不会再次执行副作用，返回该 Run 的当前状态；同 requestId 不得改目标或输入。路径中的 `stepKey` 必须 URL 编码，包括 `/`。
 
-| 方法 | `/flows` 下路径 | 内容 |
-| --- | --- | --- |
-| GET | `/catalog`、`/:flowId/source` | catalog 或只读源码 |
-| POST | `/:flowId/runs` | `{requestId,mode,input}`，202 返回 `{runId}` |
-| GET | `/runs`、`/runs/:id` | 最近 100 次摘要或完整运行 |
-| POST | `/runs/:id/pause`、`resume`、`cancel` | `{requestId}` |
-| POST | `/runs/:id/steps/:stepKey/answer` | `{requestId,output}` |
-| POST | `/runs/:id/steps/:stepKey/resolve` | `{requestId,action:"retry"|"submit_output"|"terminate",output?}` |
-| GET | `/runs/:id/steps/:stepKey/history?attempt=2&beforeSeq=…` | Agent attempt 历史；默认最新 attempt |
+| 方法 | `/flows` 下路径                                          | 内容                                         |
+| ---- | -------------------------------------------------------- | -------------------------------------------- |
+| GET  | `/catalog`、`/:flowId/source`                            | catalog 或只读源码                           |
+| POST | `/:flowId/runs`                                          | `{requestId,mode,input}`，202 返回 `{runId}` |
+| GET  | `/runs`、`/runs/:id`                                     | 最近 100 次摘要或完整运行                    |
+| POST | `/runs/:id/pause`、`resume`、`cancel`                    | `{requestId}`                                |
+| POST | `/runs/:id/steps/:stepKey/answer`                        | `{requestId,output}`                         |
+| POST | `/runs/:id/steps/:stepKey/resolve`                       | `{requestId,action:"retry"                   | "submit_output" | "terminate",output?}` |
+| GET  | `/runs/:id/steps/:stepKey/history?attempt=2&beforeSeq=…` | Agent attempt 历史；默认最新 attempt         |
 
 对应 RPC 为 `start/get/list/pause/resume/cancel/answer/resolve/history/wait`。`wait` 和 `host.invokeFlow()` 等待当前执行片段进入 paused、waiting_input、needs_attention 或终态，并返回 Run；调用方必须检查 status。
 

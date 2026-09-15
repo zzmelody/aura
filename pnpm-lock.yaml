@@ -8,12 +8,12 @@ importers:
 
   .:
     devDependencies:
-      '@types/node':
-        specifier: 24.10.1
-        version: 24.10.1
       '@hono/node-server':
         specifier: 2.1.1
         version: 2.1.1(hono@4.13.7)
+      '@types/node':
+        specifier: 24.10.1
+        version: 24.10.1
       hono:
         specifier: 4.13.7
         version: 4.13.7
@@ -203,6 +203,31 @@ importers:
         specifier: ~5.9.2
         version: 5.9.3
 
+  packages/backend/extensions:
+    dependencies:
+      '@aura/protocol':
+        specifier: workspace:*
+        version: link:../../shared/protocol
+      semver:
+        specifier: 7.8.5
+        version: 7.8.5
+      zod:
+        specifier: ^4.3.6
+        version: 4.5.4
+    devDependencies:
+      '@types/node':
+        specifier: 24.10.1
+        version: 24.10.1
+      '@types/semver':
+        specifier: 7.7.1
+        version: 7.7.1
+      tsx:
+        specifier: 4.23.13
+        version: 4.23.13
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
+
   packages/backend/orchestration:
     dependencies:
       '@aura/protocol':
@@ -250,10 +275,19 @@ importers:
       '@deepseek-ai/dsh-storage-domain':
         specifier: 0.1.2-rc.1
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-storage@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))
+      '@deepseek-ai/dsh-subprocess':
+        specifier: 0.1.2-rc.1
+        version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)
+      '@deepseek-ai/dsh-subprocess-local':
+        specifier: 0.1.2-rc.1
+        version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-subprocess@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))(@deepseek-ai/dsh-timeout@0.1.2-rc.1(@deepseek-ai/cordis@4.0.2))
       '@deepseek-ai/dsh-tools':
         specifier: 0.1.2-rc.1
         version: 0.1.2-rc.1(de5e1ff2d608fbe22667925341ad1dfc)
       '@deepseek-ai/dsh-util-values':
+        specifier: 0.1.2-rc.1
+        version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)
+      '@deepseek-ai/dsh-win32-process':
         specifier: 0.1.2-rc.1
         version: 0.1.2-rc.1(@deepseek-ai/cordis@4.0.2)
       '@deepseek-ai/dsh-workspace':
@@ -282,6 +316,22 @@ importers:
         specifier: ~5.9.2
         version: 5.9.3
 
+  packages/backend/plugin-sdk:
+    dependencies:
+      '@aura/orchestration':
+        specifier: workspace:*
+        version: link:../orchestration
+    devDependencies:
+      '@types/node':
+        specifier: 24.10.1
+        version: 24.10.1
+      tsx:
+        specifier: 4.23.13
+        version: 4.23.13
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
+
   packages/backend/runtime:
     dependencies:
       '@aura/demo':
@@ -290,6 +340,9 @@ importers:
       '@aura/dsh-auth':
         specifier: workspace:*
         version: link:../dsh-auth
+      '@aura/extensions':
+        specifier: workspace:*
+        version: link:../extensions
       '@aura/orchestration':
         specifier: workspace:*
         version: link:../orchestration
@@ -3380,6 +3433,9 @@ packages:
 
   '@types/retry@0.12.0':
     resolution: {integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==}
+
+  '@types/semver@7.7.1':
+    resolution: {integrity: sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA==}
 
   '@types/slice-ansi@4.0.0':
     resolution: {integrity: sha512-+OpjSaq85gvlZAYINyzKpLeiFkSC4EsC6IIiT6v6TLSU5k5U83fHGj9Lel8oKEXM0HqgrMVCjXPDPVICtxF7EQ==}
@@ -8424,6 +8480,8 @@ snapshots:
       csstype: 3.2.3
 
   '@types/retry@0.12.0': {}
+
+  '@types/semver@7.7.1': {}
 
   '@types/slice-ansi@4.0.0': {}
 
