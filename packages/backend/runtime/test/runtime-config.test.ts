@@ -16,6 +16,11 @@ test("runtime configuration resolves paths and validates network settings", () =
     config.credentialPath,
     resolve(root, ".aura", "dsh", ".credentials.yaml"),
   );
+  assert.equal(
+    config.tripoCredentialPath,
+    resolve(root, ".aura", "tripo", "api-key"),
+  );
+  assert.equal(config.tripoRegion, "global");
   assert.equal(formatHttpUrl(config.host, config.port), "http://[::1]:4321");
   assert.throws(() => resolveRuntimeConfig({ port: 0 }), /port is invalid/);
   assert.throws(() => resolveRuntimeConfig({ host: " " }), /cannot be empty/);

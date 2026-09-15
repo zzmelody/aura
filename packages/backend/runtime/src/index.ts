@@ -1,6 +1,7 @@
 /** Composition root shared by Aura's server and desktop application outputs. */
 import { CodexSubscriptionAuth } from "@aura/dsh-auth";
 import { OrchestrationHost } from "@aura/orchestration";
+import { createTripoService } from "@aura/tripo";
 import { startApiServer } from "./api-server.ts";
 import { startDemoModel } from "./demo-model.ts";
 import { DshSessionRunner } from "./dsh-session-runner.ts";
@@ -37,6 +38,11 @@ export async function startAuraRuntime(
     credentialPath: config.credentialPath,
     model: config.codexModel,
   });
+  const tripo = await createTripoService({
+    credentialPath: config.tripoCredentialPath,
+    region: config.tripoRegion,
+    apiKey: process.env.TRIPO_API_KEY,
+  });
   let demoModel: DemoModelHandle | undefined;
   let dsh: DshSessionRunner | undefined;
   let api: ApiServerHandle | undefined;
@@ -56,7 +62,7 @@ export async function startAuraRuntime(
       modelURL: demoModel.url,
       codexModel: config.codexModel,
     });
-    api = await startApiServer({ config, codexAuth, dsh, flows });
+    api = await startApiServer({ config, codexAuth, dsh, tripo, flows });
   } catch (error) {
     const cleanups: Promise<void>[] = [codexAuth.close()];
     if (api) cleanups.push(api.close());

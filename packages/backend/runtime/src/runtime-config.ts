@@ -13,6 +13,13 @@ function resolvePort(value: number): number {
   return value;
 }
 
+function resolveTripoRegion(value: string | undefined): "global" | "china" {
+  const region = value?.trim().toLowerCase() || "global";
+  if (region !== "global" && region !== "china")
+    throw new Error(`Aura Tripo region is invalid: ${region}`);
+  return region;
+}
+
 /** Resolves environment overrides once at the composition boundary. */
 export function resolveRuntimeConfig(
   options: AuraRuntimeOptions = {},
@@ -31,6 +38,8 @@ export function resolveRuntimeConfig(
     credentialPath: join(root, ".aura", "dsh", ".credentials.yaml"),
     dshExecutable: join(dirname(dshPackage), "lib", "bin.js"),
     codexModel: process.env.AURA_CODEX_MODEL ?? "gpt-5.6-terra",
+    tripoCredentialPath: join(root, ".aura", "tripo", "api-key"),
+    tripoRegion: resolveTripoRegion(process.env.AURA_TRIPO_REGION),
   };
 }
 

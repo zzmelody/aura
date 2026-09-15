@@ -2,7 +2,9 @@
 import { startAuraRuntime } from "@aura/runtime";
 
 const runtime = await startAuraRuntime();
-console.log(`Aura runtime: ${runtime.url} (DSH demo + DSH Codex subscription)`);
+console.log(
+  `Aura runtime: ${runtime.url} (DSH demo + DSH Codex subscription + Tripo 3D)`,
+);
 
 let closing = false;
 const launcherPid = Number(process.env.AURA_LAUNCHER_PID ?? process.ppid);

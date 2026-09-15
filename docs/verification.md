@@ -82,3 +82,10 @@ Codex 架构固定为 `Aura → DSH authorization/agent loop → dsh-llm-pi-ai �
 - Playwright 受控接口验证多次执行归组、运行/取消状态、Markdown 与对象数组表格、工具与 Agent 历史、弹窗开启/关闭/草稿保留、校验失败、请求结果未知后的幂等重试、JSON 展开、空报告、刷新恢复；1440、1024、768、390、320px 与深浅主题通过。真实 DSH demo 的 Action 示例也验证了输入、两步执行、结构化输出和 Agent 历史；未调用真实 Codex 模型。
 - `pnpm run check` 的工作区规则与所有类型检查通过，但两次全量运行均在后端 `test/action-dsh.test.ts:257` 的热加载轮询遇到 503 编排连接中断；该集成测试单独运行通过。本轮未修改这项后端测试或对应后端实现，因此不将全量检查标为通过。
 - 脚本位于 `output/playwright/verify-execution-records.ts`、`verify-execution-live.ts` 和 `verify-execution-live-finish.ts`，截图为 `execution-records-*.png`、`execution-start-dialog.png`、`execution-live-desktop.png`；全量失败日志位于 `output/workflow-records-check.log`。用户原有的小提琴学习工具执行记录已在当前浏览器中显示新卡片。
+
+## Tripo 3D 后端（2026-09-14）
+
+- 新增 `@aura/tripo` 与官方 `@vastai/tripo-sdk@0.1.1`，Hermetic 测试验证海外站 v3 endpoint、Bearer 鉴权、请求字段映射、凭据文件读取和任务结果白名单投影；未发起付费生成。
+- Runtime 定向类型检查和 11 项测试通过，覆盖文生/图生任务、状态查询、未配置 503、HTTPS 图片 URL 限制和现有聊天路由。工作区结构检查及 13 个 app/library TypeScript 目标全部通过。
+- 在独立 54321 端口启动真实 Runtime，`/tripo/status` 返回已配置的 global v3 adapter；真实 DSH demo 两轮流式对话及非法请求拒绝通过，说明 Tripo 装配没有影响现有启动和会话链路。
+- `pnpm run check` 中与本次改动相关的检查均通过；既有 orchestration 的 `action-dsh.test.ts:257` 与 `dsh.test.ts:163` 仍在辅助文件 HMR 等待阶段超时，Node 24 下分别单跑也复现。本次未修改这些测试或 HMR 实现，因此不将仓库全量检查标记为通过。

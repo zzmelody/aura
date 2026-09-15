@@ -4,6 +4,7 @@ import type {
   CodexAuthStatus,
   CodexLoginRequest,
 } from "@aura/protocol/types";
+import type { TripoRegion } from "@aura/tripo";
 
 /** Public options accepted by the embeddable Aura backend runtime. */
 export interface AuraRuntimeOptions {
@@ -27,6 +28,8 @@ export interface RuntimeConfig {
   credentialPath: string;
   dshExecutable: string;
   codexModel: string;
+  tripoCredentialPath: string;
+  tripoRegion: TripoRegion;
 }
 
 export type RuntimeMode = "demo" | "codex-subscription";

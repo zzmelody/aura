@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createApiApp } from "../src/api-server.ts";
+import { TripoService, type TripoPort } from "@aura/tripo";
 import type { CodexAuthPort, DshSessionPort } from "../src/types.ts";
 
 const codexAuth: CodexAuthPort = {
@@ -32,6 +33,33 @@ const dsh: DshSessionPort = {
           }
         : { type: "done", engine: "deepseek-harness", mode: route.mode },
     );
+  },
+};
+
+const tripo: TripoPort = {
+  configured: true,
+  status() {
+    return {
+      configured: true,
+      region: "global",
+      apiVersion: "v3",
+      features: ["text-to-model", "image-to-model", "task-status"],
+    };
+  },
+  async textToModel(input) {
+    assert.equal(input.prompt, "a low-poly fox");
+    return "tripo-task-1";
+  },
+  async imageToModel() {
+    return "tripo-task-2";
+  },
+  async getTask(taskId) {
+    return {
+      taskId,
+      type: "text_to_model",
+      status: "running",
+      progress: 42,
+    };
   },
 };
 
@@ -81,4 +109,55 @@ test("Hono API serves health, enforces origin policy and streams NDJSON", async 
     events.map((event) => event.type),
     ["delta", "done"],
   );
+});
+
+test("Hono API exposes validated asynchronous Tripo tasks", async () => {
+  const app = createApiApp({ codexAuth, dsh, tripo });
+
+  const status = await app.request("/tripo/status");
+  assert.equal(status.status, 200);
+  assert.deepEqual(await status.json(), tripo.status());
+
+  const created = await app.request("/tripo/tasks/text-to-model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: "a low-poly fox", faceLimit: 3_000 }),
+  });
+  assert.equal(created.status, 202);
+  assert.deepEqual(await created.json(), { taskId: "tripo-task-1" });
+
+  const task = await app.request("/tripo/tasks/tripo-task-1");
+  assert.equal(task.status, 200);
+  assert.deepEqual(await task.json(), {
+    taskId: "tripo-task-1",
+    type: "text_to_model",
+    status: "running",
+    progress: 42,
+  });
+
+  const invalid = await app.request("/tripo/tasks/image-to-model", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image: { url: "http://127.0.0.1/private.png" } }),
+  });
+  assert.equal(invalid.status, 400);
+
+  const unavailable = createApiApp({
+    codexAuth,
+    dsh,
+    tripo: new TripoService("global"),
+  });
+  const notConfigured = await unavailable.request(
+    "/tripo/tasks/text-to-model",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "a low-poly fox" }),
+    },
+  );
+  assert.equal(notConfigured.status, 503);
+  assert.deepEqual(await notConfigured.json(), {
+    code: "tripo_not_configured",
+    message: "Tripo 尚未配置，请先在后端设置 API Key。",
+  });
 });

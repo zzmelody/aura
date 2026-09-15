@@ -11,11 +11,12 @@ Aura 使用自己的代码、命名空间和发布流程，以固定版本的官
 演示：客户端 → Aura runtime → DSH SDK profile → 本地模拟模型
 Codex：客户端 → Aura runtime → DSH SDK profile → dsh-llm-pi-ai → openai-codex
 登录：客户端 → Aura runtime → DSH authorization → dsh-llm-pi-ai OAuth flow
+3D：客户端 → Aura runtime → @aura/tripo → Tripo v3 API
 ```
 
 `@aura/dsh-auth` 是 Aura 对 DSH authorization/credentials seam 的后端适配层。包名描述稳定职责，不绑定当前供应商；其中 `CodexSubscriptionAuth` 组合 DSH 的 `dsh-credentials-local`、`dsh-authorization`、`dsh-llm` 和 `dsh-llm-pi-ai` 服务。它只把 notice、设备码、手动回调提示和最终状态投影到客户端；浏览器回调监听使用与 OpenAI redirect URI 一致的 `localhost`。OAuth grant 由 DSH 写入 `.aura/dsh/.credentials.yaml`，不会进入 HTTP 响应、前端存储或日志。
 
-对话由 Aura 自有的 `aura-sdk` profile 启动。该 profile 叠加官方 `dsh-base` 与 `dsh-sdk-app` bundle，配置 `openai-codex` provider，并通过官方 SDK JSON-RPC 读取 session events。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、DSH 子进程、开发演示模型和 HTTP 基础设施分别位于独立模块。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](backend-runtime.md)。
+对话由 Aura 自有的 `aura-sdk` profile 启动。该 profile 叠加官方 `dsh-base` 与 `dsh-sdk-app` bundle，配置 `openai-codex` provider，并通过官方 SDK JSON-RPC 读取 session events。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、Tripo 路由、DSH 子进程、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 不是 LLM provider，由 `@aura/tripo` 使用官方 v3 SDK 提交异步 3D 任务；Key 只从后端环境或已忽略的 `.aura/tripo/` 读取。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](backend-runtime.md)。
 
 ## Monorepo
 
@@ -30,7 +31,7 @@ pnpm workspace 收录应用输出和三层可复用库：
 
 应用声明 `aura.kind: app` 与 `aura.platform`；packages 只允许 library，并声明 `aura.layer`。Web 与移动应用只能依赖 frontend/shared，服务应用只能依赖 backend/shared，桌面应用可以组合 frontend/backend/shared。`check:workspaces` 校验目录元数据、依赖方向、`workspace:*`、显式导出、未声明依赖、私有子路径、跨 workspace 相对导入、应用被依赖和依赖环。完整约束位于根 [AGENTS.md](../AGENTS.md)。
 
-浏览器、移动、桌面和服务入口分别位于 `apps/web`、`apps/mobile`、`apps/desktop` 与 `apps/server`。客户端导航和 React 状态属于 `packages/frontend/workbench`，DOM 原语与设计系统属于 `packages/frontend/ui`，DSH 授权适配属于 `packages/backend/dsh-auth`，协议、存储与规则演示属于 shared。新增小程序时创建独立的 `apps/miniprogram`，复用适合小程序运行时的 shared 逻辑，不在 packages 中伪装成应用。
+浏览器、移动、桌面和服务入口分别位于 `apps/web`、`apps/mobile`、`apps/desktop` 与 `apps/server`。客户端导航和 React 状态属于 `packages/frontend/workbench`，DOM 原语与设计系统属于 `packages/frontend/ui`，DSH 授权适配属于 `packages/backend/dsh-auth`，Tripo 3D 网络与凭据适配属于 `packages/backend/tripo`，协议、存储与规则演示属于 shared。新增小程序时创建独立的 `apps/miniprogram`，复用适合小程序运行时的 shared 逻辑，不在 packages 中伪装成应用。
 
 ## Web-first 客户端
 

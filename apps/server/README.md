@@ -5,3 +5,7 @@ Aura 的独立服务端应用输出。入口只负责启动 `@aura/runtime`；�
 在仓库根执行 `.\scripts\aura.ps1 run runtime`，服务默认只监听 `127.0.0.1:4311`。服务运行后执行 `.\scripts\aura.ps1 run test:runtime`，验证真实 DSH 进程的两轮流式演示。
 
 `/auth/codex/*` 只投影 DSH authorization 的脱敏状态；凭据由 DSH 保存在忽略目录 `.aura/dsh/`。`/chat/codex` 使用同一个 DSH 启动函数，不能静默回退到模拟模型。服务没有生产鉴权，只能用于本机或可信局域网；正式部署还需要用户认证、稳定会话映射和限流。详见 [模型接入说明](../../docs/model-providers.md)。
+
+Tripo 3D 通过 `/tripo/*` 提交异步任务并查询状态。Key 放在
+`.aura/tripo/api-key` 或后端环境变量 `TRIPO_API_KEY`；国内站账号需设置
+`AURA_TRIPO_REGION=china`。详见 [Tripo 3D 接入](../../docs/tripo.md)。

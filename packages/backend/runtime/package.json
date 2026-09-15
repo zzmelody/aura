@@ -20,6 +20,7 @@
     "@aura/dsh-auth": "workspace:*",
     "@aura/demo": "workspace:*",
     "@aura/protocol": "workspace:*",
+    "@aura/tripo": "workspace:*",
     "@hono/node-server": "2.1.1",
     "@deepseek-ai/dsh": "0.1.2-rc.1",
     "@deepseek-ai/dsh-sdk-protocol": "0.1.2-rc.1",

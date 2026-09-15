@@ -1,6 +1,7 @@
 import { createFlowApp, type OrchestrationHost } from "@aura/orchestration";
 import { validateMessages } from "@aura/protocol";
 import type { ChatEvent } from "@aura/protocol/types";
+import type { TripoPort } from "@aura/tripo";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { stream } from "hono/streaming";
@@ -18,12 +19,14 @@ import type {
   DshSessionPort,
   RuntimeConfig,
 } from "./types.ts";
+import { createTripoApp } from "./tripo-routes.ts";
 import { isRecord } from "./validation.ts";
 
 interface ApiServerOptions {
   config: RuntimeConfig;
   codexAuth: CodexAuthPort;
   dsh: DshSessionPort;
+  tripo: TripoPort;
   flows?: OrchestrationHost;
 }
 
@@ -102,9 +105,13 @@ function registerChatRoute(
 export function createApiApp({
   codexAuth,
   dsh,
+  tripo,
   flows,
   lifecycle = { shuttingDown: false, admittedRequests: 0 },
-}: Omit<ApiServerOptions, "config"> & { lifecycle?: ApiLifecycle }) {
+}: Omit<ApiServerOptions, "config" | "tripo"> & {
+  tripo?: TripoPort;
+  lifecycle?: ApiLifecycle;
+}) {
   const app = new Hono();
   app.use("*", localOriginPolicy);
 
@@ -113,9 +120,11 @@ export function createApiApp({
       service: "aura-runtime",
       modes: ["dsh-demo", "codex-subscription"],
       keyRequired: false,
+      integrations: { tripo: tripo?.configured ?? false },
     }),
   );
   app.route("/auth/codex", createCodexAuthApp(codexAuth));
+  if (tripo) app.route("/tripo", createTripoApp(tripo));
   if (flows) app.route("/flows", createFlowApp(flows));
 
   registerChatRoute(
@@ -164,13 +173,14 @@ export async function startApiServer({
   config,
   codexAuth,
   dsh,
+  tripo,
   flows,
 }: ApiServerOptions): Promise<ApiServerHandle> {
   const lifecycle: ApiLifecycle = {
     shuttingDown: false,
     admittedRequests: 0,
   };
-  const app = createApiApp({ codexAuth, dsh, flows, lifecycle });
+  const app = createApiApp({ codexAuth, dsh, tripo, flows, lifecycle });
   const { server, port } = await startHonoServer(app, config.host, config.port);
 
   return {

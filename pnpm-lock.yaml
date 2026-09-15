@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@types/node':
+        specifier: 24.10.1
+        version: 24.10.1
       '@hono/node-server':
         specifier: 2.1.1
         version: 2.1.1(hono@4.13.7)
@@ -290,6 +293,9 @@ importers:
       '@aura/protocol':
         specifier: workspace:*
         version: link:../../shared/protocol
+      '@aura/tripo':
+        specifier: workspace:*
+        version: link:../tripo
       '@deepseek-ai/dsh':
         specifier: 0.1.2-rc.1
         version: 0.1.2-rc.1(1b3dbeadc114d548bfa730556ae75f51)
@@ -305,6 +311,25 @@ importers:
       undici:
         specifier: 7.29.1
         version: 7.29.1
+    devDependencies:
+      '@types/node':
+        specifier: 24.10.1
+        version: 24.10.1
+      tsx:
+        specifier: 4.23.13
+        version: 4.23.13
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
+
+  packages/backend/tripo:
+    dependencies:
+      '@aura/protocol':
+        specifier: workspace:*
+        version: link:../../shared/protocol
+      '@vastai/tripo-sdk':
+        specifier: 0.1.1
+        version: 0.1.1
     devDependencies:
       '@types/node':
         specifier: 24.10.1
@@ -3367,6 +3392,10 @@ packages:
 
   '@ungap/structured-clone@1.4.0':
     resolution: {integrity: sha512-1mEZtMKPM09vDmQt5y7YvmN2+DFTP7Tg0EWXdic8/C6VRnpb33e4ghisCIE3WZjsE2N8mf+QV1Zqh7ZFYLWInQ==}
+
+  '@vastai/tripo-sdk@0.1.1':
+    resolution: {integrity: sha512-fkhbfYqcliGO7/4ktuM0281aehoCOzBuCeY1Q0OOHy8EMIX2OHAsgg9t5m+AvYIl2Z72YCaTu980BWZ8g/Jh9A==}
+    engines: {node: '>=18'}
 
   '@vitejs/plugin-react@6.1.1':
     resolution: {integrity: sha512-yxLaQV9gkhS8ezJqCM6+ndU7mDY6gqAg75NQ+0IjwEI8IYOmQCgkRwHKVSfWXW076DsqMo0Dk+0FK1U+M5RgFw==}
@@ -8402,6 +8431,8 @@ snapshots:
   '@types/unist@3.0.3': {}
 
   '@ungap/structured-clone@1.4.0': {}
+
+  '@vastai/tripo-sdk@0.1.1': {}
 
   '@vitejs/plugin-react@6.1.1(babel-plugin-react-compiler@1.0.0)(vite@8.2.2(@types/node@24.10.1)(esbuild@0.28.2)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0))':
     dependencies:
