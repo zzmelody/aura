@@ -95,6 +95,27 @@ function StepHistory({
       {step.scopePath?.length ? (
         <p className="muted">执行路径：{step.stepKey}</p>
       ) : null}
+      {!step.kind || step.kind === "agent" ? (
+        step.config ? (
+          <section aria-label="Agent 生效配置">
+            <h4>Agent 生效配置</h4>
+            <WorkflowData
+              value={{
+                Provider: step.config.provider,
+                模型: step.config.model,
+                思考强度: step.config.reasoningEffort,
+                "输出 token 上限":
+                  step.config.maxTokens ?? "供应商默认（未设置硬上限）",
+                温度: step.config.temperature ?? "供应商默认",
+                "超时（毫秒）": step.config.timeoutMs,
+              }}
+            />
+            <p className="muted">已存档；本步骤的重试和恢复均使用此配置。</p>
+          </section>
+        ) : (
+          <p className="muted">旧记录未存档模型配置。</p>
+        )
+      ) : null}
       {step.attempts?.length ? (
         <label>
           执行尝试{" "}

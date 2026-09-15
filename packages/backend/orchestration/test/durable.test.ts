@@ -13,6 +13,287 @@ import { runSchema } from "../src/schema.ts";
 import { recoverStep } from "../src/recovery.ts";
 import { validateFlowSource } from "../src/flow-diagnostics.ts";
 import { savedSchema, validateSaved } from "../src/durable.ts";
+import { agentConfig, agentDefaults } from "../src/agent-config.ts";
+import {
+  agentOptionsSchema,
+  agentRequestSchema,
+  FlowError,
+} from "../src/schema.ts";
+
+test("Agent options validate bounds and inherit step > Flow > runtime defaults", () => {
+  const defaults = agentDefaults(
+    "demo",
+    { temperature: 0.6, timeoutMs: 8000 },
+    9000,
+  );
+  assert.deepEqual(
+    agentConfig(defaults, {
+      model: "other-model",
+      temperature: 0,
+      timeoutMs: undefined,
+    }),
+    {
+      provider: "deepseek-official",
+      model: "other-model",
+      reasoningEffort: "off",
+      maxTokens: 4096,
+      temperature: 0,
+      timeoutMs: 8000,
+    },
+  );
+  assert.equal(
+    agentDefaults("codex", {}, 10000, "configured-model").model,
+    "configured-model",
+  );
+  for (const bad of [
+    { model: " " },
+    { reasoningEffort: "" },
+    { maxTokens: 0 },
+    { maxTokens: 1.5 },
+    { maxTokens: 1_000_001 },
+    { temperature: -1 },
+    { temperature: 2.1 },
+    { timeoutMs: 999 },
+    { timeoutMs: 600_001 },
+    { provider: "custom" },
+    { apiKey: "secret" },
+  ])
+    assert.equal(
+      agentOptionsSchema.safeParse(bad).success,
+      false,
+      JSON.stringify(bad),
+    );
+  assert.equal(
+    agentRequestSchema.safeParse({ ...agent("one"), provider: "custom" })
+      .success,
+    false,
+  );
+  assert.throws(
+    () => agentDefaults("codex", { maxTokens: 4096 }),
+    /AGENT_OPTION_UNSUPPORTED/,
+  );
+});
+
+test("Agent configuration is isolated per step and pinned across retries, checkpoints and restart", async () => {
+  const previous = process.env.AURA_CODEX_MODEL;
+  process.env.AURA_CODEX_MODEL = "original-default";
+  const observed: Array<{ id: string; config: unknown; timeoutMs: number }> =
+    [];
+  let firstCalls = 0;
+  const workflow = async (flow: FlowScope) => {
+    await flow.agent({
+      ...agent("first", 2),
+      model: "step-model",
+      reasoningEffort: "high",
+      temperature: 0.2,
+      timeoutMs: 12000,
+    });
+    await flow.checkpoint({
+      id: "wait",
+      prompt: "Continue?",
+      schema: z.boolean(),
+    });
+    return flow.agent(agent("second"));
+  };
+  const sessions: Partial<EngineOptions["sessions"]> = {
+    execute: async (step) => {
+      observed.push({
+        id: step.id,
+        config: structuredClone(step.config),
+        timeoutMs: step.timeoutMs,
+      });
+      if (step.id === "first" && firstCalls++ === 0) {
+        process.env.AURA_CODEX_MODEL = "changed-during-retry";
+        throw new Error("transient failure");
+      }
+      return "saved";
+    },
+  };
+  let first: Awaited<ReturnType<typeof setup>> | undefined;
+  let second: Awaited<ReturnType<typeof setup>> | undefined;
+  try {
+    first = await setup(workflow, { sessions });
+    first.replaceFlow({
+      agentDefaults: {
+        reasoningEffort: "low",
+        temperature: 0.6,
+        timeoutMs: 15000,
+      },
+    });
+    const run = await first.engine.start({ ...req(), mode: "codex" });
+    assert.equal((await first.engine.wait(run.id)).status, "waiting_input");
+    assert.deepEqual(observed[0], observed[1]);
+    assert.deepEqual(observed[0]!.config, {
+      provider: "openai-codex",
+      model: "step-model",
+      reasoningEffort: "high",
+      temperature: 0.2,
+      timeoutMs: 12000,
+    });
+    assert.equal(observed[0]!.timeoutMs, 12000);
+    await first.engine.close();
+    process.env.AURA_CODEX_MODEL = "changed-after-restart";
+    second = await setup(workflow, { table: first.records, sessions });
+    await second.engine.command(
+      run.id,
+      "answer",
+      { requestId: randomUUID(), output: true },
+      "main/wait",
+    );
+    const completed = await second.engine.wait(run.id);
+    assert.equal(completed.status, "completed");
+    assert.equal(observed.length, 3);
+    assert.deepEqual(observed[2]!.config, {
+      provider: "openai-codex",
+      model: "original-default",
+      reasoningEffort: "low",
+      temperature: 0.6,
+      timeoutMs: 15000,
+    });
+    assert.equal(completed.agentDefaults!.model, "original-default");
+  } finally {
+    await first?.engine.close();
+    await second?.engine.close();
+    if (previous === undefined) delete process.env.AURA_CODEX_MODEL;
+    else process.env.AURA_CODEX_MODEL = previous;
+  }
+});
+
+test("changed Agent parameters conflict with replay and invalid capabilities fail before dispatch", async () => {
+  for (const field of [
+    "model",
+    "reasoningEffort",
+    "maxTokens",
+    "temperature",
+    "timeoutMs",
+  ] as const) {
+    let options = {
+      model: "test",
+      reasoningEffort: "off",
+      maxTokens: 1000,
+      temperature: 0.5,
+      timeoutMs: 5000,
+    };
+    let calls = 0;
+    const { engine } = await setup(
+      async (flow) => {
+        await flow.agent({ ...agent("one"), ...options });
+        return flow.checkpoint({
+          id: "wait",
+          prompt: "?",
+          schema: z.boolean(),
+        });
+      },
+      {
+        sessions: {
+          execute: async () => {
+            calls++;
+            return "saved";
+          },
+        },
+      },
+    );
+    try {
+      const run = await engine.start(req());
+      await engine.wait(run.id);
+      options = {
+        ...options,
+        [field]:
+          typeof options[field] === "number"
+            ? Number(options[field]) + 1
+            : "different",
+      };
+      await engine.command(
+        run.id,
+        "answer",
+        { requestId: randomUUID(), output: true },
+        "main/wait",
+      );
+      const result = await engine.wait(run.id);
+      assert.equal(result.status, "interrupted", field);
+      assert.match(result.error!, /FLOW_REPLAY_MISMATCH/);
+      assert.equal(calls, 1);
+    } finally {
+      await engine.close();
+    }
+  }
+  let calls = 0,
+    validations = 0;
+  const { engine } = await setup(
+    async (flow) => {
+      try {
+        await flow.agent(agent("invalid"));
+      } catch {}
+      return flow.checkpoint({ id: "wait", prompt: "?", schema: z.boolean() });
+    },
+    {
+      sessions: {
+        validateConfig: async () => {
+          validations++;
+          throw new FlowError("UNSUPPORTED_REASONING_EFFORT");
+        },
+        execute: async () => {
+          calls++;
+          return "unexpected";
+        },
+      },
+    },
+  );
+  try {
+    const run = await engine.start(req());
+    await engine.wait(run.id);
+    await engine.command(
+      run.id,
+      "answer",
+      { requestId: randomUUID(), output: true },
+      "main/wait",
+    );
+    assert.equal((await engine.wait(run.id)).status, "completed");
+    assert.equal(engine.get(run.id).steps[0]!.attempts!.length, 0);
+    assert.equal(calls, 0);
+    assert.equal(validations, 1);
+  } finally {
+    await engine.close();
+  }
+});
+
+test("pre-configuration active records fail closed while completed history stays readable", async () => {
+  const first = await setup((flow) => flow.agent(agent("one")));
+  const run = await first.engine.start(req());
+  await first.engine.wait(run.id);
+  await first.engine.close();
+  const legacy = {
+    ...first.engine.get(run.id),
+    agentDefaults: undefined,
+    steps: first.engine
+      .get(run.id)
+      .steps.map((step) => ({ ...step, config: undefined })),
+  };
+  await first.records.put(run.id, legacy);
+  const active = { ...legacy, id: randomUUID(), status: "queued" as const };
+  await first.records.put(active.id, active);
+  let calls = 0;
+  const second = await setup((flow) => flow.agent(agent("one")), {
+    table: first.records,
+    sessions: {
+      execute: async () => {
+        calls++;
+        return "unexpected";
+      },
+    },
+  });
+  try {
+    assert.equal(second.engine.get(run.id).status, "completed");
+    assert.equal(second.engine.get(active.id).status, "interrupted");
+    assert.match(
+      second.engine.get(active.id).error!,
+      /agent_config_unrecoverable/,
+    );
+    assert.equal(calls, 0);
+  } finally {
+    await second.engine.close();
+  }
+});
 
 test("manual retry adds exactly one attempt budget even when automatic budget remains", async () => {
   let fail = true;

@@ -39,5 +39,9 @@ test("Flow context stays inside protocol history limits without truncating the u
     ]),
   );
   assert.match(flowContext(starterFlow), /researcher-v1/);
+  assert.match(flowContext(starterFlow), /reasoningEffort/);
+  assert.match(flowContext(starterFlow), /Codex 适配器不支持/);
+  assert.match(starterFlow, /agentDefaults/);
+  assert.match(starterFlow, /reasoningEffort: ctx.mode/);
   assert.ok(flowContext(starterFlow).includes(starterFlow));
 });

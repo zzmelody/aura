@@ -16,6 +16,28 @@ const wrap = (run: string) => `
   });
 `;
 
+test("Agent inspector projects declared settings and Flow defaults without evaluating expressions", () => {
+  const graph = buildFlowGraph(
+    wrap(`return ctx.sequence({id:"main"}, async flow => {
+    return flow.agent({id:"one",label:"One",preset:"test",prompt:"hi",model:input.task,temperature:0,reasoningEffort:"high"});
+  });`).replace(
+      "concurrency: 3,",
+      "concurrency: 3, agentTimeoutMs: 10000, agentDefaults:{model:'default',temperature:0.5,maxTokens:1000},",
+    ),
+  );
+  assert.equal(graph.error, undefined);
+  assert.deepEqual(
+    graph.nodes.find((node) => node.kind === "agent")!.agentOptions,
+    {
+      model: "input.task",
+      reasoningEffort: '"high"',
+      temperature: "0",
+      maxTokens: "1000（Flow 默认）",
+      timeoutMs: "10000（Flow 默认）",
+    },
+  );
+});
+
 test("structured scopes project stable execution paths, parallel branches, memo and checkpoint", () => {
   const graph = buildFlowGraph(
     wrap(`return ctx.sequence({id:"main"}, async flow => {

@@ -517,6 +517,23 @@ export function FlowGraphView({
                         <dd>{selected.preset}</dd>
                       </div>
                     ) : null}
+                    {selected.agentOptions &&
+                      Object.entries(selected.agentOptions).map(
+                        ([key, value]) => (
+                          <div key={key}>
+                            <dt>{key}（声明）</dt>
+                            <dd>{value}</dd>
+                          </div>
+                        ),
+                      )}
+                    {selected.kind === "agent" ? (
+                      <div>
+                        <dt>配置说明</dt>
+                        <dd>
+                          未声明参数继承默认值；表达式不在图中执行，生效配置见运行记录。
+                        </dd>
+                      </div>
+                    ) : null}
                     {selected.parallel ? (
                       <div>
                         <dt>执行方式</dt>

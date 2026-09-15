@@ -43,7 +43,7 @@ export default defineFlow({
 
 | 调用 | 返回值 / 语义 |
 | --- | --- |
-| `agent({id,label,preset,prompt,actions?,retry?})` | `{stepId,sessionId,output:string,attempt,recovered}`；每个 attempt 使用独立 DSH session |
+| `agent({id,label,preset,prompt,actions?,retry?,model?,reasoningEffort?,maxTokens?,temperature?,timeoutMs?})` | `{stepId,sessionId,output:string,attempt,recovered}`；每个 attempt 使用独立 DSH session |
 | `action({id,label?,action,input,retry?})` | `{stepId,actionId,output,attempt,recovered}` |
 | `sequence({id}, callback)` | 串行子作用域，返回 callback 的结果 |
 | `parallel({id,branches:{name: callback}})` | 每个具名分支是独立串行作用域，返回同键结果对象，等待所有分支结束后汇合 |
@@ -57,6 +57,51 @@ V1 不支持 parallel 分支内的 checkpoint。运行时暂停会退出作用�
 `memo` 可封装时间、随机数和只读计算，必须返回 JSON；在结果落盘前崩溃时允许重新计算。外部写副作用必须通过 Action。普通 JS 代码每次重放都会重新执行，必须保证它基于固定输入、已存档结果和相同代码走出一致路径。重放时同一步骤的请求指纹变化，或完成时存在未访问的历史步骤，都会以 `FLOW_REPLAY_MISMATCH` 中断。
 
 输入、输出、memo 和人工答案使用不超过 256 KiB 的 JSON；Agent 输出为 1–80,000 字符。checkpoint/memo 的 Zod Schema 必须能转换为可存档和重新校验的 JSON Schema；依赖执行代码的 transforms、refine/superRefine、overwrite（包括 trim）等规则会在持久化前明确报错，避免恢复时丢失校验。
+
+## 每个 Agent 的模型参数
+
+参数优先级为 **步骤选项 > `defineFlow.agentDefaults` > 运行时默认值**；字段为 `undefined` 时继承。旧的 Flow 级 `agentTimeoutMs` 仍有效，但优先级低于 `agentDefaults.timeoutMs` 和步骤 `timeoutMs`。
+
+```js
+export default defineFlow({
+  title: "分别配置 Agent",
+  input: z.object({ task: z.string() }),
+  output: z.object({ report: z.string() }),
+  agentDefaults: { timeoutMs: 180_000 },
+  async run(ctx, input) {
+    return ctx.sequence({ id: "main" }, async flow => {
+      const research = await flow.agent({
+        id: "research", label: "调研", preset: "researcher-v1", prompt: input.task,
+        // provider 由 Run.mode 决定；Demo 只调用本地模拟服务。
+        model: ctx.mode === "codex" ? "gpt-5.6-terra" : "deepseek-v4-flash",
+        reasoningEffort: ctx.mode === "codex" ? "medium" : "off",
+      });
+      const review = await flow.agent({
+        id: "review", label: "深度审阅", preset: "reviewer-v1", prompt: research.output,
+        reasoningEffort: ctx.mode === "codex" ? "high" : "off",
+        timeoutMs: 240_000,
+      });
+      return { report: review.output };
+    });
+  },
+});
+```
+
+| 参数 | 范围与默认行为 |
+| --- | --- |
+| `model` | 当前模式 provider 下的模型 ID，1–200 字符。Codex 默认 `AURA_CODEX_MODEL` 或 `gpt-5.6-terra`；Demo 默认 `deepseek-v4-flash` |
+| `reasoningEffort` | DSH 对所选模型支持的准确档位；Codex 默认 `medium`，Demo profile 仅支持 `off`。不做静默降档或别名转换 |
+| `temperature` | 0–2；不设置时交给供应商默认。透传到 DSH，请求是否接受该参数由具体模型决定 |
+| `maxTokens` | 1–1,000,000 的整数，具体模型还可能有更低限制。Demo 默认 4096。**当前锁定版本的 Codex 适配器不转发此字段，因此 Codex 模式显式设置会报 `AGENT_OPTION_UNSUPPORTED`，不承诺伪造的硬上限** |
+| `timeoutMs` | 1,000–600,000 的整数；默认 180,000。限制每次 Agent attempt 的总时长，不是整个 Run 或单次模型请求的时长 |
+
+不开放脚本级 `provider`、API key、base URL 或任意 provider 参数；凭据和路由仍在后端 DSH profile 中管理。选择 `preset` 用于角色/工具环境，不能覆盖本次已固定的模型参数。模型配置的元数据校验在创建 Agent attempt 前执行；不支持的模型或思考档位给出明确错误，不自动换模型。
+
+Run 入队前保存已合并的 `agentDefaults`，每个 Agent step 在调用前保存 `config` 并纳入 `requestHash`。重试、人工重试及重启都使用同一配置；即使环境默认模型变化，尚未访问的后续 Agent 也继承原 Run 默认值。脚本在重放中显式改变步骤参数会触发 `FLOW_REPLAY_MISMATCH`。底层供应商自身的模型实现和未设置的采样默认值不在 Aura 可冻结的范围内。
+
+Graph 节点详情展示的是参数声明/表达式，不执行它们；展开运行步骤可以查看真正存档的 provider、模型、思考强度、温度、token 配置与超时。
+
+升级前未存档 Agent 配置的未结束 Run，在恢复时标记 `agent_config_unrecoverable`，要求新建运行，不擅自套用新默认值；已完成历史保持可读，未保存的配置明确显示为旧记录。存储域版本仍为 1。
 
 ## Action 与重试
 

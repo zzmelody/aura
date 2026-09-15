@@ -1,5 +1,6 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { SessionId } from "@deepseek-ai/dsh-session";
+import { LlmError, ReasoningEffortId } from "@deepseek-ai/dsh-llm";
 import type {
   SessionRequestId,
   SessionPage,
@@ -29,6 +30,35 @@ function agentFailure(message?: string): FlowError {
 export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
   const controller = ctx.sessionController;
   return {
+    async validateConfig(config) {
+      try {
+        await ctx.llm.resolveCallConfig(
+          {
+            provider: config.provider,
+            model: config.model,
+            reasoningEffort: ReasoningEffortId(config.reasoningEffort),
+            ...(config.maxTokens === undefined
+              ? {}
+              : { maxTokens: config.maxTokens }),
+            ...(config.temperature === undefined
+              ? {}
+              : { temperature: config.temperature }),
+          },
+          AbortSignal.timeout(15_000),
+        );
+      } catch (error) {
+        // Adapter errors can include endpoint details. Only expose our validated route/options.
+        const code =
+          error instanceof LlmError ? error.code : "MODEL_CONFIG_UNAVAILABLE";
+        const safeCode = /^[A-Z0-9_]+$/.test(code)
+          ? code
+          : "MODEL_CONFIG_UNAVAILABLE";
+        throw new FlowError(
+          `Agent 模型配置不可用（${safeCode}）：${config.provider}/${config.model}，reasoningEffort=${config.reasoningEffort}。`,
+          422,
+        );
+      }
+    },
     async execute({
       sessionId: rawId,
       preset,
@@ -41,7 +71,9 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
       stepKey,
       actionDefinitions,
       requestId: savedRequestId,
+      config,
     }) {
+      if (!config) throw new FlowError("Agent attempt 缺少已存档的模型配置。");
       const sessionId = SessionId(rawId);
       const timeout = AbortSignal.timeout(timeoutMs);
       const stop = AbortSignal.any([signal, timeout]);
@@ -60,15 +92,30 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
         stepId: stepKey ?? localId,
         sessionId: rawId,
       });
+      // Official DSH waterfall: one scoped, logged configuration for every model turn/tool loop.
+      const unmountConfig = agent.ctx.on(
+        "agent/request",
+        async (_payload, next) => {
+          await next();
+          return {
+            provider: config.provider,
+            model: config.model,
+            reasoningEffort: ReasoningEffortId(config.reasoningEffort),
+            ...(config.maxTokens === undefined
+              ? {}
+              : { maxTokens: config.maxTokens }),
+            ...(config.temperature === undefined
+              ? {}
+              : { temperature: config.temperature }),
+          };
+        },
+      );
       try {
         await controller.selectModel({
           sessionId,
-          provider: mode === "codex" ? "openai-codex" : "deepseek-official",
-          model:
-            mode === "codex"
-              ? process.env.AURA_CODEX_MODEL || "gpt-5.6-terra"
-              : "deepseek-v4-flash",
-          reasoningEffort: mode === "codex" ? "medium" : "off",
+          provider: config.provider,
+          model: config.model,
+          reasoningEffort: config.reasoningEffort,
         });
         if (!savedRequestId)
           throw new FlowError("Agent attempt 缺少持久化 requestId。");
@@ -151,6 +198,7 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
           if (session) await ctx.sessions.flush(session);
         }
       } finally {
+        unmountConfig();
         unmountActions();
       }
     },

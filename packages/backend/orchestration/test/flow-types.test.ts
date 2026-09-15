@@ -12,6 +12,7 @@ import { defineFlow, z } from "@aura/orchestration/flow";
 defineFlow({
   title: "Types", input: z.object({ task: z.string() }),
   output: z.object({ report: z.string(), approved: z.boolean() }),
+  agentDefaults: { model: "gpt-5.6-terra", reasoningEffort: "medium", timeoutMs: 120000 },
   async run(ctx, input) {
     // @ts-expect-error Root operations must enter a sequence first.
     ctx.agent({});
@@ -23,9 +24,18 @@ defineFlow({
           researcher: branch => branch.agent({
             id: "research", label: "Research", preset: "test", prompt: input.task,
             retry: { maxAttempts: 2 },
+            model: "gpt-5.6-terra", reasoningEffort: "high", temperature: 0.5, timeoutMs: 60000,
           }),
           score: branch => branch.memo({ id: "score", schema: z.number(), compute: () => 42 }),
         },
+      });
+      flow.agent({ id: "bad", label: "Bad", preset: "test", prompt: input.task,
+        // @ts-expect-error Numeric controls cannot be strings.
+        maxTokens: "4096",
+      });
+      flow.agent({ id: "bad-provider", label: "Bad", preset: "test", prompt: input.task,
+        // @ts-expect-error Provider and credentials are not script options.
+        provider: "custom",
       });
       results.researcher.output.toUpperCase();
       results.score.toFixed(0);

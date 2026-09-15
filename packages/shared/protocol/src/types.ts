@@ -35,6 +35,23 @@ export interface FlowRetry {
   multiplier?: number;
   maxDelayMs?: number;
 }
+/** Credential-free, per-Agent request controls. Provider remains bound to Run mode. */
+export interface FlowAgentOptions {
+  model?: string;
+  reasoningEffort?: string;
+  maxTokens?: number;
+  temperature?: number;
+  timeoutMs?: number;
+}
+/** Frozen before dispatch; every attempt of a logical Agent uses this configuration. */
+export interface FlowAgentConfig {
+  provider: "openai-codex" | "deepseek-official";
+  model: string;
+  reasoningEffort: string;
+  maxTokens?: number;
+  temperature?: number;
+  timeoutMs: number;
+}
 export interface FlowAttempt {
   number: number;
   status: FlowAttemptPhase;
@@ -60,6 +77,7 @@ export interface FlowCatalogEntry {
   sourceHash?: string;
   inputSchema?: JsonValue;
   outputSchema?: JsonValue;
+  agentDefaults?: FlowAgentOptions;
   error?: string;
 }
 export interface FlowCatalog {
@@ -106,6 +124,8 @@ export interface FlowAgentStep extends FlowStepBase {
   sessionId: string;
   requestId?: string;
   actions?: ActionReference[];
+  /** Absent on records created before per-Agent configuration support. */
+  config?: FlowAgentConfig;
   output?: string;
 }
 export interface FlowActionStep extends FlowStepBase {
@@ -163,6 +183,8 @@ export interface FlowRun {
   output?: JsonValue;
   error?: string;
   durableVersion?: 1;
+  /** Frozen Run defaults, including environment-derived model selection. */
+  agentDefaults?: FlowAgentConfig;
   requestInputHash?: string;
   actionVersions?: ActionReference[];
   queuedAt?: number;

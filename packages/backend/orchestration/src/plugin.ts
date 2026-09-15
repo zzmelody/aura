@@ -25,6 +25,7 @@ export const inject = [
   "loader",
   "hmr",
   "tools",
+  "llm",
 ];
 
 const spec = defineDomain({

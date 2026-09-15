@@ -24,8 +24,31 @@ export const startSchema = z
   })
   .strict();
 
+const agentOptionFields = {
+  model: z.string().trim().min(1).max(200).optional(),
+  reasoningEffort: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)
+    .optional(),
+  maxTokens: z.number().int().min(1).max(1_000_000).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  timeoutMs: z.number().int().min(1_000).max(600_000).optional(),
+};
+export const agentOptionsSchema = z.object(agentOptionFields).strict();
+export const agentConfigSchema = z
+  .object({
+    ...agentOptionFields,
+    provider: z.enum(["openai-codex", "deepseek-official"]),
+    model: agentOptionFields.model.unwrap(),
+    reasoningEffort: agentOptionFields.reasoningEffort.unwrap(),
+    timeoutMs: agentOptionFields.timeoutMs.unwrap(),
+  })
+  .strict();
+
 export const agentRequestSchema = z
   .object({
+    ...agentOptionFields,
     id: flowIdSchema,
     label: z.string().trim().min(1).max(100),
     preset: flowIdSchema,
@@ -107,6 +130,7 @@ export const stepSchema = z.union([
     sessionId: z.uuid(),
     requestId: z.uuid().optional(),
     actions: z.array(actionRefSchema).optional(),
+    config: agentConfigSchema.optional(),
     output: z.string().optional(),
   }),
   z.object({
@@ -181,6 +205,7 @@ export const runSchema = z.object({
   mode: z.enum(["demo", "codex"]),
   status: runPhaseSchema,
   durableVersion: z.literal(1).optional(),
+  agentDefaults: agentConfigSchema.optional(),
   requestInputHash: z.string().length(64).optional(),
   actionVersions: z.array(actionRefSchema).optional(),
   queuedAt: z.number().optional(),

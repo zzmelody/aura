@@ -14,6 +14,10 @@ import { OrchestrationHost } from "../src/index.ts";
 
 interface ModelRequest {
   messages: Array<{ role: string; content: unknown }>;
+  model: string;
+  max_tokens?: number;
+  temperature?: number;
+  thinking?: { type: string };
 }
 
 const nodeMajor = Number(process.versions.node.split(".")[0]);
@@ -31,16 +35,18 @@ export default defineFlow({
   output: z.object({ report: z.string() }),
   concurrency: 2,
   agentTimeoutMs: 30000,
+  agentDefaults: { temperature: 0.25, maxTokens: 512 },
   async run(ctx, input) {
     return ctx.sequence({ id: "main" }, async (flow) => {
     const { research, review } = await flow.parallel({ id: "analysis", branches: {
       research: (branch) => branch.agent({ id: "research", label: "Research", preset: "researcher-v1", prompt: prompt(input.task, "research"), retry: { maxAttempts: 2, initialDelayMs: 0 } }),
-      review: (branch) => branch.agent({ id: "review", label: "Review", preset: "reviewer-v1", prompt: prompt(input.task, "review"), retry: { maxAttempts: 2, initialDelayMs: 0 } }),
+      review: (branch) => branch.agent({ id: "review", label: "Review", preset: "reviewer-v1", model: "deepseek-v4-pro", reasoningEffort: "off", temperature: 0.75, maxTokens: 1280, prompt: prompt(input.task, "review"), retry: { maxAttempts: 2, initialDelayMs: 0 } }),
     }});
     const coordinator = await flow.agent({
       id: "coordinator",
       label: "Coordinator",
       preset: "coordinator-v1",
+      timeoutMs: 15000,
       retry: { maxAttempts: 2, initialDelayMs: 0 },
       prompt: prompt(input.task, "coordinator", [research, review].map((item) => ({
         nodeId: item.stepId,
@@ -92,6 +98,22 @@ test(
       entrySource(apiUrl),
     );
 
+    await mkdir(join(flowRoot, "config-check"));
+    await writeFile(
+      join(flowRoot, "config-check", "config-check.flow.js"),
+      `
+import { defineFlow, z } from ${JSON.stringify(apiUrl)};
+export default defineFlow({
+  title: "Config validation", input: z.object({ effort: z.string() }), output: z.json(),
+  async run(ctx, input) {
+    return ctx.sequence({id:"main"}, flow => flow.agent({
+      id:"call",label:"Validate",preset:"researcher-v1",prompt:"Must not dispatch",
+      reasoningEffort: input.effort,
+    }));
+  },
+});
+`,
+    );
     const calls: ModelRequest[] = [];
     let holdCoordinator = false;
     let releaseCoordinator: (() => void) | undefined;
@@ -165,6 +187,43 @@ test(
         3,
       );
       assert.equal(calls.length, 3);
+      for (const node of ["research", "review", "coordinator"]) {
+        const request = calls.find((call) =>
+          call.messages.some(
+            (message) =>
+              typeof message.content === "string" &&
+              message.content.includes(`"nodeId":"${node}"`),
+          ),
+        )!;
+        assert.ok(request, node);
+        assert.equal(
+          request.model,
+          node === "review" ? "deepseek-v4-pro" : "deepseek-v4-flash",
+        );
+        assert.equal(request.temperature, node === "review" ? 0.75 : 0.25);
+        assert.equal(request.max_tokens, node === "review" ? 1280 : 512);
+        assert.deepEqual(request.thinking, { type: "disabled" });
+        const step = run.steps.find((step) => step.id === node)!;
+        assert.ok(step.kind === "agent");
+        assert.equal(step.config!.model, request.model);
+        assert.equal(
+          step.config!.timeoutMs,
+          node === "coordinator" ? 15000 : 30000,
+        );
+      }
+
+      const invalidConfig = await host.invokeFlow("config-check", {
+        input: { effort: "unsupported-effort" },
+        mode: "demo",
+      });
+      assert.equal(invalidConfig.status, "failed");
+      assert.match(invalidConfig.error!, /UNSUPPORTED_REASONING_EFFORT/);
+      assert.equal(invalidConfig.steps[0]!.attempts!.length, 0);
+      assert.equal(
+        calls.length,
+        3,
+        "invalid capability must not send a model request",
+      );
 
       const history = await host.request<FlowHistory>("history", {
         id: run.id,

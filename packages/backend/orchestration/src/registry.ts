@@ -5,10 +5,11 @@ import type {
   FlowCatalogEntry,
   FlowSource,
   JsonValue,
+  FlowAgentOptions,
 } from "@aura/protocol/types";
 import { z } from "zod";
 import type { FlowDefinition, FlowRegistrationConfig } from "./flow-api.ts";
-import { FlowError, parse } from "./schema.ts";
+import { FlowError, parse, agentOptionsSchema } from "./schema.ts";
 import { validateFlowSource } from "./flow-diagnostics.ts";
 
 export interface LoadedFlow {
@@ -20,6 +21,7 @@ export interface LoadedFlow {
   outputSchema: z.ZodType;
   concurrency: number;
   agentTimeoutMs: number;
+  agentDefaults?: FlowAgentOptions;
   run: FlowDefinition["run"];
 }
 
@@ -35,6 +37,7 @@ const definitionSchema = z
     }),
     concurrency: z.number().int().min(1).max(4).default(2),
     agentTimeoutMs: z.number().int().min(1_000).max(600_000).default(180_000),
+    agentDefaults: agentOptionsSchema.optional(),
     run: z.custom<FlowDefinition["run"]>(
       (value) => typeof value === "function",
       { error: "run 必须是函数" },
@@ -93,6 +96,7 @@ export class FlowRegistry {
       outputSchema: definition.output,
       concurrency: definition.concurrency,
       agentTimeoutMs: definition.agentTimeoutMs,
+      agentDefaults: definition.agentDefaults,
       run: definition.run,
     });
     this.problems.delete(config.flowId);
@@ -152,6 +156,7 @@ export class FlowRegistry {
       sourceHash: flow.sourceHash,
       inputSchema: z.toJSONSchema(flow.inputSchema) as JsonValue,
       outputSchema: z.toJSONSchema(flow.outputSchema) as JsonValue,
+      ...(flow.agentDefaults ? { agentDefaults: flow.agentDefaults } : {}),
       ...(this.warnings.has(flow.id)
         ? { error: this.warnings.get(flow.id) }
         : {}),

@@ -62,7 +62,7 @@ export default defineFlow({
     return ctx.sequence({ id: "main" }, async (flow) => {
     const { direct, agent } = await flow.parallel({ id: "batch", branches: {
       direct: (branch) => branch.action({ id: "direct", action: "probe-action", input: { value: "direct", delayMs: 2000 } }),
-      agent: (branch) => branch.agent({ id: "allowed", label: "Allowed", preset: "researcher-v1", actions: ["probe-action"], prompt: "USE_ACTION" }),
+      agent: (branch) => branch.agent({ id: "allowed", label: "Allowed", preset: "researcher-v1", actions: ["probe-action"], temperature: 0.8, maxTokens: 777, prompt: "USE_ACTION" }),
       default: (branch) => branch.agent({ id: "default", label: "Default", preset: "reviewer-v1", prompt: "NO_ACTION" }),
     }});
     return { direct: direct.output, report: agent.output };
@@ -90,7 +90,12 @@ test(
       join(flowRoot, "action-check", "action-check.flow.js"),
       flowSource,
     );
-    const requests: Array<{ user: string; tools: string[] }> = [];
+    const requests: Array<{
+      user: string;
+      tools: string[];
+      temperature?: number;
+      maxTokens?: number;
+    }> = [];
     let holdToolResult = false;
     let releaseToolResult: (() => void) | undefined;
     const app = new Hono();
@@ -98,12 +103,19 @@ test(
       const input = (await c.req.json()) as {
         messages: Array<{ role: string; content: unknown }>;
         tools?: Array<{ function: { name: string } }>;
+        temperature?: number;
+        max_tokens?: number;
       };
       const user = JSON.stringify(
         input.messages.filter((m) => m.role === "user"),
       );
       const names = input.tools?.map((t) => t.function.name) ?? [];
-      requests.push({ user, tools: names });
+      requests.push({
+        user,
+        tools: names,
+        temperature: input.temperature,
+        maxTokens: input.max_tokens,
+      });
       const result = input.messages.findLast((m) => m.role === "tool");
       if (holdToolResult && result)
         await new Promise<void>((resolve) => {
@@ -194,6 +206,15 @@ test(
         1,
       );
       for (const request of requests) {
+        // Both the initial call and the post-tool request retain the same scoped settings.
+        assert.equal(
+          request.temperature,
+          request.user.includes("USE_ACTION") ? 0.8 : undefined,
+        );
+        assert.equal(
+          request.maxTokens,
+          request.user.includes("USE_ACTION") ? 777 : 4096,
+        );
         assert.equal(
           request.tools.some((name) => name.startsWith("aura_direct_")),
           false,

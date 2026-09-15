@@ -37,6 +37,7 @@ import {
   Suspension,
 } from "./durable.ts";
 import { runScoped } from "./scopes.ts";
+import { agentConfig } from "./agent-config.ts";
 
 interface ExecutionOptions {
   get(): FlowRun;
@@ -304,6 +305,18 @@ export class FlowExecution {
   }
   private agent = async (path: string[], input: FlowAgentRequest) => {
     const request = parse(agentRequestSchema, input);
+    const { model, reasoningEffort, maxTokens, temperature, timeoutMs } =
+      request;
+    const defaults = this.options.get().agentDefaults;
+    if (!defaults)
+      throw new ReplayMismatch("运行缺少已存档的 Agent 默认配置。");
+    const config = agentConfig(defaults, {
+      model,
+      reasoningEffort,
+      maxTokens,
+      temperature,
+      timeoutMs,
+    });
     const definitions = request.actions.map((id) => this.actionDefinition(id));
     const refs = definitions
       .filter((action): action is LoadedAction => Boolean(action))
@@ -318,9 +331,10 @@ export class FlowExecution {
         sessionId: randomUUID(),
         status: "queued",
         actions: refs,
+        config,
         retry: parse(retrySchema, request.retry ?? {}),
       },
-      { ...request, actionVersions: refs },
+      { ...request, actionVersions: refs, config },
     );
     if (!this.reusable(prepared.step)) {
       if (
@@ -339,13 +353,23 @@ export class FlowExecution {
           prepared.key,
           `Preset 不存在或不可用：${request.preset}`,
         );
+      try {
+        await this.options.ports.sessions.validateConfig?.(config);
+      } catch (error) {
+        return this.failed(
+          prepared.key,
+          error instanceof FlowError
+            ? error.message
+            : "Agent 模型配置不可用，请检查模型及参数。",
+        );
+      }
     }
     const step = (await this.perform(prepared.key, async (current) => {
       const output = await this.options.ports.sessions.execute({
         ...(current as FlowAgentStep),
         input: request.prompt,
         mode: this.options.get().mode,
-        timeoutMs: this.options.flow.agentTimeoutMs,
+        timeoutMs: (current as FlowAgentStep).config!.timeoutMs,
         signal: this.abort.signal,
         runId: this.options.get().id,
         actionDefinitions: definitions as LoadedAction[],

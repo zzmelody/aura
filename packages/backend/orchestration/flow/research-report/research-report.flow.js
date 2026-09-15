@@ -12,6 +12,7 @@ export default defineFlow({
   }),
   concurrency: 2,
   agentTimeoutMs: 180_000,
+  agentDefaults: { timeoutMs: 180_000 },
 
   async run(ctx, input) {
     return ctx.sequence({ id: "main" }, async (flow) => {
@@ -23,6 +24,7 @@ export default defineFlow({
               id: "research",
               label: "方案分析",
               preset: "researcher-v1",
+              reasoningEffort: ctx.mode === "codex" ? "medium" : "off",
               prompt: agentPrompt({
                 task: input.task,
                 nodeId: "research",
@@ -34,6 +36,7 @@ export default defineFlow({
               id: "review",
               label: "风险审阅",
               preset: "reviewer-v1",
+              reasoningEffort: ctx.mode === "codex" ? "high" : "off",
               prompt: agentPrompt({
                 task: input.task,
                 nodeId: "review",
@@ -47,6 +50,8 @@ export default defineFlow({
         id: "coordinator",
         label: "最终报告",
         preset: "coordinator-v1",
+        reasoningEffort: ctx.mode === "codex" ? "high" : "off",
+        timeoutMs: 240_000,
         prompt: agentPrompt({
           task: input.task,
           nodeId: "coordinator",

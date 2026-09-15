@@ -17,6 +17,8 @@ export type FlowGraphNode = {
   label: string;
   subtitle: string;
   preset?: string;
+  /** Source expressions only, never runtime-evaluated or advertised as effective settings. */
+  agentOptions?: Record<string, string>;
   prompt?: string;
   binding?: string;
   line?: number;
@@ -410,6 +412,7 @@ export function buildFlowGraph(source: string): FlowGraph {
   const description = literal(objectProperty(definition, "description"));
   const concurrency = literal(objectProperty(definition, "concurrency"));
   const run = objectProperty(definition, "run");
+  const agentDefaults = objectProperty(definition, "agentDefaults");
   const inputFields = schemaFields(objectProperty(definition, "input"));
   const outputFields = schemaFields(objectProperty(definition, "output"));
   const graph: FlowGraph = {
@@ -496,12 +499,38 @@ export function buildFlowGraph(source: string): FlowGraph {
         `agent-${generatedAgent}`;
       if (typeof staticId !== "string")
         graph.warnings.push(`第 ${generatedAgent} 个 Agent 使用动态 ID。`);
+      const agentOptions = Object.fromEntries(
+        [
+          "model",
+          "reasoningEffort",
+          "maxTokens",
+          "temperature",
+          "timeoutMs",
+        ].flatMap((key) => {
+          const explicit = objectProperty(config, key);
+          const inherited =
+            objectProperty(agentDefaults, key) ??
+            (key === "timeoutMs"
+              ? objectProperty(definition, "agentTimeoutMs")
+              : undefined);
+          const expression = explicit ?? inherited;
+          return expression
+            ? [
+                [
+                  key,
+                  `${sourceText(source, expression)}${explicit ? "" : "（Flow 默认）"}`,
+                ],
+              ]
+            : [];
+        }),
+      );
       return {
         id: uniqueId([...scopePath, base].join("/")),
         kind: "agent",
         label: typeof label === "string" ? label : base,
         subtitle: typeof preset === "string" ? preset : "Agent",
         preset: typeof preset === "string" ? preset : undefined,
+        ...(Object.keys(agentOptions).length ? { agentOptions } : {}),
         prompt: sourceText(source, objectProperty(config, "prompt")),
         binding,
         line: call.loc?.start.line,

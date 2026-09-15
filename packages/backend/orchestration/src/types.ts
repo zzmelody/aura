@@ -4,6 +4,7 @@ import type {
   FlowHistory,
   FlowRun,
   FlowAgentStep,
+  FlowAgentConfig,
 } from "@aura/protocol/types";
 import type { LoadedFlow } from "./registry.ts";
 import type { ActionRegistry, LoadedAction } from "./action-registry.ts";
@@ -33,6 +34,8 @@ export interface FlowDomain {
 }
 
 export interface SessionPort {
+  /** Validate exact provider/model controls without starting a session or a model request. */
+  validateConfig?(config: FlowAgentConfig): Promise<void>;
   execute(
     step: FlowAgentStep & {
       input: string;

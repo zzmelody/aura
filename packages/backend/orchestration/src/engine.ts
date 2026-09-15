@@ -27,6 +27,7 @@ import {
 import { FlowExecution } from "./execution.ts";
 import { FlowScheduler } from "./scheduler.ts";
 import { recoverRun } from "./recovery.ts";
+import { agentDefaults } from "./agent-config.ts";
 
 const mutationSchema = z
   .object({
@@ -179,6 +180,11 @@ export class FlowEngine {
         updatedAt: Date.now(),
         steps: [],
         durableVersion: 1,
+        agentDefaults: agentDefaults(
+          request.mode,
+          flow.agentDefaults,
+          flow.agentTimeoutMs,
+        ),
         requestInputHash: fingerprint(jsonValue(request.input, "Flow 入参")),
         actionVersions: [...actions.values()].map(({ id, sourceHash }) => ({
           id,
@@ -196,7 +202,14 @@ export class FlowEngine {
     rejectedCommand?: { requestId: string; fingerprint: string },
   ): Promise<Revision | undefined> {
     const run = this.get(id);
+    const missingConfig =
+      Boolean(run.durableVersion) &&
+      (!run.agentDefaults ||
+        run.steps.some(
+          (step) => (!step.kind || step.kind === "agent") && !step.config,
+        ));
     try {
+      if (missingConfig) throw new Error("Missing pinned Agent configuration");
       const flow = this.options.registry.get(run.flow.id);
       const actions =
         this.options.actions?.registry.snapshot() ??
@@ -219,8 +232,9 @@ export class FlowEngine {
         ...current,
         status: "interrupted",
         finishedAt: Date.now(),
-        error:
-          "revision_mismatch: Flow 或已引用 Action 的代码已变化，请新建运行。",
+        error: missingConfig
+          ? "agent_config_unrecoverable: 旧运行未保存 Agent 模型配置，无法保证恢复时配置一致，请新建运行。"
+          : "revision_mismatch: Flow 或已引用 Action 的代码已变化，请新建运行。",
         commands: rejectedCommand
           ? [
               ...(current.commands ?? []),

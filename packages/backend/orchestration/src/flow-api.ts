@@ -1,13 +1,21 @@
 import type { Context, Plugin } from "@deepseek-ai/cordis";
 import { z } from "zod";
-import type { JsonValue, FlowRetry } from "@aura/protocol/types";
-export type { FlowRetry } from "@aura/protocol/types";
+import type {
+  JsonValue,
+  FlowRetry,
+  FlowAgentOptions,
+} from "@aura/protocol/types";
+export type {
+  FlowRetry,
+  FlowAgentOptions,
+  FlowAgentConfig,
+} from "@aura/protocol/types";
 
 export { z };
 
 export type FlowMode = "demo" | "codex";
 
-export interface FlowAgentRequest {
+export interface FlowAgentRequest extends FlowAgentOptions {
   id: string;
   label: string;
   preset: string;
@@ -81,6 +89,8 @@ export interface FlowDefinition<
   output: OutputSchema;
   concurrency?: number;
   agentTimeoutMs?: number;
+  /** Individual agent() options override these defaults. */
+  agentDefaults?: FlowAgentOptions;
   run(
     context: FlowContext,
     input: z.output<InputSchema>,
