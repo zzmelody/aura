@@ -15,6 +15,7 @@ import type { ContributionRoot, FlowDomain, Table } from "./types.ts";
 import type { ActionRun, AuraPluginStatus } from "@aura/protocol/types";
 import { ActionRegistry } from "./action-registry.ts";
 import { ActionRuntime } from "./actions.ts";
+import { VeyaWorldAgentCapability } from "./veya-world-agent.ts";
 import { ActionRuns } from "./action-runs.ts";
 import { LocalAIManager } from "./local-ai/manager.ts";
 
@@ -30,6 +31,7 @@ const contributionRootSchema = z
     root: z.string().trim().min(1).max(4_096),
     namespace: z.string().trim().min(1).max(64).optional(),
     plugin: pluginIdentitySchema.optional(),
+    capabilities: z.array(z.string().trim().min(1)).max(32).optional(),
   })
   .strict()
   .refine(
@@ -60,6 +62,7 @@ function rootKey(root: ContributionRoot): string {
     process.platform === "win32" ? path.toLowerCase() : path,
     root.namespace ?? null,
     root.plugin ?? null,
+    [...(root.capabilities ?? [])].sort(),
   ]);
 }
 
@@ -262,7 +265,11 @@ export async function apply(ctx: Context) {
   );
   // This owner survives individual Action Loader/HMR fibers.
   ctx.effect(() => () => localAI.close(), "aura-local-ai.lifecycle");
-  const actionRuntime = new ActionRuntime(ctx, localAI);
+  const worldAgentSessionPath = process.env.AURA_VEYA_WORLD_AGENT_SESSION_PATH;
+  const auraCapabilities = worldAgentSessionPath
+    ? new VeyaWorldAgentCapability(worldAgentSessionPath)
+    : undefined;
+  const actionRuntime = new ActionRuntime(ctx, localAI, auraCapabilities);
 
   const domain = await ctx.storageDomain.open(spec);
   const actionDomain = await ctx.storageDomain.open(actionSpec);

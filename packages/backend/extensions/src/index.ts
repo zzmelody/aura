@@ -82,6 +82,7 @@ export interface PluginContributionRoot {
   path: string;
   namespace: string;
   plugin: AuraPluginIdentity;
+  capabilities: string[];
 }
 
 export interface AuraPluginResolution {
@@ -172,6 +173,7 @@ async function validatePlugin(
   options: LoadAuraPluginsOptions,
 ): Promise<{
   identity: AuraPluginIdentity;
+  capabilities: string[];
   actionRoot?: string;
   flowRoot?: string;
 }> {
@@ -256,6 +258,7 @@ async function validatePlugin(
   };
   return {
     identity,
+    capabilities: [...manifest.capabilities],
     ...(manifest.contributes.actions
       ? {
           actionRoot: await validateContributionRoot(
@@ -370,6 +373,7 @@ async function resolveAuraPluginConfiguration(
         path,
         namespace: plugin.identity.id,
         plugin: plugin.identity,
+        capabilities: [...plugin.capabilities],
       });
       if (plugin.actionRoot) result.actionRoots.push(root(plugin.actionRoot));
       if (plugin.flowRoot) result.flowRoots.push(root(plugin.flowRoot));

@@ -41,7 +41,8 @@ export async function startAuraRuntime(
   const pluginManager = await AuraPluginManager.create({
     configPath: config.pluginConfigPath,
     auraVersion: "0.1.0",
-    pluginSdkVersion: "1.0.0",
+    pluginSdkVersion: "1.1.0",
+    supportedCapabilities: ["aura.veya.world-agent"],
   });
   const plugins = pluginManager.resolution;
 
@@ -72,30 +73,41 @@ export async function startAuraRuntime(
       dshHome: config.dshHome,
       modelURL: demoModel.url,
       codexModel: config.codexModel,
-      flowRoots: plugins.flowRoots.map(({ path, namespace, plugin }) => ({
-        root: path,
-        namespace,
-        plugin,
-      })),
-      actionRoots: plugins.actionRoots.map(({ path, namespace, plugin }) => ({
-        root: path,
-        namespace,
-        plugin,
-      })),
-      plugins: plugins.plugins,
-    });
-    pluginManager.setActivator((resolution) =>
-      flows!.configureContributions({
-        flowRoots: resolution.flowRoots.map(({ path, namespace, plugin }) => ({
+      flowRoots: plugins.flowRoots.map(
+        ({ path, namespace, plugin, capabilities }) => ({
           root: path,
           namespace,
           plugin,
-        })),
-        actionRoots: resolution.actionRoots.map(
-          ({ path, namespace, plugin }) => ({
+          capabilities,
+        }),
+      ),
+      actionRoots: plugins.actionRoots.map(
+        ({ path, namespace, plugin, capabilities }) => ({
+          root: path,
+          namespace,
+          plugin,
+          capabilities,
+        }),
+      ),
+      plugins: plugins.plugins,
+      worldAgentSessionPath: config.worldAgentSessionPath,
+    });
+    pluginManager.setActivator((resolution) =>
+      flows!.configureContributions({
+        flowRoots: resolution.flowRoots.map(
+          ({ path, namespace, plugin, capabilities }) => ({
             root: path,
             namespace,
             plugin,
+            capabilities,
+          }),
+        ),
+        actionRoots: resolution.actionRoots.map(
+          ({ path, namespace, plugin, capabilities }) => ({
+            root: path,
+            namespace,
+            plugin,
+            capabilities,
           }),
         ),
         plugins: resolution.plugins,

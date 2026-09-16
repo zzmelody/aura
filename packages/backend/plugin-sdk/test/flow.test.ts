@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { defineFlow, z } from "../src/flow.ts";
+import { auraCapability } from "../src/action.ts";
+import type { ActionContext } from "../src/action.ts";
 import type {
   FlowDefinition as InternalDefinition,
   FlowRegistrationConfig,
@@ -61,4 +63,35 @@ test("public Flow contract adapts root Action calls to an internal sequence", as
     { value: "input" },
   );
   assert.deepEqual(output, { value: "ok" });
+});
+
+test("public Action capability helper binds identity and cancellation", async () => {
+  const abort = new AbortController();
+  const calls: unknown[][] = [];
+  const context = {
+    signal: abort.signal,
+    cwd: "/workspace",
+    directory: "/plugin/action",
+    callId: "call-1",
+    mode: "demo",
+    aura: {
+      async invoke(...args: unknown[]) {
+        calls.push(args);
+        return { ok: true };
+      },
+    },
+  } as ActionContext;
+
+  const output = await auraCapability(context, "aura.veya.world-agent").invoke(
+    "worlds.list",
+    {},
+  );
+  assert.deepEqual(output, { ok: true });
+  assert.deepEqual(calls, [
+    ["aura.veya.world-agent", "worlds.list", {}, abort.signal],
+  ]);
+  assert.throws(
+    () => auraCapability({ ...context, aura: undefined }, "missing"),
+    /capability is unavailable/u,
+  );
 });

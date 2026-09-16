@@ -76,6 +76,12 @@ export class OrchestrationHost {
           AURA_FLOW_ROOTS: JSON.stringify(flowRoots),
           AURA_ACTION_ROOTS: JSON.stringify(actionRoots),
           AURA_PLUGIN_STATUSES: JSON.stringify(this.options.plugins ?? []),
+          ...(this.options.worldAgentSessionPath
+            ? {
+                AURA_VEYA_WORLD_AGENT_SESSION_PATH:
+                  this.options.worldAgentSessionPath,
+              }
+            : {}),
           AURA_CODEX_MODEL: codexModel || "gpt-5.6-terra",
           AURA_DEMO_KEY: "demo-only-not-a-real-key",
           AURA_DEMO_BASE_URL: modelURL,

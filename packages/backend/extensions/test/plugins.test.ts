@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -21,7 +28,11 @@ async function fixture(run: (root: string) => Promise<void>) {
   }
 }
 
-async function writePlugin(root: string, id = "example.tools") {
+async function writePlugin(
+  root: string,
+  id = "example.tools",
+  capabilities: string[] = [],
+) {
   const plugin = join(root, id);
   await mkdir(join(plugin, "actions", "echo"), { recursive: true });
   await mkdir(join(plugin, "flows", "report"), { recursive: true });
@@ -34,7 +45,7 @@ async function writePlugin(root: string, id = "example.tools") {
       version: "0.1.0",
       engines: { aura: ">=0.1.0 <0.2.0", pluginSdk: "^1.0.0" },
       contributes: { actions: "./actions", flows: "./flows" },
-      capabilities: [],
+      capabilities,
     }),
   );
   await writeFile(
@@ -95,8 +106,40 @@ test("loads an explicitly enabled relative plugin directory", async () =>
     );
     const result = await loadAuraPlugins(options(config));
     assert.equal(result.plugins[0]?.available, true);
-    assert.equal(result.actionRoots[0]?.path, resolve(plugin, "actions"));
+    assert.equal(
+      result.actionRoots[0]?.path,
+      await realpath(resolve(plugin, "actions")),
+    );
     assert.equal(result.flowRoots[0]?.namespace, "example.tools");
+    assert.deepEqual(result.actionRoots[0]?.capabilities, []);
+  }));
+
+test("loads only plugins whose declared host capabilities are supported", async () =>
+  fixture(async (root) => {
+    const plugin = await writePlugin(root, "example.capability", [
+      "aura.veya.world-agent",
+    ]);
+    const config = join(root, "plugins.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        version: 1,
+        plugins: [{ path: plugin, enabled: true, trust: "local" }],
+      }),
+    );
+
+    const missing = await loadAuraPlugins(options(config));
+    assert.equal(missing.plugins[0]?.available, false);
+    assert.match(missing.plugins[0]?.error ?? "", /未提供的能力/u);
+
+    const supported = await loadAuraPlugins({
+      ...options(config),
+      supportedCapabilities: ["aura.veya.world-agent"],
+    });
+    assert.equal(supported.plugins[0]?.available, true);
+    assert.deepEqual(supported.actionRoots[0]?.capabilities, [
+      "aura.veya.world-agent",
+    ]);
   }));
 
 test("isolates invalid and duplicate plugins as unavailable", async () =>

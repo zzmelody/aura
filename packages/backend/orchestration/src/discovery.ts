@@ -45,6 +45,7 @@ export class CodeDiscovery {
   readonly root: string;
   readonly namespace?: string;
   readonly plugin?: ContributionRoot["plugin"];
+  readonly capabilities?: ContributionRoot["capabilities"];
   private mounted = new Map<string, MountedFlow>();
   private failures = new Map<string, string>();
   private issues = new Set<string>();
@@ -61,6 +62,8 @@ export class CodeDiscovery {
     this.root = typeof root === "string" ? root : root.root;
     this.namespace = typeof root === "string" ? undefined : root.namespace;
     this.plugin = typeof root === "string" ? undefined : root.plugin;
+    this.capabilities =
+      typeof root === "string" ? undefined : root.capabilities;
     this.kind = kind;
   }
 
@@ -75,6 +78,7 @@ export class CodeDiscovery {
       root: this.root,
       ...(this.namespace ? { namespace: this.namespace } : {}),
       ...(this.plugin ? { plugin: this.plugin } : {}),
+      ...(this.capabilities ? { capabilities: [...this.capabilities] } : {}),
     };
   }
 
@@ -162,6 +166,7 @@ export class CodeDiscovery {
         directory,
         entry: expected,
         plugin: this.plugin,
+        capabilities: this.capabilities,
       };
       try {
         const loaderId = await this.loader.create({

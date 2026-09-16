@@ -51,6 +51,8 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 受信任的本地外部插件由 `packages/backend/extensions` 从 `.aura/plugins.json` 中显式列出的目录加载；Aura 不扫描任意磁盘目录，也不安装依赖。插件根的 `aura.plugin.json`、ESM package、引擎范围、贡献目录、能力声明和公共 `@aura/plugin-sdk` 依赖会先经过后端校验。通过校验的多根 Action/Flow 进入同一个 Cordis Loader/HMR 与注册表，外部贡献使用 `<plugin-id>/<local-id>` 规范 ID，内置贡献继续使用原 ID。catalog 与运行记录保留插件身份、版本和贡献 hash；前端无需为注册插件重新构建。设置页可通过 runtime 固定的 `/plugins/config` 边界替换这份目录清单并查看预校验状态，但配置代码执行权限只对绑定 loopback 的本机服务开放。保存会在编排子进程内动态增删发现根和 HMR 监听，实际加载成功后再原子持久化；失败则回滚。已有运行使用创建时固定的版本，新运行立即看到新配置，无需重启 runtime。
 
+插件 manifest 请求的宿主能力必须全部受当前 Runtime 支持，否则插件不会加载。Action 通过 Plugin SDK 的 `auraCapability()` 取得按调用取消域绑定的领域端口，不接触凭据、任意 URL 或底层进程。首个端口 `aura.veya.world-agent` 从平台默认的 Godot Veya 会话描述符发现随机 loopback 服务，只允许固定世界操作并在宿主内部附加 bearer token；新服务走 `veya-agent-tools/1` 的统一调用端点，旧服务兼容对应 `/v2` 路径。token 不进入插件输入、Flow/Agent 上下文、前端 DTO 或日志。
+
 Flow 的模型参数由 `flow.agent({model,reasoningEffort,temperature,maxTokens,timeoutMs,...})` 按步骤声明，或通过 `defineFlow.agentDefaults` 提供公共默认值；步骤覆盖 Flow 默认，Flow 默认覆盖运行时配置。provider 仍绑定 Run.mode，脚本不接触凭据或任意 endpoint。入队时固定 Run 默认参数，Agent dispatch 前保存完整 `config` 并纳入请求指纹；重试与重放不读取新的环境默认值。`sessionController.selectModel` 选择模型，DSH Agent 的官方 `agent/request` scoped waterfall 将同一配置应用到每轮模型请求并写入 DSH request header。模型与思考强度先经过 DSH 能力校验，无效配置不会启动 Agent attempt。升级前未保存参数的未结束记录安全中断为 `agent_config_unrecoverable`；已完成历史继续可读。
 
 ## 当前取舍

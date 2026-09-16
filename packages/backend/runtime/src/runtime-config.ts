@@ -1,6 +1,7 @@
 import { copyFile, mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath, URL } from "node:url";
 import type { AuraRuntimeOptions, RuntimeConfig } from "./types.ts";
 
@@ -18,6 +19,38 @@ function resolveTripoRegion(value: string | undefined): "global" | "china" {
   if (region !== "global" && region !== "china")
     throw new Error(`Aura Tripo region is invalid: ${region}`);
   return region;
+}
+
+function defaultWorldAgentSessionPath(): string {
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA;
+    if (!appData)
+      throw new Error("APPDATA is required to discover the Veya World Agent.");
+    return join(
+      appData,
+      "Godot",
+      "app_userdata",
+      "Veya",
+      "world-agent-session.json",
+    );
+  }
+  if (process.platform === "darwin")
+    return join(
+      homedir(),
+      "Library",
+      "Application Support",
+      "Godot",
+      "app_userdata",
+      "Veya",
+      "world-agent-session.json",
+    );
+  return join(
+    process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"),
+    "godot",
+    "app_userdata",
+    "Veya",
+    "world-agent-session.json",
+  );
 }
 
 /** Trusted plugin code may be configured only when the runtime is not LAN-bound. */
@@ -52,6 +85,11 @@ export function resolveRuntimeConfig(
     tripoRegion: resolveTripoRegion(process.env.AURA_TRIPO_REGION),
     pluginConfigPath: resolve(
       options.pluginConfigPath ?? join(root, ".aura", "plugins.json"),
+    ),
+    worldAgentSessionPath: resolve(
+      options.worldAgentSessionPath ??
+        process.env.AURA_VEYA_WORLD_AGENT_SESSION ??
+        defaultWorldAgentSessionPath(),
     ),
   };
 }

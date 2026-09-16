@@ -16,6 +16,7 @@ export interface LoadedAction extends ActionRegistration {
   outputSchema: JsonValue;
   toolName: string;
   plugin?: AuraPluginIdentity;
+  capabilities: readonly string[];
 }
 
 function toolName(id: string): string {
@@ -69,6 +70,7 @@ export class ActionRegistry {
       outputSchema,
       toolName: dshToolName,
       plugin: config.plugin,
+      capabilities: Object.freeze([...(config.capabilities ?? [])]),
     });
     this.problems.delete(id);
     this.warnings.delete(id);

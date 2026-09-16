@@ -7,18 +7,48 @@ import type { ActionBinding } from "./action-api.ts";
 import type { LoadedAction } from "./action-registry.ts";
 import { FlowError, jsonValue } from "./schema.ts";
 import type { LocalAIClient } from "./local-ai/api.ts";
+import type { AuraCapabilityClient } from "./action-api.ts";
 
 const internalPrefix = "aura_direct_";
+
+/** @internal Narrows the host capability port to one Action's manifest grants. */
+export function actionCapabilities(
+  action: Pick<LoadedAction, "id" | "capabilities">,
+  host: AuraCapabilityClient | undefined,
+): AuraCapabilityClient | undefined {
+  if (!host) return undefined;
+  const allowed = new Set(action.capabilities);
+  return Object.freeze({
+    invoke(
+      capability: string,
+      operation: string,
+      input: Parameters<AuraCapabilityClient["invoke"]>[2],
+      signal: AbortSignal,
+    ) {
+      if (!allowed.has(capability))
+        throw new Error(
+          `Aura host capability was not declared by ${action.id}: ${capability}`,
+        );
+      return host.invoke(capability, operation, input, signal);
+    },
+  });
+}
 
 /** Thin adapter to the single DSH ToolRuntime, including policy, validation and timeout. */
 export class ActionRuntime {
   private ctx: Context;
   private directMasks = new Map<string, Array<() => void>>();
   private localAI?: LocalAIClient;
+  private aura?: AuraCapabilityClient;
 
-  constructor(ctx: Context, localAI?: LocalAIClient) {
+  constructor(
+    ctx: Context,
+    localAI?: LocalAIClient,
+    aura?: AuraCapabilityClient,
+  ) {
     this.ctx = ctx;
     this.localAI = localAI;
+    this.aura = aura;
     // Direct calls require an unscoped DSH registration. Keep these short-lived,
     // pinned definitions out of every Agent's model surface, without changing presets.
     const hideDirectTools = (agent: Agent) => {
@@ -45,7 +75,11 @@ export class ActionRuntime {
           throw new FlowError(`Action 与已有 DSH 工具重名：${action.id}`);
         dispose.push(
           agent.ctx.tools.register(
-            action.tool(action.toolName, { ...binding, localAI: this.localAI }),
+            action.tool(action.toolName, {
+              ...binding,
+              localAI: this.localAI,
+              aura: actionCapabilities(action, this.aura),
+            }),
           ),
         );
       }
@@ -69,7 +103,11 @@ export class ActionRuntime {
     const callId = ToolCallId(randomUUID());
     const name = `${internalPrefix}${callId.replaceAll("-", "")}`;
     const dispose = this.ctx.tools.register(
-      action.tool(name, { ...binding, localAI: this.localAI }),
+      action.tool(name, {
+        ...binding,
+        localAI: this.localAI,
+        aura: actionCapabilities(action, this.aura),
+      }),
     );
     const masks: Array<() => void> = [];
     this.directMasks.set(name, masks);

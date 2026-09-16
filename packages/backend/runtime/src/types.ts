@@ -14,6 +14,8 @@ export interface AuraRuntimeOptions {
   port?: number;
   /** Defaults to <root>/.aura/plugins.json. */
   pluginConfigPath?: string;
+  /** Defaults to the current platform's Godot user:// path for Veya. */
+  worldAgentSessionPath?: string;
 }
 
 /** Handle owned by the server or desktop application entrypoint. */
@@ -34,6 +36,7 @@ export interface RuntimeConfig {
   tripoCredentialPath: string;
   tripoRegion: TripoRegion;
   pluginConfigPath: string;
+  worldAgentSessionPath: string;
 }
 
 export type RuntimeMode = "demo" | "codex-subscription";

@@ -22,12 +22,14 @@ export interface HostOptions {
   flowRoots?: ContributionRoot[];
   actionRoots?: ContributionRoot[];
   plugins?: AuraPluginStatus[];
+  worldAgentSessionPath?: string;
 }
 
 export interface ContributionRoot {
   root: string;
   namespace?: string;
   plugin?: AuraPluginIdentity;
+  capabilities?: string[];
 }
 
 export interface ContributionConfiguration {

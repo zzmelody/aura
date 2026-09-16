@@ -11,10 +11,21 @@ import {
 } from "@deepseek-ai/dsh-tools";
 import type { FlowMode } from "@aura/protocol/types";
 import type { AuraPluginIdentity } from "@aura/protocol/types";
+import type { JsonValue } from "@aura/protocol/types";
 import { jsonValue } from "./schema.ts";
 import type { LocalAIClient } from "./local-ai/api.ts";
 
 export type { InferArgs, InferValue, ParameterSchemaSpec, ValueSchemaSpec };
+
+/** Host-owned, manifest-gated capabilities available to trusted Actions. */
+export interface AuraCapabilityClient {
+  invoke(
+    capability: string,
+    operation: string,
+    input: JsonValue,
+    signal: AbortSignal,
+  ): Promise<JsonValue>;
+}
 
 // DSH's recursively inferred schema types exceed TS's comparison depth when
 // instantiated inside another generic factory. Keep author inference in defineAction.
@@ -35,6 +46,8 @@ export interface ActionContext {
   readonly idempotencyKey?: string;
   /** Host-owned local model lifecycle; absent in hosts without this capability. */
   readonly localAI?: LocalAIClient;
+  /** Host-owned external service ports. Credentials never enter Action input. */
+  readonly aura?: AuraCapabilityClient;
 }
 
 export type ActionBinding = Omit<
@@ -59,6 +72,7 @@ export interface ActionRegistrationConfig {
   directory: string;
   entry: string;
   plugin?: AuraPluginIdentity;
+  capabilities?: string[];
 }
 
 export interface ActionRegistration {
