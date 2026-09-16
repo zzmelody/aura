@@ -91,6 +91,10 @@ test("Veya capability preserves canonical tool names on the native Agent protoco
         "veya.operation.status",
         "veya.operation.cancel",
         "veya.preview.capture",
+        "veya.cooker.capabilities",
+        "veya.cooker.submit",
+        "veya.cooker.status",
+        "veya.cooker.cancel",
       ];
       for (const tool of tools)
         await client.invoke(
@@ -137,6 +141,27 @@ test("Veya preview capture requires the native Agent tool protocol", async () =>
           expected_revision: 1,
           request_id: "preview",
         },
+        new AbortController().signal,
+      ),
+      /requires veya-agent-tools\/1/u,
+    );
+    assert.equal(requests, 0);
+  });
+});
+
+test("Veya Cooker requires the native Agent tool protocol", async () => {
+  await fixture(async (sessionPath) => {
+    let requests = 0;
+    const request = (async () => {
+      requests += 1;
+      return new Response("{}");
+    }) as typeof fetch;
+    const client = new VeyaWorldAgentCapability(sessionPath, request);
+    await assert.rejects(
+      client.invoke(
+        VEYA_WORLD_AGENT_CAPABILITY,
+        "veya.cooker.capabilities",
+        {},
         new AbortController().signal,
       ),
       /requires veya-agent-tools\/1/u,

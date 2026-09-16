@@ -69,6 +69,13 @@ const operations = new Map<string, Operation>([
     },
   ],
   ["veya.preview.capture", { method: "POST", tool: "veya.preview.capture" }],
+  [
+    "veya.cooker.capabilities",
+    { method: "POST", tool: "veya.cooker.capabilities" },
+  ],
+  ["veya.cooker.submit", { method: "POST", tool: "veya.cooker.submit" }],
+  ["veya.cooker.status", { method: "POST", tool: "veya.cooker.status" }],
+  ["veya.cooker.cancel", { method: "POST", tool: "veya.cooker.cancel" }],
 ]);
 
 interface SessionDescriptor {
