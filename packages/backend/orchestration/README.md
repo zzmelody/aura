@@ -177,6 +177,10 @@ unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算�
 
 `local-image`、`local-video`、`local-tts` 分别访问已部署的 Qwen-Image-2512、MiniMax H3 和 Qwen3-TTS，另有 `local-ai-service` 管理启停和状态。它们是可供未来 Flow / Agent 复用的独立 Action，不新增 Workflow。后端统一串行使用 GPU，生成结束、取消或失败后回收受管进程，单独启动有 60 秒空闲期限。配置、参数、调用示例及 Windows 异常退出资源所有权见 [本地模型 Actions](docs/local-ai-actions.md)。
 
+### macOS 保持唤醒 Action
+
+`macos-keep-awake` 在 macOS 后台管理 Aura 自己启动的 `/usr/bin/caffeinate -i`。输入 `operation: "start" | "stop" | "status"`；重复 start 复用已记录的进程，stop 只终止 PID 与可执行文件均核验为 `caffeinate` 的进程。状态写在工作区 `.aura/macos-keep-awake.json`，因此 Aura 重启后仍可查看和停止；进程不会阻止合盖、手动睡眠或低电量关机。其他平台调用会明确失败。
+
 ### Flow / Action 定义
 
 `FlowDiscovery` 在首次启动、catalog 读取、运行开始前和后台短周期扫描时检查内置及已启用外部根的直接子目录。非法 ID、入口名不一致、缺少入口或多个 `*.flow.js` 都会作为不可用项进入 catalog。外部贡献使用 `<plugin-id>/<local-id>` 规范 ID，内置贡献保持原有 ID；DSH 工具名由后端映射为安全名称，持久化和公开接口始终保留规范 ID。
