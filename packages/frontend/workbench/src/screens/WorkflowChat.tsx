@@ -171,50 +171,62 @@ export function WorkflowChat({
               />
             ) : (
               <article
-                className="workflow-run-card workflow-legacy-record"
+                className={`workflow-message workflow-legacy-record ${
+                  message.role === "user"
+                    ? "workflow-message-user"
+                    : "workflow-message-assistant"
+                }`}
                 key={message.id}
                 aria-label="保留的会话内容"
               >
-                <h3 className="workflow-section-label">
-                  {message.role === "user" ? "输入" : "记录"}
-                </h3>
-                <WorkflowData value={storedWorkflowValue(message.text)} />
+                <div
+                  className={
+                    message.role === "user" ? "workflow-user-bubble" : undefined
+                  }
+                >
+                  <WorkflowData value={storedWorkflowValue(message.text)} />
+                </div>
               </article>
             ),
           )}
           {pending ? (
             <article
-              className="workflow-run-card workflow-pending-card"
+              className="workflow-turn workflow-pending-turn"
               aria-label="待确认的执行"
             >
-              <div className="workflow-pending-heading">
-                <GitBranch size={17} />
-                <strong>
-                  {submitting ? "正在提交工作流" : "这次执行待确认"}
-                </strong>
-                <span role="status">{submitting ? "提交中" : "待确认"}</span>
-              </div>
-              <h3 className="workflow-section-label">输入</h3>
-              <WorkflowData value={pending.input} schema={schema} />
-              <p className="muted">
-                {submitting
-                  ? "正在创建本次执行记录…"
-                  : "服务尚未确认提交结果。重试会继续确认同一次执行。"}
-              </p>
-              {error ? (
-                <p role="alert" className="error">
-                  {error}
+              <section className="workflow-message workflow-message-user">
+                <div className="workflow-user-bubble">
+                  <WorkflowData value={pending.input} schema={schema} />
+                </div>
+              </section>
+              <section className="workflow-message workflow-message-assistant workflow-pending-response">
+                <div className="workflow-pending-heading">
+                  <GitBranch size={17} />
+                  <strong>
+                    {submitting ? "正在提交工作流" : "这次执行待确认"}
+                  </strong>
+                  <span role="status">{submitting ? "提交中" : "待确认"}</span>
+                </div>
+                <p className="muted">
+                  {submitting
+                    ? "正在创建本次执行记录…"
+                    : "服务尚未确认提交结果。重试会继续确认同一次执行。"}
                 </p>
-              ) : null}
-              {!submitting ? (
-                <button
-                  type="button"
-                  className="tool-button"
-                  onClick={() => void submit(pending.input, pending.mode)}
-                >
-                  重试提交
-                </button>
-              ) : null}
+                {error ? (
+                  <p role="alert" className="error">
+                    {error}
+                  </p>
+                ) : null}
+                {!submitting ? (
+                  <button
+                    type="button"
+                    className="tool-button"
+                    onClick={() => void submit(pending.input, pending.mode)}
+                  >
+                    重试提交
+                  </button>
+                ) : null}
+              </section>
             </article>
           ) : error ? (
             <p className="workflow-session-error error" role="alert">

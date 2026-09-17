@@ -1,8 +1,7 @@
 import React, { useEffect, useId, useState } from "react";
 import {
-  ArrowDownLeft,
-  ArrowUpRight,
   CheckCircle2,
+  Circle,
   CircleAlert,
   Clock3,
   GitBranch,
@@ -10,6 +9,7 @@ import {
   RefreshCw,
   Square,
 } from "lucide-react";
+import { AuraMark } from "@aura/ui/components";
 import type {
   FlowHistory,
   FlowRun,
@@ -211,6 +211,15 @@ function StepHistory({
   );
 }
 
+function StepStateIcon({ status }: { status: FlowStep["status"] }) {
+  if (status === "completed") return <CheckCircle2 size={14} />;
+  if (status === "running")
+    return <LoaderCircle size={14} className="workflow-spinner" />;
+  if (status === "failed" || status === "unknown")
+    return <CircleAlert size={14} />;
+  return <Circle size={14} />;
+}
+
 export function WorkflowRunResult({
   endpoint,
   message,
@@ -262,9 +271,6 @@ export function WorkflowRunResult({
     };
   }, [endpoint, id, revision, receive]);
   const phase = cached?.status ?? message.workflowPhase ?? "queued";
-  const selected = cached?.steps.find(
-    (step) => (step.stepKey ?? step.id) === stepId,
-  );
   const active = isWorkflowActive(phase);
   const progress = workflowProgress(cached);
   const inputValue = cached
@@ -285,187 +291,187 @@ export function WorkflowRunResult({
     phase === "completed" ? CheckCircle2 : active ? LoaderCircle : CircleAlert;
   return (
     <article
-      className={`workflow-run-card run-${phase}`}
+      className={`workflow-turn run-${phase}`}
       aria-labelledby={titleId}
       data-run-id={id}
       tabIndex={-1}
     >
-      <header className="workflow-run-heading">
-        <span className="workflow-run-mark">
-          <GitBranch size={18} aria-hidden="true" />
-        </span>
-        <div className="workflow-run-identity">
-          <h2 id={titleId}>第 {index} 次执行</h2>
-          <div className="workflow-run-meta">
-            {cached ? (
-              <time dateTime={new Date(cached.createdAt).toISOString()}>
-                {new Date(cached.createdAt).toLocaleString("zh-CN", {
-                  month: "2-digit",
-                  day: "2-digit",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </time>
-            ) : (
-              <span>正在同步记录</span>
-            )}
-            {cached ? (
-              <span>{cached.mode === "demo" ? "本地演示" : "Codex"}</span>
-            ) : null}
-          </div>
-        </div>
-        <span
-          className={`workflow-phase workflow-status-badge phase-${phase}`}
-          role="status"
-        >
-          <PhaseIcon
-            size={14}
-            className={active ? "workflow-spinner" : undefined}
-          />
-          {workflowPhaseLabels[phase]}
-        </span>
-        {active ? (
-          <button
-            type="button"
-            className="icon-control workflow-stop"
-            aria-label={`停止第 ${index} 次执行`}
-            title="停止运行"
-            onClick={onCancel}
-          >
-            <Square size={14} />
-          </button>
-        ) : null}
-      </header>
-      {error ? (
-        <div className="workflow-fetch-error" role="alert">
-          {error}
-          <button
-            className="text-control"
-            onClick={() => setRevision((value) => value + 1)}
-          >
-            重试
-          </button>
-        </div>
-      ) : null}
-      {cached ? (
-        <WorkflowControls endpoint={endpoint} run={cached} receive={receive} />
-      ) : null}
-      <section className="workflow-run-input" aria-label="本次输入">
-        <h3 className="workflow-section-label">
-          <ArrowUpRight size={14} />
-          输入
-        </h3>
-        {inputValue === undefined ? (
-          <p className="workflow-value-empty">正在读取本次输入…</p>
-        ) : (
-          <WorkflowData value={inputValue} schema={inputSchema} />
-        )}
-      </section>
-      <section className="workflow-run-output" aria-label="本次输出">
-        <h3 className="workflow-section-label">
-          <ArrowDownLeft size={14} />
-          输出
-        </h3>
-        {problem ? (
-          <div className="workflow-run-problem" role="alert">
-            <CircleAlert size={16} />
-            <WorkflowRichText text={problem} />
-          </div>
-        ) : null}
-        {hasWorkflowContent(output) && !(problem && output === problem) ? (
-          <WorkflowData value={output} />
-        ) : (
-          <div className="workflow-output-placeholder">
-            {active ? (
-              <LoaderCircle size={18} className="workflow-spinner" />
-            ) : (
-              <ArrowDownLeft size={18} />
-            )}
-            <span>
-              {!cached && !savedOutput && !error
-                ? "正在读取本次输出…"
-                : active
-                  ? "工作流正在执行，输出将在这里更新。"
-                  : phase === "completed"
-                    ? "工作流已完成，但未返回输出内容。"
-                    : "本次执行未生成输出，可展开执行过程查看详情。"}
-            </span>
-          </div>
-        )}
-        {output !== undefined && !hasWorkflowContent(output) ? (
-          <WorkflowJson value={output} />
-        ) : null}
-      </section>
-      <div className="workflow-run-progress" aria-label="执行进度">
-        <span className="workflow-current-step">
-          {active ? (
-            <>
-              <span className="workflow-live-dot" />
-              {progress.current.length
-                ? `正在执行 · ${progress.current.join("、")}`
-                : "等待下一步执行"}
-            </>
+      <section className="workflow-message workflow-message-user" aria-label="本次输入">
+        <div className="workflow-user-bubble">
+          {inputValue === undefined ? (
+            <p className="workflow-value-empty">正在读取本次输入…</p>
           ) : (
-            <>
-              <CheckCircle2 size={13} />
-              {progress.completed} 个步骤完成
-            </>
+            <WorkflowData value={inputValue} schema={inputSchema} />
           )}
-        </span>
-        {progress.total ? (
-          <span className="workflow-progress-count">
-            {progress.completed} / {progress.total}
+        </div>
+      </section>
+      <section className="workflow-message workflow-message-assistant">
+        <header className="workflow-response-heading">
+          <span className="workflow-response-mark" aria-hidden="true">
+            <AuraMark size={20} />
           </span>
+          <div className="workflow-response-identity">
+            <div>
+              <strong id={titleId}>工作流</strong>
+              <span className="workflow-run-number">第 {index} 次执行</span>
+            </div>
+            <div className="workflow-run-meta">
+              {cached ? (
+                <time dateTime={new Date(cached.createdAt).toISOString()}>
+                  {new Date(cached.createdAt).toLocaleString("zh-CN", {
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </time>
+              ) : (
+                <span>正在同步记录</span>
+              )}
+              {cached ? (
+                <span>{cached.mode === "demo" ? "本地演示" : "Codex"}</span>
+              ) : null}
+            </div>
+          </div>
+          <span
+            className={`workflow-phase workflow-status-badge phase-${phase}`}
+            role="status"
+          >
+            <PhaseIcon
+              size={14}
+              className={active ? "workflow-spinner" : undefined}
+            />
+            {workflowPhaseLabels[phase]}
+          </span>
+          {active ? (
+            <button
+              type="button"
+              className="icon-control workflow-stop"
+              aria-label={`停止第 ${index} 次执行`}
+              title="停止运行"
+              onClick={onCancel}
+            >
+              <Square size={14} />
+            </button>
+          ) : null}
+        </header>
+        {error ? (
+          <div className="workflow-fetch-error" role="alert">
+            {error}
+            <button
+              className="text-control"
+              onClick={() => setRevision((value) => value + 1)}
+            >
+              重试
+            </button>
+          </div>
         ) : null}
         {cached ? (
-          <span className="workflow-run-duration">
-            <Clock3 size={12} />
-            {workflowDuration(
-              cached.createdAt,
-              cached.finishedAt ?? Date.now(),
+          <WorkflowControls endpoint={endpoint} run={cached} receive={receive} />
+        ) : null}
+        <div className="workflow-stream" aria-live={active ? "polite" : "off"}>
+          {cached?.steps.length ? (
+            <ol className="workflow-stream-steps" aria-label="执行步骤">
+              {cached.steps.map((step) => {
+                const key = step.stepKey ?? step.id;
+                const expanded = key === stepId;
+                return (
+                  <li className={`phase-${step.status}`} key={key}>
+                    <button
+                      type="button"
+                      aria-expanded={expanded}
+                      onClick={() => setStepId(expanded ? undefined : key)}
+                    >
+                      <span className="workflow-step-state" aria-hidden="true">
+                        <StepStateIcon status={step.status} />
+                      </span>
+                      <span className="workflow-step-copy">
+                        <strong>{step.label}</strong>
+                        <small>{workflowPhaseLabels[step.status]}</small>
+                      </span>
+                    </button>
+                    {expanded ? (
+                      <StepHistory
+                        key={key}
+                        endpoint={endpoint}
+                        runId={id}
+                        step={step}
+                      />
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ol>
+          ) : active ? (
+            <div className="workflow-stream-starting">
+              <LoaderCircle size={15} className="workflow-spinner" />
+              正在准备执行步骤…
+            </div>
+          ) : null}
+          <section className="workflow-stream-output" aria-label="本次输出">
+            {problem ? (
+              <div className="workflow-run-problem" role="alert">
+                <CircleAlert size={16} />
+                <WorkflowRichText text={problem} />
+              </div>
+            ) : null}
+            {hasWorkflowContent(output) && !(problem && output === problem) ? (
+              <WorkflowData value={output} />
+            ) : (
+              <div className="workflow-output-placeholder">
+                {active ? (
+                  <LoaderCircle size={16} className="workflow-spinner" />
+                ) : (
+                  <GitBranch size={16} />
+                )}
+                <span>
+                  {!cached && !savedOutput && !error
+                    ? "正在读取执行内容…"
+                    : active
+                      ? "步骤正在执行，结果会继续显示在这里。"
+                      : phase === "completed"
+                        ? "工作流已完成，但未返回输出内容。"
+                        : "本次执行未生成输出。"}
+                </span>
+              </div>
+            )}
+            {output !== undefined && !hasWorkflowContent(output) ? (
+              <WorkflowJson value={output} />
+            ) : null}
+          </section>
+        </div>
+        <footer className="workflow-response-meta" aria-label="执行进度">
+          <span className="workflow-current-step">
+            {active ? (
+              <>
+                <span className="workflow-live-dot" />
+                {progress.current.length
+                  ? `正在执行 · ${progress.current.join("、")}`
+                  : "等待下一步执行"}
+              </>
+            ) : (
+              <>
+                <CheckCircle2 size={13} />
+                {progress.completed} 个步骤完成
+              </>
             )}
           </span>
-        ) : null}
-      </div>
-      {cached?.steps.length ? (
-        <details className="workflow-execution">
-          <summary>执行过程 · {cached.steps.length} 个步骤</summary>
-          <div className="workflow-steps">
-            {cached.steps.map((step) => (
-              <button
-                key={step.stepKey ?? step.id}
-                className={
-                  (step.stepKey ?? step.id) === stepId ? "selected" : ""
-                }
-                aria-expanded={(step.stepKey ?? step.id) === stepId}
-                onClick={() =>
-                  setStepId(
-                    (step.stepKey ?? step.id) === stepId
-                      ? undefined
-                      : (step.stepKey ?? step.id),
-                  )
-                }
-              >
-                <span className="workflow-step-label">
-                  <i className={`workflow-step-dot phase-${step.status}`} />
-                  {step.label}
-                </span>
-                <small className={`workflow-phase phase-${step.status}`}>
-                  {workflowPhaseLabels[step.status]}
-                </small>
-              </button>
-            ))}
-          </div>
-          {selected ? (
-            <StepHistory
-              key={selected.stepKey ?? selected.id}
-              endpoint={endpoint}
-              runId={id}
-              step={selected}
-            />
+          {progress.total ? (
+            <span className="workflow-progress-count">
+              {progress.completed} / {progress.total}
+            </span>
           ) : null}
-        </details>
-      ) : null}
+          {cached ? (
+            <span className="workflow-run-duration">
+              <Clock3 size={12} />
+              {workflowDuration(
+                cached.createdAt,
+                cached.finishedAt ?? Date.now(),
+              )}
+            </span>
+          ) : null}
+        </footer>
+      </section>
     </article>
   );
 }

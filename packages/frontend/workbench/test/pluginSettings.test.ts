@@ -14,7 +14,7 @@ const state = {
       enabled: true,
       trust: "local" as const,
       status: {
-        id: "zzmelody.veya",
+        id: "veya",
         name: "Veya Creative",
         version: "0.1.1",
         enabled: true,

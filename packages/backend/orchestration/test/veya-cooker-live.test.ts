@@ -28,7 +28,7 @@ test(
   async () => {
     const dshHome = await mkdtemp(join(tmpdir(), "aura-veya-cooker-live-"));
     const plugin = {
-      id: "zzmelody.veya",
+      id: "veya",
       name: "Veya Creative",
       version: "0.3.0",
     };
@@ -69,12 +69,12 @@ test(
         "cooker-cancel",
       ]) {
         const action = catalog.actions?.find(
-          (entry) => entry.id === `zzmelody.veya/${id}`,
+          (entry) => entry.id === `veya/${id}`,
         );
         assert.equal(action?.available, true, JSON.stringify(action));
       }
       const capabilities = await invoke(
-        "zzmelody.veya/cooker-capabilities",
+        "veya/cooker-capabilities",
         {},
       );
       assert.equal(capabilities.available, true);
@@ -97,7 +97,7 @@ test(
         ` {name="pack",operation="pack",files={output},output=${JSON.stringify(pack)}},`,
         "}",
       ].join("\n");
-      const submitted = await invoke("zzmelody.veya/cooker-submit", {
+      const submitted = await invoke("veya/cooker-submit", {
         pipelineSource: pipeline,
         sources: [
           {
@@ -120,7 +120,7 @@ test(
         attempt += 1
       ) {
         await delay(50);
-        result = await invoke("zzmelody.veya/cooker-status", {
+        result = await invoke("veya/cooker-status", {
           operationId: submitted.operation_id!,
         });
       }
@@ -129,7 +129,7 @@ test(
       assert.equal(object(result.cooker).steps?.length, 4);
       assert.equal(result.assets?.length, 1);
 
-      const terminalCancel = await invoke("zzmelody.veya/cooker-cancel", {
+      const terminalCancel = await invoke("veya/cooker-cancel", {
         operationId: submitted.operation_id!,
       });
       assert.equal(terminalCancel.status, "succeeded");

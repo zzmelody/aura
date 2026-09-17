@@ -10,7 +10,7 @@ import {
 } from "../src/workflowPresentation.ts";
 import type { FlowRun } from "@aura/protocol/types";
 
-test("execution cards pair input by run identity and retain unrelated history", () => {
+test("execution turns pair input by run identity and retain unrelated history", () => {
   const messages: Message[] = [
     { id: "a:input", role: "user", text: "Input A", status: "complete" },
     { id: "b:input", role: "user", text: "Input B", status: "complete" },

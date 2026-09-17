@@ -8,6 +8,7 @@ type Operation = { method: "GET" | "POST"; path?: string; tool?: string };
 
 const operations = new Map<string, Operation>([
   ["health", { method: "GET", path: "/v1/health" }],
+  ["veya.system.context", { method: "POST", tool: "veya.system.context" }],
   [
     "veya.world.list",
     { method: "POST", path: "/v2/worlds/list", tool: "veya.world.list" },
@@ -76,6 +77,11 @@ const operations = new Map<string, Operation>([
   ["veya.cooker.submit", { method: "POST", tool: "veya.cooker.submit" }],
   ["veya.cooker.status", { method: "POST", tool: "veya.cooker.status" }],
   ["veya.cooker.cancel", { method: "POST", tool: "veya.cooker.cancel" }],
+  ["veya.runtime.observe", { method: "POST", tool: "veya.runtime.observe" }],
+  ["veya.runtime.inspect", { method: "POST", tool: "veya.runtime.inspect" }],
+  ["veya.action.perform", { method: "POST", tool: "veya.action.perform" }],
+  ["veya.dialogue.choose", { method: "POST", tool: "veya.dialogue.choose" }],
+  ["veya.player.respawn", { method: "POST", tool: "veya.player.respawn" }],
 ]);
 
 interface SessionDescriptor {

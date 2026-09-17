@@ -83,6 +83,12 @@ Codex 架构固定为 `Aura → DSH authorization/agent loop → dsh-llm-pi-ai �
 - `pnpm run check` 的工作区规则与所有类型检查通过，但两次全量运行均在后端 `test/action-dsh.test.ts:257` 的热加载轮询遇到 503 编排连接中断；该集成测试单独运行通过。本轮未修改这项后端测试或对应后端实现，因此不将全量检查标为通过。
 - 脚本位于 `output/playwright/verify-execution-records.ts`、`verify-execution-live.ts` 和 `verify-execution-live-finish.ts`，截图为 `execution-records-*.png`、`execution-start-dialog.png`、`execution-live-desktop.png`；全量失败日志位于 `output/workflow-records-check.log`。用户原有的小提琴学习工具执行记录已在当前浏览器中显示新卡片。
 
+## 工作流对话式输出（2026-09-16）
+
+- 每次执行显示为用户输入和工作流回复组成的对话轮次；步骤、运行状态与结果在同一中间输出区连续更新，不再使用整块执行卡片。步骤默认可见，点击后仍可查看 Agent、工具、attempt 和恢复详情。
+- 运行参数继续通过按需弹窗提交；工作流回复保留暂停、继续、停止、checkpoint 和未知结果处理能力。窄屏下输入气泡、回复头、步骤详情和结构化输出保持单列且不产生横向溢出。
+- Workbench 类型检查和 27 项测试通过，Web、Electron renderer、Capacitor 构建通过。Playwright 在真实历史与新建本地演示运行中验证两次执行按对话轮次排列、6 个步骤直接可见、详情可展开；1200px 与 390px 视口均无横向溢出。
+
 ## Tripo 3D 后端（2026-09-14）
 
 - 新增 `@aura/tripo` 与官方 `@vastai/tripo-sdk@0.1.1`，Hermetic 测试验证海外站 v3 endpoint、Bearer 鉴权、请求字段映射、凭据文件读取和任务结果白名单投影；未发起付费生成。

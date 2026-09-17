@@ -78,6 +78,7 @@ test("Veya capability preserves canonical tool names on the native Agent protoco
       }) as typeof fetch;
       const client = new VeyaWorldAgentCapability(sessionPath, request);
       const tools = [
+        "veya.system.context",
         "veya.world.list",
         "veya.world.status",
         "veya.world.read",
@@ -95,6 +96,11 @@ test("Veya capability preserves canonical tool names on the native Agent protoco
         "veya.cooker.submit",
         "veya.cooker.status",
         "veya.cooker.cancel",
+        "veya.runtime.observe",
+        "veya.runtime.inspect",
+        "veya.action.perform",
+        "veya.dialogue.choose",
+        "veya.player.respawn",
       ];
       for (const tool of tools)
         await client.invoke(
@@ -166,6 +172,35 @@ test("Veya Cooker requires the native Agent tool protocol", async () => {
       ),
       /requires veya-agent-tools\/1/u,
     );
+    assert.equal(requests, 0);
+  });
+});
+
+test("Veya runtime tools require the native Agent tool protocol", async () => {
+  await fixture(async (sessionPath) => {
+    let requests = 0;
+    const request = (async () => {
+      requests += 1;
+      return new Response("{}");
+    }) as typeof fetch;
+    const client = new VeyaWorldAgentCapability(sessionPath, request);
+    for (const operation of [
+      "veya.system.context",
+      "veya.runtime.observe",
+      "veya.runtime.inspect",
+      "veya.action.perform",
+      "veya.dialogue.choose",
+      "veya.player.respawn",
+    ])
+      await assert.rejects(
+        client.invoke(
+          VEYA_WORLD_AGENT_CAPABILITY,
+          operation,
+          {},
+          new AbortController().signal,
+        ),
+        /requires veya-agent-tools\/1/u,
+      );
     assert.equal(requests, 0);
   });
 });
