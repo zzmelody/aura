@@ -12,9 +12,10 @@ contextBridge.exposeInMainWorld("auraHost", {
       ) as Promise<SiteProject | null>,
     start: (project: SiteProject) =>
       ipcRenderer.invoke("aura:site:start", project) as Promise<SiteStatus>,
-    stop: () => ipcRenderer.invoke("aura:site:stop") as Promise<SiteStatus>,
-    open: (url: string) =>
-      ipcRenderer.invoke("aura:site:open", url) as Promise<void>,
+    stop: (id: string) =>
+      ipcRenderer.invoke("aura:site:stop", id) as Promise<SiteStatus>,
+    open: (project: SiteProject) =>
+      ipcRenderer.invoke("aura:site:open", project) as Promise<void>,
     onStatus: (callback: (status: SiteStatus) => void) => {
       const listener = (_event: IpcRendererEvent, status: SiteStatus) =>
         callback(status);

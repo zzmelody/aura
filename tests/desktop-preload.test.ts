@@ -22,11 +22,7 @@ test("built desktop preload runs with sandbox CommonJS and exposes working Site 
       requests.push(args);
       if (args[0] === "aura:site:choose-directory") return project;
       if (args[0] === "aura:site:status")
-        events.emit(
-          "aura:site:status",
-          { sender: "private" },
-          { state: "idle" },
-        );
+        events.emit("aura:site:status", { sender: "private" }, { state: "idle" });
     },
   };
   // Like a sandboxed preload: no import/Node loader, only Electron's limited require.
@@ -60,13 +56,13 @@ test("built desktop preload runs with sandbox CommonJS and exposes working Site 
   events.emit("aura:site:status", {}, { state: "running" });
   assert.equal(received.length, 1);
   await host.site.start(project);
-  await host.site.stop();
-  await host.site.open("http://127.0.0.1:5173");
+  await host.site.stop("/tmp/site");
+  await host.site.open(project);
   assert.deepEqual(requests, [
     ["aura:site:choose-directory"],
     ["aura:site:status"],
     ["aura:site:start", project],
-    ["aura:site:stop"],
-    ["aura:site:open", "http://127.0.0.1:5173"],
+    ["aura:site:stop", "/tmp/site"],
+    ["aura:site:open", project],
   ]);
 });

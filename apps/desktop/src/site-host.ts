@@ -13,7 +13,7 @@ import {
 
 const STATUS_CHANNEL = "aura:site:status";
 const SITE_URL_PATTERN = /^https?:\/\//i;
-let siteWindow: BrowserWindow | null = null;
+const siteWindows = new Map<string, BrowserWindow>();
 const subscribers = new Set<Electron.WebContents>();
 const runner = new SiteRunner({
   onStatus(status) {
@@ -22,18 +22,19 @@ const runner = new SiteRunner({
       else contents.send(STATUS_CHANNEL, status);
     }
   },
-  openPreview: openSiteWindow,
+  openPreview: (url, project) => openSiteWindow(url, project),
 });
 
-async function openSiteWindow(url: string): Promise<void> {
-  let window = siteWindow;
+async function openSiteWindow(url: string, project?: SiteProject): Promise<void> {
+  const id = project?.id ?? url;
+  let window = siteWindows.get(id);
   if (!window || window.isDestroyed()) {
     window = new BrowserWindow({
       width: 1280,
       height: 820,
       minWidth: 760,
       minHeight: 520,
-      title: "Aura · Site",
+      title: `Aura · ${project?.name ?? "Site"}`,
       backgroundColor: "#0C0B10",
       webPreferences: {
         contextIsolation: true,
@@ -41,9 +42,9 @@ async function openSiteWindow(url: string): Promise<void> {
         sandbox: true,
       },
     });
-    siteWindow = window;
+    siteWindows.set(id, window);
     window.on("closed", () => {
-      if (siteWindow === window) siteWindow = null;
+      if (siteWindows.get(id) === window) siteWindows.delete(id);
     });
     window.webContents.setWindowOpenHandler(({ url: requested }) =>
       SITE_URL_PATTERN.test(requested)
@@ -82,21 +83,27 @@ export function installSiteHost(): void {
   ipcMain.handle("aura:site:start", (_event, project: unknown) =>
     runner.start(project),
   );
-  ipcMain.handle("aura:site:stop", () => runner.stop());
-  ipcMain.handle("aura:site:open", (_event, url: unknown) => {
-    if (typeof url !== "string") throw new Error("无效的预览地址。");
-    return runner.open(url);
+  ipcMain.handle("aura:site:stop", (_event, id: unknown) => {
+    if (typeof id !== "string") throw new Error("无效的 Site 项目标识。");
+    return runner.stop(id);
+  });
+  ipcMain.handle("aura:site:open", (_event, project: unknown) => {
+    if (!project || typeof project !== "object") throw new Error("无效的 Site 项目。");
+    return runner.open(project as SiteProject);
   });
   ipcMain.handle("aura:site:status", (event) => {
     subscribers.add(event.sender);
-    event.sender.send(STATUS_CHANNEL, runner.getStatus());
-    return runner.getStatus();
+    for (const status of runner.getStatuses())
+      event.sender.send(STATUS_CHANNEL, status);
+    return runner.getStatuses();
   });
 }
 
 export async function closeSiteHost(): Promise<void> {
   await runner.stop();
-  if (siteWindow && !siteWindow.isDestroyed()) siteWindow.close();
+  for (const window of siteWindows.values())
+    if (!window.isDestroyed()) window.close();
+  siteWindows.clear();
 }
 
 export { STATUS_CHANNEL };

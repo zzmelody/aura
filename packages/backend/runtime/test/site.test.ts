@@ -339,3 +339,30 @@ test("direct dev server scripts get a selected free port and keep existing servi
   assert.equal(await (await fetch(occupied.url)).text(), "foreign service");
   await site.stop();
 });
+
+test("multiple projects run concurrently with separate status and ports", async (t) => {
+  const first = await fixture(t, "node server.ts 0");
+  const second = await fixture(t, "node server.ts 0");
+  const opened: string[] = [];
+  const site = new SiteRunner({
+    onStatus() {},
+    openPreview: async (url) => { opened.push(url); },
+    readinessTimeoutMs: 10000,
+  });
+  t.after(() => site.stop());
+  await Promise.all([
+    site.start({ ...first, url: "http://127.0.0.1:59174/" }),
+    site.start({ ...second, url: "http://127.0.0.1:59174/" }),
+  ]);
+  await until(() => opened.length === 2 || site.getStatus(first.id).state === "error" || site.getStatus(second.id).state === "error");
+  const firstStatus = site.getStatus(first.id);
+  const secondStatus = site.getStatus(second.id);
+  assert.equal(firstStatus.state, "running", JSON.stringify(firstStatus));
+  assert.equal(secondStatus.state, "running", JSON.stringify(secondStatus));
+  assert.notEqual(firstStatus.project!.url, secondStatus.project!.url);
+  await site.stop(first.id);
+  assert.equal(site.getStatus(first.id).state, "stopped");
+  assert.equal(site.getStatus(second.id).state, "running");
+  assert.match(await (await fetch(secondStatus.project!.url)).text(), /owned site/);
+  await site.stop(second.id);
+});

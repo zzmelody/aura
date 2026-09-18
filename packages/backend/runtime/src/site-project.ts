@@ -93,6 +93,7 @@ export async function describeProject(directory: string): Promise<SiteProject> {
   const script =
     ["dev", "start", "serve"].find((name) => names.includes(name)) ?? names[0];
   return {
+    id: normalized,
     directory: normalized,
     name:
       typeof manifest.name === "string" && manifest.name.trim()
@@ -119,7 +120,10 @@ export async function siteProjectInput(
   const url = localSiteUrl(
     typeof input.url === "string" ? input.url : project.url,
   ).toString();
-  return { project: { ...project, script, url }, command: scripts[script] };
+  return {
+    project: { ...project, id: project.directory, script, url },
+    command: scripts[script],
+  };
 }
 
 /** Only direct commands with literal arguments: never append flags to a shell pipeline/wrapper. */

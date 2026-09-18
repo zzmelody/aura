@@ -3,6 +3,8 @@ export type ChatMessage = { role: "user" | "assistant"; text: string };
 
 export type SitePackageManager = "pnpm" | "npm" | "yarn" | "bun";
 export interface SiteProject {
+  /** Stable local identifier. For desktop sites this is the normalized directory. */
+  id: string;
   directory: string;
   name: string;
   packageManager: SitePackageManager;
