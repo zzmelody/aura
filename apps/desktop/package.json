@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "aura": { "kind": "app", "platform": "desktop" },
+  "aura": {
+    "kind": "app",
+    "platform": "desktop"
+  },
   "main": "src/main.ts",
   "scripts": {
-    "dev": "tsx ../../scripts/dev-renderer.ts desktop",
-    "start": "pnpm run build:renderer && electron .",
-    "build": "pnpm run build:renderer",
+    "dev": "pnpm run build:preload && tsx ../../scripts/dev-renderer.ts desktop",
+    "start": "pnpm run build && electron .",
+    "build": "pnpm run build:renderer && pnpm run build:preload",
+    "build:preload": "tsx ../../scripts/build-desktop-preload.ts",
     "build:renderer": "vite build",
     "typecheck": "tsc --noEmit"
   },

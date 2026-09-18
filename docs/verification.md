@@ -1,5 +1,18 @@
 # 验证记录
 
+## Desktop Site 端口冲突修复（2026-09-18）
+
+- 新增端口/进程回归：直接脚本参数适配、本机地址与监听进程归属、自定义脚本冲突时拒绝启动、通配监听占用识别、ANSI/分段输出的实际地址同步、拒绝其他进程宣告地址、启动中停止与并发启动、预检查后被抢占、真实 Vite 显式端口冲突后自动改用空闲端口。Vite 退出后原占用服务仍可访问。
+- 就绪超时保留停止入口，手动打开重复校验进程归属，未就绪时不再允许盲目打开预览。端口与子进程逻辑移入 `@aura/runtime/site`，Electron 主进程只适配宿主能力。
+- macOS 本机执行 Site 定向回归、沙箱 preload 测试、`pnpm run check` 和 `pnpm run build:desktop` 均通过；Windows/Linux 分支未在对应系统实测。
+- 确认当前项目已停止后，退出并用 `pnpm desktop` 重启；实际 Site 页面保留原目录配置，显示端口避让说明，未运行时「打开预览」禁用。未启动用户的外部项目。
+
+## Desktop Site 目录入口修复（2026-09-18）
+
+- 在实际 `pnpm desktop` 窗口中复现：Electron 沙箱直接加载 `src/preload.ts`，报 `Cannot use import statement outside a module`，导致 Site 误显示桌面版提示。
+- 开发启动与静态构建均预编译 `dist-host/preload.cjs`，保留 `sandbox`、`contextIsolation` 和禁用 Node integration。新增回归测试在限制为 Electron `require` 的环境中执行生成产物，检查 Site IPC、初始状态和退订。
+- 重启真实桌面窗口后，Site 的「选择目录」可见，点击成功打开系统「选择前端项目目录」对话框；取消后正常返回。未替用户指定项目或运行外部项目。
+
 日期：2026-09-11，Windows 本地环境。自动验证不使用真实 Codex 账号或 API Key。
 
 ## 当前 Monorepo 回归

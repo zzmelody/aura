@@ -27,6 +27,7 @@ import { CodexLoginButton } from "./CodexLoginButton";
 import { HomeScreen, HistoryScreen } from "./screens/Home";
 import { ChatScreen } from "./screens/Chat";
 import { SettingsScreen } from "./screens/Settings";
+import { SiteScreen } from "./screens/Site";
 import { Workflows } from "./screens/Workflows";
 import { useFlowCatalog } from "./flowCatalog";
 import { flowContext, useFlowDraft } from "./flowDraft";
@@ -176,7 +177,9 @@ export default function App() {
                           ? "概览"
                           : tab === "history"
                             ? "全部记录"
-                            : "设置"}
+                            : tab === "site"
+                              ? "Site"
+                              : "设置"}
                   </strong>
                 </div>
                 <div className="header-actions">
@@ -328,6 +331,7 @@ export default function App() {
                   systemReduced={systemReduced}
                 />
               ) : null}
+              {tab === "site" ? <SiteScreen /> : null}
               <footer className="workspace-status">
                 <span>
                   <span

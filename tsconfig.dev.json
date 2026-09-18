@@ -2,6 +2,7 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": { "types": ["node", "vite/client"] },
   "include": [
+    "scripts/build-desktop-preload.ts",
     "scripts/dev-renderer.ts",
     "scripts/vite-live-reload.ts",
     "scripts/vite-live-reload-client.ts"

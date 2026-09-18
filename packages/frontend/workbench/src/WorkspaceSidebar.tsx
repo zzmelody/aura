@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   MessageCircle,
   PanelLeftClose,
+  PanelsTopLeft,
   Search,
   Settings2,
   SquarePen,
@@ -25,6 +26,7 @@ const tabs = [
   { id: "chat", label: "对话", icon: MessageCircle },
   { id: "home", label: "概览", icon: Grid2X2 },
   { id: "history", label: "全部记录", icon: Clock3 },
+  { id: "site", label: "Site", icon: PanelsTopLeft },
 ] as const;
 
 export function WorkspaceSidebar({

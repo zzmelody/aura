@@ -1,3 +1,5 @@
+import type { SiteHostApi } from "./site.ts";
+
 export type AuraPlatform = "web" | "desktop" | "mobile";
 
 declare global {
@@ -5,6 +7,7 @@ declare global {
     auraHost?: {
       platform: AuraPlatform;
       openExternal?(url: string): Promise<void>;
+      site?: SiteHostApi;
     };
   }
 }

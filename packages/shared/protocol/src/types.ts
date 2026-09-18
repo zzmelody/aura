@@ -1,6 +1,27 @@
 /** Text-only message accepted by the demo HTTP endpoint. */
 export type ChatMessage = { role: "user" | "assistant"; text: string };
 
+export type SitePackageManager = "pnpm" | "npm" | "yarn" | "bun";
+export interface SiteProject {
+  directory: string;
+  name: string;
+  packageManager: SitePackageManager;
+  scripts: string[];
+  script: string;
+  url: string;
+}
+export type SiteStatusState =
+  "idle" | "starting" | "running" | "stopping" | "stopped" | "error";
+export interface SiteStatus {
+  state: SiteStatusState;
+  project?: SiteProject;
+  message?: string;
+  output?: string;
+  pid?: number;
+  previewReady?: boolean;
+  portMessage?: string;
+}
+
 /** Wire data only. Flow discovery, validation and execution live in the backend. */
 export type JsonValue =
   null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };

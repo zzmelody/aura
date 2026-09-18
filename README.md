@@ -7,6 +7,7 @@ Aura 是独立应用项目，不是 DeepSeek Harness 源码副本。项目采用
 - 本地会话、历史恢复、逐字回复、停止、复制、失败重试，以及深浅色和减少动态效果。
 - 工作流卡片浏览与内联节点预览、独立流程图/代码详情；运行在绑定工作流的会话中进行，步骤记录与结果随会话保存，支持拖拽节点和画布。
 - 离线规则演示，以及通过官方 DSH profile 运行的服务端演示。
+- 桌面版 Site 菜单：选择本机前端项目目录，识别开发脚本并在独立窗口运行本地预览。
 - 右上角「登录 Codex」入口：由 DSH 的授权与凭据服务完成 OpenAI OAuth，登录后对话通过 DSH 的 `openai-codex` provider 使用 ChatGPT Plus/Pro 订阅。
 - Vite 浏览器构建、Electron 桌面窗口、Capacitor Android/iOS 容器和 Android 内测包脚本。
 

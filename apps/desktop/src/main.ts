@@ -6,6 +6,7 @@ import { app, BrowserWindow, dialog, shell } from "electron";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { startAuraRuntime } from "@aura/runtime";
+import { closeSiteHost, installSiteHost } from "./site-host.ts";
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(sourceDir, "..");
@@ -13,6 +14,7 @@ const repoRoot = resolve(sourceDir, "..", "..", "..");
 const rendererRoot = resolve(appDir, "dist");
 let ownedRuntime: Awaited<ReturnType<typeof startAuraRuntime>> | null = null;
 let renderer: ServerType | null = null;
+installSiteHost();
 const development = !app.isPackaged && process.argv.includes("--dev");
 if (development) {
   const parentPid = Number(process.env.AURA_DEV_PARENT_PID);
@@ -107,7 +109,11 @@ async function openWorkbench() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: resolve(appDir, "dist-host", "preload.cjs"),
     },
+  });
+  window.webContents.on("preload-error", (_event, _path, error) => {
+    console.error("Aura desktop bridge failed to load:", error.message);
   });
   window.webContents.setWindowOpenHandler(({ url: requested }) => {
     if (requested === "about:blank")
@@ -139,12 +145,25 @@ async function openWorkbench() {
 
 app.on("window-all-closed", () => app.quit());
 let finishingQuit = false;
+let closingServices = false;
 app.on("before-quit", (event) => {
-  if (finishingQuit || !ownedRuntime) return;
+  if (finishingQuit) return;
   event.preventDefault();
-  finishingQuit = true;
+  if (closingServices) return;
+  closingServices = true;
   renderer?.close();
-  void ownedRuntime.close().finally(() => app.quit());
+  void Promise.all([closeSiteHost(), ownedRuntime?.close()])
+    .then(() => {
+      finishingQuit = true;
+      app.quit();
+    })
+    .catch((error) => {
+      closingServices = false;
+      dialog.showErrorBox(
+        "Aura 退出清理失败",
+        error instanceof Error ? error.message : "请重试退出。",
+      );
+    });
 });
 app.on("will-quit", () => renderer?.close());
 app

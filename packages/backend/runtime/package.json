@@ -9,6 +9,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./site": "./src/site-runner.ts",
     "./validation": "./src/validation.ts"
   },
   "scripts": {
