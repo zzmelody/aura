@@ -181,6 +181,12 @@ unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算�
 
 `macos-keep-awake` 在 macOS 后台管理 Aura 自己启动的 `/usr/bin/caffeinate -i`。输入 `operation: "start" | "stop" | "status"`；重复 start 复用已记录的进程，stop 只终止 PID 与可执行文件均核验为 `caffeinate` 的进程。状态写在工作区 `.aura/macos-keep-awake.json`，因此 Aura 重启后仍可查看和停止；进程不会阻止合盖、手动睡眠或低电量关机。其他平台调用会明确失败。
 
+### ANGE GameGen Pi Action
+
+`ange-pi` 是专用的 Pi 调用 Action，不是通用 Agent 适配层。默认只需要 `prompt`；它从 Anchemy 的 `settings.json` 和 `roles/generate` 读取 ANGE checkout、经过校验的 Pi host、模型/认证配置、角色 policy 与 GameGen skills，然后以 `cwd=ANGE` 启动真实 Pi 的 JSONL print 会话。默认加载 `pi-ange-gamegen`、`pi-subagents`、`pi-rpiv-todo` 和 `pi-anchemy-gateway`，不会读取任意全局插件或执行安装。
+
+可选参数包括 `sessionId`（按 UUID 续接）、`model`、`thinking`、`name`、`cwd`、`settingsPath`、session/output 目录、`timeoutMs`、插件子集、额外 skills 和受约束的 `extraArgs`。GameGen 始终保留；cwd、session/output 目录必须通过路径包含检查。Action 返回 `sessionId`、最终文本、tool calls、Pi 状态、JSONL 日志、退出信息和 usage。取消会终止 Pi 进程组并等待退出；返回内容和 stderr 会遮蔽 Anchemy gateway key。
+
 ### Flow / Action 定义
 
 `FlowDiscovery` 在首次启动、catalog 读取、运行开始前和后台短周期扫描时检查内置及已启用外部根的直接子目录。非法 ID、入口名不一致、缺少入口或多个 `*.flow.js` 都会作为不可用项进入 catalog。外部贡献使用 `<plugin-id>/<local-id>` 规范 ID，内置贡献保持原有 ID；DSH 工具名由后端映射为安全名称，持久化和公开接口始终保留规范 ID。
