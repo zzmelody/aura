@@ -71,5 +71,21 @@ Tripo 未文档化字段。Tripo 的模型下载 URL 有效期很短，状态变
 这避免把一个带付费额度的通用上游代理暴露出来。后续需要模型转换、贴图、减面、绑骨
 或上传时，应在 `@aura/tripo` 增加明确的类型化能力和独立的 body/文件大小限制。
 
+## Veya 模型生成 capability
+
+受信任插件可在 manifest 声明 `aura.tripo.game-asset`，再通过 Plugin SDK 调用唯一的
+`generate` 操作。该操作不是通用代理，而是一条固定的付费链路：
+
+1. 无参考图时用 GPT Image 2.5 文生前视图；有参考图时先上传受限的本地
+   PNG/JPEG/WebP，再用图生图得到前视图。
+2. 以该前视图为身份参考，串行生成左、后、右三个正交视图。
+3. 把四张一致视图交给 `P1-20260311`，生成有面数上限、PBR、UV 和米制缩放的 GLB。
+4. 立即下载四张图片、GLB 和可选预览，写入临时目录；全部验证成功后才原子改名发布，
+   同目录保存不含签名 URL 和本地参考路径的 `manifest.json`。
+
+默认图像模型由插件选择 `chat_image_2.5_sunburst`，也可显式选择速度档
+`chat_image_2.5_flare`。付费任务使用 Action 的手工恢复语义；未知提交结果不会自动重试，
+避免重复扣费。
+
 实现依据：[Tripo 官方 JavaScript SDK](https://github.com/VAST-AI-Research/tripo-js-sdk)、
 [Tripo v3 API 文档](https://developers.tripo3d.ai/en/docs/introduction)。

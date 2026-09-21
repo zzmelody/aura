@@ -102,6 +102,17 @@ Codex 架构固定为 `Aura → DSH authorization/agent loop → dsh-llm-pi-ai �
 - 运行参数继续通过按需弹窗提交；工作流回复保留暂停、继续、停止、checkpoint 和未知结果处理能力。窄屏下输入气泡、回复头、步骤详情和结构化输出保持单列且不产生横向溢出。
 - Workbench 类型检查和 27 项测试通过，Web、Electron renderer、Capacitor 构建通过。Playwright 在真实历史与新建本地演示运行中验证两次执行按对话轮次排列、6 个步骤直接可见、详情可展开；1200px 与 390px 视口均无横向溢出。
 
+## 工作流内联运行输入（2026-09-20）
+
+- 运行参数从模态弹窗迁入对话流末尾；展开时历史内容保持可见和可滚动，顶部运行按钮、关闭按钮与 Escape 可收起编辑块，草稿在重新展开后恢复。新建空会话自动展开输入，提交确认后仍自动收起并聚焦新运行。
+- Workbench 类型检查和 30 项测试通过，Web、Electron renderer、Desktop preload 与 Capacitor 构建通过。Playwright 验证页面没有打开的模态 dialog、桌面历史与编辑块同时可见、Escape 收起及草稿恢复；390px 视口无横向溢出。
+
+## 工作流参数表单与路径选择（2026-09-20）
+
+- JSON Schema 字符串字段按语义渲染：任务描述使用多行输入，普通字符串使用单行输入，枚举/数值/布尔分别使用对应控件；`imagePath`、`referenceImagePath` 和目录字段使用带图标的路径控件。
+- Aura Desktop 通过隔离 preload 与受校验 IPC 打开原生图片或目录选择器；取消选择不修改草稿，选择成功后将绝对路径写入当前运行输入。Web/移动端继续支持手工填写服务端可访问路径，并明确提示原生选择能力属于 Desktop。
+- `pnpm --filter @aura/workbench typecheck`、32 项 workbench 测试、`pnpm --filter @aura/desktop typecheck` 与 Web/Desktop/Mobile 构建通过。真实浏览器验证 Veya 七字段表单的长文本、图片、目录、单行、枚举和数值控件，窄视口保持单列且无横向溢出；Web 端选择提示以内联状态展示。
+
 ## Tripo 3D 后端（2026-09-14）
 
 - 新增 `@aura/tripo` 与官方 `@vastai/tripo-sdk@0.1.1`，Hermetic 测试验证海外站 v3 endpoint、Bearer 鉴权、请求字段映射、凭据文件读取和任务结果白名单投影；未发起付费生成。

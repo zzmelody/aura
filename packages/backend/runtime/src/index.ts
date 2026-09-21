@@ -42,7 +42,7 @@ export async function startAuraRuntime(
     configPath: config.pluginConfigPath,
     auraVersion: "0.1.0",
     pluginSdkVersion: "1.1.0",
-    supportedCapabilities: ["aura.veya.world-agent"],
+    supportedCapabilities: ["aura.veya.world-agent", "aura.tripo.game-asset"],
   });
   const plugins = pluginManager.resolution;
 
@@ -91,6 +91,8 @@ export async function startAuraRuntime(
       ),
       plugins: plugins.plugins,
       worldAgentSessionPath: config.worldAgentSessionPath,
+      tripoCredentialPath: config.tripoCredentialPath,
+      tripoRegion: config.tripoRegion,
     });
     pluginManager.setActivator((resolution) =>
       flows!.configureContributions({

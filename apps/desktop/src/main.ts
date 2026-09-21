@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { startAuraRuntime } from "@aura/runtime";
 import { closeSiteHost, installSiteHost } from "./site-host.ts";
+import { installWorkflowFileHost } from "./workflow-file-host.ts";
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(sourceDir, "..");
@@ -15,6 +16,7 @@ const rendererRoot = resolve(appDir, "dist");
 let ownedRuntime: Awaited<ReturnType<typeof startAuraRuntime>> | null = null;
 let renderer: ServerType | null = null;
 installSiteHost();
+installWorkflowFileHost();
 const development = !app.isPackaged && process.argv.includes("--dev");
 if (development) {
   const parentPid = Number(process.env.AURA_DEV_PARENT_PID);

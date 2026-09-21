@@ -15,9 +15,15 @@ import type { ContributionRoot, FlowDomain, Table } from "./types.ts";
 import type { ActionRun, AuraPluginStatus } from "@aura/protocol/types";
 import { ActionRegistry } from "./action-registry.ts";
 import { ActionRuntime } from "./actions.ts";
-import { VeyaWorldAgentCapability } from "./veya-world-agent.ts";
+import {
+  VEYA_WORLD_AGENT_CAPABILITY,
+  VeyaWorldAgentCapability,
+} from "./veya-world-agent.ts";
+import { AuraCapabilityRouter } from "./capability-router.ts";
+import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
 import { ActionRuns } from "./action-runs.ts";
 import { LocalAIManager } from "./local-ai/manager.ts";
+import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 
 const pluginIdentitySchema = z
   .object({
@@ -266,8 +272,29 @@ export async function apply(ctx: Context) {
   // This owner survives individual Action Loader/HMR fibers.
   ctx.effect(() => () => localAI.close(), "aura-local-ai.lifecycle");
   const worldAgentSessionPath = process.env.AURA_VEYA_WORLD_AGENT_SESSION_PATH;
-  const auraCapabilities = worldAgentSessionPath
-    ? new VeyaWorldAgentCapability(worldAgentSessionPath)
+  const capabilityRoutes = [];
+  if (worldAgentSessionPath)
+    capabilityRoutes.push([
+      VEYA_WORLD_AGENT_CAPABILITY,
+      new VeyaWorldAgentCapability(worldAgentSessionPath),
+    ] as const);
+  const tripoCredentialPath = process.env.AURA_TRIPO_CREDENTIAL_PATH;
+  if (tripoCredentialPath) {
+    const region = process.env.AURA_TRIPO_REGION;
+    if (region !== "global" && region !== "china")
+      throw new Error("AURA_TRIPO_REGION must be global or china");
+    const tripo = await createTripoService({
+      credentialPath: tripoCredentialPath,
+      region,
+      apiKey: process.env.TRIPO_API_KEY,
+    });
+    capabilityRoutes.push([
+      TRIPO_GAME_ASSET_CAPABILITY,
+      new TripoGameAssetCapability(tripo),
+    ] as const);
+  }
+  const auraCapabilities = capabilityRoutes.length
+    ? new AuraCapabilityRouter(capabilityRoutes)
     : undefined;
   const actionRuntime = new ActionRuntime(ctx, localAI, auraCapabilities);
 

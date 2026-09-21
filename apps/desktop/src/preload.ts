@@ -1,10 +1,17 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { SiteProject, SiteStatus } from "@aura/workbench/site";
+import type { WorkflowPathKind } from "@aura/workbench/file-picker";
 
 const STATUS_CHANNEL = "aura:site:status";
 
 contextBridge.exposeInMainWorld("auraHost", {
   platform: "desktop" as const,
+  workflowFiles: {
+    choose: (kind: WorkflowPathKind) =>
+      ipcRenderer.invoke("aura:workflow-files:choose", kind) as Promise<
+        string | null
+      >,
+  },
   site: {
     chooseDirectory: () =>
       ipcRenderer.invoke(

@@ -9,6 +9,7 @@
   },
   "exports": {
     ".": "./src/App.tsx",
+    "./file-picker": "./src/file-picker.ts",
     "./site": "./src/site.ts"
   },
   "scripts": {

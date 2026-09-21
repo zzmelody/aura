@@ -12,6 +12,20 @@ import {
   type Task,
   type TextToModelParams,
 } from "@vastai/tripo-sdk";
+import {
+  generateTripoGameAsset,
+  type TripoGameAssetRequest,
+  type TripoGameAssetResult,
+  type TripoGameAssetSdkPort,
+} from "./game-asset.ts";
+
+export {
+  TRIPO_GAME_ASSET_CAPABILITY,
+  type TripoGameAssetImageModel,
+  type TripoGameAssetImageQuality,
+  type TripoGameAssetRequest,
+  type TripoGameAssetResult,
+} from "./game-asset.ts";
 
 export const TRIPO_BASE_URLS = {
   global: "https://openapi.tripo3d.ai/v3",
@@ -28,7 +42,7 @@ export interface TripoPort {
   getTask(taskId: string): Promise<TripoTask>;
 }
 
-interface TripoSdkPort {
+interface TripoSdkPort extends TripoGameAssetSdkPort {
   textToModel(params: TextToModelParams): Promise<string>;
   imageToModel(params: ImageToModelParams): Promise<string>;
   getTask(taskId: string): Promise<Task>;
@@ -48,6 +62,31 @@ export class TripoNotConfiguredError extends Error {
     super("Tripo API key is not configured.");
     this.name = "TripoNotConfiguredError";
   }
+}
+
+async function waitForQueueTurn(
+  previous: Promise<void>,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  await new Promise<void>((resolve, reject) => {
+    const aborted = () => {
+      cleanup();
+      reject(signal.reason);
+    };
+    const cleanup = () => signal.removeEventListener("abort", aborted);
+    signal.addEventListener("abort", aborted, { once: true });
+    previous.then(
+      () => {
+        cleanup();
+        resolve();
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      },
+    );
+  });
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -110,13 +149,17 @@ function toPublicTask(task: Task): TripoTask {
     type: task.type,
     status: task.status,
     progress: optionalNumber(task.progress),
-    createdAt: optionalEpochMilliseconds(task.create_time),
+    createdAt:
+      optionalEpochMilliseconds(task.create_time) ??
+      (typeof task.created_at === "string"
+        ? Date.parse(task.created_at) || undefined
+        : undefined),
     output: compactOutput(task.output),
     error:
-      task.error_msg || task.error_code !== undefined
+      task.error_message || task.error_msg || task.error_code !== undefined
         ? {
             code: optionalNumber(task.error_code),
-            message: optionalString(task.error_msg),
+            message: optionalString(task.error_message ?? task.error_msg),
           }
         : undefined,
   };
@@ -149,10 +192,17 @@ async function readStoredApiKey(path: string): Promise<string | undefined> {
 export class TripoService implements TripoPort {
   readonly #client?: TripoSdkPort;
   readonly #region: TripoRegion;
+  readonly #fetch: typeof globalThis.fetch;
+  #gameAssetQueue: Promise<void> = Promise.resolve();
 
-  constructor(region: TripoRegion, client?: TripoSdkPort) {
+  constructor(
+    region: TripoRegion,
+    client?: TripoSdkPort,
+    fetcher: typeof globalThis.fetch = globalThis.fetch,
+  ) {
     this.#region = region;
     this.#client = client;
+    this.#fetch = fetcher;
   }
 
   get configured(): boolean {
@@ -183,11 +233,32 @@ export class TripoService implements TripoPort {
       "url" in input.image
         ? { url: input.image.url }
         : { file_token: input.image.fileToken };
-    return client.imageToModel({ file, ...generationParams(input) });
+    return client.imageToModel({ input: file, ...generationParams(input) });
   }
 
   async getTask(taskId: string): Promise<TripoTask> {
     return toPublicTask(await this.#requireClient().getTask(taskId));
+  }
+
+  /** Serializes the image-heavy chain because Tripo's default image pool is one task. */
+  async generateGameAsset(
+    input: TripoGameAssetRequest,
+    signal: AbortSignal,
+  ): Promise<TripoGameAssetResult> {
+    const client = this.#requireClient();
+    let release!: () => void;
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const previous = this.#gameAssetQueue.catch(() => undefined);
+    this.#gameAssetQueue = previous.then(() => turn);
+    try {
+      await waitForQueueTurn(previous, signal);
+      signal.throwIfAborted();
+      return await generateTripoGameAsset(client, input, this.#fetch, signal);
+    } finally {
+      release();
+    }
   }
 
   #requireClient(): TripoSdkPort {
@@ -202,7 +273,8 @@ export async function createTripoService(
 ): Promise<TripoService> {
   const apiKey =
     options.apiKey?.trim() || (await readStoredApiKey(options.credentialPath));
-  if (!apiKey) return new TripoService(options.region);
+  if (!apiKey)
+    return new TripoService(options.region, undefined, options.fetch);
   const baseUrl = TRIPO_BASE_URLS[options.region];
   const client = options.clientFactory
     ? options.clientFactory(apiKey, baseUrl)
@@ -214,5 +286,5 @@ export async function createTripoService(
         retries: 2,
         userAgent: "aura-runtime/0.1",
       });
-  return new TripoService(options.region, client);
+  return new TripoService(options.region, client, options.fetch);
 }

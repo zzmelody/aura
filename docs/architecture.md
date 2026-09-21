@@ -39,7 +39,7 @@ Aura 只有一套 React Web 界面。`@aura/workbench` 负责页面、状态与 
 
 每个客户端独立构建同一个 library，而不是让应用依赖另一个应用的 `dist`。这样 workspace 依赖方向保持单向，Electron/Capacitor 的宿主能力也不会渗入公共页面。宿主只通过 `window.auraHost` 暴露最小的平台标识与打开系统浏览器能力；会话继续使用 Web Storage，OAuth token 仍只属于后端 DSH。
 
-桌面 Site 目录选择和项目运行通过同一宿主桥接暴露。`src/preload.ts` 在开发启动和静态构建时编译为独立的 CommonJS 产物 `dist-host/preload.cjs`，Electron 在启用 `sandbox` 与 `contextIsolation` 的窗口中加载它；主进程的 TypeScript 支持不适用于沙箱 preload。renderer 只在桥接缺失时补充平台标识，以便显示准确的桌面连接错误。
+桌面 Site 目录选择、项目运行以及工作流图片/输出目录选择通过最小宿主桥接暴露。工作流选择器只返回用户明确选择的本机绝对路径，不读取文件内容；共享表单仍允许输入服务端路径，使 Web 与移动端不会伪造浏览器无法取得的绝对路径。`src/preload.ts` 在开发启动和静态构建时编译为独立的 CommonJS 产物 `dist-host/preload.cjs`，Electron 在启用 `sandbox` 与 `contextIsolation` 的窗口中加载它；主进程的 TypeScript 支持不适用于沙箱 preload。renderer 只在桥接缺失时补充平台标识，以便显示准确的桌面连接错误。
 
 Site 的目录/脚本解析、端口检查、进程组和就绪验证属于 `packages/backend/runtime`，以 `@aura/runtime/site` 导出，与 Electron IPC/窗口分离。`site-project.ts`、`site-network.ts`、`site-process.ts`、`site-runner.ts` 分别管理配置、网络与进程归属、子进程和生命周期；共享类型放在 protocol。已识别的直接开发命令先从系统监听表选择可用端口，再把明确端口传给开发服务器并从输出同步真实地址，自定义脚本冲突拒绝启动；不能仅凭某个地址能响应就判定启动成功，必须同时验证监听者属于本次进程树。桌面退出等待 Site 进程与自有 runtime 一起完成清理。
 
@@ -55,7 +55,7 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 受信任的本地外部插件由 `packages/backend/extensions` 从 `.aura/plugins.json` 中显式列出的目录加载；Aura 不扫描任意磁盘目录，也不安装依赖。插件根的 `aura.plugin.json`、ESM package、引擎范围、贡献目录、能力声明和公共 `@aura/plugin-sdk` 依赖会先经过后端校验。通过校验的多根 Action/Flow 进入同一个 Cordis Loader/HMR 与注册表，外部贡献使用 `<plugin-id>/<local-id>` 规范 ID，内置贡献继续使用原 ID。catalog 与运行记录保留插件身份、版本和贡献 hash；前端无需为注册插件重新构建。设置页可通过 runtime 固定的 `/plugins/config` 边界替换这份目录清单并查看预校验状态，但配置代码执行权限只对绑定 loopback 的本机服务开放。保存会在编排子进程内动态增删发现根和 HMR 监听，实际加载成功后再原子持久化；失败则回滚。已有运行使用创建时固定的版本，新运行立即看到新配置，无需重启 runtime。
 
-插件 manifest 请求的宿主能力必须全部受当前 Runtime 支持，否则插件不会加载。Action 通过 Plugin SDK 的 `auraCapability()` 取得按调用取消域绑定的领域端口，不接触凭据、任意 URL 或底层进程。首个端口 `aura.veya.world-agent` 从平台默认的 Godot Veya 会话描述符发现随机 loopback 服务，只允许固定世界操作并在宿主内部附加 bearer token；新服务走 `veya-agent-tools/1` 的统一调用端点，旧服务兼容对应 `/v2` 路径。token 不进入插件输入、Flow/Agent 上下文、前端 DTO 或日志。
+插件 manifest 请求的宿主能力必须全部受当前 Runtime 支持，否则插件不会加载。Action 通过 Plugin SDK 的 `auraCapability()` 取得按调用取消域绑定的领域端口，不接触凭据、任意 URL 或底层进程。`aura.veya.world-agent` 从平台默认的 Godot Veya 会话描述符发现随机 loopback 服务，只允许固定世界操作并在宿主内部附加 bearer token；新服务走 `veya-agent-tools/1` 的统一调用端点，旧服务兼容对应 `/v2` 路径。`aura.tripo.game-asset` 只允许一条固定的 GPT Image 2.5 四视图到 Tripo P1 GLB 链路，由宿主上传受限参考图、串行等待付费任务、验证并立即持久化短时产物 URL。token、API Key 和上游 URL 不进入插件输入、Flow/Agent 上下文、前端 DTO 或日志；本地参考路径只在用户输入和 capability 调用边界内使用，不写入结果或 provenance manifest。
 
 Flow 的模型参数由 `flow.agent({model,reasoningEffort,temperature,maxTokens,timeoutMs,...})` 按步骤声明，或通过 `defineFlow.agentDefaults` 提供公共默认值；步骤覆盖 Flow 默认，Flow 默认覆盖运行时配置。provider 仍绑定 Run.mode，脚本不接触凭据或任意 endpoint。入队时固定 Run 默认参数，Agent dispatch 前保存完整 `config` 并纳入请求指纹；重试与重放不读取新的环境默认值。`sessionController.selectModel` 选择模型，DSH Agent 的官方 `agent/request` scoped waterfall 将同一配置应用到每轮模型请求并写入 DSH request header。模型与思考强度先经过 DSH 能力校验，无效配置不会启动 Agent attempt。升级前未保存参数的未结束记录安全中断为 `agent_config_unrecoverable`；已完成历史继续可读。
 
@@ -67,7 +67,7 @@ Flow 的模型参数由 `flow.agent({model,reasoningEffort,temperature,maxTokens
 
 「工作流」首页用卡片展示用途与可用状态，点击卡片按需通过 `/flows/:flowId/source` 读取已注册入口源码，在卡片下方静态解析节点；编辑入口进入流程图/代码详情。画布与节点支持拖拽，位置只影响当前预览，不修改代码。注册时保留源码快照，热加载失败时预览与运行均继续使用最后可用版本；接口按目录 ID 查注册表，不接受文件路径，不返回辅助文件或凭据。源码预览不具备发布或修改后端代码的能力。
 
-运行入口创建带 `workflow` 绑定的工作区会话，输入、结果和步骤记录都在会话内查看。绑定保存工作流 ID、标题、服务 origin 和输入 Schema，每个结果引用原有后端 run ID；不会把工作流输入提交到普通 `/chat` 链路。同一会话支持多次独立运行，后台轮询同步状态，原有服务端运行记录自动进入历史列表。前端按 run ID 将原有输入/结果消息配成对话轮次，不改变存储格式；用户输入右对齐，工作流步骤、状态和结果在中间输出区随轮询连续更新。富文本及结构化数据由 workbench 的浏览器组件渲染，Markdown 依赖随工作流会话按需加载。执行表单使用弹窗，确认接收后关闭。待确认提交保留 requestId，网络失败后重试复用同一请求；本地删除会话记录隐藏 run ID，避免轮询重新导入。工作流回复提供暂停/继续、checkpoint 输入、未知结果处理、attempt 历史和恢复记录；图是代码的只读静态投影，运行记录另行展示实际执行路径。
+运行入口创建带 `workflow` 绑定的工作区会话，输入、结果和步骤记录都在会话内查看。绑定保存工作流 ID、标题、服务 origin 和输入 Schema，每个结果引用原有后端 run ID；不会把工作流输入提交到普通 `/chat` 链路。同一会话支持多次独立运行，后台轮询同步状态，原有服务端运行记录自动进入历史列表。前端按 run ID 将原有输入/结果消息配成对话轮次，不改变存储格式；用户输入右对齐，工作流步骤、状态和结果在中间输出区随轮询连续更新。富文本及结构化数据由 workbench 的浏览器组件渲染，Markdown 依赖随工作流会话按需加载。执行表单作为对话流末尾的内联编辑块按需展开，确认接收后收起，不阻塞历史浏览和页面滚动。待确认提交保留 requestId，网络失败后重试复用同一请求；本地删除会话记录隐藏 run ID，避免轮询重新导入。工作流回复提供暂停/继续、checkpoint 输入、未知结果处理、attempt 历史和恢复记录；图是代码的只读静态投影，运行记录另行展示实际执行路径。
 
 普通联网对话请求暂时各启动一个 DSH SDK 进程，客户端历史作为带标记的完整输入交给 DSH，响应结束或连接断开后回收进程。这保留了 DSH agent loop、provider、事件与取消链路，但普通对话仍不是长期运行的服务端权威会话；独立的「流程」链路已采用稳定的步骤到 DSH session 映射与持久化，不使用这一临时对话协议。
 

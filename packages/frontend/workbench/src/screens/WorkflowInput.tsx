@@ -1,5 +1,18 @@
-import React from "react";
+import React, { useId, useState } from "react";
+import { FolderOpen, ImagePlus } from "lucide-react";
 import type { JsonValue } from "@aura/protocol/types";
+import {
+  chooseWorkflowPath,
+  workflowFilePickerAvailable,
+  type WorkflowPathKind,
+} from "../file-picker";
+import {
+  workflowFieldKind,
+  workflowFieldLabel,
+  workflowFieldPlaceholder,
+  workflowOptionLabel,
+} from "../workflowInputModel";
+import { platform } from "../platform";
 
 export const asObject = (value: JsonValue | undefined) =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -38,6 +51,10 @@ export function WorkflowInput({
   onChange(text: string): void;
   disabled: boolean;
 }) {
+  const id = useId();
+  const [pickerError, setPickerError] = useState<Record<string, string>>({});
+  const desktop = platform() === "desktop";
+  const pickerAvailable = workflowFilePickerAvailable();
   let value: JsonValue;
   try {
     value = JSON.parse(text);
@@ -47,6 +64,13 @@ export function WorkflowInput({
   const properties = asObject(asObject(schema)?.properties);
   const current = asObject(value);
   const fields = Object.entries(properties ?? {});
+  const required = new Set(
+    Array.isArray(asObject(schema)?.required)
+      ? (asObject(schema)?.required as JsonValue[]).filter(
+          (item): item is string => typeof item === "string",
+        )
+      : [],
+  );
   const simple =
     current &&
     fields.length > 0 &&
@@ -57,65 +81,179 @@ export function WorkflowInput({
     );
   return simple ? (
     <div className="workflow-input-fields">
-      {fields.map(([key, field]) => {
+      {fields.map(([key, field], index) => {
         const spec = asObject(field) ?? {};
-        const label = typeof spec.title === "string" ? spec.title : key;
-        const update = (next: JsonValue) =>
-          onChange(JSON.stringify({ ...current, [key]: next }, null, 2));
+        const options = Array.isArray(spec.enum) ? spec.enum : [];
+        const label = workflowFieldLabel(key, spec);
+        const kind = workflowFieldKind(key, spec);
+        const fieldId = `${id}-${index}`;
+        const update = (next: JsonValue) => {
+          const nextValue = { ...current };
+          if (next === "" && !required.has(key)) delete nextValue[key];
+          else nextValue[key] = next;
+          onChange(JSON.stringify(nextValue, null, 2));
+          setPickerError((errors) => {
+            if (!errors[key]) return errors;
+            const copy = { ...errors };
+            delete copy[key];
+            return copy;
+          });
+        };
+        const choose = async (pathKind: WorkflowPathKind) => {
+          try {
+            const selected = await chooseWorkflowPath(pathKind);
+            if (selected) update(selected);
+          } catch (cause) {
+            setPickerError((errors) => ({
+              ...errors,
+              [key]:
+                cause instanceof Error ? cause.message : "无法打开路径选择器。",
+            }));
+          }
+        };
         return (
-          <label key={key} className="workflow-input-field">
-            <span>{label}</span>
-            {Array.isArray(spec.enum) ? (
+          <div
+            key={key}
+            className={`workflow-input-field workflow-input-${kind}`}
+          >
+            <label className="workflow-field-label" htmlFor={fieldId}>
+              <span>{label}</span>
+              {required.has(key) ? (
+                <span className="workflow-required" aria-label="必填">
+                  必填
+                </span>
+              ) : (
+                <span className="workflow-optional">可选</span>
+              )}
+            </label>
+            {kind === "select" ? (
               <select
+                id={fieldId}
                 aria-label={label}
                 disabled={disabled}
-                value={JSON.stringify(current[key] ?? spec.enum[0])}
+                value={JSON.stringify(current[key] ?? options[0])}
                 onChange={(event) => update(JSON.parse(event.target.value))}
               >
-                {spec.enum.map((option) => (
+                {options.map((option) => (
                   <option
                     key={JSON.stringify(option)}
                     value={JSON.stringify(option)}
                   >
-                    {String(option)}
+                    {workflowOptionLabel(option)}
                   </option>
                 ))}
               </select>
-            ) : spec.type === "boolean" ? (
-              <input
-                type="checkbox"
-                disabled={disabled}
-                checked={current[key] === true}
-                onChange={(event) => update(event.target.checked)}
-              />
-            ) : spec.type === "string" ? (
+            ) : kind === "boolean" ? (
+              <label className="workflow-switch" htmlFor={fieldId}>
+                <input
+                  id={fieldId}
+                  type="checkbox"
+                  disabled={disabled}
+                  checked={current[key] === true}
+                  onChange={(event) => update(event.target.checked)}
+                />
+                <span aria-hidden="true" />
+                <small>{current[key] === true ? "已开启" : "未开启"}</small>
+              </label>
+            ) : kind === "long-text" ? (
               <textarea
+                id={fieldId}
                 aria-label={label}
                 disabled={disabled}
-                rows={fields.length === 1 ? 3 : 2}
-                placeholder={
-                  typeof spec.description === "string"
-                    ? spec.description
-                    : "输入本次任务…"
-                }
+                rows={4}
+                placeholder={workflowFieldPlaceholder(key, kind, spec)}
                 value={String(current[key] ?? "")}
                 onChange={(event) => update(event.target.value)}
               />
+            ) : kind === "image" || kind === "directory" ? (
+              <>
+                <div className="workflow-path-input">
+                  <span className="workflow-path-icon" aria-hidden="true">
+                    {kind === "image" ? (
+                      <ImagePlus size={17} />
+                    ) : (
+                      <FolderOpen size={17} />
+                    )}
+                  </span>
+                  <input
+                    id={fieldId}
+                    aria-label={label}
+                    disabled={disabled}
+                    type="text"
+                    value={String(current[key] ?? "")}
+                    placeholder={workflowFieldPlaceholder(
+                      key,
+                      kind,
+                      spec,
+                      desktop,
+                    )}
+                    onChange={(event) => update(event.target.value)}
+                    autoComplete="off"
+                  />
+                  {desktop ? (
+                    <button
+                      type="button"
+                      className="workflow-path-button"
+                      disabled={disabled}
+                      onClick={() => void choose(kind)}
+                      title={
+                        pickerAvailable
+                          ? `选择${label}`
+                          : "路径选择服务未连接；点击查看处理方法"
+                      }
+                    >
+                      选择
+                    </button>
+                  ) : null}
+                </div>
+                {pickerError[key] ? (
+                  <small className="workflow-field-error" role="alert">
+                    {pickerError[key]}
+                  </small>
+                ) : !desktop ? (
+                  <small className="workflow-field-hint">
+                    Web 版可粘贴 Aura 服务端可访问的
+                    {kind === "image" ? "图片" : "目录"}
+                    路径；选择本机路径请使用 Aura Desktop。
+                  </small>
+                ) : null}
+              </>
             ) : (
               <input
+                id={fieldId}
                 aria-label={label}
                 disabled={disabled}
-                type="number"
-                step={spec.type === "integer" ? 1 : "any"}
+                type={kind === "number" ? "number" : "text"}
+                step={
+                  kind === "number"
+                    ? spec.type === "integer"
+                      ? 1
+                      : "any"
+                    : undefined
+                }
+                min={
+                  kind === "number" && typeof spec.minimum === "number"
+                    ? spec.minimum
+                    : undefined
+                }
+                max={
+                  kind === "number" && typeof spec.maximum === "number"
+                    ? spec.maximum
+                    : undefined
+                }
+                placeholder={workflowFieldPlaceholder(key, kind, spec)}
                 value={String(current[key] ?? "")}
                 onChange={(event) =>
                   update(
-                    event.target.value === "" ? "" : Number(event.target.value),
+                    kind === "number" && event.target.value !== ""
+                      ? Number(event.target.value)
+                      : event.target.value,
                   )
                 }
+                autoComplete="off"
               />
             )}
-          </label>
+          </div>
         );
       })}
     </div>

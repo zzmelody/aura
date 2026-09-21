@@ -10,6 +10,14 @@ HTTP 响应、日志、前端存储或源码。
 默认连接海外站。国内站账号设置 `AURA_TRIPO_REGION=china`，海外站可显式设置
 `AURA_TRIPO_REGION=global`。两个站点的账号和 Key 不互通。
 
-当前第一阶段支持 text-to-model、通过 HTTPS URL 或已有 file token 的
-image-to-model，以及异步任务状态查询。生成接口只返回 task ID；调用方轮询任务接口，
-成功后应立即消费模型 URL，因为 Tripo 返回的下载地址是短时有效的。
+通用 HTTP 边界支持 text-to-model、通过 HTTPS URL 或已有 file token 的
+image-to-model，以及异步任务状态查询。除此之外，后端还提供受限的
+`aura.tripo.game-asset` Action capability：依次生成前、左、后、右四张 GPT Image 2.5
+参考图，再用 Tripo P1 生成受面数约束、带 PBR 且按米缩放的 GLB。宿主会在短时 URL
+失效前下载图片、模型与预览，并把它们和 provenance manifest 原子发布到调用方指定目录。
+
+game-asset capability 不接受 API Key、上游 URL 或任意 Tripo payload。可选本地参考图只允许
+PNG/JPEG/WebP 且不超过 20 MiB；输出目录必须是绝对路径，单个模型下载上限 200 MiB。
+整条图片链路串行执行，以遵守 Tripo 默认单任务图片并发池。付费任务不自动重放。
+单张图片任务最多轮询 90 秒，模型任务最多轮询 2 分钟；调用方 Action 的总超时为
+10 分钟，超时或取消都会沿同一个 `AbortSignal` 停止后续等待与下载。

@@ -1,4 +1,5 @@
 import type { SiteHostApi } from "./site.ts";
+import type { WorkflowFileHostApi } from "./file-picker.ts";
 
 export type AuraPlatform = "web" | "desktop" | "mobile";
 
@@ -8,6 +9,7 @@ declare global {
       platform: AuraPlatform;
       openExternal?(url: string): Promise<void>;
       site?: SiteHostApi;
+      workflowFiles?: WorkflowFileHostApi;
     };
   }
 }

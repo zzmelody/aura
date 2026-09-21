@@ -39,12 +39,13 @@ export function WorkflowChat({
   const [inputError, setInputError] = useState("");
   const scroll = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
-  const dialog = useRef<HTMLDialogElement>(null);
+  const composer = useRef<HTMLFormElement>(null);
   const runButton = useRef<HTMLButtonElement>(null);
-  const dialogTitle = useId();
-  const initiallyEmpty = useRef(
-    session.messages.length === 0 && !binding.pending,
+  const composerId = useId();
+  const [composerSessionId, setComposerSessionId] = useState<string | null>(
+    session.messages.length === 0 && !binding.pending ? session.id : null,
   );
+  const composerOpen = composerSessionId === session.id;
   const pending = binding.pending;
   const submitting = workspace.workflows.submitting.includes(session.id);
   const executions = workflowExecutions(session.messages);
@@ -57,16 +58,26 @@ export function WorkflowChat({
       scroll.current.scrollTop = scroll.current.scrollHeight;
   }, [session.messages]);
   useEffect(() => {
-    const modal = dialog.current;
-    if (initiallyEmpty.current) modal?.showModal();
-    return () => modal?.close();
-  }, []);
+    if (session.messages.length === 0 && !binding.pending)
+      setComposerSessionId(session.id);
+  }, [binding.pending, session.id, session.messages.length]);
+  useEffect(() => {
+    if (!composerOpen) return;
+    const frame = requestAnimationFrame(() => {
+      composer.current?.scrollIntoView({ block: "nearest" });
+      composer.current
+        ?.querySelector<HTMLElement>("textarea, input, select")
+        ?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [composerOpen, session.id]);
   function openComposer() {
     setInputError("");
-    dialog.current?.showModal();
+    nearBottom.current = true;
+    setComposerSessionId(session.id);
   }
   function closeComposer() {
-    dialog.current?.close();
+    setComposerSessionId(null);
     runButton.current?.focus();
   }
   async function submit(input?: JsonValue, runMode = mode) {
@@ -85,7 +96,7 @@ export function WorkflowChat({
       runMode,
     );
     if (accepted) {
-      dialog.current?.close();
+      setComposerSessionId(null);
       requestAnimationFrame(() =>
         scroll.current
           ?.querySelector<HTMLElement>(
@@ -113,8 +124,10 @@ export function WorkflowChat({
           ref={runButton}
           type="button"
           className="tool-button workflow-new-run"
-          onClick={openComposer}
+          onClick={composerOpen ? closeComposer : openComposer}
           disabled={workspace.busy || flow?.available === false}
+          aria-expanded={composerOpen}
+          aria-controls={composerId}
         >
           <Plus size={14} />
           {pending ? "检查提交" : runCount ? "再次运行" : "运行工作流"}
@@ -131,7 +144,7 @@ export function WorkflowChat({
         }}
       >
         <div className="workflow-conversation">
-          {!executions.length && !pending ? (
+          {!executions.length && !pending && !composerOpen ? (
             <div className="workflow-chat-empty">
               <span className="workflow-empty-icon">
                 <GitBranch size={24} />
@@ -238,101 +251,107 @@ export function WorkflowChat({
               此工作流当前不可运行，历史记录仍可查看。
             </p>
           ) : null}
+          {composerOpen ? (
+            <form
+              ref={composer}
+              id={composerId}
+              className="workflow-composer workflow-inline-composer"
+              aria-labelledby={`${composerId}-title`}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeComposer();
+                }
+              }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submit();
+              }}
+            >
+              <div className="workflow-inline-heading">
+                <div>
+                  <h2 id={`${composerId}-title`}>
+                    {runCount ? "再次运行工作流" : "运行工作流"}
+                  </h2>
+                  <p>{binding.title}</p>
+                </div>
+                <button
+                  type="button"
+                  className="icon-control"
+                  aria-label="关闭运行输入"
+                  onClick={closeComposer}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              {pending && !workspace.busy ? (
+                <div className="workflow-pending" role="status">
+                  上次提交尚未确认，重试会继续同一次运行。
+                  <button
+                    type="button"
+                    className="text-control"
+                    onClick={() => void submit(pending.input, pending.mode)}
+                  >
+                    重试提交
+                  </button>
+                </div>
+              ) : null}
+              <WorkflowInput
+                schema={jsonMode ? undefined : schema}
+                text={text}
+                disabled={workspace.busy || Boolean(pending)}
+                onChange={workspace.setDraft}
+              />
+              {inputError || error ? (
+                <p role="alert" className="error">
+                  {inputError || error}
+                </p>
+              ) : null}
+              <div className="workflow-compose-actions">
+                <select
+                  aria-label="运行模式"
+                  value={mode}
+                  disabled={workspace.busy || Boolean(pending)}
+                  onChange={(event) =>
+                    setMode(event.target.value as FlowMode)
+                  }
+                >
+                  <option value="demo">本地演示</option>
+                  <option value="codex">Codex</option>
+                </select>
+                <button
+                  type="button"
+                  className="text-control"
+                  aria-pressed={jsonMode}
+                  onClick={() => setJsonMode(!jsonMode)}
+                >
+                  {jsonMode ? "表单输入" : "JSON"}
+                </button>
+                <span className="workflow-compose-spacer" />
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={
+                    workspace.busy ||
+                    Boolean(pending) ||
+                    flow?.available === false
+                  }
+                >
+                  {submitting ? (
+                    <LoaderCircle size={14} className="workflow-spinner" />
+                  ) : (
+                    <Play size={14} />
+                  )}
+                  {submitting ? "提交中…" : "开始执行"}
+                </button>
+              </div>
+              <p className="workflow-compose-note">
+                输入与结果将保存在当前会话中。
+              </p>
+            </form>
+          ) : null}
         </div>
       </div>
-      <dialog
-        ref={dialog}
-        className="workflow-run-dialog"
-        aria-labelledby={dialogTitle}
-        onClick={(event) => {
-          if (event.target === event.currentTarget) closeComposer();
-        }}
-      >
-        <form
-          className="workflow-composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-        >
-          <div className="workflow-dialog-heading">
-            <div>
-              <h2 id={dialogTitle}>
-                {runCount ? "再次运行工作流" : "运行工作流"}
-              </h2>
-              <p>{binding.title}</p>
-            </div>
-            <button
-              type="button"
-              className="icon-control"
-              aria-label="关闭运行输入"
-              onClick={closeComposer}
-            >
-              <X size={18} />
-            </button>
-          </div>
-          {pending && !workspace.busy ? (
-            <div className="workflow-pending" role="status">
-              上次提交尚未确认，重试会继续同一次运行。
-              <button
-                type="button"
-                className="text-control"
-                onClick={() => void submit(pending.input, pending.mode)}
-              >
-                重试提交
-              </button>
-            </div>
-          ) : null}
-          <WorkflowInput
-            schema={jsonMode ? undefined : schema}
-            text={text}
-            disabled={workspace.busy || Boolean(pending)}
-            onChange={workspace.setDraft}
-          />
-          {inputError || error ? (
-            <p role="alert" className="error">
-              {inputError || error}
-            </p>
-          ) : null}
-          <div className="workflow-compose-actions">
-            <select
-              aria-label="运行模式"
-              value={mode}
-              disabled={workspace.busy || Boolean(pending)}
-              onChange={(event) => setMode(event.target.value as FlowMode)}
-            >
-              <option value="demo">本地演示</option>
-              <option value="codex">Codex</option>
-            </select>
-            <button
-              type="button"
-              className="text-control"
-              aria-pressed={jsonMode}
-              onClick={() => setJsonMode(!jsonMode)}
-            >
-              {jsonMode ? "表单输入" : "JSON"}
-            </button>
-            <span className="workflow-compose-spacer" />
-            <button
-              className="primary-button"
-              type="submit"
-              disabled={
-                workspace.busy || Boolean(pending) || flow?.available === false
-              }
-            >
-              {submitting ? (
-                <LoaderCircle size={14} className="workflow-spinner" />
-              ) : (
-                <Play size={14} />
-              )}
-              {submitting ? "提交中…" : "开始执行"}
-            </button>
-          </div>
-          <p className="workflow-compose-note">
-            输入与结果将保存在当前会话中。
-          </p>
-        </form>
-      </dialog>
     </section>
   );
 }

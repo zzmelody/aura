@@ -82,6 +82,12 @@ export class OrchestrationHost {
                   this.options.worldAgentSessionPath,
               }
             : {}),
+          ...(this.options.tripoCredentialPath
+            ? {
+                AURA_TRIPO_CREDENTIAL_PATH: this.options.tripoCredentialPath,
+                AURA_TRIPO_REGION: this.options.tripoRegion ?? "global",
+              }
+            : {}),
           AURA_CODEX_MODEL: codexModel || "gpt-5.6-terra",
           AURA_DEMO_KEY: "demo-only-not-a-real-key",
           AURA_DEMO_BASE_URL: modelURL,

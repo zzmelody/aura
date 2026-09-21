@@ -150,7 +150,7 @@ Action `recovery` 默认为 `manual`。只有显式 `idempotent` 的直接 Actio
 
 `ctx` 还提供 `signal`、`cwd`、Action 目录 `directory`、每次工具调用的 `callId`、`mode`，以及调用方存在时的 `runId`、`stepId`、`sessionId`。直接 Flow Action 的 `idempotencyKey` 跨 attempt 和重启保持不变。Agent 内部 Action 调用由 DSH 记录和调度，不是单独的 Flow durable step；未完成 Agent 一旦调用过工具，就需人工处理，不能自动重跑整个 Agent。
 
-外部插件可以通过 `@aura/plugin-sdk/action` 的 `auraCapability(ctx, id)` 使用 manifest 已声明且宿主支持的领域能力。能力实现由长驻宿主持有，Action 只收到固定操作及 JSON 结果，不接触凭据、任意 URL 或进程句柄。当前 `aura.veya.world-agent` 映射 Veya 的固定世界操作、运行观察/检查、探索动作/对话/重生和 `veya.cooker.capabilities/submit/status/cancel`，从平台默认 Godot `user://world-agent-session.json` 读取连接描述符；描述符声明 `veya-agent-tools/1` 时调用原生 `/agent/v1/call`，旧服务仅对已有世界操作回退到对应 `/v2` 路径，运行态、截图与 Cooker 工具不回退。可用后端环境变量 `AURA_VEYA_WORLD_AGENT_SESSION` 覆盖绝对路径。描述符与 bearer token 不进入 Action 入参、输出或运行记录。
+外部插件可以通过 `@aura/plugin-sdk/action` 的 `auraCapability(ctx, id)` 使用 manifest 已声明且宿主支持的领域能力。能力实现由长驻宿主持有，Action 只收到固定操作及 JSON 结果，不接触凭据、任意 URL 或进程句柄。`aura.veya.world-agent` 映射 Veya 的固定世界操作、运行观察/检查、探索动作/对话/重生和 `veya.cooker.capabilities/submit/status/cancel`，从平台默认 Godot `user://world-agent-session.json` 读取连接描述符；描述符声明 `veya-agent-tools/1` 时调用原生 `/agent/v1/call`，旧服务仅对已有世界操作回退到对应 `/v2` 路径，运行态、截图与 Cooker 工具不回退。可用后端环境变量 `AURA_VEYA_WORLD_AGENT_SESSION` 覆盖绝对路径。`aura.tripo.game-asset` 则只暴露固定的 GPT Image 2.5 四视图到 Tripo P1 GLB 生成操作，Key、短时下载 URL 和任务轮询全部留在宿主。描述符、bearer token 与 Tripo Key 不进入 Action 入参、输出或运行记录。
 
 默认不向 Agent 暴露 Action；用 `flow.agent({actions:["text-stats"],...})` 显式授予，名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。Action 超时默认 30 秒、最大 10 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
 
@@ -181,11 +181,11 @@ unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算�
 
 `macos-keep-awake` 在 macOS 后台管理 Aura 自己启动的 `/usr/bin/caffeinate -i`。输入 `operation: "start" | "stop" | "status"`；重复 start 复用已记录的进程，stop 只终止 PID 与可执行文件均核验为 `caffeinate` 的进程。状态写在工作区 `.aura/macos-keep-awake.json`，因此 Aura 重启后仍可查看和停止；进程不会阻止合盖、手动睡眠或低电量关机。其他平台调用会明确失败。
 
-### ANGE GameGen Pi Action
+### Pi Action
 
-`ange-pi` 是专用的 Pi 调用 Action，不是通用 Agent 适配层。默认只需要 `prompt`；它从 Anchemy 的 `settings.json` 和 `roles/generate` 读取 ANGE checkout、经过校验的 Pi host、模型/认证配置、角色 policy 与 GameGen skills，然后以 `cwd=ANGE` 启动真实 Pi 的 JSONL print 会话。默认加载 `pi-ange-gamegen`、`pi-subagents`、`pi-rpiv-todo` 和 `pi-anchemy-gateway`，不会读取任意全局插件或执行安装。
+`pi` 是通用的本机 Pi CLI 调用 Action，不绑定项目、角色、模型供应商或插件集合。默认只需要 `prompt`；Pi 入口按 `piPath`、`AURA_PI_BIN`、`PATH` 的顺序解析，JS 入口由当前 Node（或 `nodePath` / `AURA_PI_NODE_BIN`）执行。Action 沿用 Pi 自己的模型与认证配置，也可显式覆盖 `provider`、`model`、`thinking`、system prompt、工具集合、extensions 和 skills。`agentDirectory` / `AURA_PI_AGENT_DIR` 可为单次调用指定 `PI_CODING_AGENT_DIR`，但凭据内容不会进入 Action 入参、输出或日志。
 
-可选参数包括 `sessionId`（按 UUID 续接）、`model`、`thinking`、`name`、`cwd`、`settingsPath`、session/output 目录、`timeoutMs`、插件子集、额外 skills 和受约束的 `extraArgs`。GameGen 始终保留；cwd、session/output 目录必须通过路径包含检查。Action 返回 `sessionId`、最终文本、tool calls、Pi 状态、JSONL 日志、退出信息和 usage。取消会终止 Pi 进程组并等待退出；返回内容和 stderr 会遮蔽 Anchemy gateway key。
+默认使用 Pi 的全局资源发现，同时以 `--no-approve` 拒绝非交互的项目本地信任提示；`approveProject: true` 可显式信任项目配置，`isolated: true` 则关闭自动发现的 extensions、skills、prompt templates 和 themes，只加载入参提供的绝对路径。`contextFiles: false` 可关闭工作区 context files。`cwd` 可相对 Aura 工作区指定但不能越界；session 与输出默认保存到 `.aura/pi/sessions` 和 `.aura/pi/runs/<callId>`。Action 支持按 UUID 续接 session，返回最终文本、tool calls、Pi 状态、JSONL 日志、退出信息和 usage；取消或超时会终止 Pi 进程组，输出会遮蔽环境中的常见 secret/token/key 值。
 
 ### Flow / Action 定义
 
