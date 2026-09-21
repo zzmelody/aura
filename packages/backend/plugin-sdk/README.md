@@ -14,3 +14,8 @@ domain operations. Aura owns discovery, credentials, network access, and
 cancellation; capability secrets never become Action parameters or outputs.
 Aura 0.1 currently provides `aura.veya.world-agent`, a fixed-operation client
 for Veya's authenticated loopback service.
+
+Plugin Actions may throw `ActionFailure` for a bounded message that is safe to
+persist and show in Workflow UI. Ordinary errors remain generic. Product-facing
+messages must identify the failed stage and next action without credentials,
+private paths, signed URLs, raw provider responses, or stack traces.

@@ -32,7 +32,7 @@ async function eventually<T>(
 }
 
 const actionSource = `
-import { defineAction } from ${JSON.stringify(new URL("../src/action-api.ts", import.meta.url).href)};
+import { ActionFailure, defineAction } from ${JSON.stringify(new URL("../src/action-api.ts", import.meta.url).href)};
 import { setTimeout as delay } from "node:timers/promises";
 import { version } from "./lib/version.js";
 export default defineAction({
@@ -45,6 +45,7 @@ export default defineAction({
     if (ctx.stepId && !ctx.stepId.startsWith("main/")) throw new Error("Missing scoped step identity");
     if (ctx.stepId && !ctx.sessionId && !ctx.idempotencyKey) throw new Error("Missing durable Action key");
     await delay(input.delayMs ?? 1, undefined, { signal: ctx.signal });
+    if (input.value === "product-error") throw new ActionFailure("模型生成未完成 · 生成左视图：等待超过 90 秒，请勿立即重复提交。");
     if (input.value === "bad-schema") return 42;
     if (input.value === "oversize") return "x".repeat(300000);
     if (input.value === "cycle") { const cyclic = {}; cyclic.self = cyclic; return cyclic; }
@@ -56,10 +57,14 @@ export default defineAction({
 const flowSource = `
 import { defineFlow, z } from ${JSON.stringify(new URL("../src/flow-api.ts", import.meta.url).href)};
 export default defineFlow({
-  title: "Actions integration", input: z.object({}), output: z.object({ direct: z.json(), report: z.string() }),
+  title: "Actions integration", input: z.object({ actionValue: z.string().optional() }), output: z.object({ direct: z.json(), report: z.string() }),
   concurrency: 3,
-  async run(ctx) {
+  async run(ctx, input) {
     return ctx.sequence({ id: "main" }, async (flow) => {
+    if (input.actionValue) {
+      const result = await flow.action({ id: "product", action: "probe-action", input: { value: input.actionValue } });
+      return { direct: result.output, report: "completed" };
+    }
     const { direct, agent } = await flow.parallel({ id: "batch", branches: {
       direct: (branch) => branch.action({ id: "direct", action: "probe-action", input: { value: "direct", delayMs: 2000 } }),
       agent: (branch) => branch.agent({ id: "allowed", label: "Allowed", preset: "researcher-v1", actions: ["probe-action"], temperature: 0.8, maxTokens: 777, prompt: "USE_ACTION" }),
@@ -255,6 +260,19 @@ test(
       assert.equal(
         (await host.request<ActionRun>("action/get", { id: local.id })).status,
         "completed",
+      );
+      const productFailure = await host.invokeFlow("action-check", {
+        input: { actionValue: "product-error" },
+        mode: "demo",
+      });
+      assert.equal(productFailure.status, "failed");
+      assert.equal(
+        productFailure.error,
+        "模型生成未完成 · 生成左视图：等待超过 90 秒，请勿立即重复提交。",
+      );
+      assert.equal(
+        productFailure.steps[0]?.error,
+        "模型生成未完成 · 生成左视图：等待超过 90 秒，请勿立即重复提交。",
       );
       for (const input of [
         { value: 7 },

@@ -5,6 +5,8 @@ import type {
 } from "@aura/orchestration/action";
 
 export {
+  ACTION_FAILURE_CODE,
+  ActionFailure,
   defineAction,
   type ActionContext,
   type ActionDefinition,

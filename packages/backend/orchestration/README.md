@@ -123,10 +123,10 @@ Graph 节点详情展示的是参数声明/表达式，不执行它们；展开�
 
 ## Action 与重试
 
-Action 入口为 `action/<action-id>/<action-id>.action.js`。Action 使用 DSH 原生工具 Schema DSL；`output.render` 给模型呈现结果，`execute` 返回结构化 JSON。
+Action 入口为 `action/<action-id>/<action-id>.action.js`。Action 使用 DSH 原生工具 Schema DSL；`output.render` 给模型呈现结果，`execute` 返回结构化 JSON。默认异常只记录稳定错误码；需要在 Workflow 中展示的安全、产品化说明必须显式抛出 `ActionFailure`，且不得包含凭据、私有路径、签名 URL 或堆栈。
 
 ```js
-import { defineAction } from "@aura/orchestration/action";
+import { ActionFailure, defineAction } from "@aura/orchestration/action";
 
 export default defineAction({
   title: "转为大写",
@@ -139,6 +139,7 @@ export default defineAction({
   },
   async execute(ctx, input) {
     ctx.signal.throwIfAborted();
+    if (!input.text.trim()) throw new ActionFailure("请输入需要转换的文本。");
     return input.text.toUpperCase();
   },
 });

@@ -9,12 +9,16 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import type {
-  ImageToImageParams,
-  MultiviewToModelParams,
-  Task,
-  TextToImageParams,
-  WaitForTaskOptions,
+import {
+  TripoAPIError,
+  TripoRequestError,
+  TripoTaskError,
+  TripoTimeoutError,
+  type ImageToImageParams,
+  type MultiviewToModelParams,
+  type Task,
+  type TextToImageParams,
+  type WaitForTaskOptions,
 } from "@vastai/tripo-sdk";
 
 const MAX_REFERENCE_BYTES = 20 * 1_024 * 1_024;
@@ -24,6 +28,158 @@ const IMAGE_TASK_TIMEOUT_MS = 90_000;
 const MODEL_TASK_TIMEOUT_MS = 2 * 60_000;
 
 export const TRIPO_GAME_ASSET_CAPABILITY = "aura.tripo.game-asset";
+
+export type TripoGameAssetStage =
+  | "prepare-output"
+  | "read-reference"
+  | "upload-reference"
+  | "generate-front"
+  | "generate-left"
+  | "generate-back"
+  | "generate-right"
+  | "download-front"
+  | "download-left"
+  | "download-back"
+  | "download-right"
+  | "generate-model"
+  | "download-model"
+  | "download-preview"
+  | "publish-output";
+
+export type TripoGameAssetFailureReason =
+  | "timeout"
+  | "network"
+  | "provider-rejected"
+  | "task-failed"
+  | "task-cancelled"
+  | "content-policy"
+  | "local-io"
+  | "unexpected";
+
+const stageLabels: Record<TripoGameAssetStage, string> = {
+  "prepare-output": "准备输出目录",
+  "read-reference": "读取参考图",
+  "upload-reference": "上传参考图",
+  "generate-front": "生成前视图",
+  "generate-left": "生成左视图",
+  "generate-back": "生成后视图",
+  "generate-right": "生成右视图",
+  "download-front": "下载前视图",
+  "download-left": "下载左视图",
+  "download-back": "下载后视图",
+  "download-right": "下载右视图",
+  "generate-model": "生成 3D 模型",
+  "download-model": "下载 3D 模型",
+  "download-preview": "下载模型预览",
+  "publish-output": "保存生成结果",
+};
+
+const localStageGuidance: Partial<Record<TripoGameAssetStage, string>> = {
+  "prepare-output": "无法创建临时目录，请检查输出路径和写入权限。",
+  "read-reference":
+    "无法读取参考图，请确认文件存在，并且是 20 MiB 以下的 PNG、JPEG 或 WebP。",
+  "download-front": "前视图下载或格式校验失败，请检查网络后重试。",
+  "download-left": "左视图下载或格式校验失败，请检查网络后重试。",
+  "download-back": "后视图下载或格式校验失败，请检查网络后重试。",
+  "download-right": "右视图下载或格式校验失败，请检查网络后重试。",
+  "download-model": "模型下载或 GLB 格式校验失败，请检查网络后重试。",
+  "download-preview": "模型预览下载或格式校验失败，请检查网络后重试。",
+  "publish-output": "无法发布生成结果，请检查输出目录的写入权限和剩余空间。",
+};
+
+/** A safe, product-facing diagnosis for one bounded game-asset stage. */
+export class TripoGameAssetError extends Error {
+  readonly stage: TripoGameAssetStage;
+  readonly reason: TripoGameAssetFailureReason;
+
+  constructor(
+    stage: TripoGameAssetStage,
+    reason: TripoGameAssetFailureReason,
+    detail: string,
+    options?: ErrorOptions,
+  ) {
+    super(`模型生成未完成 · ${stageLabels[stage]}：${detail}`, options);
+    this.name = "TripoGameAssetError";
+    this.stage = stage;
+    this.reason = reason;
+  }
+}
+
+function productStageError(
+  stage: TripoGameAssetStage,
+  error: unknown,
+): TripoGameAssetError {
+  if (error instanceof TripoGameAssetError) return error;
+  if (error instanceof TripoTimeoutError) {
+    const seconds = Math.max(1, Math.ceil(error.timeoutMs / 1_000));
+    return new TripoGameAssetError(
+      stage,
+      "timeout",
+      `等待超过 ${seconds} 秒，任务可能仍在 Tripo 后台处理。请勿立即重复提交，以免重复计费。`,
+      { cause: error },
+    );
+  }
+  if (error instanceof TripoTaskError) {
+    if (error.status === "banned")
+      return new TripoGameAssetError(
+        stage,
+        "content-policy",
+        "内容未通过生成服务检查，请调整描述或参考图后重试。",
+        { cause: error },
+      );
+    if (error.status === "cancelled")
+      return new TripoGameAssetError(
+        stage,
+        "task-cancelled",
+        "上游任务已取消，请确认服务状态后重试。",
+        { cause: error },
+      );
+    return new TripoGameAssetError(
+      stage,
+      "task-failed",
+      "上游任务执行失败，请稍后重试；若持续发生，请查看 Aura 后端日志。",
+      { cause: error },
+    );
+  }
+  if (error instanceof TripoRequestError)
+    return new TripoGameAssetError(
+      stage,
+      "network",
+      error.indeterminate
+        ? "与 Tripo 的连接中断，服务端可能已经接收任务。请先确认任务状态，不要立即重复提交。"
+        : "无法连接 Tripo 服务，请检查网络或代理后重试。",
+      { cause: error },
+    );
+  if (error instanceof TripoAPIError)
+    return new TripoGameAssetError(
+      stage,
+      "provider-rejected",
+      error.code === 2
+        ? "Tripo 凭据无效，请更新 Aura 的 Tripo 配置后重试。"
+        : `Tripo 拒绝了请求（错误码 ${error.code}），请检查输入或服务配置。`,
+      { cause: error },
+    );
+  const localGuidance = localStageGuidance[stage];
+  return new TripoGameAssetError(
+    stage,
+    localGuidance ? "local-io" : "unexpected",
+    localGuidance ?? "该环节发生未预期异常，请查看 Aura 后端日志后重试。",
+    { cause: error },
+  );
+}
+
+async function atStage<T>(
+  stage: TripoGameAssetStage,
+  signal: AbortSignal,
+  execute: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await execute();
+  } catch (error) {
+    signal.throwIfAborted();
+    throw productStageError(stage, error);
+  }
+}
 
 export type TripoGameAssetImageModel =
   "chat_image_2.5_flare" | "chat_image_2.5_sunburst";
@@ -309,20 +465,28 @@ export async function generateTripoGameAsset(
 ): Promise<TripoGameAssetResult> {
   const input = assertRequest(request);
   signal.throwIfAborted();
-  await mkdir(input.outputDirectory, { recursive: true });
-  const temporaryDirectory = await mkdtemp(
-    join(input.outputDirectory, ".aura-model-"),
+  const temporaryDirectory = await atStage(
+    "prepare-output",
+    signal,
+    async () => {
+      await mkdir(input.outputDirectory, { recursive: true });
+      return mkdtemp(join(input.outputDirectory, ".aura-model-"));
+    },
   );
   let published = false;
 
   try {
     let reference: string | undefined;
     if (input.referenceImagePath) {
-      const image = await loadReference(input.referenceImagePath);
-      const uploaded = await client.uploadFile(image.bytes, {
-        filename: `reference.${image.type.extension}`,
-        contentType: image.type.contentType,
-      });
+      const image = await atStage("read-reference", signal, () =>
+        loadReference(input.referenceImagePath!),
+      );
+      const uploaded = await atStage("upload-reference", signal, () =>
+        client.uploadFile(image.bytes, {
+          filename: `reference.${image.type.extension}`,
+          contentType: image.type.contentType,
+        }),
+      );
       reference = uploaded.file_token;
     }
 
@@ -333,19 +497,28 @@ export async function generateTripoGameAsset(
       background: "opaque" as const,
       output_format: "png" as const,
     };
-    const frontTaskId = reference
-      ? await client.imageToImage({
-          input: reference,
-          prompt: referencePrompt(input.prompt, "front"),
-          ...commonImage,
-        })
-      : await client.textToImage({
-          prompt: referencePrompt(input.prompt, "front"),
-          ...commonImage,
-        });
-    const frontTask = await client.waitForTask(
-      frontTaskId,
-      waitOptions(signal, IMAGE_TASK_TIMEOUT_MS),
+    const { taskId: frontTaskId, task: frontTask } = await atStage(
+      "generate-front",
+      signal,
+      async () => {
+        const taskId = reference
+          ? await client.imageToImage({
+              input: reference,
+              prompt: referencePrompt(input.prompt, "front"),
+              ...commonImage,
+            })
+          : await client.textToImage({
+              prompt: referencePrompt(input.prompt, "front"),
+              ...commonImage,
+            });
+        return {
+          taskId,
+          task: await client.waitForTask(
+            taskId,
+            waitOptions(signal, IMAGE_TASK_TIMEOUT_MS),
+          ),
+        };
+      },
     );
 
     const tasks: Record<"front" | "left" | "back" | "right", Task> = {
@@ -354,16 +527,23 @@ export async function generateTripoGameAsset(
       back: frontTask,
       right: frontTask,
     };
+    const generationStages = {
+      left: "generate-left",
+      back: "generate-back",
+      right: "generate-right",
+    } as const;
     for (const view of ["left", "back", "right"] as const) {
-      const taskId = await client.imageToImage({
-        input: frontTaskId,
-        prompt: referencePrompt(input.prompt, view),
-        ...commonImage,
+      tasks[view] = await atStage(generationStages[view], signal, async () => {
+        const taskId = await client.imageToImage({
+          input: frontTaskId,
+          prompt: referencePrompt(input.prompt, view),
+          ...commonImage,
+        });
+        return client.waitForTask(
+          taskId,
+          waitOptions(signal, IMAGE_TASK_TIMEOUT_MS),
+        );
       });
-      tasks[view] = await client.waitForTask(
-        taskId,
-        waitOptions(signal, IMAGE_TASK_TIMEOUT_MS),
-      );
     }
 
     const imagePaths = {
@@ -378,65 +558,83 @@ export async function generateTripoGameAsset(
       back: generatedImageUrl(tasks.back),
       right: generatedImageUrl(tasks.right),
     };
+    const downloadStages = {
+      front: "download-front",
+      left: "download-left",
+      back: "download-back",
+      right: "download-right",
+    } as const;
     for (const view of ["front", "left", "back", "right"] as const) {
-      const bytes = await download(
-        fetcher,
-        imageUrls[view],
-        MAX_IMAGE_BYTES,
-        signal,
-      );
-      if (imageType(bytes)?.extension !== "png")
-        throw new Error(`Generated ${view} view is not a PNG image.`);
-      await writeFile(imagePaths[view], bytes, { flag: "wx" });
+      await atStage(downloadStages[view], signal, async () => {
+        const bytes = await download(
+          fetcher,
+          imageUrls[view],
+          MAX_IMAGE_BYTES,
+          signal,
+        );
+        if (imageType(bytes)?.extension !== "png")
+          throw new Error(`Generated ${view} view is not a PNG image.`);
+        await writeFile(imagePaths[view], bytes, { flag: "wx" });
+      });
     }
 
-    const modelTaskId = await client.multiviewToModel({
-      inputs: [
-        imageUrls.front,
-        imageUrls.left,
-        imageUrls.back,
-        imageUrls.right,
-      ],
-      model: "P1-20260311",
-      face_limit: input.faceLimit,
-      texture: true,
-      pbr: true,
-      texture_alignment: "original_image",
-      texture_quality: "standard",
-      auto_size: true,
-      export_uv: true,
+    const modelTask = await atStage("generate-model", signal, async () => {
+      const modelTaskId = await client.multiviewToModel({
+        inputs: [
+          imageUrls.front,
+          imageUrls.left,
+          imageUrls.back,
+          imageUrls.right,
+        ],
+        model: "P1-20260311",
+        face_limit: input.faceLimit,
+        texture: true,
+        pbr: true,
+        texture_alignment: "original_image",
+        texture_quality: "standard",
+        auto_size: true,
+        export_uv: true,
+      });
+      return client.waitForTask(
+        modelTaskId,
+        waitOptions(signal, MODEL_TASK_TIMEOUT_MS),
+      );
     });
-    const modelTask = await client.waitForTask(
-      modelTaskId,
-      waitOptions(signal, MODEL_TASK_TIMEOUT_MS),
-    );
-    const modelBytes = await download(
-      fetcher,
-      modelUrl(modelTask),
-      MAX_MODEL_BYTES,
-      signal,
-    );
-    if (!isGlb(modelBytes))
-      throw new Error("Tripo did not return a valid GLB model.");
+    const modelBytes = await atStage("download-model", signal, async () => {
+      const bytes = await download(
+        fetcher,
+        modelUrl(modelTask),
+        MAX_MODEL_BYTES,
+        signal,
+      );
+      if (!isGlb(bytes))
+        throw new Error("Tripo did not return a valid GLB model.");
+      return bytes;
+    });
     const modelPath = join(temporaryDirectory, "model.glb");
-    await writeFile(modelPath, modelBytes, { flag: "wx" });
+    await atStage("publish-output", signal, () =>
+      writeFile(modelPath, modelBytes, { flag: "wx" }),
+    );
 
     let previewPath: string | undefined;
     if (modelTask.output?.rendered_image_url) {
-      const preview = await download(
-        fetcher,
-        httpsUrl(modelTask.output.rendered_image_url, "Model preview URL"),
-        MAX_IMAGE_BYTES,
-        signal,
-      );
-      const previewType = imageType(preview);
-      if (!previewType)
-        throw new Error("Tripo model preview is not a supported image.");
-      previewPath = join(
-        temporaryDirectory,
-        `preview.${previewType.extension}`,
-      );
-      await writeFile(previewPath, preview, { flag: "wx" });
+      previewPath = await atStage("download-preview", signal, async () => {
+        const preview = await download(
+          fetcher,
+          httpsUrl(modelTask.output!.rendered_image_url, "Model preview URL"),
+          MAX_IMAGE_BYTES,
+          signal,
+        );
+        const previewType = imageType(preview);
+        if (!previewType)
+          throw new Error("Tripo model preview is not a supported image.");
+        const path = join(
+          temporaryDirectory,
+          `preview.${previewType.extension}`,
+        );
+        await writeFile(path, preview, { flag: "wx" });
+        return path;
+      });
     }
 
     const creditsConsumed = Object.values(tasks).reduce(
@@ -482,17 +680,19 @@ export async function generateTripoGameAsset(
       },
     };
     const manifestPath = join(temporaryDirectory, "manifest.json");
-    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
+    const finalDirectory = await atStage("publish-output", signal, async () => {
+      await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, {
+        encoding: "utf8",
+        flag: "wx",
+      });
+      const directory = await uniqueFinalDirectory(
+        input.outputDirectory,
+        safeAssetName(input.assetName),
+        modelTask.task_id,
+      );
+      await rename(temporaryDirectory, directory);
+      return directory;
     });
-
-    const finalDirectory = await uniqueFinalDirectory(
-      input.outputDirectory,
-      safeAssetName(input.assetName),
-      modelTask.task_id,
-    );
-    await rename(temporaryDirectory, finalDirectory);
     published = true;
 
     const finalImages = Object.fromEntries(

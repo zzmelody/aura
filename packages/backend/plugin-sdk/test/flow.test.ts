@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { defineFlow, z } from "../src/flow.ts";
-import { auraCapability } from "../src/action.ts";
+import { ActionFailure, auraCapability } from "../src/action.ts";
 import type { ActionContext } from "../src/action.ts";
 import type {
   FlowDefinition as InternalDefinition,
@@ -94,4 +94,12 @@ test("public Action capability helper binds identity and cancellation", async ()
     () => auraCapability({ ...context, aura: undefined }, "missing"),
     /capability is unavailable/u,
   );
+});
+
+test("public Action failures are bounded product-facing errors", () => {
+  const error = new ActionFailure(" 生成左视图\n超时。 ");
+  assert.equal(error.name, "ActionFailure");
+  assert.equal(error.code, "ACTION_FAILURE");
+  assert.equal(error.message, "生成左视图 超时。");
+  assert.throws(() => new ActionFailure("\n\t"), /message is required/u);
 });

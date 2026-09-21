@@ -3,7 +3,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import type {} from "@deepseek-ai/dsh-tools";
-import type { ActionBinding } from "./action-api.ts";
+import { ACTION_FAILURE_CODE, type ActionBinding } from "./action-api.ts";
 import type { LoadedAction } from "./action-registry.ts";
 import { FlowError, jsonValue } from "./schema.ts";
 import type { LocalAIClient } from "./local-ai/api.ts";
@@ -122,6 +122,11 @@ export class ActionRuntime {
       });
       if (result.isError) {
         const code = result.error.info?.code ?? "ACTION_FAILED";
+        if (
+          code === ACTION_FAILURE_CODE &&
+          result.error.info?.name === "ActionFailure"
+        )
+          throw new FlowError(result.error.message);
         throw new FlowError(`Action ${action.id} 执行失败（${code}）。`);
       }
       return jsonValue(result.value, "Action 出参");

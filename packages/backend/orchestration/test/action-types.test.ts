@@ -8,7 +8,7 @@ test("Action .d.ts provides checkJs input/output inference and a leaf execution 
     new URL("./virtual.action.js", import.meta.url),
   ).replaceAll("\\", "/");
   const source = `
-import { defineAction } from "@aura/orchestration/action";
+import { ActionFailure, defineAction } from "@aura/orchestration/action";
 import { localAI } from "@aura/orchestration/local-ai";
 defineAction({
   title: "Types", description: "Type fixture",
@@ -28,6 +28,7 @@ defineAction({
     ctx.flow("nested");
     // @ts-expect-error Input is inferred from DSH parameters.
     input.missing;
+    if (!input.text) throw new ActionFailure("Text is required.");
     return input.text.toUpperCase();
   },
 });

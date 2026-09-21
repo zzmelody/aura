@@ -10,7 +10,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createTripoService, TripoNotConfiguredError } from "@aura/tripo";
+import { TripoTimeoutError } from "@vastai/tripo-sdk";
+import {
+  createTripoService,
+  TripoGameAssetError,
+  TripoNotConfiguredError,
+} from "@aura/tripo";
 
 test("Tripo remains available but disabled when no backend key exists", async () => {
   const root = await mkdtemp(join(tmpdir(), "aura-tripo-empty-"));
@@ -292,6 +297,82 @@ test("Tripo generates four GPT Image 2.5 views and publishes a game GLB", async 
       auto_size: true,
       export_uv: true,
     });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Tripo exposes the exact product stage when a generated view times out", async () => {
+  const root = await mkdtemp(join(tmpdir(), "aura-tripo-stage-error-"));
+  const outputRoot = join(root, "assets", "generated");
+
+  try {
+    const service = await createTripoService({
+      credentialPath: join(root, "missing-key"),
+      region: "global",
+      apiKey: "tsk_stage-test",
+      clientFactory() {
+        return {
+          async uploadFile() {
+            throw new Error("not used");
+          },
+          async textToImage() {
+            return "image-front";
+          },
+          async imageToImage() {
+            return "image-left";
+          },
+          async multiviewToModel() {
+            throw new Error("model generation must not start");
+          },
+          async waitForTask(taskId) {
+            if (taskId === "image-left") {
+              const timeout = new TripoTimeoutError(taskId);
+              Object.assign(timeout, { taskId, timeoutMs: 90_000 });
+              throw timeout;
+            }
+            return {
+              task_id: taskId,
+              type: "text_to_image",
+              status: "success",
+              output: {
+                generated_image_url: "https://cdn.example/front.png",
+              },
+            };
+          },
+          async textToModel() {
+            throw new Error("not used");
+          },
+          async imageToModel() {
+            throw new Error("not used");
+          },
+          async getTask() {
+            throw new Error("not used");
+          },
+        };
+      },
+    });
+
+    await assert.rejects(
+      service.generateGameAsset(
+        {
+          prompt: "A walkable stone chapel",
+          outputDirectory: outputRoot,
+          imageQuality: "high",
+        },
+        new AbortController().signal,
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof TripoGameAssetError);
+        assert.equal(error.stage, "generate-left");
+        assert.equal(error.reason, "timeout");
+        assert.equal(
+          error.message,
+          "模型生成未完成 · 生成左视图：等待超过 90 秒，任务可能仍在 Tripo 后台处理。请勿立即重复提交，以免重复计费。",
+        );
+        return true;
+      },
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -1,4 +1,5 @@
 import type { Context, Plugin } from "@deepseek-ai/cordis";
+import { HarnessError } from "@deepseek-ai/dsh-llm";
 import {
   defineTool,
   type DefineToolOptions,
@@ -16,6 +17,32 @@ import { jsonValue } from "./schema.ts";
 import type { LocalAIClient } from "./local-ai/api.ts";
 
 export type { InferArgs, InferValue, ParameterSchemaSpec, ValueSchemaSpec };
+
+export const ACTION_FAILURE_CODE = "ACTION_FAILURE";
+const MAX_ACTION_FAILURE_MESSAGE = 2_000;
+
+/**
+ * A bounded, product-facing Action failure that may be persisted and shown in
+ * Workflow UI. Authors must never include credentials, private paths, signed
+ * URLs, or stack traces in this message.
+ */
+export class ActionFailure extends HarnessError {
+  constructor(message: string, options?: ErrorOptions) {
+    const normalized = message
+      .replace(/[\u0000-\u001f\u007f]/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim();
+    if (!normalized) throw new TypeError("ActionFailure message is required.");
+    super(
+      normalized.length > MAX_ACTION_FAILURE_MESSAGE
+        ? `${normalized.slice(0, MAX_ACTION_FAILURE_MESSAGE - 1)}…`
+        : normalized,
+      ACTION_FAILURE_CODE,
+      options,
+    );
+    this.name = "ActionFailure";
+  }
+}
 
 /** Host-owned, manifest-gated capabilities available to trusted Actions. */
 export interface AuraCapabilityClient {

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AuraCapabilityClient } from "../src/action-api.ts";
+import { ActionFailure, type AuraCapabilityClient } from "../src/action-api.ts";
 import { actionCapabilities } from "../src/actions.ts";
 import { AuraCapabilityRouter } from "../src/capability-router.ts";
 import { TripoGameAssetCapability } from "../src/tripo-game-asset.ts";
+import { TripoGameAssetError } from "@aura/tripo";
 
 test("Action host capabilities are limited to manifest grants", async () => {
   const calls: string[] = [];
@@ -97,5 +98,37 @@ test("Tripo game asset capability validates and routes one bounded operation", a
       signal,
     ),
     /Unsupported Tripo game-asset operation/u,
+  );
+
+  const failing = new AuraCapabilityRouter([
+    [
+      "aura.tripo.game-asset",
+      new TripoGameAssetCapability({
+        async generateGameAsset() {
+          throw new TripoGameAssetError(
+            "generate-left",
+            "timeout",
+            "等待超过 90 秒，请勿立即重复提交。",
+          );
+        },
+      }),
+    ],
+  ]);
+  await assert.rejects(
+    failing.invoke(
+      "aura.tripo.game-asset",
+      "generate",
+      { prompt: "crate", outputDirectory: "F:\\output" },
+      signal,
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof ActionFailure);
+      assert.equal(error.code, "ACTION_FAILURE");
+      assert.equal(
+        error.message,
+        "模型生成未完成 · 生成左视图：等待超过 90 秒，请勿立即重复提交。",
+      );
+      return true;
+    },
   );
 });

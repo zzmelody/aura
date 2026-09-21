@@ -1,11 +1,12 @@
 import type { JsonValue } from "@aura/protocol/types";
 import {
   TRIPO_GAME_ASSET_CAPABILITY,
+  TripoGameAssetError,
   type TripoGameAssetRequest,
   type TripoGameAssetResult,
 } from "@aura/tripo";
 import { z } from "zod";
-import type { AuraCapabilityClient } from "./action-api.ts";
+import { ActionFailure, type AuraCapabilityClient } from "./action-api.ts";
 
 const requestSchema = z
   .object({
@@ -48,9 +49,19 @@ export class TripoGameAssetCapability implements AuraCapabilityClient {
       throw new Error(`Unsupported Tripo game-asset operation: ${operation}`);
     const parsed = requestSchema.safeParse(input);
     if (!parsed.success) throw new Error("Tripo game-asset input is invalid.");
-    return (await this.#tripo.generateGameAsset(
-      parsed.data,
-      signal,
-    )) as unknown as JsonValue;
+    try {
+      return (await this.#tripo.generateGameAsset(
+        parsed.data,
+        signal,
+      )) as unknown as JsonValue;
+    } catch (error) {
+      signal.throwIfAborted();
+      if (error instanceof TripoGameAssetError)
+        throw new ActionFailure(error.message, { cause: error });
+      throw new ActionFailure(
+        "模型生成未完成 · 调用生成服务：服务发生未预期异常，请查看 Aura 后端日志后重试。",
+        { cause: error },
+      );
+    }
   }
 }
