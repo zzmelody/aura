@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { artifactResponse, type ArtifactFile } from "./artifact-http.ts";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
 import type {
   ActionRun,
@@ -38,6 +40,25 @@ export class OrchestrationHost {
 
   constructor(options: HostOptions) {
     this.options = { ...options };
+  }
+
+  async artifactContent(
+    id: string,
+    artifactId: string,
+    thumbnail: boolean,
+    request: Request,
+  ) {
+    const descriptor = await this.request<ArtifactFile>(
+      "artifacts/resolve",
+      { id, artifactId, thumbnail },
+      request.signal,
+    );
+    return artifactResponse(
+      join(this.options.dshHome, "aura-generated-assets"),
+      descriptor,
+      request,
+      thumbnail,
+    );
   }
 
   async open() {
@@ -269,7 +290,10 @@ async function readBody(context: Context): Promise<Record<string, unknown>> {
 }
 
 /** Builds the Hono router mounted by runtime under the `/flows` namespace. */
-export function createFlowApp(host: Pick<OrchestrationHost, "request">) {
+export function createFlowApp(
+  host: Pick<OrchestrationHost, "request"> &
+    Partial<Pick<OrchestrationHost, "artifactContent">>,
+) {
   const app = new Hono();
 
   app.use("*", async (context, next) => {
@@ -299,6 +323,30 @@ export function createFlowApp(host: Pick<OrchestrationHost, "request">) {
     });
   });
   app.get("/runs", async (context) => context.json(await host.request("list")));
+  app.get("/runs/:id/artifacts", async (context) =>
+    context.json(
+      await host.request("artifacts/list", {
+        id: context.req.param("id"),
+        retry: context.req.query("retry") === "1",
+      }),
+    ),
+  );
+  for (const variant of ["content", "thumbnail"] as const) {
+    app.on(
+      ["GET", "HEAD"],
+      `/runs/:id/artifacts/:artifactId/${variant}`,
+      async (context) => {
+        if (!host.artifactContent)
+          throw new FlowError("产物读取服务不可用。", 503);
+        return host.artifactContent(
+          context.req.param("id"),
+          context.req.param("artifactId"),
+          variant === "thumbnail",
+          context.req.raw,
+        );
+      },
+    );
+  }
   app.get("/:flowId/source", async (context) =>
     context.json(
       await host.request("source", { id: context.req.param("flowId") }),

@@ -22,6 +22,8 @@ import {
 import { AuraCapabilityRouter } from "./capability-router.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
 import { GeneratedArtifacts } from "./generated-artifacts.ts";
+import { WorkflowArtifactIndex } from "./workflow-artifacts.ts";
+import { historicalArtifactReader } from "./artifact-history.ts";
 import { ActionRuns } from "./action-runs.ts";
 import { LocalAIManager } from "./local-ai/manager.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
@@ -310,7 +312,17 @@ export async function apply(ctx: Context) {
   const auraCapabilities = capabilityRoutes.length
     ? new AuraCapabilityRouter(capabilityRoutes)
     : undefined;
-  const actionRuntime = new ActionRuntime(ctx, localAI, auraCapabilities);
+  const artifactIndex = new WorkflowArtifactIndex(
+    artifacts,
+    process.env.AURA_FLOW_CWD ?? process.cwd(),
+  );
+  ctx.effect(() => () => artifactIndex.close(), "aura-artifacts.lifecycle");
+  const actionRuntime = new ActionRuntime(
+    ctx,
+    localAI,
+    auraCapabilities,
+    artifactIndex,
+  );
 
   const domain = await ctx.storageDomain.open(spec);
   const actionDomain = await ctx.storageDomain.open(actionSpec);
@@ -354,6 +366,7 @@ export async function apply(ctx: Context) {
       ),
   });
   await actionRuns.initialize();
+  artifactIndex.attach((id) => engine.get(id), historicalArtifactReader(ctx));
 
   let activePlugins = pluginStatuses();
   const applyConfiguration = async (
@@ -433,6 +446,8 @@ export async function apply(ctx: Context) {
           await refreshFlows();
           await ctx.get("loader")?.await();
           await engine.initialize();
+          for (const [runId] of engine.runs.entries())
+            artifactIndex.enqueue(runId);
           data = { name: "aura-orchestration", version: 4 };
           break;
         case "catalog":
@@ -451,6 +466,16 @@ export async function apply(ctx: Context) {
           break;
         case "get":
           data = engine.get(id);
+          break;
+        case "artifacts/list":
+          data = await artifactIndex.list(id, params.retry === true);
+          break;
+        case "artifacts/resolve":
+          data = await artifactIndex.resolve(
+            id,
+            typeof params.artifactId === "string" ? params.artifactId : "",
+            params.thumbnail === true,
+          );
           break;
         case "start":
           data = await engine.start(params);

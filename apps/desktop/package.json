@@ -13,7 +13,7 @@
     "start": "pnpm run build && electron .",
     "build": "pnpm run build:renderer && pnpm run build:preload",
     "build:preload": "tsx ../../scripts/build-desktop-preload.ts",
-    "build:renderer": "vite build",
+    "build:renderer": "tsx ../../scripts/build-renderer.ts desktop",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,7 +23,9 @@
     "hono": "4.13.7",
     "lucide-react": "1.43.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "@google/model-viewer": "4.1.0",
+    "three": "0.172.0"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

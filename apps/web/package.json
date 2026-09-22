@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "aura": { "kind": "app", "platform": "web" },
+  "aura": {
+    "kind": "app",
+    "platform": "web"
+  },
   "scripts": {
     "dev": "tsx ../../scripts/dev-renderer.ts web",
-    "build": "vite build",
+    "build": "tsx ../../scripts/build-renderer.ts web",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "tsc --noEmit"
   },
@@ -14,7 +17,9 @@
     "@aura/workbench": "workspace:*",
     "lucide-react": "1.43.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "@google/model-viewer": "4.1.0",
+    "three": "0.172.0"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

@@ -8,6 +8,8 @@ import type { LoadedAction } from "./action-registry.ts";
 import { FlowError, jsonValue } from "./schema.ts";
 import type { LocalAIClient } from "./local-ai/api.ts";
 import type { AuraCapabilityClient } from "./action-api.ts";
+import type { WorkflowArtifactIndex } from "./workflow-artifacts.ts";
+import { artifactCallBinding } from "./artifact-bindings.ts";
 
 const internalPrefix = "aura_direct_";
 
@@ -40,15 +42,18 @@ export class ActionRuntime {
   private directMasks = new Map<string, Array<() => void>>();
   private localAI?: LocalAIClient;
   private aura?: AuraCapabilityClient;
+  private artifacts?: WorkflowArtifactIndex;
 
   constructor(
     ctx: Context,
     localAI?: LocalAIClient,
     aura?: AuraCapabilityClient,
+    artifacts?: WorkflowArtifactIndex,
   ) {
     this.ctx = ctx;
     this.localAI = localAI;
     this.aura = aura;
+    this.artifacts = artifacts;
     // Direct calls require an unscoped DSH registration. Keep these short-lived,
     // pinned definitions out of every Agent's model surface, without changing presets.
     const hideDirectTools = (agent: Agent) => {
@@ -79,6 +84,12 @@ export class ActionRuntime {
               ...binding,
               localAI: this.localAI,
               aura: actionCapabilities(action, this.aura),
+              bindCall: artifactCallBinding(
+                this.artifacts,
+                binding,
+                this.localAI,
+                actionCapabilities(action, this.aura),
+              ),
             }),
           ),
         );
@@ -107,6 +118,12 @@ export class ActionRuntime {
         ...binding,
         localAI: this.localAI,
         aura: actionCapabilities(action, this.aura),
+        bindCall: artifactCallBinding(
+          this.artifacts,
+          binding,
+          this.localAI,
+          actionCapabilities(action, this.aura),
+        ),
       }),
     );
     const masks: Array<() => void> = [];

@@ -1,4 +1,6 @@
 /** Single-process FIFO dispatcher. The durable Run table is the queue of record. */
+export const DEFAULT_TOP_LEVEL_RUN_CONCURRENCY = 32;
+
 export class FlowScheduler {
   readonly running = new Map<string, Promise<void>>();
   private closed = false;
@@ -10,7 +12,7 @@ export class FlowScheduler {
   constructor(
     queued: () => string[],
     execute: (id: string) => Promise<void>,
-    limit = 2,
+    limit = DEFAULT_TOP_LEVEL_RUN_CONCURRENCY,
   ) {
     this.queued = queued;
     this.execute = execute;

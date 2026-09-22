@@ -2,6 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, realpath, rename, rm } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { ActionFailure } from "./action-api.ts";
+import {
+  artifactHash,
+  artifactThumbnail,
+  inspectArtifact,
+} from "./artifact-media.ts";
 
 const MAX_MODEL_BYTES = 200 * 1024 * 1024;
 export interface ModelArtifact {
@@ -16,6 +21,29 @@ export class GeneratedArtifacts {
   readonly root: string;
   constructor(root: string) {
     this.root = root;
+  }
+
+  async registerFile(path: string, signal: AbortSignal, root?: string) {
+    const bytes = await readBoundedFile(path, MAX_MODEL_BYTES, signal, root);
+    const media = await inspectArtifact(bytes);
+    const artifactId = artifactHash(bytes);
+    await publishBytes(
+      this.root,
+      `${artifactId}.${media.format}`,
+      bytes,
+      signal,
+    );
+    let thumbnailId: string | undefined;
+    if (media.kind === "image") {
+      try {
+        const thumbnail = await artifactThumbnail(bytes);
+        thumbnailId = artifactHash(thumbnail);
+        await publishBytes(this.root, `${thumbnailId}.webp`, thumbnail, signal);
+      } catch {
+        /* The original is retained even when thumbnail generation fails. */
+      }
+    }
+    return { ...media, artifactId, ...(thumbnailId ? { thumbnailId } : {}) };
   }
 
   async registerModel(
@@ -92,7 +120,7 @@ export async function readBoundedFile(
   }
 }
 
-async function publishBytes(
+export async function publishBytes(
   root: string,
   name: string,
   bytes: Uint8Array,

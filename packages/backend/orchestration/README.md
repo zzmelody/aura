@@ -71,7 +71,7 @@ V1 不支持 parallel 分支内的 checkpoint。运行时暂停会退出作用�
 
 `flow.flow()` 接受 catalog 中的规范 Flow ID。引擎先用子 Flow 的 input Schema 校验输入，随后把子 Flow 的版本 hash、插件身份、稳定请求 ID 和 child Run ID 保存到父步骤；子 Run 继续使用自己的 output Schema、步骤、重试和恢复记录。父流程重放时认领原 child Run，不会重复创建或把调用降级为隐藏 Action。子流程的 completed、waiting_input、needs_attention、paused、cancelled 和失败状态会传播到父流程；暂停和取消也沿父子关系向下传递。
 
-子 Run 由等待它的父执行片段内联调度，不占顶层 FIFO 的两个运行槽，因此多个父 Run 不会因等待排队中的子 Run 而死锁。最多嵌套 8 层；调用链中出现相同规范 ID 会在创建子 Run 前以循环调用拒绝。子 Run 不单独出现在顶层运行历史，但可通过完整 Run API 读取，并在父步骤内展开查看和处理 checkpoint。
+子 Run 由等待它的父执行片段内联调度，不占顶层 FIFO 的 32 个运行槽，因此多个父 Run 不会因等待排队中的子 Run 而死锁。最多嵌套 8 层；调用链中出现相同规范 ID 会在创建子 Run 前以循环调用拒绝。子 Run 不单独出现在顶层运行历史，但可通过完整 Run API 读取，并在父步骤内展开查看和处理 checkpoint。
 
 内置 Flow 可以调用任意已注册 Flow。插件 Flow 可直接调用同一插件命名空间的 Flow；跨插件或调用内置 Flow 时，插件 manifest 必须声明宿主支持的 `aura.flow.invoke` capability。权限按调用方已固定的插件版本检查，目标仍必须使用 catalog 中的规范 ID。
 
@@ -176,11 +176,11 @@ Action `recovery` 默认为 `manual`。只有显式 `idempotent` 的直接 Actio
 
 外部插件可以通过 `@aura/plugin-sdk/action` 的 `auraCapability(ctx, id)` 使用 manifest 已声明且宿主支持的领域能力。能力实现由长驻宿主持有，Action 只收到固定操作及 JSON 结果，不接触凭据、任意 URL 或进程句柄。`aura.veya.world-agent` 映射 Veya 的固定世界操作、运行观察/检查、探索动作/对话/重生和 `veya.cooker.capabilities/submit/status/cancel`，从平台默认 Godot `user://world-agent-session.json` 读取连接描述符；描述符声明 `veya-agent-tools/1` 时调用原生 `/agent/v1/call`，旧服务仅对已有世界操作回退到对应 `/v2` 路径，运行态、截图与 Cooker 工具不回退。可用后端环境变量 `AURA_VEYA_WORLD_AGENT_SESSION` 覆盖绝对路径。`aura.tripo.game-asset` 则只暴露固定的 GPT Image 2.5 四视图到 Tripo P1 GLB 生成操作，Key、短时下载 URL 和任务轮询全部留在宿主。描述符、bearer token 与 Tripo Key 不进入 Action 入参、输出或运行记录。
 
-默认不向 Agent 暴露 Action；用 `flow.agent({actions:["text-stats"],...})` 显式授予，名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。Action 超时默认 30 秒、最大 10 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
+Flow Agent 使用 fail-closed 工具白名单：固定为原生工具呈现并屏蔽 DSH、preset 及 profile 的全部继承工具，只把 `flow.agent({actions:["text-stats"],...})` 显式声明的 Action 注册到当前 Agent scope；未声明时模型工具集合为空。profile 对已知内置工具的禁用继续作为纵深防护，未来新增的 DSH 默认工具也不会自动进入 Flow Agent 上下文。Action 名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。Action 超时默认 30 秒、最大 10 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
 
 ## 队列、恢复与人工处理
 
-Run 创建时先写入持久化 FIFO，最多同时执行两个 Run。queued、running、pausing 属于活动执行；paused、waiting_input、needs_attention 释放运行槽。进程关闭保留 active durable 状态，下次启动协调；用户显式取消才进入 cancelled。
+Run 创建时先写入持久化 FIFO，默认最多同时执行 32 个顶层 Run。queued、running、pausing 属于活动执行；paused、waiting_input、needs_attention 释放运行槽。进程关闭保留 active durable 状态，下次启动协调；用户显式取消才进入 cancelled。
 
 启动时先完成 Loader、Flow/Action discovery，再恢复记录：
 
@@ -300,3 +300,17 @@ Discovery 对旧根 `ctx.agent/action` 和原生 Promise 并发给出行号诊�
 Veya capability 还转发 canonical `veya.world.mode/undo/redo`、`veya.draft.create/read/update/discard`、`veya.playtest.begin/end` 与 `veya.character.navigate/act/cancel`。新增 draft/playtest/character 操作仅接受原生 Agent 协议，不回退到旧 ContentAPI。失败时以 `ActionFailure` 保留有界领域错误码；不直接公开可能含本机路径的任意原生错误。该适配器不代表已具备图片附件、资产交接或付费任务的持久恢复能力。
 
 执行 `pnpm --filter @aura/orchestration typecheck`、`pnpm --filter @aura/orchestration test`，再运行 `pnpm run check` 和 Web build。测试覆盖 FIFO、作用域、暂停、checkpoint、retry、未知结果、版本冲突和写盘故障；真实 DSH 测试使用临时目录及本地模拟模型，强制 SIGKILL 验证无工具 Agent 恢复、工具副作用隔离、历史读取和 HMR，不调用付费模型。
+
+## 工作流产物预览
+
+图片（PNG/JPEG/WebP）和自包含 GLB 通过 `GeneratedArtifacts` 按 SHA-256 归档，原有 GLB ID 与 Veya 导入保持兼容。图片限制 32 MiB / 4000 万像素，模型沿用 200 MiB 上限。图片缩略图为最长 640×480 的 WebP；Tripo 模型使用已有海报，不为预览再次调用生成服务。含外部资源 URI 或无法解析的 GLB 仅允许下载。
+
+`WorkflowArtifactIndex` 在同一受管目录的 `runs/` 保存版本化 sidecar，记录 run、step、attempt 和工具 call 的关联、补登记状态与后端恢复信息。文件路径仅留在后端索引；公开 DTO 不包含路径或上游 URL。原 Action 输出、JSON Schema、运行记录与重放指纹均保持原样。`localAI.image`、`localAI.comfyWorkflow` 和 Tripo game-asset capability 在调用上下文内自动登记，因此直接 Action 和 Agent 工具都可在生成后立即展示文件。受信任 Action 也可调用 `await ctx.artifacts?.register(path, { name, poster })`，该端口没有模型可调用的任意文件读取接口。
+
+Runtime 挂载以下 Hono 路由；JSON-RPC 只解析关联与元数据，HTTP 进程从受管目录按文件描述符校验内容 hash 并流式发送：
+
+- `GET /flows/runs/:runId/artifacts`：本运行及子运行的产物列表，`pending` 表示历史补登记尚在进行。`?retry=1` 重试本地补登记，不重跑生成。
+- `GET|HEAD /flows/runs/:runId/artifacts/:artifactId/content`：原始文件，支持单段 Range、ETag、If-None-Match、If-Range；`?download=1` 强制下载。
+- `GET|HEAD /flows/runs/:runId/artifacts/:artifactId/thumbnail`：图片缩略图或模型海报。
+
+每次读取检查运行与产物归属；路径穿越、符号链接及内容变化均不能通过。历史迁移按运行持久化版本/指纹，可重启续跑；查看历史运行时优先处理。仅接受已知 Comfy 输出目录、匹配 Tripo manifest/task 的产物以及已登记 GLB。Agent 历史只解析结构化工具结果，不从自然语言提取路径。已删除或无结构化结果的历史日志不能恢复，缺失文件或未经来源验证的候选保留不可用状态。成功归档的文件默认保留，隐藏客户端会话不删除归档。

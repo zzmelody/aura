@@ -101,6 +101,7 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
       id: localId,
       stepKey,
       actionDefinitions,
+      attempts,
       requestId: savedRequestId,
       config,
     }) {
@@ -116,32 +117,40 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
       });
       const agent = ctx.agents.get(sessionId);
       if (!agent) throw new FlowError("DSH Agent 创建后不可用。");
-      const unmountActions = actions.mount(agent, actionDefinitions, {
-        cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
-        mode,
-        runId,
-        stepId: stepKey ?? localId,
-        sessionId: rawId,
-      });
-      // Official DSH waterfall: one scoped, logged configuration for every model turn/tool loop.
-      const unmountConfig = agent.ctx.on(
-        "agent/request",
-        async (_payload, next) => {
-          await next();
-          return {
-            provider: config.provider,
-            model: config.model,
-            reasoningEffort: ReasoningEffortId(config.reasoningEffort),
-            ...(config.maxTokens === undefined
-              ? {}
-              : { maxTokens: config.maxTokens }),
-            ...(config.temperature === undefined
-              ? {}
-              : { temperature: config.temperature }),
-          };
-        },
-      );
+      const agentScopeDisposers: Array<() => void> = [];
       try {
+        // Fail closed: Flow Agents never inherit tools from DSH, a preset, or
+        // future profile additions. Aura Actions are registered below in this
+        // Agent's own scope, which DSH restrictions intentionally preserve.
+        agentScopeDisposers.push(agent.ctx.tools.presentAs("native"));
+        agentScopeDisposers.push(agent.ctx.tools.restrict({ allow: [] }));
+        agentScopeDisposers.push(
+          actions.mount(agent, actionDefinitions, {
+            cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
+            mode,
+            runId,
+            stepId: stepKey ?? localId,
+            sessionId: rawId,
+            attempt: attempts?.at(-1)?.number,
+          }),
+        );
+        // Official DSH waterfall: one scoped, logged configuration for every model turn/tool loop.
+        agentScopeDisposers.push(
+          agent.ctx.on("agent/request", async (_payload, next) => {
+            await next();
+            return {
+              provider: config.provider,
+              model: config.model,
+              reasoningEffort: ReasoningEffortId(config.reasoningEffort),
+              ...(config.maxTokens === undefined
+                ? {}
+                : { maxTokens: config.maxTokens }),
+              ...(config.temperature === undefined
+                ? {}
+                : { temperature: config.temperature }),
+            };
+          }),
+        );
         await controller.selectModel({
           sessionId,
           provider: config.provider,
@@ -249,8 +258,7 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
           if (session) await ctx.sessions.flush(session);
         }
       } finally {
-        unmountConfig();
-        unmountActions();
+        for (const dispose of agentScopeDisposers.reverse()) dispose();
       }
     },
     async reconcile(step) {

@@ -310,6 +310,29 @@ export interface FlowRunSummary {
   createdAt: number;
   updatedAt?: number;
 }
+/** A managed file reference. No filesystem paths or upstream URLs cross this boundary. */
+export interface WorkflowArtifact {
+  id: string;
+  artifactId: string;
+  runId: string;
+  stepKey: string;
+  attempt?: number;
+  callId?: string;
+  name: string;
+  kind: "image" | "model";
+  format: "png" | "jpeg" | "webp" | "glb";
+  mimeType: string;
+  bytes: number;
+  width?: number;
+  height?: number;
+  thumbnailId?: string;
+  status: "ready" | "unavailable" | "unsupported";
+}
+export interface WorkflowArtifacts {
+  artifacts: WorkflowArtifact[];
+  /** History admission is still running; poll even for a completed Run. */
+  pending: boolean;
+}
 export interface FlowHistory {
   sessionId: string;
   preset: string;

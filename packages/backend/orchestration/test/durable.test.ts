@@ -9,6 +9,7 @@ import type { EngineOptions, Table } from "../src/types.ts";
 import type { LoadedFlow } from "../src/registry.ts";
 import type { LoadedAction } from "../src/action-registry.ts";
 import { FlowEngine } from "../src/engine.ts";
+import { DEFAULT_TOP_LEVEL_RUN_CONCURRENCY } from "../src/scheduler.ts";
 import { runSchema } from "../src/schema.ts";
 import { recoverStep } from "../src/recovery.ts";
 import { validateFlowSource } from "../src/flow-diagnostics.ts";
@@ -563,7 +564,7 @@ test("pause drains running branch, stops gate waiters, releases capacity and res
   assert.deepEqual(calls, ["one", "two"]);
 });
 
-test("queue persists overflow and executes FIFO with two Run slots; queued pause/cancel dispatch nothing", async () => {
+test("queue persists overflow and executes FIFO with 32 Run slots; queued pause/cancel dispatch nothing", async () => {
   let releases: (() => void)[] = [];
   const calls: string[] = [];
   const { engine } = await setup(
@@ -579,22 +580,38 @@ test("queue persists overflow and executes FIFO with two Run slots; queued pause
     },
   );
   const runs = [];
-  for (let i = 0; i < 5; i++) runs.push(await engine.start(req()));
-  await until(() => calls.length === 2);
-  assert.equal(engine.get(runs[2]!.id).status, "queued");
-  await engine.pause(runs[3]!.id);
-  await engine.cancel(runs[4]!.id);
+  for (let i = 0; i < DEFAULT_TOP_LEVEL_RUN_CONCURRENCY + 3; i++)
+    runs.push(await engine.start(req()));
+  await until(() => calls.length === DEFAULT_TOP_LEVEL_RUN_CONCURRENCY);
+  assert.equal(
+    engine.get(runs[DEFAULT_TOP_LEVEL_RUN_CONCURRENCY]!.id).status,
+    "queued",
+  );
+  await engine.pause(runs[DEFAULT_TOP_LEVEL_RUN_CONCURRENCY + 1]!.id);
+  await engine.cancel(runs[DEFAULT_TOP_LEVEL_RUN_CONCURRENCY + 2]!.id);
   releases.shift()!();
-  await until(() => calls.length === 3);
+  await until(() => calls.length === DEFAULT_TOP_LEVEL_RUN_CONCURRENCY + 1);
   assert.deepEqual(
     calls,
-    runs.slice(0, 3).map((run) => run.id),
+    runs
+      .slice(0, DEFAULT_TOP_LEVEL_RUN_CONCURRENCY + 1)
+      .map((run) => run.id),
   );
   releases.forEach((release) => release());
   releases = [];
-  await Promise.all(runs.slice(0, 3).map((run) => engine.wait(run.id)));
-  assert.equal(engine.get(runs[3]!.id).status, "paused");
-  assert.equal(engine.get(runs[4]!.id).status, "cancelled");
+  await Promise.all(
+    runs
+      .slice(0, DEFAULT_TOP_LEVEL_RUN_CONCURRENCY + 1)
+      .map((run) => engine.wait(run.id)),
+  );
+  assert.equal(
+    engine.get(runs[DEFAULT_TOP_LEVEL_RUN_CONCURRENCY + 1]!.id).status,
+    "paused",
+  );
+  assert.equal(
+    engine.get(runs[DEFAULT_TOP_LEVEL_RUN_CONCURRENCY + 2]!.id).status,
+    "cancelled",
+  );
 });
 
 test("same local ids are valid in distinct loop scopes; overlapping and forgotten calls are rejected", async () => {

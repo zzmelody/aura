@@ -2,18 +2,20 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
+import { modelViewerAssets } from "./model-viewer-assets.ts";
 import { liveReloadFallback } from "./vite-live-reload.ts";
 
 const target = process.argv[2];
-if (target !== "web" && target !== "desktop")
-  throw new Error("Usage: dev-renderer.ts <web|desktop>");
+if (target !== "web" && target !== "desktop" && target !== "mobile")
+  throw new Error("Usage: dev-renderer.ts <web|desktop|mobile>");
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appRoot = resolve(root, "apps", target);
 const server = await createServer({
   root: appRoot,
   configFile: resolve(appRoot, "vite.config.ts"),
-  plugins: [liveReloadFallback()],
+  plugins: [liveReloadFallback(), modelViewerAssets()],
+  ...(target === "mobile" ? { server: { host: "0.0.0.0", port: 8082 } } : {}),
 });
 let desktop: ChildProcess | undefined;
 let closing: Promise<void> | undefined;

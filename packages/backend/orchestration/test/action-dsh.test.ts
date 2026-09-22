@@ -224,9 +224,9 @@ test(
           request.tools.some((name) => name.startsWith("aura_direct_")),
           false,
         );
-        assert.equal(
-          request.tools.includes("probe-action"),
-          request.user.includes("USE_ACTION"),
+        assert.deepEqual(
+          request.tools,
+          request.user.includes("USE_ACTION") ? ["probe-action"] : [],
         );
       }
       const allowed = run.steps.find((s) => s.id === "allowed");

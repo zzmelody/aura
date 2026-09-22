@@ -466,6 +466,7 @@ export class FlowExecution {
           runId: this.options.get().id,
           stepId: prepared.key,
           idempotencyKey: (current as FlowActionStep).idempotencyKey,
+          attempt: current.attempts?.at(-1)?.number,
         },
         this.abort.signal,
       ),

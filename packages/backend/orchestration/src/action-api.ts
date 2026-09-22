@@ -71,6 +71,14 @@ export interface ActionContext {
   readonly stepId?: string;
   readonly sessionId?: string;
   readonly idempotencyKey?: string;
+  readonly attempt?: number;
+  /** Registers generated files for this call without changing the Action's output schema. */
+  readonly artifacts?: {
+    register(
+      path: string,
+      options?: { name?: string; poster?: string },
+    ): Promise<void>;
+  };
   /** Host-owned local model lifecycle; absent in hosts without this capability. */
   readonly localAI?: LocalAIClient;
   /** Host-owned external service ports. Credentials never enter Action input. */
@@ -80,7 +88,12 @@ export interface ActionContext {
 export type ActionBinding = Omit<
   ActionContext,
   "signal" | "callId" | "directory"
->;
+> & {
+  /** Host-only call-scoped adapters; never exposed to model/tool parameters. */
+  bindCall?: (
+    callId: string,
+  ) => Pick<ActionContext, "localAI" | "aura" | "artifacts">;
+};
 
 export type ActionDefinition<
   S extends ParameterSchemaSpec,
@@ -147,9 +160,11 @@ export function defineAction<
             timeoutMs: definition.timeoutMs ?? 30_000,
             async execute(input: InferArgs<S>, exec: ToolRunContext) {
               jsonValue(input, "Action 入参");
+              const { bindCall, ...contextBinding } = binding;
               const output = await definition.execute(
                 Object.freeze({
-                  ...binding,
+                  ...contextBinding,
+                  ...bindCall?.(exec.callId),
                   directory: config.directory,
                   signal: exec.signal,
                   callId: exec.callId,

@@ -22,6 +22,9 @@ importers:
       sharp:
         specifier: 0.35.4
         version: 0.35.4(@types/node@24.10.1)
+      three:
+        specifier: 0.172.0
+        version: 0.172.0
       tsx:
         specifier: 4.23.13
         version: 4.23.13
@@ -40,6 +43,9 @@ importers:
       "@aura/workbench":
         specifier: workspace:*
         version: link:../../packages/frontend/workbench
+      "@google/model-viewer":
+        specifier: 4.1.0
+        version: 4.1.0(three@0.172.0)
       "@hono/node-server":
         specifier: 2.1.1
         version: 2.1.1(hono@4.13.7)
@@ -55,6 +61,9 @@ importers:
       react-dom:
         specifier: 19.2.3
         version: 19.2.3(react@19.2.3)
+      three:
+        specifier: 0.172.0
+        version: 0.172.0
     devDependencies:
       "@types/node":
         specifier: 24.10.1
@@ -89,6 +98,9 @@ importers:
       "@capacitor/core":
         specifier: 8.5.1
         version: 8.5.1
+      "@google/model-viewer":
+        specifier: 4.1.0
+        version: 4.1.0(three@0.172.0)
       lucide-react:
         specifier: 1.43.0
         version: 1.43.0(react@19.2.3)
@@ -98,6 +110,9 @@ importers:
       react-dom:
         specifier: 19.2.3
         version: 19.2.3(react@19.2.3)
+      three:
+        specifier: 0.172.0
+        version: 0.172.0
     devDependencies:
       "@capacitor/android":
         specifier: 8.5.1
@@ -145,6 +160,9 @@ importers:
       "@aura/workbench":
         specifier: workspace:*
         version: link:../../packages/frontend/workbench
+      "@google/model-viewer":
+        specifier: 4.1.0
+        version: 4.1.0(three@0.172.0)
       lucide-react:
         specifier: 1.43.0
         version: 1.43.0(react@19.2.3)
@@ -154,6 +172,9 @@ importers:
       react-dom:
         specifier: 19.2.3
         version: 19.2.3(react@19.2.3)
+      three:
+        specifier: 0.172.0
+        version: 0.172.0
     devDependencies:
       "@types/react":
         specifier: ~19.2.2
@@ -301,6 +322,9 @@ importers:
       hono:
         specifier: 4.13.7
         version: 4.13.7
+      sharp:
+        specifier: 0.35.4
+        version: 0.35.4(@types/node@24.10.1)
       zod:
         specifier: ^4.3.6
         version: 4.5.4
@@ -441,6 +465,9 @@ importers:
       "@fontsource/manrope":
         specifier: 5.3.0
         version: 5.3.0
+      "@google/model-viewer":
+        specifier: 4.1.0
+        version: 4.1.0(three@0.172.0)
       acorn:
         specifier: 8.18.0
         version: 8.18.0
@@ -459,6 +486,9 @@ importers:
       remark-gfm:
         specifier: 4.0.1
         version: 4.0.1
+      three:
+        specifier: 0.172.0
+        version: 0.172.0
     devDependencies:
       "@types/react":
         specifier: ~19.2.2
@@ -3597,6 +3627,15 @@ packages:
       "@modelcontextprotocol/sdk":
         optional: true
 
+  "@google/model-viewer@4.1.0":
+    resolution:
+      {
+        integrity: sha512-7WB/jS6wfBfRl/tWhsUUvDMKFE1KlKME97coDLlZQfvJD0nCwjhES1lJ+k7wnmf7T3zMvCfn9mIjM/mgZapuig==,
+      }
+    engines: { node: ">=6.0.0" }
+    peerDependencies:
+      three: ^0.172.0
+
   "@hono/node-server@2.1.1":
     resolution:
       {
@@ -3662,7 +3701,6 @@ packages:
       }
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-libvips-linux-arm@1.3.3":
     resolution:
@@ -3671,7 +3709,6 @@ packages:
       }
     cpu: [arm]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-libvips-linux-ppc64@1.3.3":
     resolution:
@@ -3680,7 +3717,6 @@ packages:
       }
     cpu: [ppc64]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-libvips-linux-riscv64@1.3.3":
     resolution:
@@ -3689,7 +3725,6 @@ packages:
       }
     cpu: [riscv64]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-libvips-linux-s390x@1.3.3":
     resolution:
@@ -3698,7 +3733,6 @@ packages:
       }
     cpu: [s390x]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-libvips-linux-x64@1.3.3":
     resolution:
@@ -3707,7 +3741,6 @@ packages:
       }
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-libvips-linuxmusl-arm64@1.3.3":
     resolution:
@@ -3716,7 +3749,6 @@ packages:
       }
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   "@img/sharp-libvips-linuxmusl-x64@1.3.3":
     resolution:
@@ -3725,7 +3757,6 @@ packages:
       }
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   "@img/sharp-linux-arm64@0.35.4":
     resolution:
@@ -3735,7 +3766,6 @@ packages:
     engines: { node: ">=20.9.0" }
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-linux-arm@0.35.4":
     resolution:
@@ -3745,7 +3775,6 @@ packages:
     engines: { node: ">=20.9.0" }
     cpu: [arm]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-linux-ppc64@0.35.4":
     resolution:
@@ -3755,7 +3784,6 @@ packages:
     engines: { node: ">=20.9.0" }
     cpu: [ppc64]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-linux-riscv64@0.35.4":
     resolution:
@@ -3765,7 +3793,6 @@ packages:
     engines: { node: ">=20.9.0" }
     cpu: [riscv64]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-linux-s390x@0.35.4":
     resolution:
@@ -3775,7 +3802,6 @@ packages:
     engines: { node: ">=20.9.0" }
     cpu: [s390x]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-linux-x64@0.35.4":
     resolution:
@@ -3785,7 +3811,6 @@ packages:
     engines: { node: ">=20.9.0" }
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   "@img/sharp-linuxmusl-arm64@0.35.4":
     resolution:
@@ -3795,7 +3820,6 @@ packages:
     engines: { node: ">=20.9.0" }
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   "@img/sharp-linuxmusl-x64@0.35.4":
     resolution:
@@ -3805,7 +3829,6 @@ packages:
     engines: { node: ">=20.9.0" }
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   "@img/sharp-wasm32@0.35.4":
     resolution:
@@ -4214,6 +4237,18 @@ packages:
       typescript:
         optional: true
 
+  "@lit-labs/ssr-dom-shim@1.6.0":
+    resolution:
+      {
+        integrity: sha512-VHb0ALPMTlgKjM6yIxxoQNnpKyUKLD04VzeQdsiXkMqkvYlAHxq9glGLmgbb889/1GsohSOAjvQYoiBppXFqrQ==,
+      }
+
+  "@lit/reactive-element@2.1.2":
+    resolution:
+      {
+        integrity: sha512-pbCDiVMnne1lYUIaYNN5wrwQXDtHaYtg7YEFPeW+hws6U47WeFvISGUWekPGKWOP1ygrs0ef0o1VJMk1exos5A==,
+      }
+
   "@mixmark-io/domino@2.2.0":
     resolution:
       {
@@ -4232,6 +4267,14 @@ packages:
     peerDependenciesMeta:
       "@cfworker/json-schema":
         optional: true
+
+  "@monogrid/gainmap-js@3.4.0":
+    resolution:
+      {
+        integrity: sha512-2Z0FATFHaoYJ8b+Y4y4Hgfn3FRFwuU5zRrk+9dFWp4uGAdHGqVEdP7HP+gLA3X469KXHmfupJaUbKo1b/aDKIg==,
+      }
+    peerDependencies:
+      three: ">= 0.159.0"
 
   "@octokit/openapi-types@29.0.1":
     resolution:
@@ -4511,7 +4554,6 @@ packages:
     engines: { node: ^20.19.0 || >=22.12.0 }
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   "@rolldown/binding-linux-arm64-musl@1.2.8":
     resolution:
@@ -4521,7 +4563,6 @@ packages:
     engines: { node: ^20.19.0 || >=22.12.0 }
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   "@rolldown/binding-linux-ppc64-gnu@1.2.8":
     resolution:
@@ -4531,7 +4572,6 @@ packages:
     engines: { node: ^20.19.0 || >=22.12.0 }
     cpu: [ppc64]
     os: [linux]
-    libc: [glibc]
 
   "@rolldown/binding-linux-s390x-gnu@1.2.8":
     resolution:
@@ -4541,7 +4581,6 @@ packages:
     engines: { node: ^20.19.0 || >=22.12.0 }
     cpu: [s390x]
     os: [linux]
-    libc: [glibc]
 
   "@rolldown/binding-linux-x64-gnu@1.2.8":
     resolution:
@@ -4551,7 +4590,6 @@ packages:
     engines: { node: ^20.19.0 || >=22.12.0 }
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   "@rolldown/binding-linux-x64-musl@1.2.8":
     resolution:
@@ -4561,7 +4599,6 @@ packages:
     engines: { node: ^20.19.0 || >=22.12.0 }
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   "@rolldown/binding-openharmony-arm64@1.2.8":
     resolution:
@@ -5773,6 +5810,12 @@ packages:
       }
     engines: { node: ">=0.10.0" }
 
+  immediate@3.0.6:
+    resolution:
+      {
+        integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==,
+      }
+
   inherits@2.0.4:
     resolution:
       {
@@ -5881,6 +5924,12 @@ packages:
         integrity: sha512-+Pgi+vMuUNkJyExiMBt5IlFoMyKnr5zhJ4Uspz58WOhBF5QoIZkFyNHIbBAtHwzVAgk5RtndVNsDRN61/mmDqg==,
       }
     engines: { node: ">=12" }
+
+  is-promise@2.2.2:
+    resolution:
+      {
+        integrity: sha512-+lP4/6lKUBfQjZ2pdxThZvLUAafmZb8OAxFb8XXtiQmS35INgr85hdOGoEs124ez1FCnZJt6jau/T+alh58QFQ==,
+      }
 
   is-promise@4.0.0:
     resolution:
@@ -6001,6 +6050,12 @@ packages:
       typescript:
         optional: true
 
+  lie@3.3.0:
+    resolution:
+      {
+        integrity: sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ==,
+      }
+
   lightningcss-android-arm64@1.33.0:
     resolution:
       {
@@ -6054,7 +6109,6 @@ packages:
     engines: { node: ">= 12.0.0" }
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   lightningcss-linux-arm64-musl@1.33.0:
     resolution:
@@ -6064,7 +6118,6 @@ packages:
     engines: { node: ">= 12.0.0" }
     cpu: [arm64]
     os: [linux]
-    libc: [musl]
 
   lightningcss-linux-x64-gnu@1.33.0:
     resolution:
@@ -6074,7 +6127,6 @@ packages:
     engines: { node: ">= 12.0.0" }
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   lightningcss-linux-x64-musl@1.33.0:
     resolution:
@@ -6084,7 +6136,6 @@ packages:
     engines: { node: ">= 12.0.0" }
     cpu: [x64]
     os: [linux]
-    libc: [musl]
 
   lightningcss-win32-arm64-msvc@1.33.0:
     resolution:
@@ -6110,6 +6161,24 @@ packages:
         integrity: sha512-WkUDrojuJs0xkgGf2udWxa3yGBRxPtxUkB79i6aCZLRgc7PM8fZe9TosfPDcvEpQZbuFASnHYmRLBLUbmLOIIA==,
       }
     engines: { node: ">= 12.0.0" }
+
+  lit-element@4.2.2:
+    resolution:
+      {
+        integrity: sha512-aFKhNToWxoyhkNDmWZwEva2SlQia+jfG0fjIWV//YeTaWrVnOxD89dPKfigCUspXFmjzOEUQpOkejH5Ly6sG0w==,
+      }
+
+  lit-html@3.3.3:
+    resolution:
+      {
+        integrity: sha512-el8M6jK2o3RXBnrSHX3ZKrsN8zEV63pSExTO1wYJz7QndGYZ8353e2a5PPX+qHe2aGayfnchQmkAojaWAREOIA==,
+      }
+
+  lit@3.3.3:
+    resolution:
+      {
+        integrity: sha512-fycuvZg/hkpozL00lm1pEJH5nN/lr9ZXd6mJI2HSN4+Bzc+LDNdEApJ6HFbPkdFNHLvOplIIuJvxkS4XUxqirw==,
+      }
 
   long@5.3.2:
     resolution:
@@ -6539,7 +6608,6 @@ packages:
     engines: { node: ">=20" }
     cpu: [arm64]
     os: [linux]
-    libc: [glibc]
 
   node-addon-require-builtin-linux-x64-gnu@0.1.5:
     resolution:
@@ -6549,7 +6617,6 @@ packages:
     engines: { node: ">=20" }
     cpu: [x64]
     os: [linux]
-    libc: [glibc]
 
   node-addon-require-builtin-win32-arm64-msvc@0.1.5:
     resolution:
@@ -6788,6 +6855,12 @@ packages:
         integrity: sha512-7PiHtLll5LdnKIMw100I+8xJXR5gW2QwWYkT6iJva0bXitZKa/XMrSbdmg3r2Xnaidz9Qumd0VPaMrZlF9V9sA==,
       }
     engines: { node: ">=0.4.0" }
+
+  promise-worker-transferable@1.0.4:
+    resolution:
+      {
+        integrity: sha512-bN+0ehEnrXfxV2ZQvU2PetO0n4gqBD4ulq3MI1WOPLgr7/Mg9yRQkX5+0v1vagr74ZTsl7XtzlaYDo2EuCeYJw==,
+      }
 
   prompts@2.4.2:
     resolution:
@@ -7202,6 +7275,12 @@ packages:
     engines: { node: ">=10" }
     hasBin: true
 
+  three@0.172.0:
+    resolution:
+      {
+        integrity: sha512-6HMgMlzU97MsV7D/tY8Va38b83kz8YJX+BefKjspMNAv0Vx6dxMogHOrnRl/sbMIs3BPUKijPqDqJ/+UwJbIow==,
+      }
+
   through2@4.0.2:
     resolution:
       {
@@ -7385,6 +7464,7 @@ packages:
       {
         integrity: sha512-DPSke0pXhTZgoF/d+WSt2QaKMCFSfx7QegxEWT+JOuHF5aWrKEn0G+ztjuJg/gG8/ItK+rbPCD/yNv8yyih6Cg==,
       }
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
     hasBin: true
 
   vary@1.1.2:
@@ -10345,6 +10425,12 @@ snapshots:
       - supports-color
       - utf-8-validate
 
+  "@google/model-viewer@4.1.0(three@0.172.0)":
+    dependencies:
+      "@monogrid/gainmap-js": 3.4.0(three@0.172.0)
+      lit: 3.3.3
+      three: 0.172.0
+
   "@hono/node-server@2.1.1(hono@4.13.7)":
     dependencies:
       hono: 4.13.7
@@ -10709,6 +10795,12 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
+  "@lit-labs/ssr-dom-shim@1.6.0": {}
+
+  "@lit/reactive-element@2.1.2":
+    dependencies:
+      "@lit-labs/ssr-dom-shim": 1.6.0
+
   "@mixmark-io/domino@2.2.0": {}
 
   "@modelcontextprotocol/sdk@1.30.0(zod@4.5.4)":
@@ -10732,6 +10824,11 @@ snapshots:
       zod-to-json-schema: 3.25.2(zod@4.5.4)
     transitivePeerDependencies:
       - supports-color
+
+  "@monogrid/gainmap-js@3.4.0(three@0.172.0)":
+    dependencies:
+      promise-worker-transferable: 1.0.4
+      three: 0.172.0
 
   "@octokit/openapi-types@29.0.1": {}
 
@@ -11591,6 +11688,8 @@ snapshots:
     dependencies:
       safer-buffer: 2.1.2
 
+  immediate@3.0.6: {}
+
   inherits@2.0.4: {}
 
   ini@4.1.3: {}
@@ -11627,6 +11726,8 @@ snapshots:
       is-docker: 3.0.0
 
   is-plain-obj@4.1.0: {}
+
+  is-promise@2.2.2: {}
 
   is-promise@4.0.0: {}
 
@@ -11709,6 +11810,10 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
+  lie@3.3.0:
+    dependencies:
+      immediate: 3.0.6
+
   lightningcss-android-arm64@1.33.0:
     optional: true
 
@@ -11757,6 +11862,22 @@ snapshots:
       lightningcss-linux-x64-musl: 1.33.0
       lightningcss-win32-arm64-msvc: 1.33.0
       lightningcss-win32-x64-msvc: 1.33.0
+
+  lit-element@4.2.2:
+    dependencies:
+      "@lit-labs/ssr-dom-shim": 1.6.0
+      "@lit/reactive-element": 2.1.2
+      lit-html: 3.3.3
+
+  lit-html@3.3.3:
+    dependencies:
+      "@types/trusted-types": 2.0.7
+
+  lit@3.3.3:
+    dependencies:
+      "@lit/reactive-element": 2.1.2
+      lit-element: 4.2.2
+      lit-html: 3.3.3
 
   long@5.3.2: {}
 
@@ -12319,6 +12440,11 @@ snapshots:
 
   progress@2.0.3: {}
 
+  promise-worker-transferable@1.0.4:
+    dependencies:
+      is-promise: 2.2.2
+      lie: 3.3.0
+
   prompts@2.4.2:
     dependencies:
       kleur: 3.0.3
@@ -12661,6 +12787,8 @@ snapshots:
       commander: 2.20.3
       source-map-support: 0.5.21
     optional: true
+
+  three@0.172.0: {}
 
   through2@4.0.2:
     dependencies:
