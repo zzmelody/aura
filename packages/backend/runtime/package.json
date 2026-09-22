@@ -21,6 +21,7 @@
     "@aura/orchestration": "workspace:*",
     "@aura/dsh-auth": "workspace:*",
     "@aura/demo": "workspace:*",
+    "@aura/plugin-sdk": "workspace:*",
     "@aura/protocol": "workspace:*",
     "@aura/tripo": "workspace:*",
     "@hono/node-server": "2.1.1",

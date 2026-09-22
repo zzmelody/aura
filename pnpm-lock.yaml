@@ -372,6 +372,9 @@ importers:
       "@aura/orchestration":
         specifier: workspace:*
         version: link:../orchestration
+      "@aura/plugin-sdk":
+        specifier: workspace:*
+        version: link:../plugin-sdk
       "@aura/protocol":
         specifier: workspace:*
         version: link:../../shared/protocol

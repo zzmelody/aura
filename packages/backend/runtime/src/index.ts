@@ -7,6 +7,7 @@ import { startApiServer } from "./api-server.ts";
 import { startDemoModel } from "./demo-model.ts";
 import { DshSessionRunner } from "./dsh-session-runner.ts";
 import { configureRuntimeNetwork } from "./network-proxy.ts";
+import { pluginSdkVersion } from "./plugin-sdk-version.ts";
 import {
   isLoopbackRuntimeHost,
   prepareDshProfile,
@@ -41,7 +42,7 @@ export async function startAuraRuntime(
   const pluginManager = await AuraPluginManager.create({
     configPath: config.pluginConfigPath,
     auraVersion: "0.1.0",
-    pluginSdkVersion: "1.1.0",
+    pluginSdkVersion,
     supportedCapabilities: [
       "aura.veya.world-agent",
       "aura.tripo.game-asset",
