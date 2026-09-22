@@ -8,6 +8,7 @@ export type FlowGraphNode = {
     | "input"
     | "agent"
     | "tool"
+    | "flow"
     | "condition"
     | "loop"
     | "output"
@@ -220,6 +221,18 @@ function isToolCall(node: AstNode) {
   return Boolean(toolName(node));
 }
 
+function isFlowCall(node: AstNode) {
+  return (
+    node.type === "CallExpression" &&
+    isNode(node.callee) &&
+    node.callee.type === "MemberExpression" &&
+    isNode(node.callee.object) &&
+    Boolean(identifier(node.callee.object)) &&
+    isNode(node.callee.property) &&
+    propertyName(node.callee.property) === "flow"
+  );
+}
+
 function isPromiseAll(node: AstNode) {
   if (node.type !== "CallExpression" || !isNode(node.callee)) return false;
   const callee = node.callee;
@@ -294,6 +307,7 @@ function visibleCalls(root: AstNode) {
     if (
       isAgentCall(node) ||
       isToolCall(node) ||
+      isFlowCall(node) ||
       ["memo", "checkpoint"].includes(callName(node) ?? "")
     )
       calls.push({ call: node, ancestors });
@@ -486,6 +500,21 @@ export function buildFlowGraph(source: string): FlowGraph {
         subtitle: primitive === "memo" ? "持久化结果" : "等待人工输入",
         line: call.loc?.start.line,
         prompt: sourceText(source, objectProperty(config, "prompt")),
+      };
+    }
+    if (isFlowCall(call)) {
+      const id =
+        literal(objectProperty(config, "id")) ?? `line-${call.loc?.start.line}`;
+      const target = literal(objectProperty(config, "flow"));
+      return {
+        id: uniqueId([...scopePath, String(id)].join("/")),
+        kind: "flow",
+        label: String(literal(objectProperty(config, "label")) ?? id),
+        subtitle: typeof target === "string" ? target : "嵌套工作流",
+        prompt: sourceText(source, objectProperty(config, "input")),
+        binding,
+        line: call.loc?.start.line,
+        parallel: ancestors.some(isPromiseAll),
       };
     }
     if (isAgentCall(call)) {

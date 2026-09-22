@@ -51,11 +51,13 @@ function flow(
     id: "test-flow",
     title: "测试 Flow",
     description: "",
+    service: false,
     sourceHash: hash(),
     inputSchema: z.object({ task: z.string().min(1) }),
     outputSchema: z.object({ report: z.string() }),
     concurrency: 2,
     agentTimeoutMs: 1_000,
+    capabilities: [],
     run: (ctx, input) =>
       ctx.sequence({ id: "main" }, (scope) => run(scope, input)),
     ...options,

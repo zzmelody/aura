@@ -407,11 +407,13 @@ async function setup(
     id: "test",
     title: "Test",
     description: "",
+    service: false,
     sourceHash: hash,
     inputSchema: z.object({}),
     outputSchema: z.json(),
     concurrency: options.concurrency ?? 2,
     agentTimeoutMs: 1000,
+    capabilities: [],
     run: (ctx) => ctx.sequence({ id: "main" }, run),
   };
   let currentAction = options.action ?? action;

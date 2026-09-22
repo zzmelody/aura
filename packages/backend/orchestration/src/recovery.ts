@@ -39,6 +39,10 @@ export async function recoverStep(
   if (step.kind === "memo")
     return recovered("queued", "memo 在提交前中断，将重新计算。");
   if (step.kind === "checkpoint") return { ...step, status: "waiting_input" };
+  if (step.kind === "flow")
+    return recovered("queued", "子 Flow 调用在提交前中断，将认领原子 Run。", {
+      nextAttemptAt: undefined,
+    });
   if (step.kind === "action") {
     if (step.recovery !== "idempotent")
       return recovered("unknown", "Action 执行期间中断，外部结果未知。");
@@ -80,6 +84,7 @@ export async function recoverRun(
         (step.status === "running" &&
           step.kind !== "memo" &&
           step.kind !== "checkpoint" &&
+          step.kind !== "flow" &&
           (!step.attempts?.length ||
             (step.kind !== "action" && !step.requestId))),
     )

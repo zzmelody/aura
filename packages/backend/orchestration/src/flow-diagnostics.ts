@@ -63,7 +63,7 @@ export function validateFlowSource(
         !options.allowRootOperations &&
         !shadowed &&
         object === context &&
-        ["agent", "action", "memo", "checkpoint", "parallel"].includes(
+        ["agent", "action", "flow", "memo", "checkpoint", "parallel"].includes(
           String(property),
         )
       )

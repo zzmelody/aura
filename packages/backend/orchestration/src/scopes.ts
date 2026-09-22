@@ -13,6 +13,10 @@ export interface ScopeOperations {
     path: string[],
     request: Parameters<FlowScope["action"]>[0],
   ): ReturnType<FlowScope["action"]>;
+  flow(
+    path: string[],
+    request: Parameters<FlowScope["flow"]>[0],
+  ): ReturnType<FlowScope["flow"]>;
   memo(
     path: string[],
     request: Parameters<FlowScope["memo"]>[0],
@@ -126,6 +130,8 @@ class Scope {
         this.call(request.id, () => this.ops.agent(this.path, request)),
       action: (request: Parameters<FlowScope["action"]>[0]) =>
         this.call(request.id, () => this.ops.action(this.path, request)),
+      flow: (request: Parameters<FlowScope["flow"]>[0]) =>
+        this.call(request.id, () => this.ops.flow(this.path, request)),
       memo: (request: Parameters<FlowScope["memo"]>[0]) =>
         this.call(request.id, () => this.ops.memo(this.path, request)),
       checkpoint: (request: Parameters<FlowScope["checkpoint"]>[0]) =>
@@ -146,7 +152,14 @@ export async function runScoped<T>(
   const root = new Scope(ops, [], false);
   return root.run((scope) => {
     const context: FlowContext = { ...ops.context, sequence: scope.sequence };
-    for (const name of ["agent", "action", "memo", "checkpoint", "parallel"])
+    for (const name of [
+      "agent",
+      "action",
+      "flow",
+      "memo",
+      "checkpoint",
+      "parallel",
+    ])
       Object.defineProperty(context, name, {
         get() {
           const error = new FlowError(

@@ -53,24 +53,47 @@ export default defineFlow({
 
 根 `ctx` 只暴露 `runId`、`mode`、`signal` 和 `sequence({id}, callback)`。作用域回调收到的 `flow` 还提供以下调用：
 
-| 调用                                                                                                         | 返回值 / 语义                                                                           |
-| ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `agent({id,label,preset,prompt,actions?,retry?,model?,reasoningEffort?,maxTokens?,temperature?,timeoutMs?})` | `{stepId,sessionId,output:string,attempt,recovered}`；每个 attempt 使用独立 DSH session |
-| `action({id,label?,action,input,retry?})`                                                                    | `{stepId,actionId,output,attempt,recovered}`                                            |
-| `sequence({id}, callback)`                                                                                   | 串行子作用域，返回 callback 的结果                                                      |
-| `parallel({id,branches:{name: callback}})`                                                                   | 每个具名分支是独立串行作用域，返回同键结果对象，等待所有分支结束后汇合                  |
-| `memo({id,label?,schema,compute})`                                                                           | 保存 schema 校验后的 JSON 结果；完成后重放不会调用 compute                              |
-| `checkpoint({id,label?,prompt,schema})`                                                                      | 持久化输入要求，等待人工答案，重放返回已校验的答案                                      |
+| 调用                                                                                                                 | 返回值 / 语义                                                                           |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `agent({id,label,preset,prompt,images?,actions?,retry?,model?,reasoningEffort?,maxTokens?,temperature?,timeoutMs?})` | `{stepId,sessionId,output:string,attempt,recovered}`；每个 attempt 使用独立 DSH session |
+| `action({id,label?,action,input,retry?})`                                                                            | `{stepId,actionId,output,attempt,recovered}`                                            |
+| `flow({id,label?,flow,input})`                                                                                       | `{stepId,runId,flowId,output,recovered}`；启动并等待一个持久化子 Flow                   |
+| `sequence({id}, callback)`                                                                                           | 串行子作用域，返回 callback 的结果                                                      |
+| `parallel({id,branches:{name: callback}})`                                                                           | 每个具名分支是独立串行作用域，返回同键结果对象，等待所有分支结束后汇合                  |
+| `memo({id,label?,schema,compute})`                                                                                   | 保存 schema 校验后的 JSON 结果；完成后重放不会调用 compute                              |
+| `checkpoint({id,label?,prompt,schema})`                                                                              | 持久化输入要求，等待人工答案，重放返回已校验的答案                                      |
 
 所有作用域调用必须 `await` 或 `return`。串行作用域不能重叠调用；并发统一使用 `parallel`。同级 ID 唯一（1–64 个字母、数字、下划线或连字符，首字符为字母/数字）。步骤的 `stepKey` 为作用域路径加本地 ID，例如 `main/analysis/research/call`；返回的 `stepId` 就是这个完整 key，记录中的 `id` 仍为本地 ID。循环须用稳定业务键创建子作用域或步骤 ID。单 Run 最多 64 个 durable 步骤；并发调用数由 `concurrency` 控制（1–4，默认 2）。Graph 无法静态展开的动态分支会显示提示，实际路径见运行记录。
 
 V1 不支持 parallel 分支内的 checkpoint。运行时暂停会退出作用域；即使脚本捕获了内部暂停异常，也不能继续发起关键调用或提交完成结果。
+
+### 嵌套 Flow
+
+`flow.flow()` 接受 catalog 中的规范 Flow ID。引擎先用子 Flow 的 input Schema 校验输入，随后把子 Flow 的版本 hash、插件身份、稳定请求 ID 和 child Run ID 保存到父步骤；子 Run 继续使用自己的 output Schema、步骤、重试和恢复记录。父流程重放时认领原 child Run，不会重复创建或把调用降级为隐藏 Action。子流程的 completed、waiting_input、needs_attention、paused、cancelled 和失败状态会传播到父流程；暂停和取消也沿父子关系向下传递。
+
+子 Run 由等待它的父执行片段内联调度，不占顶层 FIFO 的两个运行槽，因此多个父 Run 不会因等待排队中的子 Run 而死锁。最多嵌套 8 层；调用链中出现相同规范 ID 会在创建子 Run 前以循环调用拒绝。子 Run 不单独出现在顶层运行历史，但可通过完整 Run API 读取，并在父步骤内展开查看和处理 checkpoint。
+
+内置 Flow 可以调用任意已注册 Flow。插件 Flow 可直接调用同一插件命名空间的 Flow；跨插件或调用内置 Flow 时，插件 manifest 必须声明宿主支持的 `aura.flow.invoke` capability。权限按调用方已固定的插件版本检查，目标仍必须使用 catalog 中的规范 ID。
 
 `memo` 可封装时间、随机数和只读计算，必须返回 JSON；在结果落盘前崩溃时允许重新计算。外部写副作用必须通过 Action。普通 JS 代码每次重放都会重新执行，必须保证它基于固定输入、已存档结果和相同代码走出一致路径。重放时同一步骤的请求指纹变化，或完成时存在未访问的历史步骤，都会以 `FLOW_REPLAY_MISMATCH` 中断。
 
 输入、输出、memo 和人工答案使用不超过 256 KiB 的 JSON；Agent 输出为 1–80,000 字符。checkpoint/memo 的 Zod Schema 必须能转换为可存档和重新校验的 JSON Schema；依赖执行代码的 transforms、refine/superRefine、overwrite（包括 trim）等规则会在持久化前明确报错，避免恢复时丢失校验。
 
 ## 每个 Agent 的模型参数
+
+### 受控图片输入
+
+`images` 最多接收 4 个 `FlowImageReference`，包括 DSH 返回的 `attachmentId: "sha256:<digest>"`、`mediaType`、`bytes`、宽高和可选名称/原始尺寸；不接受文件路径、URL 或 base64。运行记录/请求指纹只保存这些引用；Session 边界通过 DSH attachment store 校验并读取实际图片，再传入 Session Controller。还会检查 DSH 自身的数量及消息总字节限制。图片缺失、损坏或模型不支持视觉时失败，不降级为纯文本。`MODEL_DOES_NOT_SUPPORT_IMAGES` 会作为可定位的安全错误保留。当前 demo 模型不支持图片；真实视觉验收需要选择支持图片的运行模式/模型。
+
+Veya 的现有 `world-preview` Action 由 `aura.veya.world-agent` 宿主能力补充 `image` 引用。宿主仅按 native capture ID 从会话绑定的预览目录读取 PNG，校验原始 SHA-256/大小，然后交给 DSH 入库。DSH 可能规范化为 WebP，因此原始 PNG hash 与附件 digest 分别记录。Flow 可调用 `ctx.agent({ images: [capture.image], ... })`；Action render 也可输出 `{type:"image",attachment:capture.image}`。真实 renderer/candidate/frame 是否符合验收由领域 Flow 检查，Aura 不凭文件名判定视觉通过。
+
+### Veya 生成资产交接
+
+Tripo capability 成功后在 `<DSH_HOME>/aura-generated-assets/` 登记不可变 GLB（SHA-256 ID，最多 200 MiB），保留原有路径、task IDs、manifest 和费用字段。若登记失败，仍返回生成结果与 `artifactRegistration`，防止导入失败触发再次付费。`veya.assets.import` 只接受已登记 ID；宿主复制到 Veya 描述符绑定的 exchange root，原生宿主再次验证并调用随产品提供的 Cooker。`veya.cooker.submit` 的声明源也可使用 `artifact://<sha256>`。没有新增任意路径读写 Action。
+
+模型 Action 未指定输出目录时，连接开发 Veya 使用项目 `assets/generated/`，发行版使用其可写创作项目目录；默认根来自可信会话描述符的 `generation_root`。显式用户输出目录及未连接 Veya 的独立生成保留原行为。会话根目录、token 和上游 URL 不交给 Agent 选择。长任务状态有界等待仍复用同一个 canonical 工具，不是新的 Flow/Agent 层；完整付费恢复和额度账本尚未实现。
+
+### 参数优先级
 
 参数优先级为 **步骤选项 > `defineFlow.agentDefaults` > 运行时默认值**；字段为 `undefined` 时继承。旧的 Flow 级 `agentTimeoutMs` 仍有效，但优先级低于 `agentDefaults.timeoutMs` 和步骤 `timeoutMs`。
 
@@ -198,19 +221,71 @@ unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算�
 
 RPC handshake 为 v4。所有 HTTP 写操作携带 UUID `requestId`；命令身份和状态变更在同一个 Run 记录中提交。重试相同命令不会再次执行副作用，返回该 Run 的当前状态；同 requestId 不得改目标或输入。路径中的 `stepKey` 必须 URL 编码，包括 `/`。
 
-| 方法 | `/flows` 下路径                                          | 内容                                         |
-| ---- | -------------------------------------------------------- | -------------------------------------------- |
-| GET  | `/catalog`、`/:flowId/source`                            | catalog 或只读源码                           |
-| POST | `/:flowId/runs`                                          | `{requestId,mode,input}`，202 返回 `{runId}` |
-| GET  | `/runs`、`/runs/:id`                                     | 最近 100 次摘要或完整运行                    |
-| POST | `/runs/:id/pause`、`resume`、`cancel`                    | `{requestId}`                                |
-| POST | `/runs/:id/steps/:stepKey/answer`                        | `{requestId,output}`                         |
-| POST | `/runs/:id/steps/:stepKey/resolve`                       | `{requestId,action:"retry"                   | "submit_output" | "terminate",output?}` |
-| GET  | `/runs/:id/steps/:stepKey/history?attempt=2&beforeSeq=…` | Agent attempt 历史；默认最新 attempt         |
+| 方法 | `/flows` 下路径                                          | 内容                                                                   |
+| ---- | -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| GET  | `/catalog`、`/:flowId/source`                            | catalog 或只读源码                                                     |
+| GET  | `/services`                                              | 已发布的 Flow 服务及其输入输出 Schema                                  |
+| POST | `/:flowId/runs`                                          | 工作台入口：`{requestId,mode,input}`，202 返回 `{runId}`               |
+| POST | `/:flowId/invoke`                                        | 服务入口：`{mode,input,requestId?}`，202 返回运行及状态链接            |
+| GET  | `/runs`、`/runs/:id`                                     | 最近 100 次摘要或完整运行                                              |
+| POST | `/runs/:id/pause`、`resume`、`cancel`                    | `{requestId}`                                                          |
+| POST | `/runs/:id/steps/:stepKey/answer`                        | `{requestId,output}`                                                   |
+| POST | `/runs/:id/steps/:stepKey/resolve`                       | `{requestId,action:"retry" \| "submit_output" \| "terminate",output?}` |
+| GET  | `/runs/:id/steps/:stepKey/history?attempt=2&beforeSeq=…` | Agent attempt 历史；默认最新 attempt                                   |
 
 对应 RPC 为 `start/get/list/pause/resume/cancel/answer/resolve/history/wait`。`wait` 和 `host.invokeFlow()` 等待当前执行片段进入 paused、waiting_input、needs_attention 或终态，并返回 Run；调用方必须检查 status。
 
 `host.invokeAction()` 使用独立 `aura_code_actions` domain，仍保持重启后 active 标记 interrupted、不自动重放的行为，也不新增通用 Action HTTP 执行端点。
+
+### 将 Flow 发布为 HTTP 服务
+
+Flow 必须显式设置 `service: true` 才能通过服务入口调用。未设置的 Flow 仍可在 Aura 工作台运行和被其他 Flow 嵌套调用，但 `/invoke` 会返回 404。
+
+```js
+export default defineFlow({
+  title: "XXX 服务",
+  description: "供其他应用调用的工作流",
+  service: true,
+  input: z.object({ task: z.string().min(1) }),
+  output: z.object({ report: z.string() }),
+  async run(ctx, input) {
+    return ctx.sequence({ id: "main" }, async (flow) => {
+      const result = await flow.agent({
+        id: "generate",
+        label: "生成报告",
+        preset: "researcher-v1",
+        prompt: input.task,
+      });
+      return { report: result.output };
+    });
+  },
+});
+```
+
+服务发现接口会返回已发布 Flow 的 `inputSchema`、`outputSchema` 和 `invokePath`。调用使用 durable 异步协议，HTTP 连接断开不会取消 Flow：
+
+```bash
+curl -i -X POST http://127.0.0.1:4311/flows/xxx/invoke \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 019d09d4-12bb-7a64-957d-e9765441bca8" \
+  -d '{"mode":"codex","input":{"task":"生成报告"}}'
+```
+
+返回 202，并通过 `Location` 和响应体给出状态地址：
+
+```json
+{
+  "runId": "…",
+  "requestId": "019d09d4-12bb-7a64-957d-e9765441bca8",
+  "status": "queued",
+  "links": {
+    "self": "/flows/runs/…",
+    "cancel": "/flows/runs/…/cancel"
+  }
+}
+```
+
+调用方随后读取 `GET /flows/runs/:runId`。终态为 `completed` 时结果在 `output`；`waiting_input` 时根据步骤的 `outputSchema` 调用 `answer`；`needs_attention` 时调用 `resolve`。网络超时后应复用同一个 `Idempotency-Key`，Aura 会返回原 Run，输入或模式不同则返回 409。也可以在 JSON 请求体内传 `requestId`；若头和请求体同时存在，两者必须一致。
 
 ## 实现与部署
 
@@ -221,5 +296,7 @@ Flow/Action 是部署时安装的、拥有完整 Node.js 权限的受信任代�
 Discovery 对旧根 `ctx.agent/action` 和原生 Promise 并发给出行号诊断，Runtime 作用域兜底校验。内置示例、默认草稿和 AI 编写提示已采用结构化 API，旧脚本需迁移。Cordis HMR 跟踪入口和本地依赖，失败保留最后可用版本；监听路径使用 canonical realpath。
 
 ## 验证
+
+Veya capability 还转发 canonical `veya.world.mode/undo/redo`、`veya.draft.create/read/update/discard`、`veya.playtest.begin/end` 与 `veya.character.navigate/act/cancel`。新增 draft/playtest/character 操作仅接受原生 Agent 协议，不回退到旧 ContentAPI。失败时以 `ActionFailure` 保留有界领域错误码；不直接公开可能含本机路径的任意原生错误。该适配器不代表已具备图片附件、资产交接或付费任务的持久恢复能力。
 
 执行 `pnpm --filter @aura/orchestration typecheck`、`pnpm --filter @aura/orchestration test`，再运行 `pnpm run check` 和 Web build。测试覆盖 FIFO、作用域、暂停、checkpoint、retry、未知结果、版本冲突和写盘故障；真实 DSH 测试使用临时目录及本地模拟模型，强制 SIGKILL 验证无工具 Agent 恢复、工具副作用隔离、历史读取和 HMR，不调用付费模型。

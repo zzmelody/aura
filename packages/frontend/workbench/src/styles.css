@@ -941,6 +941,9 @@ textarea {
 .node-tool {
   --node-color: #5598b5;
 }
+.node-flow {
+  --node-color: #8b72d8;
+}
 .node-condition {
   --node-color: #c88642;
 }
@@ -2434,7 +2437,9 @@ textarea {
   line-height: 1.5;
   font-size: 12px;
   outline: none;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 .workflow-input-field > textarea:focus,
 .workflow-input-field > input:not([type="checkbox"]):focus,
@@ -2465,7 +2470,9 @@ textarea {
   background: var(--input);
   border: 1px solid var(--border);
   border-radius: 8px;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 .workflow-path-icon {
   display: grid;
@@ -3306,6 +3313,73 @@ textarea {
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 72%, transparent);
 }
+.workflow-child-run {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--background));
+}
+.workflow-child-run > header {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+.workflow-child-run > header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.workflow-child-run > header strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.workflow-child-run > header small {
+  color: var(--muted);
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+.workflow-child-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--accent);
+  background: var(--soft);
+  border-radius: 7px;
+}
+.workflow-child-run .workflow-run-controls {
+  margin: 0 0 8px 37px;
+}
+.workflow-child-steps {
+  display: grid;
+  gap: 4px;
+  margin-left: 37px;
+}
+.workflow-child-steps details {
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.workflow-child-steps summary {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 2px;
+  color: var(--secondary);
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+}
+.workflow-child-steps summary small {
+  color: var(--muted);
+  font-size: 9px;
+}
+.workflow-child-steps .workflow-step-detail {
+  margin: 0 0 8px;
+  padding: 10px;
+}
 .workflow-stream-output {
   min-width: 0;
   padding-top: 17px;
@@ -3567,7 +3641,9 @@ textarea {
 }
 .site-hero-stats strong {
   color: var(--text);
-  font: 21px/1 "IBM Plex Mono", monospace;
+  font:
+    21px/1 "IBM Plex Mono",
+    monospace;
   letter-spacing: -1px;
 }
 .site-hero-stats i {
@@ -3695,7 +3771,9 @@ textarea {
 }
 .site-project-item-copy small {
   color: var(--muted);
-  font: 9px "IBM Plex Mono", monospace;
+  font:
+    9px "IBM Plex Mono",
+    monospace;
 }
 .site-list-check {
   margin-left: auto;
@@ -3729,7 +3807,11 @@ textarea {
   flex-direction: column;
   padding: 26px 28px 16px;
   background:
-    radial-gradient(circle at 86% 5%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 32%),
+    radial-gradient(
+      circle at 86% 5%,
+      color-mix(in srgb, var(--accent) 8%, transparent),
+      transparent 32%
+    ),
     var(--surface);
 }
 .site-detail-heading {
@@ -3766,7 +3848,9 @@ textarea {
   max-width: 520px;
   overflow: hidden;
   color: var(--muted);
-  font: 10px "IBM Plex Mono", monospace;
+  font:
+    10px "IBM Plex Mono",
+    monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3815,7 +3899,9 @@ textarea {
   margin-top: auto;
   padding-top: 18px;
   color: var(--muted);
-  font: 9px "IBM Plex Mono", monospace;
+  font:
+    9px "IBM Plex Mono",
+    monospace;
 }
 .site-detail-footer span {
   display: inline-flex;

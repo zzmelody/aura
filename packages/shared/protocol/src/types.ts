@@ -145,6 +145,8 @@ export interface FlowCatalogEntry {
   inputSchema?: JsonValue;
   outputSchema?: JsonValue;
   agentDefaults?: FlowAgentOptions;
+  /** Explicit opt-in for invocation by external HTTP service clients. */
+  service?: boolean;
   plugin?: AuraPluginIdentity;
   error?: string;
 }
@@ -220,8 +222,31 @@ export interface FlowCheckpointStep extends FlowStepBase {
   outputSchema: JsonValue;
   output?: JsonValue;
 }
+export interface FlowChildStep extends FlowStepBase {
+  kind: "flow";
+  /** Canonical registry id of the pinned child Flow revision. */
+  flowId: string;
+  sourceHash: string;
+  plugin?: AuraPluginIdentity;
+  input: JsonValue;
+  outputSchema: JsonValue;
+  /** Stable idempotency identity used to create or reclaim the child Run. */
+  childRequestId: string;
+  childRunId?: string;
+  requestInputHash: string;
+  output?: JsonValue;
+}
 export type FlowStep =
-  FlowAgentStep | FlowActionStep | FlowMemoStep | FlowCheckpointStep;
+  | FlowAgentStep
+  | FlowActionStep
+  | FlowMemoStep
+  | FlowCheckpointStep
+  | FlowChildStep;
+
+export interface FlowParentReference {
+  runId: string;
+  stepKey: string;
+}
 
 export interface ActionRun {
   id: string;
@@ -270,6 +295,10 @@ export interface FlowRun {
     status: FlowRunPhase;
     at: number;
   }[];
+  /** Present only for an engine-managed nested Flow Run. */
+  parent?: FlowParentReference;
+  /** Canonical Flow ids above this Run, used for cycle and depth checks. */
+  ancestry?: string[];
 }
 export interface FlowRunSummary {
   id: string;

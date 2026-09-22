@@ -42,6 +42,7 @@ const kindMeta: Record<
   input: { eyebrow: "INPUT", type: "流程入口", aria: "输入节点" },
   agent: { eyebrow: "AGENT", type: "Agent 调用", aria: "Agent 节点" },
   tool: { eyebrow: "TOOL", type: "工具调用", aria: "工具节点" },
+  flow: { eyebrow: "FLOW", type: "子工作流", aria: "子工作流节点" },
   scope: { eyebrow: "SCOPE", type: "结构化作用域", aria: "作用域节点" },
   memo: { eyebrow: "MEMO", type: "持久化结果", aria: "存档节点" },
   checkpoint: { eyebrow: "CHECKPOINT", type: "人工输入", aria: "人工断点节点" },
@@ -54,6 +55,7 @@ function NodeIcon({ kind }: { kind: FlowGraphNode["kind"] }) {
   if (kind === "input") return <CirclePlay size={16} />;
   if (kind === "output") return <FileOutput size={16} />;
   if (kind === "tool") return <Wrench size={16} />;
+  if (kind === "flow") return <GitFork size={16} />;
   if (kind === "condition") return <GitBranch size={16} />;
   if (kind === "loop") return <Repeat2 size={16} />;
   return <Bot size={16} />;

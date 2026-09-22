@@ -33,6 +33,8 @@ export const startSchema = z
     flowId: contributionIdSchema,
     input: z.unknown(),
     mode: z.enum(["demo", "codex"]),
+    /** Internal HTTP-boundary guard; callers cannot publish an unlisted Flow. */
+    serviceOnly: z.boolean().optional(),
   })
   .strict();
 
@@ -58,6 +60,28 @@ export const agentConfigSchema = z
   })
   .strict();
 
+export const flowImageSchema = z
+  .object({
+    attachmentId: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+    mediaType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),
+    bytes: z
+      .number()
+      .int()
+      .positive()
+      .max(32 * 1024 * 1024),
+    width: z.number().int().positive().max(16384),
+    height: z.number().int().positive().max(16384),
+    name: z.string().max(200).optional(),
+    originalDimensions: z
+      .object({
+        width: z.number().int().positive(),
+        height: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 export const agentRequestSchema = z
   .object({
     ...agentOptionFields,
@@ -65,6 +89,7 @@ export const agentRequestSchema = z
     label: z.string().trim().min(1).max(100),
     preset: flowIdSchema,
     prompt: text,
+    images: z.array(flowImageSchema).max(4).optional(),
     actions: z.array(contributionIdSchema).max(64).default([]),
     retry: retrySchema.optional(),
   })
@@ -171,6 +196,19 @@ export const stepSchema = z.union([
     outputSchema: z.json(),
     output: z.json().optional(),
   }),
+  z.object({
+    ...stepBase,
+    kind: z.literal("flow"),
+    flowId: contributionIdSchema,
+    sourceHash: z.string().length(64),
+    plugin: pluginIdentitySchema.optional(),
+    input: z.json(),
+    outputSchema: z.json(),
+    childRequestId: z.uuid(),
+    childRunId: z.uuid().optional(),
+    requestInputHash: z.string().length(64),
+    output: z.json().optional(),
+  }),
 ]);
 
 export const actionRequestSchema = z
@@ -180,6 +218,15 @@ export const actionRequestSchema = z
     action: contributionIdSchema,
     input: z.unknown(),
     retry: retrySchema.optional(),
+  })
+  .strict();
+
+export const flowRequestSchema = z
+  .object({
+    id: flowIdSchema,
+    label: z.string().trim().min(1).max(100).optional(),
+    flow: contributionIdSchema,
+    input: z.unknown(),
   })
   .strict();
 
@@ -242,6 +289,13 @@ export const runSchema = z.object({
   steps: z.array(stepSchema),
   output: z.json().optional(),
   error: z.string().optional(),
+  parent: z
+    .object({
+      runId: z.uuid(),
+      stepKey: z.string().min(1),
+    })
+    .optional(),
+  ancestry: z.array(contributionIdSchema).max(8).optional(),
 });
 
 export const active = (status: string) =>

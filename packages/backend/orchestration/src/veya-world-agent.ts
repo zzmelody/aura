@@ -1,12 +1,38 @@
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { isAbsolute, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import type { Context } from "@deepseek-ai/cordis";
+import type {} from "@deepseek-ai/dsh-api-session-controller";
+import { GeneratedArtifacts, readBoundedFile } from "./generated-artifacts.ts";
 import type { JsonValue } from "@aura/protocol/types";
 import type { AuraCapabilityClient } from "./action-api.ts";
+import { ActionFailure } from "./action-api.ts";
 
 export const VEYA_WORLD_AGENT_CAPABILITY = "aura.veya.world-agent";
 
 type Operation = { method: "GET" | "POST"; path?: string; tool?: string };
 
 const operations = new Map<string, Operation>([
+  ["veya.assets.import", { method: "POST", tool: "veya.assets.import" }],
+  ...["mode", "undo", "redo"].map((name): [string, Operation] => [
+    `veya.world.${name}`,
+    { method: "POST", path: `/v2/worlds/${name}`, tool: `veya.world.${name}` },
+  ]),
+  ...[
+    "draft.create",
+    "draft.read",
+    "draft.update",
+    "draft.discard",
+    "playtest.begin",
+    "playtest.end",
+    "character.navigate",
+    "character.act",
+    "character.cancel",
+  ].map((name): [string, Operation] => [
+    `veya.${name}`,
+    { method: "POST", tool: `veya.${name}` },
+  ]),
   ["health", { method: "GET", path: "/v1/health" }],
   ["veya.system.context", { method: "POST", tool: "veya.system.context" }],
   [
@@ -88,6 +114,9 @@ interface SessionDescriptor {
   baseUrl: string;
   token: string;
   toolsProtocol?: "veya-agent-tools/1";
+  exchangeRoot?: string;
+  previewRoot?: string;
+  generationRoot?: string;
 }
 
 type Fetch = typeof fetch;
@@ -133,6 +162,18 @@ function descriptor(value: unknown): SessionDescriptor {
   return {
     baseUrl: url.origin,
     token: source.token,
+    ...(typeof source.generation_root === "string" &&
+    isAbsolute(source.generation_root)
+      ? { generationRoot: source.generation_root }
+      : {}),
+    ...(typeof source.exchange_root === "string" &&
+    isAbsolute(source.exchange_root)
+      ? { exchangeRoot: source.exchange_root }
+      : {}),
+    ...(typeof source.preview_root === "string" &&
+    isAbsolute(source.preview_root)
+      ? { previewRoot: source.preview_root }
+      : {}),
     ...(source.tools_protocol === "veya-agent-tools/1"
       ? { toolsProtocol: source.tools_protocol }
       : {}),
@@ -149,10 +190,22 @@ function responseObject(value: unknown): Record<string, JsonValue> {
 export class VeyaWorldAgentCapability implements AuraCapabilityClient {
   readonly sessionPath: string;
   readonly request: Fetch;
+  readonly media?: {
+    artifacts: GeneratedArtifacts;
+    attachments: Pick<Context["attachments"], "saveImage">;
+  };
 
-  constructor(sessionPath: string, request: Fetch = fetch) {
+  constructor(
+    sessionPath: string,
+    request: Fetch = fetch,
+    media?: {
+      artifacts: GeneratedArtifacts;
+      attachments: Pick<Context["attachments"], "saveImage">;
+    },
+  ) {
     this.sessionPath = sessionPath;
     this.request = request;
+    this.media = media;
   }
 
   private async session(): Promise<SessionDescriptor> {
@@ -181,13 +234,110 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
     input: JsonValue,
     signal: AbortSignal,
   ): Promise<JsonValue> {
+    const session = await this.session();
+    if (capability === VEYA_WORLD_AGENT_CAPABILITY && this.media) {
+      const body = object(input);
+      const ids: unknown[] =
+        operation === "veya.assets.import" ? [body.artifact_id] : [];
+      if (operation === "veya.cooker.submit" && Array.isArray(body.inputs))
+        for (const item of body.inputs) {
+          if (
+            item &&
+            typeof item === "object" &&
+            !Array.isArray(item) &&
+            typeof item.source === "string" &&
+            item.source.startsWith("artifact://")
+          )
+            ids.push(item.source.slice("artifact://".length));
+        }
+      if (ids.length && !session.exchangeRoot)
+        throw new ActionFailure(
+          "asset_exchange_unavailable: Update Veya to support managed asset imports.",
+        );
+      for (const id of ids)
+        await this.media.artifacts.stageModel(
+          id,
+          session.exchangeRoot!,
+          signal,
+        );
+    }
+    const deadline = Date.now() + 10_000;
+    let data: JsonValue;
+    for (;;) {
+      try {
+        data = await this.invokeOnce(
+          capability,
+          operation,
+          input,
+          signal,
+          session,
+        );
+        break;
+      } catch (error) {
+        if (
+          operation !== "veya.preview.capture" ||
+          !(error instanceof ActionFailure) ||
+          !error.message.startsWith("Veya preview_not_ready ") ||
+          Date.now() >= deadline
+        )
+          throw error;
+        await delay(100, undefined, { signal });
+      }
+    }
+    if (operation === "veya.preview.capture" && this.media) {
+      const capture = object(data);
+      if (
+        !session.previewRoot ||
+        typeof capture.capture_id !== "string" ||
+        !/^[a-f0-9]{32}$/u.test(capture.capture_id) ||
+        capture.mime_type !== "image/png"
+      )
+        throw new ActionFailure(
+          "invalid_preview_reference: Veya did not return a managed PNG reference.",
+        );
+      // Never read the response's screenshot path. Derive the path solely from
+      // the bound root and opaque capture ID, then verify the exact native bytes.
+      const bytes = await readBoundedFile(
+        join(session.previewRoot, `${capture.capture_id}.png`),
+        32 * 1024 * 1024,
+        signal,
+        session.previewRoot,
+      );
+      if (
+        bytes.length !== capture.bytes ||
+        createHash("sha256").update(bytes).digest("hex") !== capture.sha256
+      )
+        throw new ActionFailure(
+          "preview_hash_mismatch: Screenshot bytes changed before attachment admission.",
+        );
+      const image = await this.media.attachments.saveImage({
+        data: bytes,
+        mediaType: "image/png",
+        name: `veya-${capture.capture_id}.png`,
+      });
+      return { ...capture, image: image as unknown as JsonValue };
+    }
+    return data;
+  }
+
+  /** Trusted producer configuration; not an Agent filesystem operation. */
+  async generatedOutputDirectory() {
+    return (await this.session()).generationRoot;
+  }
+
+  private async invokeOnce(
+    capability: string,
+    operation: string,
+    input: JsonValue,
+    signal: AbortSignal,
+    session: SessionDescriptor,
+  ): Promise<JsonValue> {
     if (capability !== VEYA_WORLD_AGENT_CAPABILITY)
       throw new Error(`Aura host capability is unavailable: ${capability}`);
     const route = operations.get(operation);
     if (!route)
       throw new Error(`Unsupported Veya World Agent operation: ${operation}`);
     const body = object(input);
-    const session = await this.session();
     const useTools = Boolean(session?.toolsProtocol && route.tool);
     if (!useTools && !route.path)
       throw new Error(
@@ -241,10 +391,17 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
       return envelope.data ?? null;
     const code =
       typeof envelope.error === "string" ? envelope.error : "request_failed";
-    const message =
-      typeof envelope.message === "string"
-        ? envelope.message
-        : `HTTP ${response.status}`;
-    throw new Error(`Veya World Agent ${code}: ${message}`);
+    // Only bounded domain codes cross the tool boundary. Native importer/VM
+    // messages can contain private paths; never forward those verbatim.
+    const safeCode = /^[a-z][a-z0-9_]{0,95}$/u.test(code)
+      ? code
+      : "validation_failed";
+    const explanation =
+      safeCode === "revision_conflict"
+        ? " The world changed; read its latest revision before editing."
+        : "";
+    throw new ActionFailure(
+      `Veya ${safeCode} (HTTP ${response.status}).${explanation}`,
+    );
   }
 }

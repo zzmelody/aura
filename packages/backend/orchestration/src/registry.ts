@@ -22,6 +22,7 @@ export interface LoadedFlow {
   id: string;
   title: string;
   description: string;
+  service: boolean;
   sourceHash: string;
   inputSchema: z.ZodType;
   outputSchema: z.ZodType;
@@ -29,6 +30,7 @@ export interface LoadedFlow {
   agentTimeoutMs: number;
   agentDefaults?: FlowAgentOptions;
   plugin?: AuraPluginIdentity;
+  capabilities: readonly string[];
   run: FlowDefinition["run"];
 }
 
@@ -36,6 +38,7 @@ const definitionSchema = z
   .object({
     title: z.string().trim().min(1).max(100),
     description: z.string().trim().max(500).default(""),
+    service: z.boolean().default(false),
     input: z.custom<z.ZodType>((value) => value instanceof z.ZodType, {
       error: "input 必须是 Zod schema",
     }),
@@ -101,6 +104,7 @@ export class FlowRegistry {
       id,
       title: definition.title,
       description: definition.description,
+      service: definition.service,
       sourceHash,
       inputSchema: definition.input,
       outputSchema: definition.output,
@@ -108,6 +112,7 @@ export class FlowRegistry {
       agentTimeoutMs: definition.agentTimeoutMs,
       agentDefaults: definition.agentDefaults,
       plugin: config.plugin,
+      capabilities: Object.freeze([...(config.capabilities ?? [])]),
       run: definition.run,
     });
     this.problems.delete(id);
@@ -167,6 +172,7 @@ export class FlowRegistry {
       sourceHash: flow.sourceHash,
       inputSchema: z.toJSONSchema(flow.inputSchema) as JsonValue,
       outputSchema: z.toJSONSchema(flow.outputSchema) as JsonValue,
+      service: flow.service,
       ...(flow.agentDefaults ? { agentDefaults: flow.agentDefaults } : {}),
       ...(flow.plugin ? { plugin: flow.plugin } : {}),
       ...(this.warnings.has(flow.id)

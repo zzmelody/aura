@@ -21,6 +21,7 @@ import {
 } from "./veya-world-agent.ts";
 import { AuraCapabilityRouter } from "./capability-router.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
+import { GeneratedArtifacts } from "./generated-artifacts.ts";
 import { ActionRuns } from "./action-runs.ts";
 import { LocalAIManager } from "./local-ai/manager.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
@@ -202,6 +203,7 @@ export const inject = [
   "tools",
   "llm",
   "subprocess",
+  "attachments",
 ];
 
 function contributionRoots(
@@ -273,11 +275,19 @@ export async function apply(ctx: Context) {
   ctx.effect(() => () => localAI.close(), "aura-local-ai.lifecycle");
   const worldAgentSessionPath = process.env.AURA_VEYA_WORLD_AGENT_SESSION_PATH;
   const capabilityRoutes = [];
-  if (worldAgentSessionPath)
-    capabilityRoutes.push([
-      VEYA_WORLD_AGENT_CAPABILITY,
-      new VeyaWorldAgentCapability(worldAgentSessionPath),
-    ] as const);
+  const artifacts = new GeneratedArtifacts(
+    resolve(
+      process.env.DSH_HOME ?? process.env.AURA_FLOW_CWD ?? process.cwd(),
+      "aura-generated-assets",
+    ),
+  );
+  const veya = worldAgentSessionPath
+    ? new VeyaWorldAgentCapability(worldAgentSessionPath, fetch, {
+        artifacts,
+        attachments: ctx.attachments,
+      })
+    : undefined;
+  if (veya) capabilityRoutes.push([VEYA_WORLD_AGENT_CAPABILITY, veya] as const);
   const tripoCredentialPath = process.env.AURA_TRIPO_CREDENTIAL_PATH;
   if (tripoCredentialPath) {
     const region = process.env.AURA_TRIPO_REGION;
@@ -290,7 +300,11 @@ export async function apply(ctx: Context) {
     });
     capabilityRoutes.push([
       TRIPO_GAME_ASSET_CAPABILITY,
-      new TripoGameAssetCapability(tripo),
+      new TripoGameAssetCapability(
+        tripo,
+        artifacts,
+        veya ? () => veya.generatedOutputDirectory() : undefined,
+      ),
     ] as const);
   }
   const auraCapabilities = capabilityRoutes.length

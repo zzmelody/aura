@@ -5,6 +5,7 @@ import {
   CircleAlert,
   Clock3,
   GitBranch,
+  GitFork,
   LoaderCircle,
   RefreshCw,
   Square,
@@ -31,6 +32,85 @@ import {
   workflowApi,
   workflowPhaseLabels,
 } from "../workflowSessions";
+
+function NestedFlowRun({
+  endpoint,
+  runId,
+}: {
+  endpoint: string;
+  runId: string;
+}) {
+  const [run, setRun] = useState<FlowRun>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const abort = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const next = await workflowApi<FlowRun>(
+          endpoint,
+          `/runs/${encodeURIComponent(runId)}`,
+          undefined,
+          abort.signal,
+        );
+        if (abort.signal.aborted) return;
+        setRun(next);
+        setError("");
+        if (isWorkflowOpen(next.status)) timer = setTimeout(poll, 1200);
+      } catch (cause) {
+        if (!abort.signal.aborted)
+          setError(cause instanceof Error ? cause.message : "子工作流读取失败");
+      }
+    }
+    void poll();
+    return () => {
+      abort.abort();
+      clearTimeout(timer);
+    };
+  }, [endpoint, runId]);
+  if (error) return <p className="error">{error}</p>;
+  if (!run) return <p className="muted">正在读取子工作流…</p>;
+  return (
+    <section
+      className="workflow-child-run"
+      aria-label={`子工作流 ${run.flow.title}`}
+    >
+      <header>
+        <span className="workflow-child-icon" aria-hidden="true">
+          <GitFork size={14} />
+        </span>
+        <div>
+          <strong>{run.flow.title}</strong>
+          <small>{run.flow.id}</small>
+        </div>
+        <span className={`workflow-phase phase-${run.status}`}>
+          {workflowPhaseLabels[run.status]}
+        </span>
+      </header>
+      <WorkflowControls
+        endpoint={endpoint}
+        run={run}
+        receive={(_endpoint, next) => setRun(next)}
+      />
+      {run.steps.length ? (
+        <div className="workflow-child-steps">
+          {run.steps.map((step) => (
+            <details key={step.stepKey ?? step.id}>
+              <summary>
+                <StepStateIcon status={step.status} />
+                <span>{step.label}</span>
+                <small>{workflowPhaseLabels[step.status]}</small>
+              </summary>
+              <StepHistory endpoint={endpoint} runId={run.id} step={step} />
+            </details>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">尚未创建执行步骤</p>
+      )}
+    </section>
+  );
+}
 
 function StepHistory({
   endpoint,
@@ -146,20 +226,41 @@ function StepHistory({
         </p>
       ))}
       {step.kind && step.kind !== "agent" ? (
-        <>
-          {step.kind === "action" ? (
-            <>
-              <h4>工具输入</h4>
-              <WorkflowData value={step.input} />
-            </>
-          ) : null}
-          <h4>{step.kind === "checkpoint" ? "已提交答案" : "步骤输出"}</h4>
-          {step.output === undefined ? (
-            <p className="muted">等待输出</p>
-          ) : (
-            <WorkflowData value={step.output} />
-          )}
-        </>
+        step.kind === "flow" ? (
+          <>
+            <h4>子工作流输入</h4>
+            <WorkflowData value={step.input} />
+            <p className="muted">
+              固定版本 {step.sourceHash.slice(0, 10)} · {step.flowId}
+            </p>
+            {step.childRunId ? (
+              <NestedFlowRun endpoint={endpoint} runId={step.childRunId} />
+            ) : (
+              <p className="muted">正在创建子工作流运行…</p>
+            )}
+            {step.output !== undefined ? (
+              <>
+                <h4>子工作流输出</h4>
+                <WorkflowData value={step.output} />
+              </>
+            ) : null}
+          </>
+        ) : (
+          <>
+            {step.kind === "action" ? (
+              <>
+                <h4>工具输入</h4>
+                <WorkflowData value={step.input} />
+              </>
+            ) : null}
+            <h4>{step.kind === "checkpoint" ? "已提交答案" : "步骤输出"}</h4>
+            {step.output === undefined ? (
+              <p className="muted">等待输出</p>
+            ) : (
+              <WorkflowData value={step.output} />
+            )}
+          </>
+        )
       ) : (
         <>
           <div className="workflow-history-actions">
@@ -296,7 +397,10 @@ export function WorkflowRunResult({
       data-run-id={id}
       tabIndex={-1}
     >
-      <section className="workflow-message workflow-message-user" aria-label="本次输入">
+      <section
+        className="workflow-message workflow-message-user"
+        aria-label="本次输入"
+      >
         <div className="workflow-user-bubble">
           {inputValue === undefined ? (
             <p className="workflow-value-empty">正在读取本次输入…</p>
@@ -367,7 +471,11 @@ export function WorkflowRunResult({
           </div>
         ) : null}
         {cached ? (
-          <WorkflowControls endpoint={endpoint} run={cached} receive={receive} />
+          <WorkflowControls
+            endpoint={endpoint}
+            run={cached}
+            receive={receive}
+          />
         ) : null}
         <div className="workflow-stream" aria-live={active ? "polite" : "off"}>
           {cached?.steps.length ? (

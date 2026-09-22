@@ -60,6 +60,7 @@ export interface SessionPort {
   execute(
     step: FlowAgentStep & {
       input: string;
+      images?: import("./flow-api.ts").FlowImageReference[];
       mode: "demo" | "codex";
       timeoutMs: number;
       signal: AbortSignal;

@@ -1,7 +1,12 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
-import type { ActionRun, FlowMode, FlowRun } from "@aura/protocol/types";
+import type {
+  ActionRun,
+  FlowCatalog,
+  FlowMode,
+  FlowRun,
+} from "@aura/protocol/types";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -282,6 +287,17 @@ export function createFlowApp(host: Pick<OrchestrationHost, "request">) {
   app.get("/catalog", async (context) =>
     context.json(await host.request("catalog")),
   );
+  app.get("/services", async (context) => {
+    const catalog = await host.request<FlowCatalog>("catalog");
+    return context.json({
+      flows: catalog.flows
+        .filter((flow) => flow.available && flow.service)
+        .map((flow) => ({
+          ...flow,
+          invokePath: `/flows/${encodeURIComponent(flow.id)}/invoke`,
+        })),
+    });
+  });
   app.get("/runs", async (context) => context.json(await host.request("list")));
   app.get("/:flowId/source", async (context) =>
     context.json(
@@ -329,6 +345,37 @@ export function createFlowApp(host: Pick<OrchestrationHost, "request">) {
       flowId: context.req.param("flowId"),
     });
     return context.json({ runId: run.id }, 202);
+  });
+  app.post("/:flowId/invoke", async (context) => {
+    const body = await readBody(context);
+    const headerRequestId = context.req.header("Idempotency-Key")?.trim();
+    if (
+      headerRequestId &&
+      typeof body.requestId === "string" &&
+      body.requestId !== headerRequestId
+    )
+      throw new FlowError("Idempotency-Key 与请求体 requestId 必须一致。", 409);
+    const requestId = headerRequestId || body.requestId || randomUUID();
+    const run = await host.request<FlowRun>("start", {
+      ...body,
+      requestId,
+      flowId: context.req.param("flowId"),
+      serviceOnly: true,
+    });
+    const self = `/flows/runs/${encodeURIComponent(run.id)}`;
+    context.header("Location", self);
+    return context.json(
+      {
+        runId: run.id,
+        requestId: run.requestId,
+        status: run.status,
+        links: {
+          self,
+          cancel: `${self}/cancel`,
+        },
+      },
+      202,
+    );
   });
 
   app.all("*", (context) => context.json({ message: "编排接口不存在。" }, 404));

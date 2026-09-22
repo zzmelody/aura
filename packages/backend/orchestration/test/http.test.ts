@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { createFlowApp, type OrchestrationHost } from "../src/index.ts";
 import { FlowError } from "../src/schema.ts";
@@ -12,7 +13,32 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
         throw new FlowError("流程运行不存在。", 404);
       if ("id" in params && params.id === "private")
         throw new Error("secret provider value");
-      if (method === "start") return { id: "started-run" } as T;
+      if (method === "catalog")
+        return {
+          flows: [
+            {
+              id: "public-flow",
+              title: "Public",
+              description: "",
+              available: true,
+              service: true,
+            },
+            {
+              id: "internal-flow",
+              title: "Internal",
+              description: "",
+              available: true,
+              service: false,
+            },
+          ],
+          presets: [],
+        } as T;
+      if (method === "start")
+        return {
+          id: "started-run",
+          requestId: (params as { requestId: string }).requestId,
+          status: "queued",
+        } as T;
       return { method, params } as T;
     },
   };
@@ -21,9 +47,23 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
   const catalog = await app.request("/catalog");
   assert.equal(catalog.headers.get("cache-control"), "no-store");
   assert.equal(
-    ((await catalog.json()) as { method: string }).method,
-    "catalog",
+    ((await catalog.json()) as { flows: unknown[] }).flows.length,
+    2,
   );
+
+  const services = await app.request("/services");
+  assert.deepEqual(await services.json(), {
+    flows: [
+      {
+        id: "public-flow",
+        title: "Public",
+        description: "",
+        available: true,
+        service: true,
+        invokePath: "/flows/public-flow/invoke",
+      },
+    ],
+  });
 
   const started = await app.request("/research-report/runs", {
     method: "POST",
@@ -40,6 +80,11 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
     method: "source",
     params: { id: "research-report" },
   });
+  const servicesFlowSource = await app.request("/services/source");
+  assert.deepEqual(await servicesFlowSource.json(), {
+    method: "source",
+    params: { id: "services" },
+  });
   const pluginSource = await app.request("/example.creative%2Fbrief/source");
   assert.deepEqual(await pluginSource.json(), {
     method: "source",
@@ -54,6 +99,54 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
     input: { task: "x" },
     flowId: "research-report",
   });
+
+  const invocationId = "0876c236-1fc9-44ce-9f4a-e25244cde371";
+  const invoked = await app.request("/public-flow/invoke", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": invocationId,
+    },
+    body: JSON.stringify({ mode: "demo", input: { task: "service" } }),
+  });
+  assert.equal(invoked.status, 202);
+  assert.equal(invoked.headers.get("location"), "/flows/runs/started-run");
+  assert.deepEqual(await invoked.json(), {
+    runId: "started-run",
+    requestId: invocationId,
+    status: "queued",
+    links: {
+      self: "/flows/runs/started-run",
+      cancel: "/flows/runs/started-run/cancel",
+    },
+  });
+  assert.deepEqual(
+    calls.filter(({ method }) => method === "start").at(-1)?.params,
+    {
+      requestId: invocationId,
+      mode: "demo",
+      input: { task: "service" },
+      flowId: "public-flow",
+      serviceOnly: true,
+    },
+  );
+  assert.equal(
+    (
+      await app.request("/public-flow/invoke", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": invocationId,
+        },
+        body: JSON.stringify({
+          requestId: randomUUID(),
+          mode: "demo",
+          input: {},
+        }),
+      })
+    ).status,
+    409,
+  );
 
   const history = await app.request(
     "/runs/run-id/steps/research/history?beforeSeq=10",

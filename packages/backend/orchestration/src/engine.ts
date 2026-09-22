@@ -5,6 +5,7 @@ import type {
   FlowStep,
   FlowCatalog,
   FlowAgentStep,
+  FlowChildStep,
   AuraPluginIdentity,
   AuraPluginStatus,
 } from "@aura/protocol/types";
@@ -30,6 +31,8 @@ import { FlowExecution } from "./execution.ts";
 import { FlowScheduler } from "./scheduler.ts";
 import { recoverRun } from "./recovery.ts";
 import { agentDefaults } from "./agent-config.ts";
+
+const MAX_NESTED_FLOW_DEPTH = 8;
 
 function samePlugin(
   left: LoadedFlow["plugin"] | LoadedAction["plugin"],
@@ -62,6 +65,7 @@ export class FlowEngine {
   readonly running = new Map<string, FlowExecution>();
   private options: EngineOptions;
   private scheduler: FlowScheduler;
+  private nestedTasks = new Map<string, Promise<void>>();
   private revisions = new Map<string, Revision>();
   private pluginEpochs = new Map<string, number>();
   private operations: Promise<unknown> = Promise.resolve();
@@ -83,7 +87,9 @@ export class FlowEngine {
           .map(([, run]) => run)
           .filter(
             (run) =>
-              run.status === "queued" && !this.storageFailures.has(run.id),
+              run.status === "queued" &&
+              !run.parent &&
+              !this.storageFailures.has(run.id),
           )
           .sort(
             (a, b) =>
@@ -121,6 +127,17 @@ export class FlowEngine {
       const recovered = await recoverRun(run, this.options.sessions);
       await this.update(id, () => recovered);
     }
+    for (const [id, run] of this.runs.entries()) {
+      if (!run.parent || terminal(run.status)) continue;
+      const parent = this.runs.get(run.parent.runId);
+      if (parent && !terminal(parent.status)) continue;
+      await this.update(id, (current) => ({
+        ...current,
+        status: "cancelled",
+        finishedAt: Date.now(),
+        error: "父 Flow 已结束，子 Flow 已取消。",
+      }));
+    }
     this.initialized = true;
     this.scheduler.kick();
   }
@@ -140,6 +157,7 @@ export class FlowEngine {
   }
   list() {
     return [...this.runs.entries()]
+      .filter(([, run]) => !run.parent)
       .map(([, run]) => ({
         id: run.id,
         flowId: run.flow.id,
@@ -165,6 +183,16 @@ export class FlowEngine {
     return this.serialize(async () => {
       if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
       const request = parse(startSchema, input);
+      let publishedFlow: LoadedFlow | undefined;
+      if (request.serviceOnly) {
+        await this.options.refreshFlows();
+        publishedFlow = this.options.registry.get(request.flowId);
+        if (!publishedFlow.service)
+          throw new FlowError(
+            `Flow 未发布为 HTTP 服务：${request.flowId}`,
+            404,
+          );
+      }
       const previous = [...this.runs.entries()].find(
         ([, run]) => run.requestId === request.requestId,
       )?.[1];
@@ -178,8 +206,8 @@ export class FlowEngine {
           throw new FlowError("同一请求 ID 不能用于不同输入。", 409);
         return previous;
       }
-      await this.options.refreshFlows();
-      const flow = this.options.registry.get(request.flowId);
+      if (!publishedFlow) await this.options.refreshFlows();
+      const flow = publishedFlow ?? this.options.registry.get(request.flowId);
       const args = parseJson(flow.inputSchema, request.input, "Flow 入参");
       const actions =
         this.options.actions?.registry.snapshot() ??
@@ -225,6 +253,170 @@ export class FlowEngine {
       this.scheduler.kick();
       return run;
     });
+  }
+  private async resolveChild(
+    parentRunId: string,
+    flowId: string,
+    input: unknown,
+  ) {
+    await this.options.refreshFlows();
+    const parent = this.get(parentRunId);
+    const caller = this.revisions.get(parentRunId)?.flow;
+    if (!caller)
+      throw new FlowError("父 Flow 的固定版本不可用，无法启动子 Flow。", 409);
+    const flow = this.options.registry.get(flowId);
+    const sameOwner =
+      Boolean(caller.plugin) && caller.plugin?.id === flow.plugin?.id;
+    if (
+      caller.plugin &&
+      !sameOwner &&
+      !caller.capabilities.includes("aura.flow.invoke")
+    )
+      throw new FlowError(
+        `插件 Flow ${caller.id} 缺少跨插件调用能力 aura.flow.invoke。`,
+        403,
+      );
+    const ancestry = [...(parent.ancestry ?? []), parent.flow.id];
+    if (ancestry.includes(flow.id))
+      throw new FlowError(
+        `检测到 Flow 循环调用：${[...ancestry, flow.id].join(" -> ")}`,
+        409,
+      );
+    if (ancestry.length > MAX_NESTED_FLOW_DEPTH)
+      throw new FlowError(`Flow 嵌套最多 ${MAX_NESTED_FLOW_DEPTH} 层。`, 409);
+    return {
+      id: flow.id,
+      title: flow.title,
+      sourceHash: flow.sourceHash,
+      plugin: flow.plugin,
+      input: parseJson(flow.inputSchema, input, "子 Flow 入参"),
+      outputSchema: jsonValue(
+        JSON.parse(JSON.stringify(z.toJSONSchema(flow.outputSchema))),
+        "子 Flow 出参 Schema",
+      ),
+    };
+  }
+  private startChild(parentRunId: string, step: FlowChildStep) {
+    return this.serialize(async () => {
+      if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
+      const parent = this.get(parentRunId);
+      if (terminal(parent.status))
+        throw new FlowError("父 Flow 已结束，不能再启动子 Flow。", 409);
+      const saved = parent.steps.find(
+        (candidate) => candidate.stepKey === step.stepKey,
+      );
+      if (
+        saved?.kind !== "flow" ||
+        saved.childRequestId !== step.childRequestId
+      )
+        throw new FlowError("父 Flow 步骤与子 Flow 启动请求不一致。", 409);
+      const previous = [...this.runs.entries()].find(
+        ([, run]) => run.requestId === step.childRequestId,
+      )?.[1];
+      if (previous) {
+        if (
+          previous.parent?.runId !== parentRunId ||
+          previous.parent.stepKey !== step.stepKey ||
+          previous.flow.id !== step.flowId ||
+          previous.flow.sourceHash !== step.sourceHash ||
+          previous.requestInputHash !== step.requestInputHash
+        )
+          throw new FlowError("子 Flow 请求 ID 已用于不同调用。", 409);
+        if (saved.childRunId !== previous.id)
+          await this.update(parentRunId, (current) => ({
+            ...current,
+            steps: current.steps.map((candidate) =>
+              candidate.kind === "flow" && candidate.stepKey === step.stepKey
+                ? { ...candidate, childRunId: previous.id }
+                : candidate,
+            ),
+          }));
+        return previous;
+      }
+      await this.options.refreshFlows();
+      const flow = this.options.registry.get(step.flowId);
+      if (
+        flow.sourceHash !== step.sourceHash ||
+        !samePlugin(flow.plugin, step.plugin)
+      )
+        throw new FlowError(
+          `子 Flow ${step.flowId} 的固定版本已不可用，请新建运行。`,
+          409,
+        );
+      const actions =
+        this.options.actions?.registry.snapshot() ??
+        new Map<string, LoadedAction>();
+      const now = Date.now();
+      const run: FlowRun = {
+        id: randomUUID(),
+        requestId: step.childRequestId,
+        flow: {
+          id: flow.id,
+          title: flow.title,
+          description: flow.description,
+          sourceHash: flow.sourceHash,
+          plugin: flow.plugin,
+        },
+        input: step.input,
+        mode: parent.mode,
+        status: "queued",
+        createdAt: now,
+        queuedAt: now,
+        updatedAt: now,
+        steps: [],
+        durableVersion: 1,
+        agentDefaults: agentDefaults(
+          parent.mode,
+          flow.agentDefaults,
+          flow.agentTimeoutMs,
+        ),
+        requestInputHash: step.requestInputHash,
+        actionVersions: [...actions.values()].map(
+          ({ id, sourceHash, plugin }) => ({ id, sourceHash, plugin }),
+        ),
+        parent: { runId: parentRunId, stepKey: step.stepKey! },
+        ancestry: [...(parent.ancestry ?? []), parent.flow.id],
+      };
+      await this.runs.put(run.id, run);
+      await this.update(parentRunId, (current) => ({
+        ...current,
+        steps: current.steps.map((candidate) =>
+          candidate.kind === "flow" && candidate.stepKey === step.stepKey
+            ? { ...candidate, childRunId: run.id }
+            : candidate,
+        ),
+      }));
+      this.revisions.set(run.id, {
+        flow,
+        actions,
+        pluginEpochs: new Map(this.pluginEpochs),
+      });
+      return run;
+    });
+  }
+  private async runChild(id: string): Promise<FlowRun> {
+    let run = this.get(id);
+    if (!run.parent)
+      throw new FlowError("只有嵌套 Flow Run 可以由父 Flow 内联执行。", 409);
+    if (run.status === "paused") {
+      run = await this.update(id, (current) => ({
+        ...current,
+        status: "queued",
+        queuedAt: this.queueTime(),
+        finishedAt: undefined,
+        error: undefined,
+      }));
+    }
+    if (!executable(run.status)) return run;
+    let task = this.nestedTasks.get(id);
+    if (!task) {
+      task = Promise.resolve()
+        .then(() => this.execute(id))
+        .finally(() => this.nestedTasks.delete(id));
+      this.nestedTasks.set(id, task);
+    }
+    await task;
+    return this.get(id);
   }
   private async revision(
     id: string,
@@ -326,6 +518,12 @@ export class FlowEngine {
     const execution = new FlowExecution({
       ...revision,
       ports: this.options,
+      flows: {
+        resolve: (parentRunId, flowId, input) =>
+          this.resolveChild(parentRunId, flowId, input),
+        start: (parentRunId, step) => this.startChild(parentRunId, step),
+        run: (runId) => this.runChild(runId),
+      },
       get: () => this.get(id),
       update: (change) => this.update(id, change),
     });
@@ -346,11 +544,61 @@ export class FlowEngine {
           503,
         );
       if (this.closed) break;
+      if (this.get(id).parent && this.get(id).status === "queued") {
+        await this.runChild(id);
+        continue;
+      }
       const changed = this.scheduler.changed();
       this.scheduler.kick();
       await changed;
     }
     return this.get(id);
+  }
+  private childRunIds(run: FlowRun) {
+    return run.steps.flatMap((step) =>
+      step.kind === "flow" && step.childRunId ? [step.childRunId] : [],
+    );
+  }
+  private async wakeAncestors(child: FlowRun, paused: boolean) {
+    let current = child;
+    while (current.parent) {
+      const parentId = current.parent.runId;
+      const parent = this.get(parentId);
+      if (terminal(parent.status)) break;
+      let pauseExecution = false;
+      const updated = await this.serialize(() =>
+        this.update(parentId, (latest) => {
+          if (terminal(latest.status)) return latest;
+          if (paused) {
+            pauseExecution = this.running.has(parentId);
+            return {
+              ...latest,
+              status:
+                latest.status === "paused"
+                  ? "paused"
+                  : pauseExecution
+                    ? "pausing"
+                    : "paused",
+            };
+          }
+          return {
+            ...latest,
+            status: "queued",
+            queuedAt: this.queueTime(),
+            finishedAt: undefined,
+            error: undefined,
+            steps: latest.steps.map((step) =>
+              step.kind === "flow" && step.childRunId === current.id
+                ? { ...step, status: "queued", error: undefined }
+                : step,
+            ),
+          };
+        }),
+      );
+      if (pauseExecution) this.running.get(parentId)?.pause();
+      current = updated;
+    }
+    this.scheduler.kick();
   }
   async command(
     id: string,
@@ -366,6 +614,7 @@ export class FlowEngine {
     if (request.action && operation !== "resolve")
       throw new FlowError("此操作不接受 action。");
     const bodyHash = fingerprint({ operation, key, ...request });
+    let stateChanged = false;
     const result = await this.serialize(async () => {
       if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
       const current = this.get(id);
@@ -388,8 +637,10 @@ export class FlowEngine {
             requestId: request.requestId,
             fingerprint: bodyHash,
           }))
-        )
+        ) {
+          stateChanged = true;
           return this.get(id);
+        }
       }
       let next = current;
       if (operation === "pause") {
@@ -404,10 +655,13 @@ export class FlowEngine {
               ? "pausing"
               : "paused",
         };
+        stateChanged = current.status !== "paused";
       }
-      if (operation === "resume")
+      if (operation === "resume") {
         next = { ...current, status: "queued", queuedAt: this.queueTime() };
-      if (operation === "cancel")
+        stateChanged = true;
+      }
+      if (operation === "cancel") {
         next = terminal(current.status)
           ? current
           : {
@@ -416,9 +670,16 @@ export class FlowEngine {
               finishedAt: Date.now(),
               error: "Flow 已取消。",
             };
+        stateChanged = !terminal(current.status);
+      }
       if (operation === "answer" || operation === "resolve") {
         const step = current.steps.find((step) => stepKey(step) === key);
         if (!step) throw new FlowError("Flow 步骤不存在。", 404);
+        if (step.kind === "flow")
+          throw new FlowError(
+            "请在 childRunId 对应的子 Flow Run 上处理输入或未知结果。",
+            409,
+          );
         if (
           operation === "answer" &&
           (current.status !== "waiting_input" ||
@@ -491,6 +752,7 @@ export class FlowEngine {
           queuedAt: this.queueTime(),
           finishedAt: request.action === "terminate" ? Date.now() : undefined,
         };
+        stateChanged = true;
       }
       // Step completions may interleave with pause/cancel. Preserve their latest records.
       const updated = await this.update(id, (latest) => {
@@ -531,9 +793,25 @@ export class FlowEngine {
       this.scheduler.kick();
       return updated;
     });
-    if (operation === "cancel")
-      await this.scheduler.running.get(id)?.catch(() => undefined);
-    return operation === "cancel" ? this.get(id) : result;
+    if (stateChanged && (operation === "pause" || operation === "cancel")) {
+      await Promise.all(
+        this.childRunIds(result).map((childId) =>
+          this.command(childId, operation, { requestId: randomUUID() }),
+        ),
+      );
+    }
+    const settled = this.get(id);
+    if (stateChanged && settled.parent)
+      await this.wakeAncestors(settled, operation === "pause");
+    if (operation === "cancel") {
+      await Promise.allSettled(
+        [this.scheduler.running.get(id), this.nestedTasks.get(id)].filter(
+          (task): task is Promise<void> => Boolean(task),
+        ),
+      );
+      return this.get(id);
+    }
+    return result;
   }
   pause(id: string, requestId = randomUUID()) {
     return this.command(id, "pause", { requestId });
@@ -585,5 +863,6 @@ export class FlowEngine {
       execution.abort.abort(new Error("runtime closing"));
     }
     await Promise.allSettled([...this.scheduler.running.values()]);
+    await Promise.allSettled([...this.nestedTasks.values()]);
   }
 }

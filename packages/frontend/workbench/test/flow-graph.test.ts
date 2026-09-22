@@ -72,6 +72,26 @@ test("structured scopes project stable execution paths, parallel branches, memo 
   );
 });
 
+test("renders nested Flow calls as first-class nodes", () => {
+  const graph = buildFlowGraph(`
+    export default defineFlow({
+      title: "Parent", input: z.object({ task: z.string() }), output: z.json(),
+      async run(ctx, input) {
+        return ctx.sequence({ id: "main" }, async flow => {
+          const child = await flow.flow({
+            id: "draft", label: "生成草稿", flow: "writer/draft", input,
+          });
+          return child.output;
+        });
+      }
+    });
+  `);
+  const child = graph.nodes.find((node) => node.kind === "flow");
+  assert.equal(child?.id, "main/draft");
+  assert.equal(child?.label, "生成草稿");
+  assert.equal(child?.subtitle, "writer/draft");
+});
+
 test("ignores ordinary JavaScript while preserving agent order", () => {
   const graph = buildFlowGraph(
     wrap(`

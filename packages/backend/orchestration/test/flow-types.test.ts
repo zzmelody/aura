@@ -12,17 +12,21 @@ import { defineFlow, z } from "@aura/orchestration/flow";
 defineFlow({
   title: "Types", input: z.object({ task: z.string() }),
   output: z.object({ report: z.string(), approved: z.boolean() }),
+  service: true,
   agentDefaults: { model: "gpt-5.6-terra", reasoningEffort: "medium", timeoutMs: 120000 },
   async run(ctx, input) {
     // @ts-expect-error Root operations must enter a sequence first.
     ctx.agent({});
     // @ts-expect-error Parallel is only available inside a scope.
     ctx.parallel({});
+    // @ts-expect-error Nested Flow calls must enter a sequence first.
+    ctx.flow({});
     return ctx.sequence({ id: "main" }, async (flow) => {
       const results = await flow.parallel({
         id: "research", branches: {
           researcher: branch => branch.agent({
             id: "research", label: "Research", preset: "test", prompt: input.task,
+            images: [{ attachmentId: "sha256:" + "a".repeat(64), mediaType: "image/png", bytes: 68, width: 1, height: 1 }],
             retry: { maxAttempts: 2 },
             model: "gpt-5.6-terra", reasoningEffort: "high", temperature: 0.5, timeoutMs: 60000,
           }),
@@ -37,12 +41,21 @@ defineFlow({
         // @ts-expect-error Provider and credentials are not script options.
         provider: "custom",
       });
+      flow.agent({ id: "bad-image", label: "Bad", preset: "test", prompt: input.task,
+        // @ts-expect-error Images must be managed references, not paths.
+        images: [{ path: "secret.png" }],
+      });
       results.researcher.output.toUpperCase();
       results.score.toFixed(0);
       // @ts-expect-error Named branch results retain their exact keys.
       results.missing;
       // @ts-expect-error Memo output retains its schema's inferred type.
       results.score.toUpperCase();
+      const child = await flow.flow({
+        id: "child", label: "Child", flow: "example.plugin/child", input: { task: input.task },
+      });
+      child.output;
+      child.runId.toUpperCase();
       const answer = await flow.checkpoint({
         id: "approval", prompt: "Publish?", schema: z.object({ approved: z.boolean() }),
       });

@@ -7,12 +7,14 @@ import {
 } from "@aura/tripo";
 import { z } from "zod";
 import { ActionFailure, type AuraCapabilityClient } from "./action-api.ts";
+import type { GeneratedArtifacts } from "./generated-artifacts.ts";
 
 const requestSchema = z
   .object({
     prompt: z.string().trim().min(1).max(4_000),
     referenceImagePath: z.string().min(1).max(4_096).optional(),
     outputDirectory: z.string().min(1).max(4_096),
+    useVeyaOutputDirectory: z.boolean().optional(),
     assetName: z.string().max(80).optional(),
     imageModel: z
       .enum(["chat_image_2.5_flare", "chat_image_2.5_sunburst"])
@@ -32,9 +34,17 @@ export interface TripoGameAssetPort {
 /** Credential-free Action capability for one bounded model-generation pipeline. */
 export class TripoGameAssetCapability implements AuraCapabilityClient {
   readonly #tripo: TripoGameAssetPort;
+  readonly artifacts?: GeneratedArtifacts;
+  readonly defaultDirectory?: () => Promise<string | undefined>;
 
-  constructor(tripo: TripoGameAssetPort) {
+  constructor(
+    tripo: TripoGameAssetPort,
+    artifacts?: GeneratedArtifacts,
+    defaultDirectory?: () => Promise<string | undefined>,
+  ) {
     this.#tripo = tripo;
+    this.artifacts = artifacts;
+    this.defaultDirectory = defaultDirectory;
   }
 
   async invoke(
@@ -50,10 +60,37 @@ export class TripoGameAssetCapability implements AuraCapabilityClient {
     const parsed = requestSchema.safeParse(input);
     if (!parsed.success) throw new Error("Tripo game-asset input is invalid.");
     try {
-      return (await this.#tripo.generateGameAsset(
-        parsed.data,
-        signal,
-      )) as unknown as JsonValue;
+      const { useVeyaOutputDirectory, ...request } = parsed.data;
+      if (useVeyaOutputDirectory && this.defaultDirectory) {
+        // Missing Veya sessions preserve standalone generation's legacy default;
+        // a connected packaged Veya binds a writable creation-project root.
+        const directory = await this.defaultDirectory().catch(() => undefined);
+        if (directory) request.outputDirectory = directory;
+      }
+      const result = await this.#tripo.generateGameAsset(request, signal);
+      // Preserve a completed paid result even if local registration fails. A
+      // downstream import failure must not turn into another generation request.
+      if (!this.artifacts) return result as unknown as JsonValue;
+      try {
+        return {
+          ...result,
+          modelArtifact: await this.artifacts.registerModel(
+            result.modelPath,
+            signal,
+          ),
+        } as unknown as JsonValue;
+      } catch {
+        signal.throwIfAborted();
+        return {
+          ...result,
+          artifactRegistration: {
+            status: "failed",
+            code: "artifact_registration_failed",
+            message:
+              "Model generation completed and its files were retained. Local asset registration failed; do not regenerate or pay again.",
+          },
+        } as unknown as JsonValue;
+      }
     } catch (error) {
       signal.throwIfAborted();
       if (error instanceof TripoGameAssetError)

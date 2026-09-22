@@ -5,6 +5,7 @@ import type {
   FlowStep,
   FlowAgentStep,
   FlowActionStep,
+  FlowChildStep,
   FlowAttempt,
   JsonValue,
 } from "@aura/protocol/types";
@@ -14,11 +15,13 @@ import type { EngineOptions } from "./types.ts";
 import type {
   FlowAgentRequest,
   FlowActionRequest,
+  FlowChildRequest,
   FlowScope,
 } from "./flow-api.ts";
 import {
   actionRequestSchema,
   agentRequestSchema,
+  flowRequestSchema,
   FlowError,
   jsonValue,
   parse,
@@ -45,6 +48,22 @@ interface ExecutionOptions {
   flow: LoadedFlow;
   actions: ReadonlyMap<string, LoadedAction>;
   ports: Pick<EngineOptions, "sessions" | "presets" | "actions">;
+  flows: {
+    resolve(
+      parentRunId: string,
+      flowId: string,
+      input: unknown,
+    ): Promise<{
+      id: string;
+      title: string;
+      sourceHash: string;
+      plugin?: FlowChildStep["plugin"];
+      input: JsonValue;
+      outputSchema: JsonValue;
+    }>;
+    start(parentRunId: string, step: FlowChildStep): Promise<FlowRun>;
+    run(runId: string): Promise<FlowRun>;
+  };
 }
 
 function samePlugin(
@@ -381,6 +400,7 @@ export class FlowExecution {
       const output = await this.options.ports.sessions.execute({
         ...(current as FlowAgentStep),
         input: request.prompt,
+        ...(request.images ? { images: request.images } : {}),
         mode: this.options.get().mode,
         timeoutMs: (current as FlowAgentStep).config!.timeoutMs,
         signal: this.abort.signal,
@@ -457,6 +477,134 @@ export class FlowExecution {
       attempt: step.attempts?.length,
       recovered: prepared.recovered,
     };
+  };
+  private flow = async (path: string[], input: FlowChildRequest) => {
+    const request = parse(flowRequestSchema, input);
+    const rawInput = jsonValue(request.input, "子 Flow 入参");
+    const key = [...path, request.id].join("/");
+    const existing = this.options
+      .get()
+      .steps.find((step) => stepKey(step) === key);
+    if (existing && existing.kind !== "flow") {
+      this.fatalError = new ReplayMismatch(
+        `步骤 ${key} 的类型与子 Flow 调用不一致。`,
+      );
+      throw this.fatalError;
+    }
+    const pinned = existing as FlowChildStep | undefined;
+    if (
+      pinned &&
+      (pinned.flowId !== request.flow ||
+        pinned.requestInputHash !== fingerprint(rawInput))
+    ) {
+      this.fatalError = new ReplayMismatch(
+        `步骤 ${key} 的子 Flow 或输入与存档不一致。`,
+      );
+      throw this.fatalError;
+    }
+    const target = pinned
+      ? {
+          id: pinned.flowId,
+          title: pinned.label,
+          sourceHash: pinned.sourceHash,
+          plugin: pinned.plugin,
+          input: pinned.input,
+          outputSchema: pinned.outputSchema,
+        }
+      : await this.options.flows.resolve(
+          this.options.get().id,
+          request.flow,
+          request.input,
+        );
+    const prepared = await this.prepare(
+      path,
+      {
+        kind: "flow",
+        id: request.id,
+        label: request.label ?? target.title,
+        flowId: target.id,
+        sourceHash: target.sourceHash,
+        plugin: target.plugin,
+        input: target.input,
+        outputSchema: target.outputSchema,
+        childRequestId: pinned?.childRequestId ?? randomUUID(),
+        childRunId: pinned?.childRunId,
+        requestInputHash: fingerprint(rawInput),
+        status: "queued",
+      },
+      {
+        id: request.id,
+        label: request.label,
+        flow: target.id,
+        sourceHash: target.sourceHash,
+        plugin: target.plugin,
+        requestInputHash: fingerprint(rawInput),
+      },
+    );
+    if (this.reusable(prepared.step)) {
+      const step = prepared.step as FlowChildStep;
+      return {
+        stepId: prepared.key,
+        runId: step.childRunId!,
+        flowId: step.flowId,
+        output: step.output!,
+        recovered: prepared.recovered,
+      };
+    }
+    const release = await this.acquire();
+    try {
+      let step = prepared.step as FlowChildStep;
+      const child = await this.options.flows.start(this.options.get().id, step);
+      step = (await this.updateStep(prepared.key, (current) => ({
+        ...current,
+        childRunId: child.id,
+        status: "running",
+        startedAt: current.startedAt ?? Date.now(),
+        error: undefined,
+      }))) as FlowChildStep;
+      const result = await this.options.flows.run(child.id);
+      this.boundary();
+      if (result.status === "completed") {
+        const completed = (await this.complete(
+          prepared.key,
+          result.output!,
+        )) as FlowChildStep;
+        return {
+          stepId: prepared.key,
+          runId: child.id,
+          flowId: completed.flowId,
+          output: completed.output!,
+          recovered: prepared.recovered,
+        };
+      }
+      if (result.status === "waiting_input") {
+        await this.updateStep(prepared.key, (current) => ({
+          ...current,
+          status: "waiting_input",
+        }));
+        return this.suspend("waiting_input");
+      }
+      if (result.status === "needs_attention") {
+        await this.updateStep(prepared.key, (current) => ({
+          ...current,
+          status: "unknown",
+        }));
+        return this.suspend("needs_attention");
+      }
+      if (result.status === "paused") {
+        await this.updateStep(prepared.key, (current) => ({
+          ...current,
+          status: "queued",
+        }));
+        return this.suspend("paused");
+      }
+      return this.failed(
+        prepared.key,
+        `子 Flow ${result.flow.id} ${result.status}：${result.error ?? "未返回结果。"}`,
+      );
+    } finally {
+      release();
+    }
   };
   private memo = async (
     path: string[],
@@ -541,6 +689,7 @@ export class FlowExecution {
           },
           agent: this.agent,
           action: this.action,
+          flow: this.flow,
           memo: this.memo,
           checkpoint: this.checkpoint,
         },

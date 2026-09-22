@@ -42,7 +42,11 @@ export async function startAuraRuntime(
     configPath: config.pluginConfigPath,
     auraVersion: "0.1.0",
     pluginSdkVersion: "1.1.0",
-    supportedCapabilities: ["aura.veya.world-agent", "aura.tripo.game-asset"],
+    supportedCapabilities: [
+      "aura.veya.world-agent",
+      "aura.tripo.game-asset",
+      "aura.flow.invoke",
+    ],
   });
   const plugins = pluginManager.resolution;
 

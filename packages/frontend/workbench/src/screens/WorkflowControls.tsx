@@ -194,9 +194,12 @@ export function WorkflowControls({
       {run.steps
         .filter(
           (step) =>
-            (run.status === "waiting_input" &&
+            (step.kind !== "flow" &&
+              run.status === "waiting_input" &&
               step.status === "waiting_input") ||
-            (run.status === "needs_attention" && step.status === "unknown"),
+            (step.kind !== "flow" &&
+              run.status === "needs_attention" &&
+              step.status === "unknown"),
         )
         .map((step) => (
           <StepInput

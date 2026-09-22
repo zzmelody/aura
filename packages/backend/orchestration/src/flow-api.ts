@@ -16,11 +16,23 @@ export { z };
 
 export type FlowMode = "demo" | "codex";
 
+/** Durable host-admitted raster reference; never a path, URL or base64 payload. */
+export interface FlowImageReference {
+  attachmentId: string;
+  mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  bytes: number;
+  width: number;
+  height: number;
+  name?: string;
+  originalDimensions?: { width: number; height: number };
+}
+
 export interface FlowAgentRequest extends FlowAgentOptions {
   id: string;
   label: string;
   preset: string;
   prompt: string;
+  images?: FlowImageReference[];
   actions?: string[];
   retry?: FlowRetry;
 }
@@ -38,6 +50,22 @@ export interface FlowActionResult {
   actionId: string;
   output: JsonValue;
   attempt?: number;
+  recovered?: boolean;
+}
+
+export interface FlowChildRequest {
+  id: string;
+  label?: string;
+  /** Canonical Flow id, including a plugin namespace when applicable. */
+  flow: string;
+  input: unknown;
+}
+
+export interface FlowChildResult {
+  stepId: string;
+  runId: string;
+  flowId: string;
+  output: JsonValue;
   recovered?: boolean;
 }
 
@@ -62,6 +90,7 @@ export interface FlowContext {
 export interface FlowScope extends FlowContext {
   agent(request: FlowAgentRequest): Promise<FlowAgentResult>;
   action(request: FlowActionRequest): Promise<FlowActionResult>;
+  flow(request: FlowChildRequest): Promise<FlowChildResult>;
   parallel<B extends Record<string, (scope: FlowScope) => unknown>>(options: {
     id: string;
     branches: B;
@@ -86,6 +115,8 @@ export interface FlowDefinition<
 > {
   title: string;
   description?: string;
+  /** Publishes this Flow through the external HTTP invocation endpoint. */
+  service?: boolean;
   input: InputSchema;
   output: OutputSchema;
   concurrency?: number;
@@ -103,6 +134,7 @@ export interface FlowRegistrationConfig {
   directory: string;
   entry: string;
   plugin?: AuraPluginIdentity;
+  capabilities?: string[];
 }
 
 export interface FlowRegistrationPort {

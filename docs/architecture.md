@@ -47,7 +47,7 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 ## 后端 Agent 流程编排
 
-`packages/backend/orchestration`（`@aura/orchestration`）统一拥有代码 Flow 的发现、Cordis Loader/HMR 注册、执行、动态步骤/session 映射、运行持久化和 `/flows/*` API。Flow 位于该包的 `flow/<flow-id>/<flow-id>.flow.js`，用 JavaScript 条件、循环和 `sequence/parallel` 回调作用域表达控制流，并通过 `@aura/orchestration/flow` 获得 `defineFlow`、Zod 与声明文件补全。`@aura/runtime` 只创建并关闭宿主、转交 HTTP 命名空间；前端「流程」页面只根据后端 JSON Schema 收集参数并渲染 DTO。shared/protocol 仅包含通信类型，不执行 Flow 或装配 prompt。
+`packages/backend/orchestration`（`@aura/orchestration`）统一拥有代码 Flow 的发现、Cordis Loader/HMR 注册、执行、动态步骤/session 映射、运行持久化和 `/flows/*` API。Flow 位于该包的 `flow/<flow-id>/<flow-id>.flow.js`，用 JavaScript 条件、循环和 `sequence/parallel` 回调作用域表达控制流，并通过 `@aura/orchestration/flow` 获得 `defineFlow`、Zod 与声明文件补全。作用域内的 `flow.flow()` 以规范 ID 创建持久化 child Run，固定子版本并保存父子关系；嵌套运行内联调度，不占顶层 FIFO 槽。定义设置 `service: true` 时，运行时才把它列入 `/flows/services` 并允许外部应用通过 `/flows/:flowId/invoke` 创建 durable Run；调用返回状态链接，客户端断开不取消执行。`@aura/runtime` 只创建并关闭宿主、转交 HTTP 命名空间；前端「流程」页面只根据后端 JSON Schema 收集参数并渲染 DTO。shared/protocol 仅包含通信类型，不执行 Flow 或装配 prompt。
 
 流程使用独立、长驻且空闲可回收的 `aura-flow` DSH profile。每个 `scope.agent()` attempt 都产生独立 preset/session，复用 DSH Session Controller、领域存储、JSONL、模型路由和取消；Cordis HMR 复用 DSH 已有模块依赖图与事务回滚。运行开始时固定代码定义和 Flow 目录内容 hash，后续热更新只影响新运行。客户端断开不取消流程。Run 先持久化排队，最多同时执行两个；暂停、人工 checkpoint 和未知结果等待不占并发槽。重启先加载定义并校验同一 source hash，再从脚本入口重放；完成步骤按作用域路径及请求指纹返回存档输出，DSH 完成回合可认领输出，未知副作用等待人工处理。旧 active 记录缺少 durable identity 时标记 `legacy_unrecoverable`，已完成历史保持可读。Flow JS 是拥有完整 Node.js 权限的受信任后端代码。普通 `/chat` 链路仍保留原实现，流程不依赖客户端对话历史。实现、恢复约束与扩展配置见 [编排包说明](../packages/backend/orchestration/README.md)。
 
@@ -58,6 +58,8 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 插件 manifest 请求的宿主能力必须全部受当前 Runtime 支持，否则插件不会加载。Action 通过 Plugin SDK 的 `auraCapability()` 取得按调用取消域绑定的领域端口，不接触凭据、任意 URL 或底层进程。`aura.veya.world-agent` 从平台默认的 Godot Veya 会话描述符发现随机 loopback 服务，只允许固定世界操作并在宿主内部附加 bearer token；新服务走 `veya-agent-tools/1` 的统一调用端点，旧服务兼容对应 `/v2` 路径。`aura.tripo.game-asset` 只允许一条固定的 GPT Image 2.5 四视图到 Tripo P1 GLB 链路，由宿主上传受限参考图、串行等待付费任务、验证并立即持久化短时产物 URL。token、API Key 和上游 URL 不进入插件输入、Flow/Agent 上下文、前端 DTO 或日志；本地参考路径只在用户输入和 capability 调用边界内使用，不写入结果或 provenance manifest。
 
 Flow 的模型参数由 `flow.agent({model,reasoningEffort,temperature,maxTokens,timeoutMs,...})` 按步骤声明，或通过 `defineFlow.agentDefaults` 提供公共默认值；步骤覆盖 Flow 默认，Flow 默认覆盖运行时配置。provider 仍绑定 Run.mode，脚本不接触凭据或任意 endpoint。入队时固定 Run 默认参数，Agent dispatch 前保存完整 `config` 并纳入请求指纹；重试与重放不读取新的环境默认值。`sessionController.selectModel` 选择模型，DSH Agent 的官方 `agent/request` scoped waterfall 将同一配置应用到每轮模型请求并写入 DSH request header。模型与思考强度先经过 DSH 能力校验，无效配置不会启动 Agent attempt。升级前未保存参数的未结束记录安全中断为 `agent_config_unrecoverable`；已完成历史继续可读。
+
+Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Session 边界校验并读取实际图片，不把 base64 或任意图片路径塞入 durable JSON。Veya 截图从会话绑定的 preview root 读取并校验原始 hash 后入库；DSH 规范化图片的 digest 单独保留。文本模型拒绝图片并返回明确错误，不退回只看路径的“视觉验收”。生成 GLB 由 Tripo 宿主登记 SHA-256 引用，只有已登记内容能通过 `veya.assets.import` 复制到 Veya 受控交换区，再由其原生 Cooker 编译。生成成功、登记失败时仍保存生成结果，不能因此重新付费。目录、进程、凭据仍属于后端领域能力；外部 Action 只调用一个 canonical 工具，组合仍在 Flow。
 
 ## 当前取舍
 

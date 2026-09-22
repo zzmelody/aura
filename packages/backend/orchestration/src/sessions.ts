@@ -10,6 +10,36 @@ import type { FlowHistory } from "@aura/protocol/types";
 import type { SessionPort } from "./types.ts";
 import { FlowError } from "./schema.ts";
 import type { ActionRuntime } from "./actions.ts";
+import type { FlowImageReference } from "./flow-api.ts";
+
+/** Resolve only admitted immutable images; the durable Flow keeps references. */
+export async function imagePromptParts(
+  ctx: Pick<Context, "attachments">,
+  images: readonly FlowImageReference[],
+  signal: AbortSignal,
+) {
+  const limit = ctx.attachments.imageLimits;
+  if (
+    images.length > Math.min(4, limit.maxImagesPerMessage) ||
+    images.reduce((sum, image) => sum + image.bytes, 0) >
+      limit.maxMessageImageBytes
+  )
+    throw new FlowError("Agent 图片附件超过宿主上限。", 413);
+  const parts = [];
+  for (const ref of images) {
+    const stored = await ctx.attachments.readImage(
+      ref as Extract<ContentBlock, { type: "image" }>["attachment"],
+      signal,
+    );
+    parts.push({
+      type: "image" as const,
+      mediaType: stored.ref.mediaType,
+      data: Buffer.from(stored.data).toString("base64"),
+      ...(ref.name ? { name: ref.name } : {}),
+    });
+  }
+  return parts;
+}
 
 const plainText = (content?: readonly ContentBlock[]) =>
   (content ?? [])
@@ -63,6 +93,7 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
       sessionId: rawId,
       preset,
       input,
+      images = [],
       mode,
       timeoutMs,
       signal,
@@ -167,15 +198,35 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
         stop.addEventListener("abort", onAbort, { once: true });
         try {
           stop.throwIfAborted();
-          await controller.prompt(
-            {
-              sessionId,
-              requestId,
-              mode: "queue",
-              content: [{ type: "text", text: input }],
-            },
-            stop,
-          );
+          try {
+            await controller.prompt(
+              {
+                sessionId,
+                requestId,
+                mode: "queue",
+                content: [
+                  { type: "text", text: input },
+                  ...(await imagePromptParts(ctx, images, stop)),
+                ],
+              },
+              stop,
+            );
+          } catch (error) {
+            // DSH rejects text-only models before accepting a prompt. Preserve
+            // this safe domain reason instead of suggesting a generic retry.
+            if (
+              error &&
+              typeof error === "object" &&
+              "details" in error &&
+              (error.details as { reason?: string } | undefined)?.reason ===
+                "MODEL_DOES_NOT_SUPPORT_IMAGES"
+            )
+              throw new FlowError(
+                "MODEL_DOES_NOT_SUPPORT_IMAGES：当前 Agent 模型不支持图片输入，请使用支持视觉的模型；不会降级为仅路径或文本验收。",
+                422,
+              );
+            throw error;
+          }
           await completed;
           await ctx.agents.get(sessionId)?.whenIdle();
           stop.throwIfAborted();
