@@ -2393,7 +2393,8 @@ textarea {
 }
 .workflow-input-long-text,
 .workflow-input-image,
-.workflow-input-directory {
+.workflow-input-directory,
+.workflow-input-multi-select {
   grid-column: 1 / -1;
 }
 .workflow-field-label {
@@ -2519,6 +2520,43 @@ textarea {
   color: var(--muted);
   font-size: 10px;
   line-height: 1.6;
+}
+.workflow-multi-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.workflow-option {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+.workflow-option.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--input));
+  color: var(--text);
+}
+.workflow-option:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.workflow-option:has(input:disabled) {
+  cursor: default;
+}
+.workflow-option input {
+  position: absolute;
+  opacity: 0;
 }
 .workflow-switch {
   display: inline-flex;

@@ -7,6 +7,8 @@ import {
   type WorkflowPathKind,
 } from "../file-picker";
 import {
+  workflowCanRenderFields,
+  workflowEnumArrayOptions,
   workflowFieldKind,
   workflowFieldLabel,
   workflowFieldPlaceholder,
@@ -72,18 +74,14 @@ export function WorkflowInput({
       : [],
   );
   const simple =
-    current &&
-    fields.length > 0 &&
-    fields.every(([, field]) =>
-      ["string", "number", "integer", "boolean"].includes(
-        String(asObject(field)?.type),
-      ),
-    );
+    current && fields.length > 0 && workflowCanRenderFields(properties ?? {});
   return simple ? (
     <div className="workflow-input-fields">
       {fields.map(([key, field], index) => {
         const spec = asObject(field) ?? {};
         const options = Array.isArray(spec.enum) ? spec.enum : [];
+        const multiOptions = workflowEnumArrayOptions(spec);
+        const selected = Array.isArray(current[key]) ? current[key] : [];
         const label = workflowFieldLabel(key, spec);
         const kind = workflowFieldKind(key, spec);
         const fieldId = `${id}-${index}`;
@@ -116,7 +114,11 @@ export function WorkflowInput({
             key={key}
             className={`workflow-input-field workflow-input-${kind}`}
           >
-            <label className="workflow-field-label" htmlFor={fieldId}>
+            <label
+              className="workflow-field-label"
+              id={`${fieldId}-label`}
+              htmlFor={kind === "multi-select" ? undefined : fieldId}
+            >
               <span>{label}</span>
               {required.has(key) ? (
                 <span className="workflow-required" aria-label="必填">
@@ -126,7 +128,53 @@ export function WorkflowInput({
                 <span className="workflow-optional">可选</span>
               )}
             </label>
-            {kind === "select" ? (
+            {kind === "multi-select" && multiOptions ? (
+              <div
+                className="workflow-multi-select"
+                role="group"
+                aria-labelledby={`${fieldId}-label`}
+                aria-describedby={
+                  typeof spec.description === "string"
+                    ? `${fieldId}-hint`
+                    : undefined
+                }
+              >
+                {multiOptions.map((option) => {
+                  const checked = selected.includes(option);
+                  const min =
+                    typeof spec.minItems === "number" ? spec.minItems : 0;
+                  const max =
+                    typeof spec.maxItems === "number"
+                      ? spec.maxItems
+                      : multiOptions.length;
+                  return (
+                    <label
+                      key={JSON.stringify(option)}
+                      className={`workflow-option${checked ? " selected" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={
+                          disabled ||
+                          (checked
+                            ? selected.length <= min
+                            : selected.length >= max)
+                        }
+                        onChange={() =>
+                          update(
+                            checked
+                              ? selected.filter((item) => item !== option)
+                              : [...selected, option],
+                          )
+                        }
+                      />
+                      <span>{workflowOptionLabel(option)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : kind === "select" ? (
               <select
                 id={fieldId}
                 aria-label={label}
@@ -253,6 +301,11 @@ export function WorkflowInput({
                 autoComplete="off"
               />
             )}
+            {kind === "multi-select" && typeof spec.description === "string" ? (
+              <small id={`${fieldId}-hint`} className="workflow-field-hint">
+                {spec.description}
+              </small>
+            ) : null}
           </div>
         );
       })}

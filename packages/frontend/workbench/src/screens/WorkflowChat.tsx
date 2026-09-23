@@ -24,7 +24,10 @@ export function WorkflowChat({
 }) {
   const session = workspace.active!;
   const binding = session.workflow!;
-  const schema = binding.inputSchema ?? flow?.inputSchema;
+  const schema =
+    flow?.available && flow.inputSchema
+      ? flow.inputSchema
+      : (binding.inputSchema ?? flow?.inputSchema);
   const text =
     workspace.draft ||
     JSON.stringify(
@@ -173,7 +176,7 @@ export function WorkflowChat({
                 message={message}
                 input={input}
                 index={++executionIndex}
-                inputSchema={schema}
+                inputSchema={binding.inputSchema ?? schema}
                 cached={
                   workspace.workflows.runs[
                     workflowRunKey(binding.endpoint, message.workflowRunId)
@@ -312,9 +315,7 @@ export function WorkflowChat({
                   aria-label="运行模式"
                   value={mode}
                   disabled={workspace.busy || Boolean(pending)}
-                  onChange={(event) =>
-                    setMode(event.target.value as FlowMode)
-                  }
+                  onChange={(event) => setMode(event.target.value as FlowMode)}
                 >
                   <option value="demo">本地演示</option>
                   <option value="codex">Codex</option>

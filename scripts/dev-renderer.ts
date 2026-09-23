@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
@@ -44,19 +45,14 @@ try {
   await server.listen();
   server.printUrls();
   if (target === "desktop") {
-    const pnpm = process.env.npm_execpath;
-    if (!pnpm)
-      throw new Error("Start desktop development through pnpm run desktop.");
-    desktop = spawn(
-      process.execPath,
-      [pnpm, "--filter", "@aura/desktop", "exec", "electron", ".", "--dev"],
-      {
-        cwd: root,
-        stdio: "inherit",
-        windowsHide: true,
-        env: { ...process.env, AURA_DEV_PARENT_PID: String(process.pid) },
-      },
-    );
+    const require = createRequire(resolve(appRoot, "package.json"));
+    const electronCli = require.resolve("electron/cli.js");
+    desktop = spawn(process.execPath, [electronCli, ".", "--dev"], {
+      cwd: appRoot,
+      stdio: "inherit",
+      windowsHide: true,
+      env: { ...process.env, AURA_DEV_PARENT_PID: String(process.pid) },
+    });
     desktop.once("error", (error) => {
       console.error(error.message);
       void close().finally(() => process.exit(1));

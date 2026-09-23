@@ -12,9 +12,9 @@ const runtimeEntry = fileURLToPath(
   new URL("../apps/server/server.ts", import.meta.url),
 );
 const previewEntry = fileURLToPath(new URL("./preview.ts", import.meta.url));
-const pnpmEntry = process.env.npm_execpath;
-if (mode === "web" && !pnpmEntry)
-  throw new Error("Run this command through pnpm from the repository root.");
+const rendererEntry = fileURLToPath(
+  new URL("./dev-renderer.ts", import.meta.url),
+);
 
 async function runtimeIsReady(): Promise<boolean> {
   try {
@@ -66,16 +66,12 @@ const surface =
         stdio: "inherit",
         windowsHide: true,
       })
-    : spawn(
-        process.execPath,
-        [pnpmEntry, "--filter", "@aura/web", "run", "dev"],
-        {
-          cwd: root,
-          env: process.env,
-          stdio: "inherit",
-          windowsHide: true,
-        },
-      );
+    : spawn(process.execPath, ["--import", "tsx", rendererEntry, "web"], {
+        cwd: root,
+        env: process.env,
+        stdio: "inherit",
+        windowsHide: true,
+      });
 
 let closing = false;
 let launcherWatch: NodeJS.Timeout | null = null;

@@ -5,6 +5,7 @@ export type WorkflowFieldKind =
   | "directory"
   | "image"
   | "long-text"
+  | "multi-select"
   | "number"
   | "select"
   | "text";
@@ -24,17 +25,50 @@ const labels: Record<string, string> = {
 };
 
 const optionLabels: Record<string, string> = {
+  attack: "攻击",
   high: "高",
+  humanoid: "人形",
+  idle: "待机",
+  interact: "交互",
+  jump: "跳跃",
   low: "低",
   max: "最高",
   medium: "中",
+  quadruped: "四足",
+  run: "奔跑",
+  sit: "坐下",
+  sleep: "睡眠",
   xhigh: "超高",
+  walk: "行走",
 };
+
+export function workflowEnumArrayOptions(
+  spec: SchemaObject,
+): JsonValue[] | null {
+  if (spec.type !== "array") return null;
+  const items = spec.items;
+  if (!items || typeof items !== "object" || Array.isArray(items)) return null;
+  if (items.type !== "string" || !Array.isArray(items.enum)) return null;
+  if (!items.enum.every((value) => typeof value === "string")) return null;
+  return items.enum;
+}
+
+export function workflowCanRenderFields(properties: SchemaObject): boolean {
+  return Object.values(properties).every((field) => {
+    if (!field || typeof field !== "object" || Array.isArray(field))
+      return false;
+    return (
+      ["string", "number", "integer", "boolean"].includes(String(field.type)) ||
+      workflowEnumArrayOptions(field) !== null
+    );
+  });
+}
 
 export function workflowFieldKind(
   key: string,
   spec: SchemaObject,
 ): WorkflowFieldKind {
+  if (workflowEnumArrayOptions(spec)) return "multi-select";
   if (Array.isArray(spec.enum)) return "select";
   if (spec.type === "boolean") return "boolean";
   if (spec.type === "number" || spec.type === "integer") return "number";
@@ -58,7 +92,9 @@ export function workflowFieldKind(
     /(?:image|photo|picture|thumbnail).*(?:path|file)|(?:path|file).*(?:image|photo|picture|thumbnail)/u.test(
       normalized,
     ) ||
-    /(?:选择|上传).*(?:图片|图像)|(?:图片|图像).*(?:路径|文件)/u.test(description)
+    /(?:选择|上传).*(?:图片|图像)|(?:图片|图像).*(?:路径|文件)/u.test(
+      description,
+    )
   )
     return "image";
   if (
@@ -101,5 +137,7 @@ export function workflowFieldPlaceholder(
 }
 
 export function workflowOptionLabel(value: JsonValue): string {
-  return typeof value === "string" ? optionLabels[value] ?? value : String(value);
+  return typeof value === "string"
+    ? (optionLabels[value] ?? value)
+    : String(value);
 }
