@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,7 +19,11 @@ import {
 
 test("pi folds a completed JSONL turn", () => {
   const result = parseEventState([
-    { type: "session", id: "00000000-0000-4000-8000-000000000001", cwd: "/workspace" },
+    {
+      type: "session",
+      id: "00000000-0000-4000-8000-000000000001",
+      cwd: "/workspace",
+    },
     {
       type: "message_end",
       message: {
@@ -56,7 +67,13 @@ test("pi treats an error stop as failed and preserves the provider error", () =>
 test("pi keeps an incomplete stream incomplete", () => {
   const result = parseEventState([
     { type: "session", id: "00000000-0000-4000-8000-000000000003" },
-    { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "partial" }] } },
+    {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "partial" }],
+      },
+    },
   ]);
   assert.equal(result.protocolComplete, false);
   assert.equal(result.terminalStatus, "incomplete");
@@ -90,17 +107,21 @@ test("pi builds a generic isolated invocation from explicit resources", () => {
   assert.ok(args.includes("/opt/pi/example.js"));
   assert.ok(args.includes("read,grep"));
   assert.equal(args.at(-1), "Inspect this workspace");
-  assert.equal(args.some((value) => /ange|gamegen|anchemy/i.test(value)), false);
+  assert.equal(
+    args.some((value) => /ange|gamegen|anchemy/i.test(value)),
+    false,
+  );
 });
 
 test("pi refuses extra flags owned by the Action", () => {
   assert.throws(
-    () => buildArgs(
-      { extensions: [], skills: [] },
-      { prompt: "hello", extraArgs: ["--api-key=secret"] },
-      { mode: "create", id: "00000000-0000-4000-8000-000000000005" },
-      "/sessions",
-    ),
+    () =>
+      buildArgs(
+        { extensions: [], skills: [] },
+        { prompt: "hello", extraArgs: ["--api-key=secret"] },
+        { mode: "create", id: "00000000-0000-4000-8000-000000000005" },
+        "/sessions",
+      ),
     /不能覆盖 Pi Action 管理的参数/u,
   );
 });
@@ -119,26 +140,32 @@ test("pi resolves its executable and resources without project-specific settings
     mkdir(skill),
   ]);
 
-  const config = await resolveConfig({
-    piPath,
-    agentDirectory,
-    extensions: [extension],
-    skills: [skill],
-  }, {});
+  const config = await resolveConfig(
+    {
+      piPath,
+      agentDirectory,
+      extensions: [extension],
+      skills: [skill],
+    },
+    {},
+  );
 
-  assert.equal(config.piPath, piPath);
+  const canonicalPiPath = await realpath(piPath);
+  assert.equal(config.piPath, canonicalPiPath);
   assert.equal(config.command, await realpath(process.execPath));
-  assert.deepEqual(config.prefixArgs, [piPath]);
-  assert.equal(config.agentDirectory, agentDirectory);
-  assert.deepEqual(config.extensions, [extension]);
-  assert.deepEqual(config.skills, [skill]);
+  assert.deepEqual(config.prefixArgs, [canonicalPiPath]);
+  assert.equal(config.agentDirectory, await realpath(agentDirectory));
+  assert.deepEqual(config.extensions, [await realpath(extension)]);
+  assert.deepEqual(config.skills, [await realpath(skill)]);
 });
 
 test("pi invokes a CLI process and folds its JSONL result", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "aura-pi-process-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const piPath = join(root, "pi.js");
-  await writeFile(piPath, `
+  await writeFile(
+    piPath,
+    `
 const args = process.argv.slice(2);
 const sessionId = args[args.indexOf("--session-id") + 1];
 const events = [
@@ -147,7 +174,8 @@ const events = [
   { type: "agent_end", messages: [] },
 ];
 for (const event of events) process.stdout.write(JSON.stringify(event) + "\\n");
-`);
+`,
+  );
   const config = await resolveConfig({ piPath }, {});
   const controller = new AbortController();
 

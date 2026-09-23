@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, realpath, rename, rm } from "node:fs/promises";
-import { join, resolve, dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { ActionFailure } from "./action-api.ts";
 import {
   artifactHash,
@@ -85,11 +85,12 @@ export async function readBoundedFile(
 ) {
   signal.throwIfAborted();
   const canonical = await realpath(path);
-  // Managed files are direct children, never symlinks or arbitrary nested paths.
+  // Compare canonical directories so aliases such as macOS /var and /private/var
+  // are equivalent. The original basename still rejects symlinked files.
   if (
     root &&
-    (resolve(canonical) !== resolve(path) ||
-      dirname(canonical) !== (await realpath(root)))
+    (dirname(canonical) !== (await realpath(root)) ||
+      canonical !== join(dirname(canonical), basename(path)))
   )
     throw new ActionFailure(
       "invalid_artifact_path: File escaped its managed directory.",

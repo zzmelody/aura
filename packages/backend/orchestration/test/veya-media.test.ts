@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  readFile,
+  rm,
+  symlink,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { Context } from "@deepseek-ai/cordis";
-import { GeneratedArtifacts } from "../src/generated-artifacts.ts";
+import {
+  GeneratedArtifacts,
+  readBoundedFile,
+} from "../src/generated-artifacts.ts";
 import {
   VeyaWorldAgentCapability,
   VEYA_WORLD_AGENT_CAPABILITY,
@@ -45,6 +55,43 @@ async function fixture(run: (root: string) => Promise<void>) {
     await rm(root, { recursive: true, force: true });
   }
 }
+
+test("managed files accept a directory alias but reject symlinked files and other roots", () =>
+  fixture(async (root) => {
+    const managed = join(root, "managed");
+    const alias = join(root, "alias");
+    await mkdir(managed);
+    await symlink(
+      managed,
+      alias,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const source = join(managed, "capture.png");
+    await writeFile(source, png);
+    assert.deepEqual(
+      await readBoundedFile(
+        join(alias, "capture.png"),
+        png.length + 1,
+        signal,
+        managed,
+      ),
+      png,
+    );
+    if (process.platform !== "win32") {
+      const link = join(managed, "linked.png");
+      await symlink(source, link);
+      await assert.rejects(
+        readBoundedFile(link, png.length + 1, signal, managed),
+        /invalid_artifact_path/,
+      );
+    }
+    const outside = join(root, "outside.png");
+    await writeFile(outside, png);
+    await assert.rejects(
+      readBoundedFile(outside, png.length + 1, signal, managed),
+      /invalid_artifact_path/,
+    );
+  }));
 
 test("registered models persist across hosts; IDs are immutable and arbitrary paths cannot be staged", () =>
   fixture(async (root) => {
