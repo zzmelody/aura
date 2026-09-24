@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createServer } from "node:net";
 import { promisify } from "node:util";
 import { stripVTControlCharacters } from "node:util";
 
@@ -33,7 +34,16 @@ export function sitePort(url: URL): number {
 export async function portAvailable(port: number): Promise<boolean> {
   if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
   const listeners = await listeningPids(port);
-  return listeners !== null && listeners.length === 0;
+  if (listeners === null || listeners.length > 0) return false;
+  // A port may be reserved by Windows without appearing in the listener
+  // table. Probe the same loopback bind the child server will need.
+  const probe = createServer();
+  return new Promise<boolean>((resolve) => {
+    probe.once("error", () => resolve(false));
+    probe.listen({ host: "127.0.0.1", port, exclusive: true }, () => {
+      probe.close((error) => resolve(!error));
+    });
+  });
 }
 
 async function listeningPids(port: number): Promise<number[] | null> {

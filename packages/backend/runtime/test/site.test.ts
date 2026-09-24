@@ -14,6 +14,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import {
   announcedSiteUrls,
+  availableSitePort,
   belongsToSite,
   localSiteUrl,
   portAvailable,
@@ -27,9 +28,9 @@ import {
 } from "../src/site-project.ts";
 import { SiteRunner, type SiteStatus } from "../src/site-runner.ts";
 
-async function server(t: TestContext, hostname = "127.0.0.1") {
+async function server(t: TestContext, hostname = "127.0.0.1", port = 0) {
   const app = new Hono().get("*", (c) => c.text("foreign service"));
-  const http = serve({ fetch: app.fetch, hostname, port: 0 });
+  const http = serve({ fetch: app.fetch, hostname, port });
   if (!http.listening)
     await new Promise<void>((resolve, reject) => {
       http.once("listening", resolve);
@@ -220,7 +221,8 @@ test("a wildcard listener is treated as occupied before a loopback project start
 test("custom server announcing an alternate port synchronizes URL and is owned by the child tree", async (t) => {
   const project = await fixture(t, "node server.ts 0");
   const { runner: site, opened } = runner(t);
-  await site.start({ ...project, url: "http://127.0.0.1:59171/" });
+  const preferred = await availableSitePort(44000);
+  await site.start({ ...project, url: `http://127.0.0.1:${preferred}/` });
   await until(() => opened.length === 1 || site.getStatus().state === "error");
   const status = site.getStatus();
   assert.equal(status.state, "running", JSON.stringify(status));
@@ -252,7 +254,8 @@ test("a foreign listener announced by the child is never adopted; timeout retain
     `console.log('Local: ${foreign.url}'); setInterval(() => {}, 1000);`,
   );
   const { runner: site, opened } = runner(t, 1400);
-  await site.start({ ...project, url: "http://127.0.0.1:59172/" });
+  const preferred = await availableSitePort(44000);
+  await site.start({ ...project, url: `http://127.0.0.1:${preferred}/` });
   await until(() => site.getStatus().state === "error");
   assert.ok(site.getStatus().pid);
   assert.equal(site.getStatus().previewReady, false);
@@ -266,7 +269,8 @@ test("a child that exits during startup reports an error promptly", async (t) =>
   const project = await fixture(t, "node server.ts 0");
   await writeFile(join(project.directory, "server.ts"), "process.exit(7);");
   const { runner: site, opened } = runner(t);
-  await site.start({ ...project, url: "http://127.0.0.1:59172/" });
+  const preferred = await availableSitePort(44000);
+  await site.start({ ...project, url: `http://127.0.0.1:${preferred}/` });
   await until(() => site.getStatus().state === "error", 15000);
   const status = site.getStatus();
   assert.match(status.message!, /代码 7/);
@@ -278,12 +282,14 @@ test("a child that exits during startup reports an error promptly", async (t) =>
 test("stop during startup cancels preview; concurrent starts leave only the newest child", async (t) => {
   const project = await fixture(t, "node server.ts 0 normal 1500");
   const { runner: site, opened } = runner(t);
-  await site.start({ ...project, url: "http://127.0.0.1:59173/" });
+  const preferred = await availableSitePort(44000);
+  const requested = { ...project, url: `http://127.0.0.1:${preferred}/` };
+  await site.start(requested);
   await site.stop();
   await delay(1700);
   assert.deepEqual(opened, []);
   await assert.rejects(access(join(project.directory, "started.txt")));
-  await Promise.all([site.start(project), site.start(project)]);
+  await Promise.all([site.start(requested), site.start(requested)]);
   await until(() => opened.length === 1 || site.getStatus().state === "error");
   assert.equal(
     site.getStatus().state,
@@ -296,10 +302,7 @@ test("stop during startup cancels preview; concurrent starts leave only the newe
 });
 
 test("port taken after preflight is not mistaken for the newly spawned project", async (t) => {
-  const probe = await server(t);
-  // Choose an available port near the fixture's OS-assigned port.
-  let port = probe.port < 65000 ? probe.port + 1 : 49000;
-  while (!(await portAvailable(port))) port++;
+  const port = await availableSitePort(44000);
   const project = await fixture(t, "node server.ts 0 idle");
   const opened: string[] = [];
   let foreign: ReturnType<typeof serve> | undefined;
@@ -329,7 +332,8 @@ test("port taken after preflight is not mistaken for the newly spawned project",
 });
 
 test("direct dev server scripts get a selected free port and keep existing services alone", async (t) => {
-  const occupied = await server(t);
+  // Avoid Windows' dynamic client-port range while testing port selection.
+  const occupied = await server(t, "127.0.0.1", await availableSitePort(44000));
   const project = await fixture(
     t,
     `vite --host 0.0.0.0 --port ${occupied.port}`,
@@ -365,9 +369,11 @@ test("multiple projects run concurrently with separate status and ports", async 
     readinessTimeoutMs: 30000,
   });
   t.after(() => site.stop());
+  const preferred = await availableSitePort(44000);
+  const url = `http://127.0.0.1:${preferred}/`;
   await Promise.all([
-    site.start({ ...first, url: "http://127.0.0.1:59174/" }),
-    site.start({ ...second, url: "http://127.0.0.1:59174/" }),
+    site.start({ ...first, url }),
+    site.start({ ...second, url }),
   ]);
   await until(() => opened.length === 2 || site.getStatus(first.id).state === "error" || site.getStatus(second.id).state === "error");
   const firstStatus = site.getStatus(first.id);
