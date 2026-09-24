@@ -115,6 +115,10 @@ export async function provisionProfile(
       name: ${JSON.stringify(new URL("./plugin.ts", import.meta.url).href)}
     - id: workspace-registry
       name: '@deepseek-ai/dsh-workspace'
+    - id: client-connection
+      name: '@deepseek-ai/dsh-client-connection'
+    - id: client-file-upload
+      name: '@deepseek-ai/dsh-client-file-upload'
     - id: session-controller
       name: '@deepseek-ai/dsh-api-session-controller'
       config:

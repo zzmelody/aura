@@ -90,12 +90,15 @@ export class DshSessionRunner {
       const notification = parameters as unknown as SessionEventNotification;
       if (notification.sessionId !== sessionId) return;
       const event = notification.event;
-      if (
-        event.type === "assistant/chunk" &&
-        event.data.chunk.type === "text-delta"
-      ) {
-        textSeen = true;
-        emit({ type: "delta", text: event.data.chunk.text });
+      if (event.type === "assistant/message") {
+        const text = event.data.message.content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("");
+        if (text) {
+          textSeen = true;
+          emit({ type: "delta", text });
+        }
       }
       if (event.type === "turn/end") {
         ended = true;

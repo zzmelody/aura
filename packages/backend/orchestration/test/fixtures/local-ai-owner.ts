@@ -15,7 +15,7 @@ if (role === "owner") {
   const ctx = new Context();
   const sub = new LocalSubprocessRuntime(ctx);
   acquireGpuLease(leaseName); // Intentionally no graceful cleanup: the test kills this owner.
-  launchOwned(sub, {
+  await launchOwned(sub, {
     argv: [process.execPath, import.meta.filename, "child", path],
     cwd: process.cwd(),
     env: {},

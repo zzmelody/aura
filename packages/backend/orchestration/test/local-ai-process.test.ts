@@ -98,7 +98,7 @@ test(
     const path = join(root, "pids.json");
     const ctx = new Context();
     const sub = new LocalSubprocessRuntime(ctx);
-    const child = launchOwned(sub, {
+    const child = await launchOwned(sub, {
       argv: [process.execPath, fixture, "child", path],
       cwd: root,
       env: {},
