@@ -14,7 +14,7 @@
 
 ## 日常使用
 
-在日常账号下运行 `C:\ci-control\Enter-CiMode.ps1` 上线所有 runner；运行 `Exit-CiMode.ps1` 等待作业结束并下线。两个入口调用 Windows 计划任务，可能需要管理员 PowerShell。`Enter-CiMode.ps1` 检查 Aura 默认端口 4311、ComfyUI 常用端口 8188、现有 Godot 进程、本机代理端口 7890 和 CI 账号的实际文件访问；其他携带凭据的本地服务也必须由操作者先关闭。`Run-Runner.ps1` 只给 runner 进程设置 `http://127.0.0.1:7890` 代理环境变量，不复制日常账号的代理配置或凭据。`Exit-CiMode.ps1` 会通过 GitHub API 确认作业不忙，停止计划任务及其残留的 runner 进程，并确认 GitHub 已显示 Offline，再允许启动这些服务。
+在日常账号下运行 `C:\ci-control\Enter-CiMode.ps1` 上线所有 runner；运行 `Exit-CiMode.ps1` 等待作业结束并下线。两个入口调用 Windows 计划任务，可能需要管理员 PowerShell。`Enter-CiMode.ps1` 检查 Aura 默认端口 4311、ComfyUI 常用端口 8188、现有 Godot 与 Veya 进程、本机代理端口 7890 和 CI 账号的实际文件访问；其他携带凭据的本地服务也必须由操作者先关闭。`Run-Runner.ps1` 只给 runner 进程设置 `http://127.0.0.1:7890` 代理环境变量，不复制日常账号的代理配置或凭据。`Exit-CiMode.ps1` 会通过 GitHub API 确认作业不忙，停止计划任务及其残留的 runner 进程，并确认 GitHub 已显示 Offline，再允许启动这些服务。
 
 主分支推送及手动触发都只在 `main` 上执行本机工作流。runner 离线时 GitHub 会排队，超过 24 小时会失败，需要手动重新运行。工作流使用只读 `GITHUB_TOKEN`、固定提交 SHA 的 Action，以及不保留 GitHub 凭据的 checkout。不要把个人 SSH 密钥、PAT、Aura 凭据或持久化的包仓库凭据放进 `AuraCI` 的用户目录。该账号能读到所有已注册个人仓库的 runner 工作目录和注册文件，因此这些仓库共用一个信任边界。
 
