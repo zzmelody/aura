@@ -41,7 +41,7 @@ Aura 只有一套 React Web 界面。`@aura/workbench` 负责页面、状态与 
 
 桌面 Site 目录选择、项目运行以及工作流图片/输出目录选择通过最小宿主桥接暴露。工作流选择器只返回用户明确选择的本机绝对路径，不读取文件内容；共享表单仍允许输入服务端路径，使 Web 与移动端不会伪造浏览器无法取得的绝对路径。`src/preload.ts` 在开发启动和静态构建时编译为独立的 CommonJS 产物 `dist-host/preload.cjs`，Electron 在启用 `sandbox` 与 `contextIsolation` 的窗口中加载它；主进程的 TypeScript 支持不适用于沙箱 preload。renderer 只在桥接缺失时补充平台标识，以便显示准确的桌面连接错误。
 
-Site 的目录/脚本解析、端口检查、进程组和就绪验证属于 `packages/backend/runtime`，以 `@aura/runtime/site` 导出，与 Electron IPC/窗口分离。`site-project.ts`、`site-network.ts`、`site-process.ts`、`site-runner.ts` 分别管理配置、网络与进程归属、子进程和生命周期；共享类型放在 protocol。已识别的直接开发命令先从系统监听表选择可用端口，再把明确端口传给开发服务器并从输出同步真实地址，自定义脚本冲突拒绝启动；不能仅凭某个地址能响应就判定启动成功，必须同时验证监听者属于本次进程树。桌面退出等待 Site 进程与自有 runtime 一起完成清理。
+Site 的目录/脚本解析、端口检查、进程组和就绪验证属于 `packages/backend/runtime`，以 `@aura/runtime/site` 导出，与 Electron IPC/窗口分离。`site-project.ts`、`site-network.ts`、`site-process.ts`、`site-runner.ts` 分别管理配置、网络与进程归属、子进程和生命周期；共享类型放在 protocol。已识别的直接开发命令先从系统监听表选择可用端口，再把明确端口传给开发服务器并从输出同步真实地址，自定义脚本冲突拒绝启动；不能仅凭某个地址能响应就判定启动成功，必须同时验证监听者属于本次进程树。子进程在启动时退出会立即更新为错误状态并保留诊断输出。桌面退出等待 Site 进程与自有 runtime 一起完成清理。
 
 Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动页面服务和 Aura runtime，解决页面存在但 4311 服务缺失的问题。`scripts/dev-renderer.ts` 在根开发工具层统一启动 Web / Desktop / Mobile 的 Vite 服务（Web 固定 8081，Desktop 与 Mobile 默认 8082），应用配置继续留在各自入口。Desktop 开发模式加载 Vite URL，静态预览仍由 Electron 使用 Hono 提供构建产物。根工具的 Vite 插件只在开发期注入 HTTP 版本检查，Vite WebSocket 不可用时以整页刷新恢复；HTTP 路由通过 Hono 官方适配器接入 Vite Connect，不进入发布产物，也不引入 frontend → backend 依赖。Electron 主进程会先检查并启动 runtime，再显示 renderer；开发入口和窗口退出时回收自己启动的服务。Capacitor 原生应用不能内嵌 Node/DSH，真机通过设置中的局域网地址连接电脑端 runtime。后端 Origin 策略仅额外接受 Capacitor 固定的 `https://localhost` / `capacitor://localhost` 来源。
 
