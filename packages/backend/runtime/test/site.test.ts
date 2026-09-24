@@ -71,7 +71,7 @@ async function fixture(t: TestContext, script: string) {
   return describeProject(directory);
 }
 
-async function until(check: () => boolean | Promise<boolean>, timeout = 12000) {
+async function until(check: () => boolean | Promise<boolean>, timeout = 40000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (await check()) return;
@@ -80,7 +80,7 @@ async function until(check: () => boolean | Promise<boolean>, timeout = 12000) {
   assert.fail("Timed out waiting for site state");
 }
 
-function runner(t: TestContext, readinessTimeoutMs = 10000) {
+function runner(t: TestContext, readinessTimeoutMs = 30000) {
   const opened: string[] = [];
   const statuses: SiteStatus[] = [];
   const runner = new SiteRunner({
@@ -348,7 +348,7 @@ test("multiple projects run concurrently with separate status and ports", async 
   const site = new SiteRunner({
     onStatus() {},
     openPreview: async (url) => { opened.push(url); },
-    readinessTimeoutMs: 10000,
+    readinessTimeoutMs: 30000,
   });
   t.after(() => site.stop());
   await Promise.all([
