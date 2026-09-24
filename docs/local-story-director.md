@@ -151,7 +151,7 @@ flowchart LR
 
 - `runtime/src/demo-model.ts` 是本地模拟模型。`api-server.ts` 的对话路由只配置演示与 Codex；演示成功不代表存在真实本地推理。
 - `orchestration/src/sessions.ts` 也只在演示与 Codex 之间选择模型，不能仅下载 Ollama 模型就自动用于 Flow。
-- DSH `0.1.2-rc.1` 的 `dsh-llm-pi-ai` 支持自定义 `api`、`baseURL`、`models`、兼容参数和凭据引用，可作为本地兼容端点的接入基础。
+- DSH `0.1.5-rc.3` 的 `dsh-llm-pi-ai` 支持自定义 `api`、`baseURL`、`models`、兼容参数和凭据引用，可作为本地兼容端点的接入基础。
 - 当前 DSH `GenerateOptions` 与该 provider 配置没有直接的 `response_format` / JSON Schema 输出选项。现有 Flow 的 Zod 出参校验发生在执行结果上，不能视为服务端的约束解码。
 
 建议继续遵守既有 DSH 边界：

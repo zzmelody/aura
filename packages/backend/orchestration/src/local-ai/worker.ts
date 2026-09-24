@@ -51,3 +51,6 @@ process.stdin.on("data", (chunk: string) => {
     void stop();
   }
 });
+// Publish only our PID; the owner attaches this idle worker to its Job before
+// sending the launch spec. DSH no longer exposes a PID on SubprocessHandle.
+process.stdout.write(JSON.stringify({ pid: process.pid }) + "\n");

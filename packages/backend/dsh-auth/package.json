@@ -17,10 +17,10 @@
   "dependencies": {
     "@aura/protocol": "workspace:*",
     "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-authorization": "0.1.2-rc.1",
-    "@deepseek-ai/dsh-credentials-local": "0.1.2-rc.1",
-    "@deepseek-ai/dsh-llm": "0.1.2-rc.1",
-    "@deepseek-ai/dsh-llm-pi-ai": "0.1.2-rc.1"
+    "@deepseek-ai/dsh-authorization": "0.1.5-rc.3",
+    "@deepseek-ai/dsh-credentials-local": "0.1.5-rc.3",
+    "@deepseek-ai/dsh-llm": "0.1.5-rc.3",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.1.5-rc.3"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

@@ -235,7 +235,7 @@ interface ManagerOptions {
   idleMs?: number;
   startupMs?: number;
   pollMs?: number;
-  launch?: (spec: LaunchSpec) => OwnedProcess;
+  launch?: (spec: LaunchSpec) => OwnedProcess | Promise<OwnedProcess>;
   lease?: () => () => void;
 }
 
@@ -248,7 +248,7 @@ export class LocalAIManager implements LocalAIClient {
   private options: ManagerOptions;
   private entries: Deployment[];
   private outputs: string;
-  private spawn: (spec: LaunchSpec) => OwnedProcess;
+  private spawn: (spec: LaunchSpec) => OwnedProcess | Promise<OwnedProcess>;
   private cwd: string;
 
   constructor(
@@ -346,7 +346,7 @@ export class LocalAIManager implements LocalAIClient {
       await access(deployment.launch.argv[0]);
       await mkdir(this.outputs, { recursive: true, mode: 0o700 });
       signal.throwIfAborted();
-      const child = this.spawn(deployment.launch);
+      const child = await this.spawn(deployment.launch);
       this.active = { deployment, process: child, release };
       const deadline = AbortSignal.any([
         signal,

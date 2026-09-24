@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import type { Readable } from "node:stream";
 import type { SubprocessRuntime } from "@deepseek-ai/dsh-subprocess";
 import { ownProcessTree } from "./ownership.ts";
 
@@ -15,10 +16,52 @@ export interface OwnedProcess {
   stop(): Promise<void>;
 }
 
-export function launchOwned(
+function readWorkerPid(stream: Readable): Promise<number> {
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+    const cleanup = () => {
+      clearTimeout(timer);
+      stream.off("data", onData);
+      stream.off("end", onEnd);
+      stream.off("error", onError);
+    };
+    const fail = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const onEnd = () => fail(new Error("本地 AI worker 未报告进程身份。"));
+    const onError = (error: Error) => fail(error);
+    const onData = (chunk: Buffer | string) => {
+      buffer += chunk.toString();
+      if (buffer.length > 256)
+        return fail(new Error("本地 AI worker 的进程身份无效。"));
+      const newline = buffer.indexOf("\n");
+      if (newline < 0) return;
+      try {
+        const identity = JSON.parse(buffer.slice(0, newline)) as { pid?: unknown };
+        if (!Number.isSafeInteger(identity.pid) || (identity.pid as number) <= 0)
+          throw new Error("本地 AI worker 的进程身份无效。");
+        cleanup();
+        stream.resume(); // Drain later child output without copying it to logs.
+        resolve(identity.pid as number);
+      } catch (error) {
+        fail(error instanceof Error ? error : new Error("本地 AI worker 的进程身份无效。"));
+      }
+    };
+    const timer = setTimeout(
+      () => fail(new Error("本地 AI worker 进程身份等待超时。")),
+      5_000,
+    );
+    stream.on("data", onData);
+    stream.once("end", onEnd);
+    stream.once("error", onError);
+  });
+}
+
+export async function launchOwned(
   subprocess: SubprocessRuntime,
   spec: LaunchSpec,
-): OwnedProcess {
+): Promise<OwnedProcess> {
   const handle = subprocess.spawn({
     argv: [
       process.execPath,
@@ -28,7 +71,7 @@ export function launchOwned(
     env: { ELECTRON_RUN_AS_NODE: "1" },
     stdio: {
       stdin: "pipe",
-      stdout: { maxBytes: 16_384 },
+      stdout: "pipe",
       stderr: { maxBytes: 16_384 },
     },
     graceMs: 1_000,
@@ -58,12 +101,13 @@ export function launchOwned(
     void stop().catch(() => undefined);
   });
   try {
-    if (handle.pid <= 0 || !handle.stdin)
+    if (!handle.stdout || !handle.stdin)
       throw new Error("无法启动本地 AI worker。");
-    job = ownProcessTree(handle.pid);
+    const pid = await readWorkerPid(handle.stdout);
+    job = ownProcessTree(pid);
     handle.stdin.write(JSON.stringify(spec) + "\n");
     return {
-      pid: handle.pid,
+      pid,
       get exited() {
         return exited;
       },
@@ -113,7 +157,7 @@ export function launchOwned(
       stop,
     };
   } catch (error) {
-    void stop().catch(() => undefined);
+    await stop();
     throw error;
   }
 }

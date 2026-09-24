@@ -1,6 +1,8 @@
 # DSH 模型接入
 
-核对日期：2026-09-08。Aura 锁定 DSH `0.1.2-rc.1`，模型能力必须通过 DSH provider 与授权 seam 接入。Bedrock 保持未配置。
+核对日期：2026-09-24。Aura 锁定 DSH `0.1.5-rc.3`，模型能力必须通过 DSH provider 与授权 seam 接入。Bedrock 保持未配置。
+
+DSH SDK 的 `session.event` 现在以 `assistant/message` 提供完整助手消息。Aura 的 `/chat` 仍返回 NDJSON `delta` 事件，但当前每条助手消息只发出一次文本事件，而非逐 token 输出。
 
 ## Codex 订阅
 
