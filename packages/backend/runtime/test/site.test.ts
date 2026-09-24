@@ -32,10 +32,11 @@ import { SiteRunner, type SiteStatus } from "../src/site-runner.ts";
 async function server(t: TestContext, hostname = "127.0.0.1") {
   const app = new Hono().get("*", (c) => c.text("foreign service"));
   const http = serve({ fetch: app.fetch, hostname, port: 0 });
-  await new Promise<void>((resolve, reject) => {
-    http.once("listening", resolve);
-    http.once("error", reject);
-  });
+  if (!http.listening)
+    await new Promise<void>((resolve, reject) => {
+      http.once("listening", resolve);
+      http.once("error", reject);
+    });
   t.after(
     () =>
       new Promise<void>((resolve, reject) =>
