@@ -1,8 +1,6 @@
 name: Local CI
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       graphics_mode:
@@ -22,7 +20,7 @@ jobs:
       github.actor == 'zzmelody' &&
       github.triggering_actor == 'zzmelody' &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || inputs.graphics_mode == 'none')
+      inputs.graphics_mode == 'none'
     runs-on: [zzmelody-aura-win]
     timeout-minutes: 60
     defaults:

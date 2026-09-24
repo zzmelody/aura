@@ -18,7 +18,7 @@
 
 两个 runner 在 `AuraCI` 登录后自动上线；启动器在代理暂不可用或 runner 退出后每 30 秒重试，并保留 runner 自带的自动更新。在日常账号下可运行 `C:\ci-control\Enter-CiMode.ps1` 手动上线，运行 `Exit-CiMode.ps1` 等待作业结束并下线。两个入口调用 Windows 计划任务，可能需要管理员 PowerShell。`Enter-CiMode.ps1` 检查 Aura 默认端口 4311、ComfyUI 常用端口 8188、现有 Godot 与 Veya 进程、本机代理端口 7890 和 CI 账号的实际文件访问。登录启动与每个作业开始前也做安全检查；其他携带凭据的本地服务仍须由操作者先关闭，使用这些服务前先退出 CI 模式。`Run-Runner.ps1` 只给 runner 进程设置 `http://127.0.0.1:7890` 代理环境变量，不复制日常账号的代理配置或凭据。`Exit-CiMode.ps1` 会通过 GitHub API 确认作业不忙，停止计划任务及其残留的 runner 进程，并确认 GitHub 已显示 Offline，再允许启动这些服务。手动下线后，在本次登录会话内可通过 `Enter-CiMode.ps1` 恢复；下次登录 `AuraCI` 时也会自动恢复。
 
-主分支推送及手动触发都只在 `main` 上执行本机工作流。runner 离线时 GitHub 会排队，超过 24 小时会失败，需要手动重新运行。工作流使用只读 `GITHUB_TOKEN`、固定提交 SHA 的 Action，以及不保留 GitHub 凭据的 checkout。不要把个人 SSH 密钥、PAT、Aura 凭据或持久化的包仓库凭据放进 `AuraCI` 的用户目录。该账号能读到所有已注册个人仓库的 runner 工作目录和注册文件，因此这些仓库共用一个信任边界。
+`local-ci.yml` 只在手动触发时运行；`docs/requirements/*.md` 推送到 `main` 时，`auto-develop.yml` 才会在本机运行 Codex，并由 GitHub 托管 job 发布合格结果到 `dev`。runner 离线时 GitHub 会排队，超过 24 小时会失败，需要手动重新运行。本机工作流使用只读 `GITHUB_TOKEN`、固定提交 SHA 的 Action，以及不保留 GitHub 凭据的 checkout。发布 job 单独申请短期 `GITHUB_TOKEN` 的仓库内容写权限。不要把个人 SSH 密钥、PAT、Aura 凭据或持久化的包仓库凭据放进 `AuraCI` 的用户目录。该账号能读到所有已注册个人仓库的 runner 工作目录和注册文件，因此这些仓库共用一个信任边界。
 
 跨仓库 GPU 命令用 `C:\ci-control\Invoke-GpuLocked.ps1 -FilePath <program> -ArgumentList <args>` 包裹，在整个需要独占 GPU 的命令结束前持有主机级互斥锁。普通 CPU 检查不需要此锁。
 
