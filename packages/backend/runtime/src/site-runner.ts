@@ -261,7 +261,9 @@ export class SiteRunner {
   }
 
   private exited(id: string, entry: Entry, message: string, failed: boolean): void {
-    if (!this.live(id, entry)) return;
+    // An exit event sets exitCode before this callback runs. live() would
+    // reject the exited child and leave the site stuck in "starting".
+    if (this.entries.get(id) !== entry || entry.cancelled) return;
     entry.cancelled = true;
     void this.exclusive(id, async () => {
       if (this.entries.get(id) !== entry) return;

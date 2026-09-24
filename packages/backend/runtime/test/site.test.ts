@@ -6,11 +6,9 @@ import {
   mkdtemp,
   readFile,
   rm,
-  symlink,
   writeFile,
 } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
@@ -49,7 +47,12 @@ async function server(t: TestContext, hostname = "127.0.0.1") {
 }
 
 async function fixture(t: TestContext, script: string) {
-  const directory = await mkdtemp(join(tmpdir(), "aura-site-test-"));
+  // Place fixtures under this package so Node resolves the package's pnpm
+  // links from their original location. A junction to node_modules from an
+  // OS temp directory breaks pnpm's relative package links on Windows.
+  const directory = await mkdtemp(
+    join(import.meta.dirname, "../.aura-site-test-"),
+  );
   const workspace = JSON.parse(
     await readFile(new URL("../../../../package.json", import.meta.url), "utf8"),
   ) as { packageManager: string };
@@ -65,11 +68,6 @@ async function fixture(t: TestContext, script: string) {
   await copyFile(
     new URL("./fixtures/site-server.ts", import.meta.url),
     join(directory, "server.ts"),
-  );
-  await symlink(
-    resolve(import.meta.dirname, "../node_modules"),
-    join(directory, "node_modules"),
-    "junction",
   );
   return describeProject(directory);
 }
@@ -262,6 +260,19 @@ test("a foreign listener announced by the child is never adopted; timeout retain
   await site.stop();
   assert.equal(site.getStatus().pid, undefined);
   assert.equal(await (await fetch(foreign.url)).text(), "foreign service");
+});
+
+test("a child that exits during startup reports an error promptly", async (t) => {
+  const project = await fixture(t, "node server.ts 0");
+  await writeFile(join(project.directory, "server.ts"), "process.exit(7);");
+  const { runner: site, opened } = runner(t);
+  await site.start({ ...project, url: "http://127.0.0.1:59172/" });
+  await until(() => site.getStatus().state === "error", 15000);
+  const status = site.getStatus();
+  assert.match(status.message!, /代码 7/);
+  assert.equal(status.pid, undefined);
+  assert.equal(status.previewReady, false);
+  assert.deepEqual(opened, []);
 });
 
 test("stop during startup cancels preview; concurrent starts leave only the newest child", async (t) => {
