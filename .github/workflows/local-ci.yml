@@ -1,0 +1,78 @@
+name: Local CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      graphics_mode:
+        description: Godot graphics check in the CI desktop session
+        type: choice
+        required: true
+        default: none
+        options: [none, foreground, switched, locked]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: >-
+      github.repository == 'zzmelody/aura' &&
+      github.actor == 'zzmelody' &&
+      github.triggering_actor == 'zzmelody' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || inputs.graphics_mode == 'none')
+    runs-on: [zzmelody-aura-win]
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 12.5.1
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+
+  graphics:
+    if: >-
+      github.repository == 'zzmelody/aura' &&
+      github.actor == 'zzmelody' &&
+      github.triggering_actor == 'zzmelody' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.graphics_mode != 'none'
+    runs-on: [zzmelody-aura-win]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Capture an RTX 4080 frame
+        env:
+          GRAPHICS_MODE: ${{ inputs.graphics_mode }}
+        run: |
+          $mode = $env:GRAPHICS_MODE
+          if ($mode -notin @('foreground', 'switched', 'locked')) { throw 'Invalid graphics mode.' }
+          $project = 'C:\ci-runners\graphics-probe'
+          New-Item -ItemType Directory -Force -Path $project | Out-Null
+          Copy-Item -LiteralPath 'scripts/ci/godot-probe/project.godot', 'scripts/ci/godot-probe/probe.tscn', 'scripts/ci/godot-probe/probe.gd' -Destination $project -Force
+          Write-Host 'Capturing in 30 seconds. Arrange the CI desktop state now.'
+          Start-Sleep -Seconds 30
+          & 'scripts/ci/windows/Invoke-GpuLocked.ps1' -FilePath 'C:\ci-control\tools\Godot_v4.7.2-stable_win64_console.exe' -ArgumentList @('--path', $project, '--', $mode)
+          if ($LASTEXITCODE -ne 0) { throw "Godot exited with code $LASTEXITCODE" }
+          $report = Get-Content -LiteralPath (Join-Path $project "$mode.json") -Raw | ConvertFrom-Json
+          if (-not $report.passed) { throw 'Godot did not produce a valid RTX 4080 frame.' }
+          Write-Host "Screenshot: $project\$mode.png"

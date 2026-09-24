@@ -1,0 +1,118 @@
+name: Auto develop request
+
+on:
+  issues:
+    types: [opened]
+  push:
+    branches: [main]
+    paths:
+      - "docs/requests/*.md"
+      - "docs/requests/**/*.md"
+
+permissions:
+  contents: read
+
+jobs:
+  develop:
+    if: >-
+      github.repository == 'zzmelody/aura' &&
+      github.actor == 'zzmelody' &&
+      github.triggering_actor == 'zzmelody' &&
+      (github.event_name != 'issues' || github.event.issue.user.login == 'zzmelody')
+    runs-on: [zzmelody-aura-win]
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 12.5.1
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Preserve the trusted request packer
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP 'auto-development'
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item -LiteralPath 'scripts/ci/auto-develop.ts' -Destination $target
+          Copy-Item -LiteralPath 'scripts/ci/auto-development-core.ts' -Destination $target
+      - name: Develop request with Codex
+        run: node (Join-Path $env:RUNNER_TEMP 'auto-development/auto-develop.ts') run
+      - name: Package changes
+        run: node (Join-Path $env:RUNNER_TEMP 'auto-development/auto-develop.ts') pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auto-development
+          path: |
+            ${{ runner.temp }}/auto-development/change.patch
+            ${{ runner.temp }}/auto-development/metadata.json
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    needs: develop
+    runs-on: ubuntu-latest
+    outputs:
+      check_result: ${{ steps.check.outcome }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: auto-development
+          path: ${{ runner.temp }}/auto-development
+      - run: git apply --index "$RUNNER_TEMP/auto-development/change.patch"
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 12.5.1
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - name: Verify generated change
+        id: check
+        continue-on-error: true
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run check
+
+  publish:
+    needs: [develop, verify]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.AUTO_DEV_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTO_DEV_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: auto-development
+          path: ${{ runner.temp }}/auto-development
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+      - name: Push branch and create PR
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          CHECK_RESULT: ${{ needs.verify.outputs.check_result }}
+        run: node scripts/ci/publish-auto-development.ts
