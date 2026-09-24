@@ -50,12 +50,15 @@ async function server(t: TestContext, hostname = "127.0.0.1") {
 
 async function fixture(t: TestContext, script: string) {
   const directory = await mkdtemp(join(tmpdir(), "aura-site-test-"));
+  const workspace = JSON.parse(
+    await readFile(new URL("../../../../package.json", import.meta.url), "utf8"),
+  ) as { packageManager: string };
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(
     join(directory, "package.json"),
     JSON.stringify({
       type: "module",
-      packageManager: "pnpm@10.17.1",
+      packageManager: workspace.packageManager,
       scripts: { dev: script },
     }),
   );
