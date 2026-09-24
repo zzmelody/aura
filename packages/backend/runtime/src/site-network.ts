@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 
 const exec = promisify(execFile);
 const processQueryOptions = {
-  timeout: 2500,
+  timeout: 10_000,
   maxBuffer: 4 * 1024 * 1024,
   windowsHide: true,
 };
