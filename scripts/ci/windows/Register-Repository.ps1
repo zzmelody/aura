@@ -80,10 +80,13 @@ try {
   $taskName = "Aura-CI-$Repository"
   $launcher = Join-Path $ControlRoot 'Run-Runner.ps1'
   if (-not (Test-Path -LiteralPath $launcher)) { throw "Missing runner launcher: $launcher" }
+  $guard = Join-Path $ControlRoot 'Assert-CiEnvironment.ps1'
+  if (-not (Test-Path -LiteralPath $guard -PathType Leaf)) { throw "Missing runner guard: $guard" }
   $action = New-ScheduledTaskAction -Execute 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`" -Repository $Repository" -WorkingDirectory $runnerDir
   $principal = New-ScheduledTaskPrincipal -UserId "$env:COMPUTERNAME\$CiAccountName" -LogonType Interactive -RunLevel Limited
+  $logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:COMPUTERNAME\$CiAccountName"
   $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-  Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings | Out-Null
+  Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Trigger $logonTrigger -Settings $settings | Out-Null
 
   $accessCheck = Join-Path $ControlRoot 'Test-CiAccess.ps1'
   if (-not (Test-Path -LiteralPath $accessCheck)) { throw "Missing access check script: $accessCheck" }
