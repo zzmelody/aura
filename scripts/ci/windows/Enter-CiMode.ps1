@@ -14,6 +14,9 @@ foreach ($port in @(4311, 8188)) {
 if (Get-Process -Name 'Godot*' -ErrorAction SilentlyContinue) {
   throw 'Godot is already running outside CI. Stop it before entering CI mode.'
 }
+if (-not (Get-NetTCPConnection -State Listen -LocalPort 7890 -ErrorAction SilentlyContinue | Where-Object { $_.LocalAddress -eq '127.0.0.1' })) {
+  throw 'The local GitHub proxy at 127.0.0.1:7890 is unavailable.'
+}
 
 $checkPath = 'C:\ci-runners\access-check.json'
 Remove-Item -LiteralPath $checkPath -ErrorAction SilentlyContinue

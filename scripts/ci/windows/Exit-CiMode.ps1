@@ -34,8 +34,18 @@ try {
   } while ($true)
 
   foreach ($entry in $repositories) {
+    $bin = [IO.Path]::GetFullPath((Join-Path $entry.directory 'bin'))
+    $workers = @(Get-CimInstance Win32_Process -Filter "Name = 'Runner.Worker.exe'" | Where-Object {
+      $_.ExecutablePath -and [IO.Path]::GetFullPath((Split-Path -Parent $_.ExecutablePath)) -eq $bin
+    })
+    if ($workers.Count -gt 0) { throw "Runner worker is still active: $($entry.owner)/$($entry.repository)" }
     $task = Get-ScheduledTask -TaskName $entry.taskName
     if ($task.State -eq 'Running') { Stop-ScheduledTask -TaskName $entry.taskName }
+    $listenerPath = [IO.Path]::GetFullPath((Join-Path $bin 'Runner.Listener.exe'))
+    $listeners = @(Get-CimInstance Win32_Process -Filter "Name = 'Runner.Listener.exe'" | Where-Object {
+      $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq $listenerPath
+    })
+    foreach ($listener in $listeners) { Stop-Process -Id $listener.ProcessId -Force }
     Write-Host "Stopped $($entry.owner)/$($entry.repository) runner task."
   }
   $offlineDeadline = (Get-Date).AddSeconds(60)

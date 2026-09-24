@@ -66,6 +66,14 @@ if (-not $ciUser) {
 }
 if (-not $ciUser.Enabled) { throw "Local CI account is disabled: $CiAccountName" }
 $ciSid = $ciUser.SID.Value
+$users = Get-LocalGroup -SID 'S-1-5-32-545'
+if (-not (Get-LocalGroupMember -Group $users.Name | Where-Object { $_.SID.Value -eq $ciSid })) {
+  Add-LocalGroupMember -Group $users.Name -Member $ciUser
+}
+& net.exe user $CiAccountName /passwordreq:yes | Out-Host
+if ($LASTEXITCODE -ne 0 -or -not (Get-LocalUser -Name $CiAccountName).PasswordRequired) {
+  throw "CI account must require a password: $CiAccountName"
+}
 $administrators = Get-LocalGroup -SID 'S-1-5-32-544'
 if (Get-LocalGroupMember -Group $administrators.Name | Where-Object { $_.SID.Value -eq $ciSid }) {
   throw "CI account must not be an administrator: $CiAccountName"
@@ -97,6 +105,7 @@ Copy-Item -LiteralPath (Join-Path $source 'Exit-CiMode.ps1') -Destination $Contr
 Copy-Item -LiteralPath (Join-Path $source 'Invoke-GpuLocked.ps1') -Destination $ControlRoot -Force
 Copy-Item -LiteralPath (Join-Path $source 'Register-Repository.ps1') -Destination $ControlRoot -Force
 Copy-Item -LiteralPath (Join-Path $source 'Test-CiAccess.ps1') -Destination $ControlRoot -Force
+Copy-Item -LiteralPath (Join-Path $source 'Run-Runner.ps1') -Destination $ControlRoot -Force
 
 Write-Host "Created or verified $CiAccountName ($ciSid). Reboot and sign in once before starting interactive runners."
 Remove-Item -LiteralPath (Join-Path $ControlRoot 'initialize-last-error.txt') -ErrorAction SilentlyContinue

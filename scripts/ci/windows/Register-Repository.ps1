@@ -78,7 +78,9 @@ try {
   }
 
   $taskName = "Aura-CI-$Repository"
-  $action = New-ScheduledTaskAction -Execute 'C:\Windows\System32\cmd.exe' -Argument "/d /c `"$runnerDir\run.cmd`"" -WorkingDirectory $runnerDir
+  $launcher = Join-Path $ControlRoot 'Run-Runner.ps1'
+  if (-not (Test-Path -LiteralPath $launcher)) { throw "Missing runner launcher: $launcher" }
+  $action = New-ScheduledTaskAction -Execute 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`" -Repository $Repository" -WorkingDirectory $runnerDir
   $principal = New-ScheduledTaskPrincipal -UserId "$env:COMPUTERNAME\$CiAccountName" -LogonType Interactive -RunLevel Limited
   $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
   Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings | Out-Null
