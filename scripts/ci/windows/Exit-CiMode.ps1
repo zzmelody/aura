@@ -4,7 +4,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repositories = @(Get-Content -LiteralPath (Join-Path $ControlRoot 'repositories.json') -Raw | ConvertFrom-Json)
+$parsedManifest = Get-Content -LiteralPath (Join-Path $ControlRoot 'repositories.json') -Raw | ConvertFrom-Json
+$repositories = @($parsedManifest | ForEach-Object { $_ })
 if ($repositories.Count -eq 0) { throw 'No repositories have been registered.' }
 $credentialLines = @('protocol=https', 'host=github.com', 'username=zzmelody', '') | git credential-manager get
 $passwordLine = $credentialLines | Where-Object { $_ -like 'password=*' } | Select-Object -First 1

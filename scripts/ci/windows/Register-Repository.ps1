@@ -91,9 +91,13 @@ try {
   Register-ScheduledTask -TaskName 'Aura-CI-AccessCheck' -Action $checkAction -Principal $principal -Settings $settings -Force | Out-Null
 
   $manifestPath = Join-Path $ControlRoot 'repositories.json'
-  $manifest = if (Test-Path -LiteralPath $manifestPath) { @(Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json) } else { @() }
+  $manifest = @()
+  if (Test-Path -LiteralPath $manifestPath) {
+    $parsedManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $manifest = @($parsedManifest | ForEach-Object { $_ })
+  }
   $manifest += [pscustomobject]@{ owner = $Owner; repository = $Repository; runnerName = $runnerName; taskName = $taskName; directory = $runnerDir }
-  $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+  ConvertTo-Json -InputObject $manifest -Depth 4 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
   Remove-Item -LiteralPath (Join-Path $ControlRoot 'register-last-error.txt') -ErrorAction SilentlyContinue
   Write-Host "Registered $Owner/$Repository as $runnerName with label $label. Interactive task: $taskName"
 } finally {

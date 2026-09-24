@@ -3,7 +3,8 @@ param([string] $ControlRoot = 'C:\ci-control')
 $ErrorActionPreference = 'Stop'
 $manifestPath = Join-Path $ControlRoot 'repositories.json'
 if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'No repositories have been registered.' }
-$repositories = @(Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json)
+$parsedManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$repositories = @($parsedManifest | ForEach-Object { $_ })
 if ($repositories.Count -eq 0) { throw 'No repositories have been registered.' }
 
 foreach ($port in @(4311, 8188)) {
