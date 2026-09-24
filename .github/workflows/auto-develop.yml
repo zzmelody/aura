@@ -1,8 +1,6 @@
 name: Auto develop request
 
 on:
-  issues:
-    types: [opened]
   push:
     branches: [main]
     paths:
@@ -18,7 +16,7 @@ jobs:
       github.repository == 'zzmelody/aura' &&
       github.actor == 'zzmelody' &&
       github.triggering_actor == 'zzmelody' &&
-      (github.event_name != 'issues' || github.event.issue.user.login == 'zzmelody')
+      github.ref == 'refs/heads/main'
     runs-on: [zzmelody-aura-win]
     timeout-minutes: 180
     defaults:
