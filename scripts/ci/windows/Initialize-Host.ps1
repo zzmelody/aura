@@ -108,6 +108,7 @@ Copy-Item -LiteralPath (Join-Path $source 'Test-CiAccess.ps1') -Destination $Con
 Copy-Item -LiteralPath (Join-Path $source 'Assert-CiEnvironment.ps1') -Destination $ControlRoot -Force
 Copy-Item -LiteralPath (Join-Path $source 'Run-Runner.ps1') -Destination $ControlRoot -Force
 Copy-Item -LiteralPath (Join-Path $source 'Enable-CiAutoStart.ps1') -Destination $ControlRoot -Force
+Copy-Item -LiteralPath (Join-Path $source 'Update-Mirrors.ps1') -Destination $ControlRoot -Force
 
 Write-Host "Created or verified $CiAccountName ($ciSid). Sign in once after each reboot to start interactive runners."
 Remove-Item -LiteralPath (Join-Path $ControlRoot 'initialize-last-error.txt') -ErrorAction SilentlyContinue

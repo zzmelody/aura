@@ -39,7 +39,7 @@ foreach ($entry in $repositories) {
   }
 }
 
-foreach ($name in @('Assert-CiEnvironment.ps1', 'Run-Runner.ps1')) {
+foreach ($name in @('Assert-CiEnvironment.ps1', 'Run-Runner.ps1', 'Update-Mirrors.ps1')) {
   Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $ControlRoot $name) -Force
 }
 foreach ($entry in $repositories) {

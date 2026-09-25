@@ -7,8 +7,10 @@
 1. 在管理员 PowerShell 中运行 `scripts/ci/windows/Initialize-Host.ps1`。脚本提示输入 `AuraCI` 的本地密码，不把密码写入仓库或脚本。它将账号加入普通 `Users` 组并要求密码，收紧 `F:\aura` 的 ACL，在 D/E/F 数据盘上为该账号设置拒绝访问规则，并建立 `C:\ci-runners` 与受保护的 `C:\ci-control`。原始目录 ACL 保存在后者的 `*.before.txt` 文件中。
 2. 同一管理员 PowerShell 中分别运行 `C:\ci-control\Register-Repository.ps1 -Repository aura` 和 `C:\ci-control\Register-Repository.ps1 -Repository Veya`。脚本从当前 Windows 账号的 Git Credential Manager 读取 `zzmelody` 登录，核实仓库为私有且只有你一位协作者；随后下载 GitHub 官方 runner、校验发布资产 SHA-256、通过短期注册令牌配置 runner，并创建 `Aura-CI-aura`、`Aura-CI-Veya` 两个交互式计划任务。长期 GitHub 凭据不会复制到 CI 账号。
 3. 每次重启后登录 `AuraCI` 一次；该账号的登录触发器会自动启动两个交互式 runner 任务，之后可切回日常账号。无需每次作业重新登录，也不设置自动登录。登录前 runner 不会上线；通过 `runas` 或 Task Scheduler 的非交互登录模式启动 Godot 图形作业并不等价于真实桌面会话。
-4. `Enter-CiMode.ps1` 手动上线时会在 `AuraCI` 的交互式会话里运行 `Aura-CI-AccessCheck`，确认该账号不是管理员，并且不能列出 `F:\aura`、`F:\aura\.aura`、D/E/F 盘和日常用户目录。检查结果保存在 `C:\ci-runners\access-check.json`。登录自动启动以及每个作业开始前，`Assert-CiEnvironment.ps1` 还会重新检查账号权限、本地服务与代理；检查失败时不上线或使作业失败。
-5. Godot 4.7.2 的 Windows 可执行文件位于 `C:\ci-control\tools`，由日常账号管理，`AuraCI` 只有读取和执行权限。更新 Godot 时，将受信任的 `Godot_v4.7.2-stable_win64.exe` 和 `_console.exe` 复制到此目录并核对源文件与目标文件的 SHA-256；同时更新图形工作流中的版本路径。
+4. `Enter-CiMode.ps1` 手动上线时会在 `AuraCI` 的交互式会话里运行 `Aura-CI-AccessCheck`，确认该账号不是管理员，并且不能列出 `F:\aura`、`F:\aura\.aura`、`F:\agentsworkspace`、D/E/F 盘和日常用户目录。检查结果保存在 `C:\ci-runners\access-check.json`。登录自动启动以及每个作业开始前，`Assert-CiEnvironment.ps1` 还会重新检查账号权限、本地服务与代理；检查失败时不上线或使作业失败。`F:\agentsworkspace` 是个人工作区，CI 不在那里创建检出或缓存。
+5. Godot 4.7.2 的 Windows 可执行文件、Node.js 24 和 pnpm 12.5.1 位于 `C:\ci-control\tools`，由日常账号管理，`AuraCI` 只有读取和执行权限。`Run-Runner.ps1` 把 `node` 与 `pnpm` 目录加到 runner 进程的 PATH 前面，因此本机作业直接调用它们，不再由 `actions/setup-node` 或 `pnpm/action-setup` 下载。pnpm 的内容寻址存储固定在 `C:\ci-runners\cache\pnpm`，由作业以 `--store-dir` 指定，跨作业复用。更新这些工具时核对源文件与目标文件的 SHA-256，并同步工作流中写死的版本。
+
+`Update-Mirrors.ps1` 在 `C:\ci-runners\mirrors` 维护 `aura`、`Veya` 及其子模块的 bare mirror，并在 runner 每轮退出后的空闲时间增量更新。本机作业先做浅检出，再从对应 mirror 取完整历史和子模块，不再每次从 GitHub 全量下载。CI 需要独立工作目录时克隆到 `C:\ci-runners\work\<仓库名>` 并用 `--reference` 指向 mirror，不把 worktree 挂到 runner 正在使用的仓库上，否则下一个作业的检出会计分支已被占用。
 
 已有手动任务但尚未设置登录触发器的主机，可在管理员 PowerShell 中运行 `scripts/ci/windows/Enable-CiAutoStart.ps1`，将受保护的启动器与作业前检查部署到 `C:\ci-control`，并只为清单中的 `AuraCI` 交互式 runner 任务添加登录触发器。
 

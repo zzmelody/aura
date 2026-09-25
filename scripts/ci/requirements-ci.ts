@@ -420,8 +420,9 @@ async function reconcile(): Promise<void> {
   git(["diff", "--cached", "--check"]);
   assertProtectedIndexUnchanged(protectedBeforeCodex);
   const mergeHead = exec("git", ["rev-parse", "-q", "--verify", "MERGE_HEAD"], workspace, true);
+  const staged = pathsFromGit(["diff", "--cached", "--name-only", "-z"]);
   if (mergeHead.code === 0) git(["commit", "--no-edit"]);
-  else if (changed.length) git(["commit", "-m", "Revalidate requirements against current dev"]);
+  else if (staged.length) git(["commit", "-m", "Revalidate requirements against current dev"]);
   const candidateSha = git(["rev-parse", candidateRef]);
   verifySources(metadata, candidateSha);
   const updated: Metadata = { ...metadata, baseDevSha: newBase, candidateRef, candidateSha };
@@ -549,6 +550,9 @@ async function develop(): Promise<void> {
   };
   await writeFile(path.join(artifact, "metadata.json"), JSON.stringify(metadata), "utf8");
   git(["bundle", "create", path.join(artifact, "candidate.bundle"), candidateRef, "^" + baseDevSha]);
+  git(["checkout", "--detach"]);
+  git(["branch", "-D", candidateRef]);
+  for (const requirement of successes) git(["branch", "-D", "ci/requirement-" + runKey + "-" + requirement.id]);
   appendOutput("has_changes", "true");
   appendOutput("has_failures", failures.length ? "true" : "false");
 }

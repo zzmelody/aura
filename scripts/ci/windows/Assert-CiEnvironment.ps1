@@ -7,7 +7,7 @@ if ($identity.Name -ine "$env:COMPUTERNAME\AuraCI" -or
   throw 'The runner must use the non-administrator AuraCI account.'
 }
 
-foreach ($path in @('F:\aura', 'F:\aura\.aura', 'D:\', 'E:\', 'F:\', 'C:\Users\15389')) {
+foreach ($path in @('F:\aura', 'F:\aura\.aura', 'F:\agentsworkspace', 'D:\', 'E:\', 'F:\', 'C:\Users\15389')) {
   $readable = $false
   try {
     Get-ChildItem -LiteralPath $path -Force -ErrorAction Stop | Select-Object -First 1 | Out-Null
