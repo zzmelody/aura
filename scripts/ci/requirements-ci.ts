@@ -99,18 +99,23 @@ function codexSchema(): object {
 }
 
 async function runCodex(cwd: string, prompt: string, output: string, schema: string, images: string[] = [], readOnly = false, gpuLock = false): Promise<CodexResult> {
-  const args = [
-    "-a", "never", "exec", "--sandbox", readOnly ? "read-only" : "workspace-write",
-    "--ephemeral", "--ignore-user-config", "-c", 'windows.sandbox="unelevated"',
-    "--output-schema", schema, "--output-last-message", output,
-  ];
-  if (gpuLock) args.push("-c", "windows.sandbox_private_desktop=false");
-  for (const image of images) args.push("--image", image);
-  args.push("-");
+  const agent = (process.env.CI_AGENT || "claude").toLowerCase();
   const promptFile = path.join(temp, "prompt-" + path.basename(output) + ".txt");
+  const promptForAgent = agent === "claude"
+    ? prompt + "\n\nWhen you are finished, make your final message exactly one JSON object and nothing else, matching this schema:\n" + await readFile(schema, "utf8")
+    : prompt;
+  await writeFile(promptFile, promptForAgent, "utf8");
+  const args = agent === "claude"
+    ? ["-p", "--model", "claude-opus-5[1M]", "--effort", "high", "--output-format", "json",
+       "--no-session-persistence", "--permission-mode", readOnly ? "dontAsk" : "acceptEdits"]
+    : ["-a", "never", "exec", "--sandbox", readOnly ? "read-only" : "workspace-write",
+       "--ephemeral", "--ignore-user-config", "-c", 'windows.sandbox="unelevated"',
+       "--output-schema", schema, "--output-last-message", output];
+  if (agent !== "claude" && gpuLock) args.push("-c", "windows.sandbox_private_desktop=false");
+  if (agent !== "claude") for (const image of images) args.push("--image", image);
+  if (agent !== "claude") args.push("-");
   const configFile = path.join(temp, "config-" + path.basename(output) + ".json");
-  await writeFile(promptFile, prompt, "utf8");
-  await writeFile(configFile, JSON.stringify({ promptFile, arguments: args, gpuLock }), "utf8");
+  await writeFile(configFile, JSON.stringify({ agent, promptFile, outputFile: output, arguments: args, gpuLock }), "utf8");
   const exitCode = await new Promise<number>((resolve, reject) => {
     const child = spawn("powershell.exe", [
       "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
@@ -124,10 +129,11 @@ async function runCodex(cwd: string, prompt: string, output: string, schema: str
     child.on("error", reject);
     child.on("close", (code) => resolve(code ?? 1));
   });
-  if (exitCode !== 0) throw new Error("Codex exited with code " + exitCode + ".");
-  const result = JSON.parse(await readFile(output, "utf8")) as CodexResult;
-  if (typeof result.completed !== "boolean" || !Array.isArray(result.tests))
-    throw new Error("Codex produced an invalid result.");
+  if (exitCode !== 0) throw new Error(agent + " exited with code " + exitCode + ".");
+  const raw = JSON.parse(await readFile(output, "utf8")) as { result?: string } & CodexResult;
+  const result = agent === "claude" ? JSON.parse(raw.result ?? "") as CodexResult : raw;
+  if (!result || typeof result.completed !== "boolean" || !Array.isArray(result.tests))
+    throw new Error(agent + " produced an invalid result.");
   return result;
 }
 
