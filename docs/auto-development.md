@@ -7,6 +7,7 @@
 ## 执行与失败处理
 
 - 本机开发 job 的 GITHUB_TOKEN 只有读取权限，checkout 不保存 GitHub 凭据。可信脚本先复制到 runner 临时目录，再运行 Codex；Codex 使用非交互的 workspace-write 沙箱和 Windows `unelevated` 模式，不会等待提问或审批。图形任务关闭 Codex 的私有桌面，以便在 AuraCI 的真实交互会话中截图。
+- 可信入口按 UTF-8 读取需求提示词并以 UTF-8 向 Codex 传递标准输入和控制台输出，保证中文需求与 Actions 日志不被 Windows PowerShell 的默认代码页改写。
 - Codex 必须运行相关测试并报告命令和结果。它不能修改工作流、CI 脚本、AGENTS.md、凭据文件或其他需求文档。可信脚本在测试和视觉复核通过后，只改当前需求文档的状态；若没有实现改动、测试失败或触及保护路径，该需求不会进入 dev。
 - visual: true 的需求必须产出真实程序截图，保存到 ci-evidence/<需求ID>/。脚本检查 PNG 文件非空且尺寸合理，再把图片交给一次只读 Codex 视觉复核。截图作为短期 Actions artifact 保存，不进入 Git。
 - 本地 dev 候选分支先合入触发需求的 main 提交。遇到普通代码冲突时，Codex 解决并复测；若冲突触及 CI 控制文件或需求状态，任务失败。

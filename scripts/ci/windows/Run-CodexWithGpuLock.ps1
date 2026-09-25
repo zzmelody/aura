@@ -3,7 +3,11 @@ param(
   [int] $TimeoutSeconds = 3600
 )
 $ErrorActionPreference = 'Stop'
-$config = Get-Content -LiteralPath $ConfigFile -Raw | ConvertFrom-Json
+$utf8 = [System.Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = $utf8
+[Console]::OutputEncoding = $utf8
+$OutputEncoding = $utf8
+$config = Get-Content -LiteralPath $ConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
 $arguments = [string[]] $config.arguments
 $promptFile = [string] $config.promptFile
 $mutex = $null
@@ -14,7 +18,7 @@ try {
     $held = $mutex.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds))
     if (-not $held) { throw 'Timed out waiting for the shared GPU lock.' }
   }
-  Get-Content -LiteralPath $promptFile -Raw | & codex @arguments
+  Get-Content -LiteralPath $promptFile -Raw -Encoding UTF8 | & codex @arguments
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
   if ($held) { $mutex.ReleaseMutex() }
