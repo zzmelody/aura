@@ -32,8 +32,12 @@ try {
       $env:ANTHROPIC_MODEL = 'claude-opus-5[1M]'
       # Without this, a stalled proxy connection hangs the run until the job timeout.
       $env:API_TIMEOUT_MS = '180000'
+      $transcript = Join-Path $configDir 'transcript.json'
       Get-Content -LiteralPath $promptFile -Raw -Encoding UTF8 | & $claude @arguments |
-        Set-Content -LiteralPath ([string] $config.outputFile) -Encoding UTF8
+        Set-Content -LiteralPath $transcript -Encoding UTF8
+      if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      $utf8 = New-Object System.Text.UTF8Encoding $false
+      [System.IO.File]::WriteAllText([string] $config.outputFile, (Get-Content -LiteralPath $transcript -Raw -Encoding UTF8), $utf8)
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     } finally {
       Remove-Item -LiteralPath $configDir -Recurse -Force -ErrorAction SilentlyContinue
