@@ -30,6 +30,8 @@ try {
       $env:ANTHROPIC_AUTH_TOKEN = 'sk-MBLKriCsV3Ojfaoeej3d5w'
       $env:ANTHROPIC_BASE_URL = 'https://lumina.tripo3d.com'
       $env:ANTHROPIC_MODEL = 'claude-opus-5[1M]'
+      # Without this, a stalled proxy connection hangs the run until the job timeout.
+      $env:API_TIMEOUT_MS = '180000'
       Get-Content -LiteralPath $promptFile -Raw -Encoding UTF8 | & $claude @arguments |
         Set-Content -LiteralPath ([string] $config.outputFile) -Encoding UTF8
       if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
