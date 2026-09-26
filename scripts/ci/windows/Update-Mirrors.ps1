@@ -30,7 +30,9 @@ foreach ($mirror in $mirrors) {
       & git clone --mirror $mirror.Url $path
     }
   } else {
-    & git -C $path fetch --prune
+    # The host git config sets safe.bareRepository=explicit, which blocks every
+    # command against a bare repo unless this exception is passed explicitly.
+    & git -c safe.bareRepository=all -C $path fetch --prune
   }
   if ($LASTEXITCODE -ne 0) { throw "Mirror update failed: $($mirror.Name)" }
 }

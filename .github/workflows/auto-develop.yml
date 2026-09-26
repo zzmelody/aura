@@ -33,7 +33,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Fetch history from the local mirror
-        run: git fetch --no-tags C:/ci-runners/mirrors/aura.git "+refs/heads/*:refs/remotes/origin/*"
+        run: git -c safe.bareRepository=all fetch --no-tags C:/ci-runners/mirrors/aura.git "+refs/heads/*:refs/remotes/origin/*"
       - name: Install dependencies from the shared store
         run: |
           $env:PATH = "C:\ci-control\tools\node;C:\ci-control\tools\pnpm;$env:PATH"
@@ -100,7 +100,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Fetch history from the local mirror
-        run: git fetch --no-tags C:/ci-runners/mirrors/aura.git "+refs/heads/*:refs/remotes/origin/*"
+        run: git -c safe.bareRepository=all fetch --no-tags C:/ci-runners/mirrors/aura.git "+refs/heads/*:refs/remotes/origin/*"
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: requirements-${{ github.run_id }}-${{ github.run_attempt }}
