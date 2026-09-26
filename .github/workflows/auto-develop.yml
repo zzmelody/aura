@@ -35,9 +35,9 @@ jobs:
       - name: Fetch history from the local mirror
         run: git fetch --no-tags C:/ci-runners/mirrors/aura.git "+refs/heads/*:refs/remotes/origin/*"
       - name: Install dependencies from the shared store
-        run: pnpm install --frozen-lockfile --store-dir C:\ci-runners\cache\pnpm
-        env:
-          PATH: C:\ci-control\tools\node;C:\ci-control\tools\pnpm;${{ env.PATH }}
+        run: |
+          $env:PATH = "C:\ci-control\tools\node;C:\ci-control\tools\pnpm;$env:PATH"
+          pnpm install --frozen-lockfile --store-dir C:\ci-runners\cache\pnpm
       - name: Preserve trusted CI scripts
         run: |
           $trusted = Join-Path $env:RUNNER_TEMP 'requirements-ci/trusted'
@@ -106,9 +106,9 @@ jobs:
           name: requirements-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/requirements-ci/artifact
       - name: Install dependencies from the shared store
-        run: pnpm install --frozen-lockfile --store-dir C:\ci-runners\cache\pnpm
-        env:
-          PATH: C:\ci-control\tools\node;C:\ci-control\tools\pnpm;${{ env.PATH }}
+        run: |
+          $env:PATH = "C:\ci-control\tools\node;C:\ci-control\tools\pnpm;$env:PATH"
+          pnpm install --frozen-lockfile --store-dir C:\ci-runners\cache\pnpm
       - name: Preserve trusted CI scripts
         run: |
           $trusted = Join-Path $env:RUNNER_TEMP 'requirements-ci/trusted'

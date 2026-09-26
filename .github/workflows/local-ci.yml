@@ -33,12 +33,13 @@ jobs:
       - name: Fetch history from the local mirror
         run: git fetch --no-tags C:/ci-runners/mirrors/aura.git "+refs/heads/*:refs/remotes/origin/*"
       - name: Install dependencies from the shared store
-        run: pnpm install --frozen-lockfile --store-dir C:\ci-runners\cache\pnpm
-        env:
-          PATH: C:\ci-control\tools\node;C:\ci-control\tools\pnpm;${{ env.PATH }}
-      - run: pnpm run check
-        env:
-          PATH: C:\ci-control\tools\node;C:\ci-control\tools\pnpm;${{ env.PATH }}
+        run: |
+          $env:PATH = "C:\ci-control\tools\node;C:\ci-control\tools\pnpm;$env:PATH"
+          pnpm install --frozen-lockfile --store-dir C:\ci-runners\cache\pnpm
+      - name: Check the workspace
+        run: |
+          $env:PATH = "C:\ci-control\tools\node;C:\ci-control\tools\pnpm;$env:PATH"
+          pnpm run check
 
   graphics:
     if: >-
