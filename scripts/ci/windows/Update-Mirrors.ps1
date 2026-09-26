@@ -32,7 +32,10 @@ foreach ($mirror in $mirrors) {
   } else {
     # The host git config sets safe.bareRepository=explicit, which blocks every
     # command against a bare repo unless this exception is passed explicitly.
-    & git -c safe.bareRepository=all -C $path fetch --prune
+    # --unshallow matters for a mirror first cloned at depth 1: a shallow mirror
+    # hands the runner a commit with no ancestors, and merging main into dev then
+    # fails as unrelated histories.
+    & git -c safe.bareRepository=all -C $path fetch --prune --unshallow
   }
   if ($LASTEXITCODE -ne 0) { throw "Mirror update failed: $($mirror.Name)" }
 }
