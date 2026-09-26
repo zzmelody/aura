@@ -107,7 +107,7 @@ async function runCodex(cwd: string, prompt: string, output: string, schema: str
   await writeFile(promptFile, promptForAgent, "utf8");
   const args = agent === "claude"
     ? ["-p", "--model", "claude-opus-5[1M]", "--effort", "high", "--output-format", "json",
-       "--no-session-persistence", "--permission-mode", readOnly ? "dontAsk" : "acceptEdits"]
+       "--no-session-persistence", "--permission-mode", readOnly ? "dontAsk" : "bypassPermissions"]
     : ["-a", "never", "exec", "--sandbox", readOnly ? "read-only" : "workspace-write",
        "--ephemeral", "--ignore-user-config", "-c", 'windows.sandbox="unelevated"',
        "--output-schema", schema, "--output-last-message", output];
