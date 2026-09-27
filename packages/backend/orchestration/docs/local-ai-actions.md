@@ -4,8 +4,8 @@
 
 | Action ID          | 用途                                                      | 部署 / 默认端口                                  |
 | ------------------ | --------------------------------------------------------- | ------------------------------------------------ |
-| `local-image`      | Qwen-Image-2512 文生图，返回 PNG 路径                     | `D:/workflow/AI/qwenimage/ComfyUI` / 8190        |
-| `local-video`      | MiniMax H3 文生视频（含音频），返回视频路径               | `D:/workflow/AI/minimaxh3/ComfyUI` / 8188        |
+| `local-image`      | Qwen-Image-2512 文生图，返回 PNG 路径及图片资产 ID        | `D:/workflow/AI/qwenimage/ComfyUI` / 8190        |
+| `local-video`      | MiniMax H3 文生视频或首末帧图生视频（含音频）             | `D:/workflow/AI/minimaxh3/ComfyUI` / 8188        |
 | `local-tts`        | Qwen3-TTS 预设音色、声音设计、参考音频克隆，返回 WAV 路径 | `D:/workflow/AI/qwen3tts` / 8000                 |
 | `local-ai-service` | 查看、启动、停止上面三个服务                              | 服务 ID：`qwen-image`、`minimax-h3`、`qwen3-tts` |
 | `comfy-workflow`   | 执行自定义 ComfyUI API workflow，返回动态输出和文件       | 选择 `qwen-image` 或 `minimax-h3`                |
@@ -23,12 +23,23 @@ const image = await ctx.action({
   action: "local-image",
   input: { prompt: "雨夜中的未来城市，电影光影", width: 1024, height: 1024 },
 });
-// image.output = { service: "qwen-image", seed: 123, files: ["F:\\aura\\.aura\\local-ai\\outputs\\job-...\\artifacts\\1-image_00001_.png"] }
+// image.output = { service: "qwen-image", seed: 123, files: ["...png"], imageAssetId: "64位SHA-256" }
 
 const video = await ctx.action({
   id: "clip",
   action: "local-video",
   input: { prompt: "镜头缓慢掠过海岸，伴随海浪声", frames: 39 },
+});
+
+// 后续镜头可用上一步图片作为首帧；也可以传 lastFrameAssetId。
+const guided = await ctx.action({
+  id: "guided-clip",
+  action: "local-video",
+  input: {
+    prompt: "镜头缓慢推进",
+    firstFrameAssetId: image.output.imageAssetId,
+    frames: 39,
+  },
 });
 
 const speech = await ctx.action({
@@ -62,6 +73,12 @@ const status = await host.invokeAction("local-ai-service", {
 
 `local-ai-service` 的 `operation` 为 `status | start | stop`：start 等到 HTTP 就绪，同服务重复 start 复用进程并续期；stop 只停止 Aura 自己拥有的指定服务。stop 与生成共享队列，不会中断已执行的 Action；立即中断需取消正在运行的 Action / Flow。status 不占用 GPU 队列。
 
+### 受管图片资产
+
+`POST /flows/assets/images` 接受请求体为原始 PNG、JPEG 或 WebP 字节（设置对应 `Content-Type`），最大 32 MiB，成功返回 `{ assetId, mimeType, width, height, bytes }`。此端点可供 Web 或移动端上传用户选定的参考图；不通过 DSH JSON-RPC 传二进制。后端解码校验后按内容哈希保存在 Aura 受管资产区。`local-image` 生成的图片也会登记到同一资产区，并在原有 `{ service, seed, files }` 之外返回 `imageAssetId`。Flow 后续只传图片资产 ID，不传用户文件路径或 base64。
+
+图片资产保留供后续运行复用；上传端点不启动模型，也不占用 ComfyUI 端口或 GPU。
+
 ## 参数与输出
 
 ### 自定义 ComfyUI workflow
@@ -87,12 +104,14 @@ const result = await ctx.action({
 
 也可以直接传对象：`input: { service: "minimax-h3", workflow: yourApiGraph, overrides: { "6": { prompt: "新的提示词" } } }`。`workflow` 与 `workflowFile` 必须二选一。节点参数覆盖只修改已有输入（包括连接数组），不会猜测提示词所在节点，不会修改原 JSON 对象或文件。
 
+需要参考图的 API 图先放置 `LoadImage` 节点，再传 `imageBindings: [{ nodeId: "16", assetId: "<图片资产ID>" }]`。目标必须是已有 `LoadImage.image`；后端用受管文件名替换该输入，在启动 ComfyUI 前将校验过的图片复制到本次任务专用的 input 目录。可选的 `resize: { width, height }` 会以 cover 裁切到指定画幅。不同图片或裁切尺寸会改变固定的 workflow hash。直接写在 API 图里的普通 `LoadImage` 文件名不会自动上传或解析。
+
 - `workflowFile` 支持绝对路径和相对 **Aura 后端工作区** 的路径，不相对 JSON 文件所在目录解析节点里的资源引用；每次调用重新读取。排队前固定图内容和 SHA-256，之后文件修改不影响正在运行的任务。
 - JSON 入参、workflow 文件、合并后的图及返回值均限制在 256 KiB 内，图最多 512 个节点。ComfyUI 负责节点类型、连接、模型等语义校验。
 - `outputNodeIds` 仅筛选返回结果，不裁剪执行图；其他输出节点仍会运行，但它们的中间文件不会保留。指定节点必须存在并返回 UI 输出。
 - `outputs` 按节点 ID 返回原本的 UI 数据（包括文本等非文件结果）；保存或预览文件描述符额外带 `path`。`files` 是这些本地路径的去重列表，没有文件的文本 workflow 也能成功。
 - 收集 ComfyUI 标准 `type: "output" | "temp"` 文件描述符，包括保存图、保存视频、音频和预览；单文件最大 512 MiB，总计最大 1 GiB、最多 64 个文件。只移动本次目录内的文件，不移动 ComfyUI input 文件或其他任务的产物。
-- 原图中的 `LoadImage` 等节点继续使用所选 ComfyUI 的 input 资源规则，需预先放好资源；第一版不提供文件上传、远程 ComfyUI URL、自动重试或画布 JSON 转换。
+- 每次受管 ComfyUI 实例的 input、output、temp 目录均隔离；绑定图片在执行结束或取消后删除，已登记的原始资产保留。不提供远程 ComfyUI URL、自动重试或画布 JSON 转换。
 - 自定义节点是现有 ComfyUI 的受信任 Python 代码，不是沙箱。节点若忽略 ComfyUI 标准目录、写任意绝对路径或调用外部服务，其外部副作用无法由 Aura 自动撤销；标准输出目录、临时目录和受管进程树会回收。
 
 本地后端同样可以调用 `host.invokeAction("comfy-workflow", { mode: "demo", input, signal })`。授权 Agent 时加入 `actions: ["comfy-workflow"]`。`local-image` / `local-video` 现在只是同一执行器的预置模板，保留原来的参数及 `{ service, seed, files }` 返回结构。
@@ -100,13 +119,13 @@ const result = await ctx.action({
 ### 预置生成 Action
 
 - 图片：`prompt` 必填；`negative` 可选；宽高默认 1024，范围 256–1536、16 的倍数，总像素不超过 1328×1328；`steps` 1–50、默认 30；`cfg` 1–10、默认 4。
-- 视频：`prompt` 必填；默认 608×352，宽高 256–608、32 的倍数，总像素不超过 608×352；`frames` 为 22、39、56、73、90、107、124，默认 39；固定 24 fps、8 步 Turbo。这个预置 Action 只提供文生视频，自定义节点图请用 `comfy-workflow`。
+- 视频：`prompt` 必填；可选 `firstFrameAssetId` 和 `lastFrameAssetId` 指定受管图片资产，省略两者时仍为文生视频。图片先按目标画幅 cover 裁切，接入 MiniMax H3 的首末帧输入。默认 608×352，宽高 256–608、32 的倍数，总像素不超过 608×352；`frames` 为 22、39、56、73、90、107、124，默认 39；固定 24 fps、8 步 Turbo。更复杂的引导图节点请用 `comfy-workflow`。
 - TTS：`text` 必填；`mode` 默认 `custom-voice`，可改 `voice-design` 或 `voice-clone`；预设音色默认 `Vivian`，可用音色和语言由 Action Schema 列出；`instruct` 描述预设音色的情绪或语速。
 - 声音设计：`mode: "voice-design"`，另传 `voiceDescription`。
 - 声音克隆：`mode: "voice-clone"`，另传 `referenceAudio` 的本地绝对路径（不超过 30 MiB）和 `referenceText`；只提取音色时可省略参考文字并设 `xVectorOnly: true`。参考文件只读，不会删除。
 - `maxNewTokens` 为 TTS 输出 token 上限，16–8192，默认 2048。提示词 / 文本最多 10000 字符。三种生成均支持 `seed` 0–2147483647；省略则随机，返回实际值。
 
-成功输出统一为 `{ service, seed, files: string[] }`。文件保存在 **Aura 后端机器**，不是浏览器下载 URL。运行记录仅保存路径，不嵌入二进制。成功产物会保留，磁盘空间需要用户按需管理；不会自动删除用户产物或模型文件。取消 / 失败会在进程退出后删除本次任务的临时产物，已有成功任务不受影响。硬崩溃可能留下该任务的未完成文件，但不会自动重放生成。
+成功输出保留 `{ service, seed, files: string[] }`；`local-image` 另带 `imageAssetId`。文件保存在 **Aura 后端机器**，不是浏览器下载 URL。运行记录仅保存路径和资产 ID，不嵌入二进制。成功产物会保留，磁盘空间需要用户按需管理；不会自动删除用户产物或模型文件。取消 / 失败会在进程退出后删除本次任务的临时产物，已有成功任务不受影响。硬崩溃可能留下该任务的未完成文件，但不会自动重放生成。
 
 ## 资源所有权
 

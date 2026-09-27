@@ -4,12 +4,21 @@ import { localAI } from "@aura/orchestration/local-ai";
 export default defineAction({
   title: "本地视频生成",
   description:
-    "使用本机 MiniMax H3 文生视频（含音频，24 fps、8 步 Turbo）。自动启动并回收 ComfyUI，串行使用 GPU，返回视频文件路径。",
+    "使用本机 MiniMax H3 文生视频或首末帧图生视频（含音频，24 fps、8 步 Turbo）。自动启动并回收 ComfyUI，串行使用 GPU，返回视频文件路径。",
   parameters: {
     prompt: {
       type: "string",
       required: true,
       description: "视频及声音提示词，1–10000 字符。",
+    },
+    firstFrameAssetId: {
+      type: "string",
+      description:
+        "可选的首帧图片资产 ID（64 位 SHA-256），由图片上传或 local-image 返回。",
+    },
+    lastFrameAssetId: {
+      type: "string",
+      description: "可选的末帧图片资产 ID（64 位 SHA-256）。",
     },
     width: {
       type: "integer",

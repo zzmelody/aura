@@ -6,6 +6,7 @@ export interface MediaResult {
   service: LocalAIServiceId;
   files: string[];
   seed: number;
+  imageAssetId?: string;
 }
 export type ComfyServiceId = "qwen-image" | "minimax-h3";
 export interface ComfyWorkflowInput {
@@ -16,6 +17,12 @@ export interface ComfyWorkflowInput {
   workflowFile?: string;
   /** Node ID -> existing input names and replacement JSON values. */
   overrides?: Record<string, Record<string, JsonValue>>;
+  /** Bind managed images to existing LoadImage nodes; no filesystem paths cross this boundary. */
+  imageBindings?: Array<{
+    nodeId: string;
+    assetId: string;
+    resize?: { width: number; height: number };
+  }>;
   /** Filter returned UI outputs, not which nodes execute. Omit to return all outputs. */
   outputNodeIds?: string[];
 }
@@ -45,6 +52,8 @@ export interface ImageInput {
 }
 export interface VideoInput {
   prompt: string;
+  firstFrameAssetId?: string;
+  lastFrameAssetId?: string;
   width?: number;
   height?: number;
   frames?: number;

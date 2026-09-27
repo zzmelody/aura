@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { artifactResponse, type ArtifactFile } from "./artifact-http.ts";
+import { GeneratedArtifacts } from "./generated-artifacts.ts";
+import { ActionFailure } from "./action-api.ts";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
 import type {
   ActionRun,
@@ -40,6 +42,13 @@ export class OrchestrationHost {
 
   constructor(options: HostOptions) {
     this.options = { ...options };
+  }
+
+  /** Admit browser uploads without sending binary data through the DSH JSON-RPC link. */
+  async uploadImage(bytes: Uint8Array, signal: AbortSignal) {
+    return new GeneratedArtifacts(
+      join(this.options.dshHome, "aura-generated-assets"),
+    ).registerImage(bytes, signal);
   }
 
   async artifactContent(
@@ -292,7 +301,7 @@ async function readBody(context: Context): Promise<Record<string, unknown>> {
 /** Builds the Hono router mounted by runtime under the `/flows` namespace. */
 export function createFlowApp(
   host: Pick<OrchestrationHost, "request"> &
-    Partial<Pick<OrchestrationHost, "artifactContent">>,
+    Partial<Pick<OrchestrationHost, "artifactContent" | "uploadImage">>,
 ) {
   const app = new Hono();
 
@@ -300,13 +309,45 @@ export function createFlowApp(
     context.header("Cache-Control", "no-store");
     await next();
   });
-  app.use(
-    "*",
+  app.use("*", (context, next) =>
     bodyLimit({
-      maxSize: 256 * 1_024,
+      maxSize:
+        context.req.method === "POST" && context.req.path === "/assets/images"
+          ? 32 * 1024 * 1024
+          : 256 * 1_024,
       onError: (context) => context.json({ message: "Flow 请求过大。" }, 413),
-    }),
+    })(context, next),
   );
+
+  app.post("/assets/images", async (context) => {
+    if (!host.uploadImage) throw new FlowError("图片资产服务不可用。", 503);
+    const mediaType = context.req
+      .header("content-type")
+      ?.split(";", 1)[0]
+      ?.trim()
+      .toLowerCase();
+    if (!["image/png", "image/jpeg", "image/webp"].includes(mediaType ?? ""))
+      throw new FlowError("请上传 PNG、JPEG 或 WebP 图片。", 415);
+    const bytes = new Uint8Array(await context.req.arrayBuffer());
+    try {
+      const asset = await host.uploadImage(bytes, context.req.raw.signal);
+      return context.json(
+        {
+          assetId: asset.artifactId,
+          mimeType: asset.mimeType,
+          width: asset.width,
+          height: asset.height,
+          bytes: asset.bytes,
+        },
+        201,
+      );
+    } catch (error) {
+      if (context.req.raw.signal.aborted) throw error;
+      if (error instanceof ActionFailure)
+        throw new FlowError(error.message, 400);
+      throw error;
+    }
+  });
 
   app.get("/catalog", async (context) =>
     context.json(await host.request("catalog")),

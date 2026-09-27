@@ -4,7 +4,7 @@ import { localAI } from "@aura/orchestration/local-ai";
 export default defineAction({
   title: "本地图片生成",
   description:
-    "使用本机 Qwen-Image-2512 生成 PNG。自动启动并回收 ComfyUI，串行使用 GPU，结果返回本地文件路径。",
+    "使用本机 Qwen-Image-2512 生成 PNG。自动启动并回收 ComfyUI，串行使用 GPU，返回文件路径和可复用的图片资产 ID。",
   parameters: {
     prompt: {
       type: "string",
@@ -37,6 +37,7 @@ export default defineAction({
         service: { type: "string", required: true },
         seed: { type: "integer", required: true },
         files: { type: "array", items: { type: "string" }, required: true },
+        imageAssetId: { type: "string" },
       },
     },
     render: (_input, value) => [{ type: "text", text: JSON.stringify(value) }],

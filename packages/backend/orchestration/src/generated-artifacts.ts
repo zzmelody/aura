@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, realpath, rename, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import sharp from "sharp";
 import { ActionFailure } from "./action-api.ts";
 import {
   artifactHash,
@@ -21,6 +22,76 @@ export class GeneratedArtifacts {
   readonly root: string;
   constructor(root: string) {
     this.root = root;
+  }
+
+  /** Admit a user image into the same content-addressed store as generated media. */
+  async registerImage(bytes: Uint8Array, signal: AbortSignal) {
+    signal.throwIfAborted();
+    if (bytes.length < 1 || bytes.length > 32 * 1024 * 1024)
+      throw new ActionFailure("image_size_limit: 图片必须小于 32 MiB。");
+    let media;
+    try {
+      media = await inspectArtifact(Buffer.from(bytes));
+    } catch {
+      throw new ActionFailure("invalid_image: 图片内容无效。");
+    }
+    if (media.kind !== "image")
+      throw new ActionFailure("invalid_image: 只接受 PNG、JPEG 或 WebP 图片。");
+    const artifactId = artifactHash(bytes);
+    await publishBytes(
+      this.root,
+      `${artifactId}.${media.format}`,
+      bytes,
+      signal,
+    );
+    return { artifactId, ...media };
+  }
+
+  /** Stage only a verified image ID into one isolated ComfyUI input directory. */
+  async stageImage(
+    artifactId: string,
+    exchange: string,
+    signal: AbortSignal,
+    size?: { width: number; height: number },
+  ) {
+    if (!/^[a-f0-9]{64}$/u.test(artifactId))
+      throw new ActionFailure("invalid_image_id: 需要图片资产 ID。");
+    let bytes: Buffer | undefined;
+    for (const format of ["png", "jpeg", "webp"] as const) {
+      try {
+        bytes = await readBoundedFile(
+          join(this.root, `${artifactId}.${format}`),
+          32 * 1024 * 1024,
+          signal,
+          this.root,
+        );
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    if (!bytes || artifactHash(bytes) !== artifactId)
+      throw new ActionFailure("invalid_image_id: 图片资产不存在或内容已改变。");
+    const media = await inspectArtifact(bytes);
+    if (media.kind !== "image")
+      throw new ActionFailure("invalid_image: 图片资产格式错误。");
+    const filename = `${artifactId}${size ? `-${size.width}x${size.height}` : ""}.png`;
+    const image = sharp(bytes, {
+      limitInputPixels: 40_000_000,
+      failOn: "error",
+    }).rotate();
+    const normalized = await (
+      size
+        ? image.resize(size.width, size.height, {
+            fit: "cover",
+            position: "centre",
+          })
+        : image
+    )
+      .png()
+      .toBuffer();
+    await publishBytes(exchange, filename, normalized, signal);
+    return filename;
   }
 
   async registerFile(path: string, signal: AbortSignal, root?: string) {

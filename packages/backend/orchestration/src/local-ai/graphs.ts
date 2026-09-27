@@ -83,10 +83,12 @@ export function videoGraph(
     height: number;
     frames: number;
     seed: number;
+    firstFrameAssetId?: string;
+    lastFrameAssetId?: string;
   },
   prefix: string,
 ): Graph {
-  return {
+  const graph: Graph = {
     "1": {
       class_type: "UNETLoader",
       inputs: {
@@ -174,4 +176,13 @@ export function videoGraph(
       },
     },
   };
+  if (input.firstFrameAssetId) {
+    graph["16"] = { class_type: "LoadImage", inputs: { image: "" } };
+    graph["6"].inputs.first_frame = ["16", 0];
+  }
+  if (input.lastFrameAssetId) {
+    graph["17"] = { class_type: "LoadImage", inputs: { image: "" } };
+    graph["6"].inputs.last_frame = ["17", 0];
+  }
+  return graph;
 }

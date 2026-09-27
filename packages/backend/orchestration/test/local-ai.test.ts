@@ -13,7 +13,9 @@ import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { serve, type ServerType } from "@hono/node-server";
 import { Hono } from "hono";
+import sharp from "sharp";
 import type { SubprocessRuntime } from "@deepseek-ai/dsh-subprocess";
+import { GeneratedArtifacts } from "../src/generated-artifacts.ts";
 import { LocalAIManager, type Deployment } from "../src/local-ai/manager.ts";
 import { imageGraph, videoGraph, type Graph } from "../src/local-ai/graphs.ts";
 import { readJSON, saveAudio } from "../src/local-ai/http.ts";
@@ -37,9 +39,12 @@ async function freePort() {
   await closeServer(server);
   return address.port;
 }
-async function fixture() {
+async function fixture(withAssets = false) {
   const root = await mkdtemp(join(tmpdir(), "aura-local-ai-"));
   const outputs = join(root, "outputs");
+  const assets = withAssets
+    ? new GeneratedArtifacts(join(root, "assets"))
+    : undefined;
   const entries: Deployment[] = [];
   for (const id of ["qwen-image", "minimax-h3", "qwen3-tts"] as const)
     entries.push({
@@ -61,12 +66,14 @@ async function fixture() {
     escape = false,
     unhealthy = false;
   let lastGraph: Graph | undefined;
+  let stagedImages: string[] = [];
   let lastTTS: unknown;
   let startedTTS = false;
   let ownedPort = true;
   let portDelay = 0;
   const servers = new Set<ServerType>();
   const manager = new LocalAIManager({} as SubprocessRuntime, root, {
+    assets,
     deployments: entries,
     outputs,
     idleMs: 40,
@@ -79,7 +86,9 @@ async function fixture() {
         lease = false;
       };
     },
-    launch: (spec) => {
+    launch: async (spec) => {
+      const inputAt = spec.argv.indexOf("--input-directory");
+      stagedImages = inputAt >= 0 ? await readdir(spec.argv[inputAt + 1]) : [];
       launches++;
       live++;
       assert.equal(live, 1, "model processes must never overlap");
@@ -118,7 +127,21 @@ async function fixture() {
             : spec.argv[spec.argv.indexOf("--output-directory") + 1];
           const path = join(target, subfolder, filename);
           await mkdir(dirname(path), { recursive: true });
-          await writeFile(path, "fixture-artifact");
+          await writeFile(
+            path,
+            withAssets && node.class_type === "SaveImage"
+              ? await sharp({
+                  create: {
+                    width: 8,
+                    height: 8,
+                    channels: 3,
+                    background: "red",
+                  },
+                })
+                  .png()
+                  .toBuffer()
+              : "fixture-artifact",
+          );
           uiOutputs[nodeId] = {
             images: [
               {
@@ -190,6 +213,7 @@ async function fixture() {
   });
   return {
     manager,
+    assets,
     root,
     outputs,
     entries,
@@ -198,6 +222,9 @@ async function fixture() {
     },
     get graph() {
       return lastGraph;
+    },
+    get stagedImages() {
+      return stagedImages;
     },
     get tts() {
       return lastTTS;
@@ -339,6 +366,67 @@ test("local image/video/TTS use deployed APIs, bounded outputs, and always relea
       "reference",
     );
     assert((await readdir(f.root)).includes("reference.wav"));
+  } finally {
+    await f.close();
+  }
+});
+
+test("generated and uploaded images can anchor an isolated MiniMax H3 video", async () => {
+  const f = await fixture(true);
+  try {
+    const uploaded = await f.assets!.registerImage(
+      await sharp({
+        create: { width: 16, height: 12, channels: 3, background: "blue" },
+      })
+        .png()
+        .toBuffer(),
+      signal(),
+    );
+    const generated = await f.manager.image(
+      { prompt: "山门", seed: 4 },
+      signal(),
+    );
+    assert.match(generated.imageAssetId ?? "", /^[a-f0-9]{64}$/u);
+    const video = await f.manager.video(
+      {
+        prompt: "镜头缓慢推进",
+        firstFrameAssetId: generated.imageAssetId,
+        lastFrameAssetId: uploaded.artifactId,
+        width: 352,
+        height: 608,
+        frames: 22,
+        seed: 5,
+      },
+      signal(),
+    );
+    assert.equal(video.seed, 5);
+    assert.deepEqual(f.graph?.["6"].inputs.first_frame, ["16", 0]);
+    assert.deepEqual(f.graph?.["6"].inputs.last_frame, ["17", 0]);
+    assert.deepEqual(
+      f.stagedImages.sort(),
+      [
+        `${generated.imageAssetId}-352x608.png`,
+        `${uploaded.artifactId}-352x608.png`,
+      ].sort(),
+    );
+    assert.equal(
+      await readdir(dirname(dirname(video.files[0]))).then((names) =>
+        names.includes("comfy-input"),
+      ),
+      false,
+    );
+    await assert.rejects(
+      f.manager.video(
+        { prompt: "x", firstFrameAssetId: "0".repeat(64) },
+        signal(),
+      ),
+      /不存在|已改变/,
+    );
+    assert.equal(
+      f.counts.launches,
+      2,
+      "missing images must fail before starting ComfyUI",
+    );
   } finally {
     await f.close();
   }

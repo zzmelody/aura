@@ -63,7 +63,7 @@ Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Sessi
 
 ## 当前取舍
 
-`comfy-workflow` Action 从对象或本地 API JSON 文件调用所选 ComfyUI，支持节点参数覆盖和输出节点筛选；普通界面画布 JSON 不做转换。文件内容在排队前固定并记录 hash，ComfyUI 执行每次使用独立 output/temp 目录，保存/预览产物归档后删除中间目录。`local-image` / `local-video` 仅是同一执行器的预置模板，前端不解释 ComfyUI 图或调度模型。
+`comfy-workflow` Action 从对象或本地 API JSON 文件调用所选 ComfyUI，支持节点参数覆盖、受管图片资产到 `LoadImage` 的绑定和输出节点筛选；普通界面画布 JSON 不做转换。文件内容在排队前固定并记录 hash，图片资产通过上传端点或 `local-image` 登记为内容哈希 ID；ComfyUI 执行每次使用独立 input/output/temp 目录，输入图在启动前按 ID 校验并暂存，保存/预览产物归档后删除中间目录。`local-video` 的预置模板可选择首帧、末帧图片资产；前端不解释 ComfyUI 图或调度模型。
 
 本地媒体模型以同包 `local-image`、`local-video`、`local-tts` Action 接入已有 ComfyUI / Qwen3-TTS HTTP 服务，`local-ai-service` 负责状态与显式启停。`orchestration/src/local-ai/` 是这三套受信任 Windows 部署的后端适配：复用 DSH subprocess，并用其公开 Win32 bindings 补充 Job 崩溃回收及跨宿主 GPU lease。模型进程由后端插件持有，不属于热加载 Action fiber；详情见 [本地模型 Actions](../packages/backend/orchestration/docs/local-ai-actions.md)。这条媒体工具链不替代 Agent 的 DSH 模型路由。
 

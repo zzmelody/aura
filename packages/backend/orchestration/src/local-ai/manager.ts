@@ -1,9 +1,17 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { access, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { SubprocessRuntime } from "@deepseek-ai/dsh-subprocess";
 import { z } from "zod";
+import type { GeneratedArtifacts } from "../generated-artifacts.ts";
 import type {
   ImageInput,
   LocalAIClient,
@@ -57,6 +65,14 @@ const imageSchema = z
 const videoSchema = z
   .object({
     prompt,
+    firstFrameAssetId: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .optional(),
+    lastFrameAssetId: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .optional(),
     seed,
     width: z.number().int().min(256).max(608).multipleOf(32).default(608),
     height: z.number().int().min(256).max(608).multipleOf(32).default(352),
@@ -229,6 +245,7 @@ interface Active {
   release: () => void;
 }
 interface ManagerOptions {
+  assets?: GeneratedArtifacts;
   root?: string;
   outputs?: string;
   deployments?: Deployment[];
@@ -250,6 +267,7 @@ export class LocalAIManager implements LocalAIClient {
   private outputs: string;
   private spawn: (spec: LaunchSpec) => OwnedProcess | Promise<OwnedProcess>;
   private cwd: string;
+  private assets?: GeneratedArtifacts;
 
   constructor(
     subprocess: SubprocessRuntime,
@@ -258,6 +276,7 @@ export class LocalAIManager implements LocalAIClient {
   ) {
     this.cwd = cwd;
     this.options = options;
+    this.assets = options.assets;
     this.outputs = resolve(
       options.outputs ?? join(cwd, ".aura", "local-ai", "outputs"),
     );
@@ -441,6 +460,7 @@ export class LocalAIManager implements LocalAIClient {
     signal: AbortSignal,
     work: (entry: Deployment, dir: string, signal: AbortSignal) => Promise<T>,
     isolatedComfy = false,
+    setup?: (directory: string, signal: AbortSignal) => Promise<void>,
   ) {
     return this.exclusive(signal, async (signal) => {
       clearTimeout(this.idle);
@@ -453,6 +473,7 @@ export class LocalAIManager implements LocalAIClient {
         if (isolatedComfy) {
           const entry = this.entry(id);
           const dirs = comfyDirectories(directory);
+          await mkdir(dirs.input, { recursive: true });
           await mkdir(dirs.output, { recursive: true });
           await mkdir(dirs.temporary, { recursive: true });
           override = {
@@ -460,6 +481,7 @@ export class LocalAIManager implements LocalAIClient {
             launch: isolateComfyLaunch(entry.launch, directory),
           };
         }
+        await setup?.(directory, signal);
         const entry = await this.ensure(id, signal, override);
         const result = await work(entry, directory, signal);
         signal.throwIfAborted();
@@ -476,7 +498,8 @@ export class LocalAIManager implements LocalAIClient {
           if (!success) await rm(directory, { recursive: true, force: true });
           else if (isolatedComfy) {
             const dirs = comfyDirectories(directory);
-            // Only these two directories inside our mkdtemp job are disposable.
+            // Only task-local ComfyUI directories inside our mkdtemp job are disposable.
+            await rm(dirs.input, { recursive: true, force: true });
             await rm(dirs.output, { recursive: true, force: true });
             await rm(dirs.temporary, { recursive: true, force: true });
           }
@@ -511,6 +534,19 @@ export class LocalAIManager implements LocalAIClient {
         return result;
       },
       true,
+      prepared.imageBindings.length
+        ? async (directory, signal) => {
+            if (!this.assets) throw new Error("图片资产服务不可用。");
+            const inputDirectory = comfyDirectories(directory).input;
+            for (const binding of prepared.imageBindings)
+              await this.assets.stageImage(
+                binding.assetId,
+                inputDirectory,
+                signal,
+                binding.resize,
+              );
+          }
+        : undefined,
     );
   }
 
@@ -524,7 +560,22 @@ export class LocalAIManager implements LocalAIClient {
       },
       signal,
     );
-    return { service: result.service, seed: parsed.seed, files: result.files };
+    const imageAssetId =
+      this.assets && result.files[0]
+        ? (
+            await this.assets.registerFile(
+              result.files[0],
+              signal,
+              dirname(result.files[0]),
+            )
+          ).artifactId
+        : undefined;
+    return {
+      service: result.service,
+      seed: parsed.seed,
+      files: result.files,
+      ...(imageAssetId ? { imageAssetId } : {}),
+    };
   }
   async video(input: VideoInput, signal: AbortSignal): Promise<MediaResult> {
     const parsed = videoSchema.parse(input);
@@ -532,6 +583,26 @@ export class LocalAIManager implements LocalAIClient {
       {
         service: "minimax-h3",
         workflow: videoGraph(parsed, "video"),
+        imageBindings: [
+          ...(parsed.firstFrameAssetId
+            ? [
+                {
+                  nodeId: "16",
+                  assetId: parsed.firstFrameAssetId,
+                  resize: { width: parsed.width, height: parsed.height },
+                },
+              ]
+            : []),
+          ...(parsed.lastFrameAssetId
+            ? [
+                {
+                  nodeId: "17",
+                  assetId: parsed.lastFrameAssetId,
+                  resize: { width: parsed.width, height: parsed.height },
+                },
+              ]
+            : []),
+        ],
         outputNodeIds: ["15"],
       },
       signal,

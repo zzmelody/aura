@@ -36,6 +36,24 @@ const inputSchema = z
     workflow: z.record(z.string(), z.unknown()).optional(),
     workflowFile: z.string().trim().min(1).optional(),
     overrides: z.record(nodeId, z.record(z.string(), z.json())).default({}),
+    imageBindings: z
+      .array(
+        z
+          .object({
+            nodeId,
+            assetId: z.string().regex(/^[a-f0-9]{64}$/u),
+            resize: z
+              .object({
+                width: z.number().int().min(32).max(2048),
+                height: z.number().int().min(32).max(2048),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict(),
+      )
+      .max(8)
+      .default([]),
     outputNodeIds: z.array(nodeId).min(1).max(64).optional(),
   })
   .strict()
@@ -114,6 +132,22 @@ export async function prepareWorkflow(
       });
     }
   }
+  const boundNodes = new Set<string>();
+  for (const binding of parsed.imageBindings) {
+    const node = graph[binding.nodeId];
+    if (
+      !node ||
+      node.class_type !== "LoadImage" ||
+      !Object.hasOwn(node.inputs, "image")
+    )
+      throw new Error(
+        `图片绑定必须指向已有的 LoadImage.image 节点：${binding.nodeId}`,
+      );
+    if (boundNodes.has(binding.nodeId))
+      throw new Error(`同一 LoadImage 节点不能重复绑定图片：${binding.nodeId}`);
+    boundNodes.add(binding.nodeId);
+    node.inputs.image = `${binding.assetId}${binding.resize ? `-${binding.resize.width}x${binding.resize.height}` : ""}.png`;
+  }
   const outputNodeIds = parsed.outputNodeIds
     ? [...new Set(parsed.outputNodeIds)]
     : undefined;
@@ -126,11 +160,18 @@ export async function prepareWorkflow(
   const workflowHash = createHash("sha256")
     .update(JSON.stringify(snapshot))
     .digest("hex");
-  return { service: parsed.service, graph, outputNodeIds, workflowHash };
+  return {
+    service: parsed.service,
+    graph,
+    outputNodeIds,
+    workflowHash,
+    imageBindings: parsed.imageBindings,
+  };
 }
 
 export function comfyDirectories(directory: string) {
   return {
+    input: join(directory, "comfy-input"),
     output: join(directory, "comfy-output"),
     temporary: join(directory, "comfy-temp"),
     artifacts: join(directory, "artifacts"),
@@ -143,13 +184,19 @@ export function isolateComfyLaunch(
   const dirs = comfyDirectories(directory);
   const argv: string[] = [];
   for (let i = 0; i < launch.argv.length; i++) {
-    if (["--output-directory", "--temp-directory"].includes(launch.argv[i])) {
+    if (
+      ["--input-directory", "--output-directory", "--temp-directory"].includes(
+        launch.argv[i],
+      )
+    ) {
       i++;
       continue;
     }
     argv.push(launch.argv[i]);
   }
   argv.push(
+    "--input-directory",
+    dirs.input,
     "--output-directory",
     dirs.output,
     "--temp-directory",

@@ -28,6 +28,12 @@ export default defineAction({
       description:
         '节点输入覆盖，例如 {"6":{"text":"新提示词"},"8":{"seed":42}}；节点和输入必须已存在。',
     },
+    imageBindings: {
+      type: "array",
+      items: { type: "object", additionalProperties: true },
+      description:
+        '受管图片绑定，例如 [{"nodeId":"16","assetId":"64位SHA-256"}]；目标必须为已有 LoadImage.image 节点。',
+    },
     outputNodeIds: {
       type: "array",
       items: { type: "string" },
@@ -54,7 +60,7 @@ export default defineAction({
   async execute(ctx, input) {
     // DSH's open-object DSL cannot express the nested node-id -> inputs map.
     // The backend validates its JSON values and exact shape before starting ComfyUI.
-    const { overrides, ...rest } = input;
+    const { overrides, imageBindings, ...rest } = input;
     return localAI(ctx).comfyWorkflow(
       {
         ...rest,
@@ -64,6 +70,14 @@ export default defineAction({
               overrides:
                 /** @type {NonNullable<import("@aura/orchestration/local-ai").ComfyWorkflowInput["overrides"]>} */ (
                   overrides
+                ),
+            }),
+        ...(imageBindings === undefined
+          ? {}
+          : {
+              imageBindings:
+                /** @type {NonNullable<import("@aura/orchestration/local-ai").ComfyWorkflowInput["imageBindings"]>} */ (
+                  imageBindings
                 ),
             }),
       },

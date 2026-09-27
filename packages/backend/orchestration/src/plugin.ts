@@ -269,20 +269,21 @@ export async function apply(ctx: Context) {
     actionRoots,
     (root) => new ActionDiscovery(ctx.loader, actionRegistry, root),
   );
-  const localAI = new LocalAIManager(
-    ctx.subprocess,
-    process.env.AURA_FLOW_CWD ?? process.cwd(),
-  );
-  // This owner survives individual Action Loader/HMR fibers.
-  ctx.effect(() => () => localAI.close(), "aura-local-ai.lifecycle");
-  const worldAgentSessionPath = process.env.AURA_VEYA_WORLD_AGENT_SESSION_PATH;
-  const capabilityRoutes = [];
   const artifacts = new GeneratedArtifacts(
     resolve(
       process.env.DSH_HOME ?? process.env.AURA_FLOW_CWD ?? process.cwd(),
       "aura-generated-assets",
     ),
   );
+  const localAI = new LocalAIManager(
+    ctx.subprocess,
+    process.env.AURA_FLOW_CWD ?? process.cwd(),
+    { assets: artifacts },
+  );
+  // This owner survives individual Action Loader/HMR fibers.
+  ctx.effect(() => () => localAI.close(), "aura-local-ai.lifecycle");
+  const worldAgentSessionPath = process.env.AURA_VEYA_WORLD_AGENT_SESSION_PATH;
+  const capabilityRoutes = [];
   const veya = worldAgentSessionPath
     ? new VeyaWorldAgentCapability(worldAgentSessionPath, fetch, {
         artifacts,
