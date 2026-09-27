@@ -369,6 +369,14 @@ function ArtifactDialog({
               playsInline
               preload="metadata"
             />
+          ) : artifact.kind === "audio" ? (
+            <audio
+              src={artifactUrl(endpoint, runId, artifact.artifactId)}
+              controls
+              preload="metadata"
+            />
+          ) : artifact.kind === "subtitle" ? (
+            <p>UTF-8 字幕文件，可下载后导入剪辑软件。</p>
           ) : artifact.kind === "model" ? (
             <Suspense
               fallback={

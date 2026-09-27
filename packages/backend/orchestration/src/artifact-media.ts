@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
+import { wavDuration } from "./wav.ts";
 import type { WorkflowArtifact } from "@aura/protocol/types";
 
 export const artifactHash = (value: string | Uint8Array) =>
@@ -56,6 +57,19 @@ export function selfContainedGlb(bytes: Buffer): boolean {
 }
 
 export async function inspectArtifact(bytes: Buffer): Promise<ArtifactMedia> {
+  if (
+    bytes.toString("ascii", 0, 4) === "RIFF" &&
+    bytes.toString("ascii", 8, 12) === "WAVE"
+  ) {
+    wavDuration(bytes);
+    return {
+      kind: "audio",
+      format: "wav",
+      mimeType: "audio/wav",
+      bytes: bytes.length,
+      status: "ready",
+    };
+  }
   if (bytes.toString("ascii", 4, 8) === "ftyp") {
     let offset = 0;
     let movie = false;

@@ -83,6 +83,8 @@ export interface ActionContext {
   readonly localAI?: LocalAIClient;
   /** Host-owned external service ports. Credentials never enter Action input. */
   readonly aura?: AuraCapabilityClient;
+  /** Host-owned project/version service for built-in production Actions. */
+  readonly videoProduction?: import("./video-library.ts").VideoLibrary;
 }
 
 export type ActionBinding = Omit<

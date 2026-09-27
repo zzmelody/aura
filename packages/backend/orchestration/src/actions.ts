@@ -43,17 +43,20 @@ export class ActionRuntime {
   private localAI?: LocalAIClient;
   private aura?: AuraCapabilityClient;
   private artifacts?: WorkflowArtifactIndex;
+  private videoProduction?: import("./video-library.ts").VideoLibrary;
 
   constructor(
     ctx: Context,
     localAI?: LocalAIClient,
     aura?: AuraCapabilityClient,
     artifacts?: WorkflowArtifactIndex,
+    videoProduction?: import("./video-library.ts").VideoLibrary,
   ) {
     this.ctx = ctx;
     this.localAI = localAI;
     this.aura = aura;
     this.artifacts = artifacts;
+    this.videoProduction = videoProduction;
     // Direct calls require an unscoped DSH registration. Keep these short-lived,
     // pinned definitions out of every Agent's model surface, without changing presets.
     const hideDirectTools = (agent: Agent) => {
@@ -83,6 +86,10 @@ export class ActionRuntime {
             action.tool(action.toolName, {
               ...binding,
               localAI: this.localAI,
+              videoProduction:
+                action.id === "video-project" || action.id === "video-compose"
+                  ? this.videoProduction
+                  : undefined,
               aura: actionCapabilities(action, this.aura),
               bindCall: artifactCallBinding(
                 this.artifacts,
@@ -117,6 +124,10 @@ export class ActionRuntime {
       action.tool(name, {
         ...binding,
         localAI: this.localAI,
+        videoProduction:
+          action.id === "video-project" || action.id === "video-compose"
+            ? this.videoProduction
+            : undefined,
         aura: actionCapabilities(action, this.aura),
         bindCall: artifactCallBinding(
           this.artifacts,

@@ -319,8 +319,8 @@ export interface WorkflowArtifact {
   attempt?: number;
   callId?: string;
   name: string;
-  kind: "image" | "model" | "video";
-  format: "png" | "jpeg" | "webp" | "glb" | "mp4";
+  kind: "image" | "model" | "video" | "audio" | "subtitle";
+  format: "png" | "jpeg" | "webp" | "glb" | "mp4" | "wav" | "srt";
   mimeType: string;
   bytes: number;
   width?: number;

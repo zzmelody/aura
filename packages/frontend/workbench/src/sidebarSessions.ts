@@ -3,6 +3,7 @@ import type { Session } from "@aura/core/types";
 export function sidebarSessionTitle(session: Session): string {
   if (!session.workflow || session.title !== session.workflow.title)
     return session.title;
+  if (session.workflow.id === "multi-shot-video") return "剧情视频制作";
   let text =
     session.messages.find((message) => message.role === "user")?.text.trim() ??
     "";

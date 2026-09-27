@@ -42,6 +42,8 @@ export interface ServiceStatus {
   idleTimeoutMs: number;
 }
 export interface ImageInput {
+  /** Durable workflows admit the generated file in a separate step. */
+  deferAdmission?: boolean;
   prompt: string;
   negative?: string;
   width?: number;

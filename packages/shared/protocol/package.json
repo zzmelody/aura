@@ -9,7 +9,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./video": "./src/video.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

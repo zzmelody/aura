@@ -37,7 +37,7 @@ import {
   workflowPhaseLabels,
 } from "../workflowSessions";
 
-function NestedFlowRun({
+export function NestedFlowRun({
   endpoint,
   runId,
 }: {

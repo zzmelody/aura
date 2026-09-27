@@ -25,6 +25,12 @@ import { GeneratedArtifacts } from "./generated-artifacts.ts";
 import { WorkflowArtifactIndex } from "./workflow-artifacts.ts";
 import { historicalArtifactReader } from "./artifact-history.ts";
 import { ActionRuns } from "./action-runs.ts";
+import {
+  VideoLibrary,
+  videoDomainSpec,
+  type VideoDocument,
+} from "./video-library.ts";
+import { videoRequest } from "./video-routes.ts";
 import { LocalAIManager } from "./local-ai/manager.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 
@@ -318,11 +324,19 @@ export async function apply(ctx: Context) {
     process.env.AURA_FLOW_CWD ?? process.cwd(),
   );
   ctx.effect(() => () => artifactIndex.close(), "aura-artifacts.lifecycle");
+  const videoDomain = await ctx.storageDomain.open(videoDomainSpec);
+  const videoLibrary = new VideoLibrary(
+    videoDomain.table("projects") as unknown as Table<VideoDocument>,
+    artifacts,
+    process.env.AURA_FLOW_CWD ?? process.cwd(),
+  );
   const actionRuntime = new ActionRuntime(
+    // Project records have their own domain and outlive run/session history.
     ctx,
     localAI,
     auraCapabilities,
     artifactIndex,
+    videoLibrary,
   );
 
   const domain = await ctx.storageDomain.open(spec);
@@ -366,6 +380,7 @@ export async function apply(ctx: Context) {
         }),
       ),
   });
+  videoLibrary.attach(engine);
   await actionRuns.initialize();
   artifactIndex.attach((id) => engine.get(id), historicalArtifactReader(ctx));
 
@@ -439,6 +454,15 @@ export async function apply(ctx: Context) {
       if (exiting)
         throw new FlowError("编排服务正在回收空闲资源，请刷新。", 503);
       lastActivity = Date.now();
+      if (method.startsWith("video-projects/"))
+        return {
+          ok: true,
+          data: await videoRequest(
+            videoLibrary,
+            method.slice("video-projects/".length),
+            params,
+          ),
+        };
       const id = typeof params.id === "string" ? params.id : "";
       const stepId = typeof params.stepId === "string" ? params.stepId : "";
       let data;
@@ -584,6 +608,7 @@ export async function apply(ctx: Context) {
       transport.close();
       await domain.close();
       await actionDomain.close();
+      await videoDomain.close();
     };
   }, "aura-orchestration.serve");
 }

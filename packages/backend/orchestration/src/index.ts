@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { artifactResponse, type ArtifactFile } from "./artifact-http.ts";
 import { GeneratedArtifacts } from "./generated-artifacts.ts";
+import { videoRoutes } from "./video-routes.ts";
 import { ActionFailure } from "./action-api.ts";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
 import type {
@@ -67,6 +68,20 @@ export class OrchestrationHost {
       descriptor,
       request,
       thumbnail,
+    );
+  }
+
+  async videoAssetContent(id: string, assetId: string, request: Request) {
+    const descriptor = await this.request<ArtifactFile>(
+      "video-projects/asset",
+      { id, assetId },
+      request.signal,
+    );
+    return artifactResponse(
+      join(this.options.dshHome, "aura-generated-assets"),
+      descriptor,
+      request,
+      false,
     );
   }
 
@@ -301,7 +316,12 @@ async function readBody(context: Context): Promise<Record<string, unknown>> {
 /** Builds the Hono router mounted by runtime under the `/flows` namespace. */
 export function createFlowApp(
   host: Pick<OrchestrationHost, "request"> &
-    Partial<Pick<OrchestrationHost, "artifactContent" | "uploadImage">>,
+    Partial<
+      Pick<
+        OrchestrationHost,
+        "artifactContent" | "uploadImage" | "videoAssetContent"
+      >
+    >,
 ) {
   const app = new Hono();
 
@@ -312,9 +332,13 @@ export function createFlowApp(
   app.use("*", (context, next) =>
     bodyLimit({
       maxSize:
-        context.req.method === "POST" && context.req.path === "/assets/images"
+        context.req.method === "POST" &&
+        (context.req.path === "/assets/images" ||
+          /^\/video-projects\/[^/]+\/images$/.test(context.req.path))
           ? 32 * 1024 * 1024
-          : 256 * 1_024,
+          : context.req.path.startsWith("/video-projects")
+            ? 2 * 1024 * 1024
+            : 256 * 1_024,
       onError: (context) => context.json({ message: "Flow 请求过大。" }, 413),
     })(context, next),
   );
@@ -348,6 +372,8 @@ export function createFlowApp(
       throw error;
     }
   });
+
+  app.route("/video-projects", videoRoutes(host));
 
   app.get("/catalog", async (context) =>
     context.json(await host.request("catalog")),

@@ -46,6 +46,9 @@ export default function App() {
   const flowDraft = useFlowDraft();
   const catalogState = useFlowCatalog(codexAuth.endpoint);
   const [workflowDetail, setWorkflowDetail] = useState(false);
+  const [videoDirty, setVideoDirty] = useState(false);
+  const canLeaveVideo = () =>
+    !videoDirty || window.confirm("视频剧本有未保存修改，确认离开？");
   const [workflowBrowseRevision, setWorkflowBrowseRevision] = useState(0);
   const [tab, setTab] = useState<Tab>("flows");
   const [systemReduced, setSystemReduced] = useState(false);
@@ -83,6 +86,7 @@ export default function App() {
   }, [wide, sidebarOpen]);
 
   const navigate = (next: Tab) => {
+    if (!canLeaveVideo()) return;
     setTab(next);
     if (next === "flows") {
       setWorkflowBrowseRevision((value) => value + 1);
@@ -91,6 +95,7 @@ export default function App() {
     setSidebarOpen(false);
   };
   const start = (prompt?: string) => {
+    if (!canLeaveVideo()) return;
     workspace.newChat();
     setTab("chat");
     setAssistantOpen(false);
@@ -98,6 +103,7 @@ export default function App() {
     if (prompt) void workspace.send(prompt);
   };
   const open = (id: string) => {
+    if (!canLeaveVideo()) return;
     workspace.openChat(id);
     setTab("chat");
     setAssistantOpen(false);
@@ -233,6 +239,7 @@ export default function App() {
                     endpoint={codexAuth.endpoint}
                     catalogState={catalogState}
                     onDetailChange={setWorkflowDetail}
+                    onDirtyChange={setVideoDirty}
                     onRun={(flow) => {
                       workspace.newWorkflowChat(flow, codexAuth.endpoint);
                       setTab("chat");

@@ -7,7 +7,8 @@ import { validArtifactId } from "./artifact-media.ts";
 import { FlowError } from "./schema.ts";
 
 export interface ArtifactFile {
-  artifact: WorkflowArtifact;
+  artifact: Pick<WorkflowArtifact, "name" | "mimeType"> &
+    Partial<Pick<WorkflowArtifact, "status">>;
   fileId: string;
   format: WorkflowArtifact["format"];
 }
@@ -48,7 +49,7 @@ export async function artifactResponse(
   const { artifact, fileId, format } = descriptor;
   if (
     !validArtifactId(fileId) ||
-    !["png", "jpeg", "webp", "glb", "mp4"].includes(format)
+    !["png", "jpeg", "webp", "glb", "mp4", "wav", "srt"].includes(format)
   )
     throw new FlowError("产物不存在。", 404);
   const download = new URL(request.url).searchParams.get("download") === "1";

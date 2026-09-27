@@ -561,7 +561,7 @@ export class LocalAIManager implements LocalAIClient {
       signal,
     );
     const imageAssetId =
-      this.assets && result.files[0]
+      !input.deferAdmission && this.assets && result.files[0]
         ? (
             await this.assets.registerFile(
               result.files[0],

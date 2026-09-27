@@ -19,6 +19,7 @@
     },
     "./local-ai": "./src/local-ai/api.ts",
     "./short-video": "./src/short-video.ts",
+    "./video-production": "./src/video-production.ts",
     "./plugin": "./src/plugin.ts",
     "./demo": "./src/demo.ts"
   },
