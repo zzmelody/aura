@@ -13,6 +13,7 @@ allowBuilds:
   "@google/genai": true
   electron: true
   esbuild: true
+  ffmpeg-static: true
   koffi: true
   node-pty: true
   pnpm: true

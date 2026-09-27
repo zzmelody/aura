@@ -48,7 +48,7 @@ export async function artifactResponse(
   const { artifact, fileId, format } = descriptor;
   if (
     !validArtifactId(fileId) ||
-    !["png", "jpeg", "webp", "glb"].includes(format)
+    !["png", "jpeg", "webp", "glb", "mp4"].includes(format)
   )
     throw new FlowError("产物不存在。", 404);
   const download = new URL(request.url).searchParams.get("download") === "1";

@@ -45,6 +45,7 @@ const fileFormat = (path: string): WorkflowArtifact["format"] | undefined =>
     ".jpeg": "jpeg",
     ".webp": "webp",
     ".glb": "glb",
+    ".mp4": "mp4",
   })[extname(path).toLowerCase()] as WorkflowArtifact["format"] | undefined;
 
 /** Sidecar-only indexing: never rewrites durable Action output or replay identity. */
@@ -139,9 +140,9 @@ export class WorkflowArtifactIndex {
       id: key,
       artifactId: key,
       name: (options.name ?? path).split(/[\\/]/).at(-1)!.slice(0, 180),
-      kind: format === "glb" ? "model" : "image",
+      kind: format === "glb" ? "model" : format === "mp4" ? "video" : "image",
       format,
-      mimeType: format === "glb" ? "model/gltf-binary" : `image/${format}`,
+      mimeType: format === "glb" ? "model/gltf-binary" : format === "mp4" ? "video/mp4" : `image/${format}`,
       bytes: 0,
       status: "unavailable",
     };
@@ -203,6 +204,23 @@ export class WorkflowArtifactIndex {
       }
       const result = object(value);
       if (!result) return;
+      if (
+        producer === "short-video-compose" &&
+        typeof result.videoPath === "string" &&
+        basename(result.videoPath) === "final.mp4"
+      ) {
+        const rel = relative(
+          resolve(this.cwd, ".aura/short-video"),
+          resolve(result.videoPath),
+        );
+        await this.register(
+          owner,
+          result.videoPath,
+          { name: "短视频.mp4" },
+          /^[-\w]+[/\\]final\.mp4$/u.test(rel),
+        );
+        return;
+      }
       if (
         ["local-image", "comfy-workflow"].includes(producer) &&
         Array.isArray(result.files)

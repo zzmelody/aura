@@ -65,7 +65,9 @@ Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Sessi
 
 `comfy-workflow` Action 从对象或本地 API JSON 文件调用所选 ComfyUI，支持节点参数覆盖和输出节点筛选；普通界面画布 JSON 不做转换。文件内容在排队前固定并记录 hash，ComfyUI 执行每次使用独立 output/temp 目录，保存/预览产物归档后删除中间目录。`local-image` / `local-video` 仅是同一执行器的预置模板，前端不解释 ComfyUI 图或调度模型。
 
-本地媒体模型以同包 `local-image`、`local-video`、`local-tts` Action 接入已有 ComfyUI / Qwen3-TTS HTTP 服务，`local-ai-service` 负责状态与显式启停，不增加 Workflow 或前端执行逻辑。`orchestration/src/local-ai/` 是这三套受信任 Windows 部署的后端适配：复用 DSH subprocess，并用其公开 Win32 bindings 补充 Job 崩溃回收及跨宿主 GPU lease。模型进程由后端插件持有，不属于热加载 Action fiber；详情见 [本地模型 Actions](../packages/backend/orchestration/docs/local-ai-actions.md)。这条媒体工具链不替代 Agent 的 DSH 模型路由。
+本地媒体模型以同包 `local-image`、`local-video`、`local-tts` Action 接入已有 ComfyUI / Qwen3-TTS HTTP 服务，`local-ai-service` 负责状态与显式启停。`orchestration/src/local-ai/` 是这三套受信任 Windows 部署的后端适配：复用 DSH subprocess，并用其公开 Win32 bindings 补充 Job 崩溃回收及跨宿主 GPU lease。模型进程由后端插件持有，不属于热加载 Action fiber；详情见 [本地模型 Actions](../packages/backend/orchestration/docs/local-ai-actions.md)。这条媒体工具链不替代 Agent 的 DSH 模型路由。
+
+内置 `short-video` Flow 将 TTS 与视频 Action 串接成单镜头样片，随后由 `short-video-audio` 检查 WAV 时长、`short-video-compose` 使用固定 FFmpeg 二进制合成旁白和烧录字幕。
 
 「工作流」首页用卡片展示用途与可用状态，点击卡片按需通过 `/flows/:flowId/source` 读取已注册入口源码，在卡片下方静态解析节点；编辑入口进入流程图/代码详情。画布与节点支持拖拽，位置只影响当前预览，不修改代码。注册时保留源码快照，热加载失败时预览与运行均继续使用最后可用版本；接口按目录 ID 查注册表，不接受文件路径，不返回辅助文件或凭据。源码预览不具备发布或修改后端代码的能力。
 
@@ -83,4 +85,4 @@ Codex 默认模型是 `gpt-5.6-terra`，推理档位为 medium，传输为 SSE�
 
 工作流产物通过 `@aura/orchestration` 的 `GeneratedArtifacts` 与独立 `WorkflowArtifactIndex` 登记、生成缩略图及迁移历史记录；不修改 Action 输出和 durable 重放身份。shared/protocol 的 `WorkflowArtifact` / `WorkflowArtifacts` 只传文件 ID、可用状态、元数据和来源步骤。`/flows/runs/:runId/artifacts` 与其内容路由验证运行关联；二进制由 Hono 流式发送，不进入 DSH JSON-RPC。已生成结果不因预览登记失败而触发再次生成。
 
-workbench 在工作流回复与步骤详情展示同一套文件卡片，使用原有轮询节奏同步产物。图片弹层支持缩放/拖动，GLB 使用按需加载的 `@google/model-viewer`；列表只加载缩略图，打开弹层才加载模型。`model-viewer` 和 Three.js 由三个应用通过 peer dependency 提供同一运行时，解码器由根构建插件统一部署到各宿主产物，无运行时 CDN 依赖。Web、Electron 和 Capacitor 共享 DOM 与 HTTP 文件地址，不向 renderer 暴露磁盘读取能力。
+workbench 在工作流回复与步骤详情展示同一套文件卡片，使用原有轮询节奏同步产物。图片弹层支持缩放/拖动，MP4 使用浏览器原生播放器，GLB 使用按需加载的 `@google/model-viewer`；列表只加载缩略图或占位图，打开弹层才加载模型。`model-viewer` 和 Three.js 由三个应用通过 peer dependency 提供同一运行时，解码器由根构建插件统一部署到各宿主产物，无运行时 CDN 依赖。Web、Electron 和 Capacitor 共享 DOM 与 HTTP 文件地址，不向 renderer 暴露磁盘读取能力。

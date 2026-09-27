@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
   LoaderCircle,
   Minus,
+  Play,
   Plus,
   X,
 } from "lucide-react";
@@ -137,6 +138,8 @@ function Thumbnail({
     <span className="artifact-card-placeholder">
       {artifact.kind === "model" ? (
         <Box size={34} strokeWidth={1} />
+      ) : artifact.kind === "video" ? (
+        <Play size={34} strokeWidth={1} />
       ) : (
         <ImageIcon size={30} strokeWidth={1} />
       )}
@@ -195,7 +198,9 @@ export function WorkflowArtifactGallery({
                   <span className="artifact-kind">
                     {artifact.kind === "model"
                       ? "3D · GLB"
-                      : artifact.format.toUpperCase()}
+                      : artifact.kind === "video"
+                        ? "视频 · MP4"
+                        : artifact.format.toUpperCase()}
                   </span>
                   <span className="artifact-card-expand">
                     <Expand size={16} />
@@ -295,6 +300,8 @@ function ArtifactDialog({
           <div>
             {artifact.kind === "model" ? (
               <Box size={18} />
+            ) : artifact.kind === "video" ? (
+              <Play size={18} />
             ) : (
               <ImageIcon size={18} />
             )}
@@ -354,6 +361,14 @@ function ArtifactDialog({
                 </button>
               ) : null}
             </div>
+          ) : artifact.kind === "video" ? (
+            <video
+              className="artifact-video-preview"
+              src={artifactUrl(endpoint, runId, artifact.artifactId)}
+              controls
+              playsInline
+              preload="metadata"
+            />
           ) : artifact.kind === "model" ? (
             <Suspense
               fallback={
@@ -380,7 +395,9 @@ function ArtifactDialog({
           <span>
             {artifact.kind === "image"
               ? "滚轮或双指缩放 · 拖动查看细节"
-              : "3D 模型预览"}
+              : artifact.kind === "video"
+                ? "视频预览"
+                : "3D 模型预览"}
           </span>
           {group.length > 1 ? (
             <div>

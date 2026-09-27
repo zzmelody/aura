@@ -4200,6 +4200,13 @@ textarea {
   overflow: hidden;
   background: var(--background);
 }
+.artifact-video-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
 .artifact-stage-message {
   position: absolute;
   inset: 0;

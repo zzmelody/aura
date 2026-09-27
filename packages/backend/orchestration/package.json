@@ -18,6 +18,7 @@
       "default": "./src/action-api.ts"
     },
     "./local-ai": "./src/local-ai/api.ts",
+    "./short-video": "./src/short-video.ts",
     "./plugin": "./src/plugin.ts",
     "./demo": "./src/demo.ts"
   },
@@ -51,6 +52,7 @@
     "@deepseek-ai/dsh-win32-process": "0.1.5-rc.3",
     "@deepseek-ai/dsh-workspace": "0.1.5-rc.3",
     "acorn": "8.18.0",
+    "ffmpeg-static": "5.3.0",
     "hono": "4.13.7",
     "sharp": "0.35.4",
     "zod": "^4.3.6"

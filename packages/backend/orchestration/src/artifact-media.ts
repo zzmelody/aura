@@ -56,6 +56,28 @@ export function selfContainedGlb(bytes: Buffer): boolean {
 }
 
 export async function inspectArtifact(bytes: Buffer): Promise<ArtifactMedia> {
+  if (bytes.toString("ascii", 4, 8) === "ftyp") {
+    let offset = 0;
+    let movie = false;
+    let media = false;
+    while (offset + 8 <= bytes.length) {
+      const size = bytes.readUInt32BE(offset);
+      if (size < 8 || offset + size > bytes.length) break;
+      const kind = bytes.toString("ascii", offset + 4, offset + 8);
+      if (kind === "moov") movie = true;
+      if (kind === "mdat") media = true;
+      offset += size;
+    }
+    if (!movie || !media || offset !== bytes.length)
+      throw new Error("Incomplete MP4 artifact");
+    return {
+      kind: "video",
+      format: "mp4",
+      mimeType: "video/mp4",
+      bytes: bytes.length,
+      status: "ready",
+    };
+  }
   if (bytes.toString("ascii", 0, 4) === "glTF") {
     return {
       kind: "model",
