@@ -188,6 +188,49 @@ export class WorkflowApiError extends Error {
   }
 }
 
+/** Upload bytes once; Flow inputs and saved drafts contain only the asset ID. */
+export async function uploadWorkflowImage(
+  endpoint: string,
+  file: File,
+  signal?: AbortSignal,
+  request: typeof fetch = fetch,
+): Promise<string> {
+  if (file.size < 1 || file.size > 32 * 1024 * 1024)
+    throw new Error("图片必须小于 32 MiB。");
+  const mimeType = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    webp: "image/webp",
+  }[file.name.split(".").at(-1)?.toLowerCase() ?? ""];
+  const type = ["image/png", "image/jpeg", "image/webp"].includes(file.type)
+    ? file.type
+    : mimeType;
+  if (!type) throw new Error("请选择 PNG、JPEG 或 WebP 图片。");
+  const response = await request(
+    `${endpoint.replace(/\/$/, "")}/flows/assets/images`,
+    {
+      method: "POST",
+      headers: { "Content-Type": type },
+      body: file,
+      signal,
+    },
+  );
+  const value = await response.json().catch(() => null);
+  if (!response.ok)
+    throw new WorkflowApiError(
+      value?.message || `图片上传失败（${response.status}）。`,
+      response.status,
+    );
+  if (
+    !value ||
+    typeof value.assetId !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(value.assetId)
+  )
+    throw new Error("图片上传没有返回有效的资产 ID。");
+  return value.assetId;
+}
+
 export async function workflowApi<T>(
   endpoint: string,
   path: string,

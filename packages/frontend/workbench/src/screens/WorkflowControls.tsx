@@ -7,9 +7,11 @@ function StepInput({
   step,
   busy,
   submit,
+  endpoint,
 }: {
   step: FlowStep;
   busy: boolean;
+  endpoint: string;
   submit(
     operation: "answer" | "resolve",
     step: FlowStep,
@@ -26,8 +28,10 @@ function StepInput({
   );
   const [showForm, setShowForm] = useState(step.kind === "checkpoint");
   const [error, setError] = useState("");
+  const [imageUploading, setImageUploading] = useState(false);
   const checkpoint = step.kind === "checkpoint";
   async function send() {
+    if (imageUploading) return;
     let output: JsonValue;
     try {
       output = JSON.parse(text);
@@ -91,13 +95,19 @@ function StepInput({
             text={text}
             onChange={setText}
             disabled={busy}
+            endpoint={endpoint}
+            onUploadBusyChange={setImageUploading}
           />
           {error && (
             <p className="error" role="alert">
               {error}
             </p>
           )}
-          <button className="tool-button" disabled={busy} type="submit">
+          <button
+            className="tool-button"
+            disabled={busy || imageUploading}
+            type="submit"
+          >
             {checkpoint ? "提交答案并继续" : "确认结果"}
           </button>
         </form>
@@ -207,6 +217,7 @@ export function WorkflowControls({
             step={step}
             busy={busy}
             submit={command}
+            endpoint={endpoint}
           />
         ))}
       {error && (

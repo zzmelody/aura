@@ -2393,6 +2393,7 @@ textarea {
 }
 .workflow-input-long-text,
 .workflow-input-image,
+.workflow-input-image-asset,
 .workflow-input-directory,
 .workflow-input-multi-select {
   grid-column: 1 / -1;

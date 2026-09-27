@@ -1,4 +1,4 @@
-import React, { useId, useState } from "react";
+import React, { useId, useRef, useState } from "react";
 import { FolderOpen, ImagePlus } from "lucide-react";
 import type { JsonValue } from "@aura/protocol/types";
 import {
@@ -15,6 +15,64 @@ import {
   workflowOptionLabel,
 } from "../workflowInputModel";
 import { platform } from "../platform";
+import { uploadWorkflowImage } from "../workflowSessions";
+
+function ImageAssetField({
+  id,
+  label,
+  value,
+  disabled,
+  uploading,
+  onChange,
+  onFile,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  disabled: boolean;
+  uploading: boolean;
+  onChange(value: string): void;
+  onFile(file: File): void;
+}) {
+  const fileInput = useRef<HTMLInputElement>(null);
+  return (
+    <div className="workflow-path-input">
+      <span className="workflow-path-icon" aria-hidden="true">
+        <ImagePlus size={17} />
+      </span>
+      <input
+        id={id}
+        aria-label={label}
+        disabled={disabled || uploading}
+        type="text"
+        value={value}
+        placeholder="上传图片，或粘贴图片资产 ID"
+        onChange={(event) => onChange(event.target.value)}
+        autoComplete="off"
+      />
+      <input
+        ref={fileInput}
+        hidden
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        disabled={disabled || uploading}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (file) onFile(file);
+        }}
+      />
+      <button
+        type="button"
+        className="workflow-path-button"
+        disabled={disabled || uploading}
+        onClick={() => fileInput.current?.click()}
+      >
+        {uploading ? "上传中…" : "上传图片"}
+      </button>
+    </div>
+  );
+}
 
 export const asObject = (value: JsonValue | undefined) =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -47,14 +105,22 @@ export function WorkflowInput({
   text,
   onChange,
   disabled,
+  endpoint,
+  onUploadBusyChange,
 }: {
   schema?: JsonValue;
   text: string;
   onChange(text: string): void;
   disabled: boolean;
+  endpoint?: string;
+  onUploadBusyChange?(busy: boolean): void;
 }) {
   const id = useId();
   const [pickerError, setPickerError] = useState<Record<string, string>>({});
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  const uploading = useRef(false);
+  const latestText = useRef(text);
+  latestText.current = text;
   const desktop = platform() === "desktop";
   const pickerAvailable = workflowFilePickerAvailable();
   let value: JsonValue;
@@ -86,16 +152,49 @@ export function WorkflowInput({
         const kind = workflowFieldKind(key, spec);
         const fieldId = `${id}-${index}`;
         const update = (next: JsonValue) => {
-          const nextValue = { ...current };
+          let latest = current;
+          try {
+            latest = asObject(JSON.parse(latestText.current)) ?? current;
+          } catch {
+            // The form remains usable while a JSON draft is being edited.
+          }
+          const nextValue = { ...latest };
           if (next === "" && !required.has(key)) delete nextValue[key];
           else nextValue[key] = next;
-          onChange(JSON.stringify(nextValue, null, 2));
+          const nextText = JSON.stringify(nextValue, null, 2);
+          latestText.current = nextText;
+          onChange(nextText);
           setPickerError((errors) => {
             if (!errors[key]) return errors;
             const copy = { ...errors };
             delete copy[key];
             return copy;
           });
+        };
+        const upload = async (file: File) => {
+          if (uploading.current) return;
+          if (!endpoint) {
+            setPickerError((errors) => ({
+              ...errors,
+              [key]: "工作流服务地址不可用。",
+            }));
+            return;
+          }
+          uploading.current = true;
+          setUploadingKey(key);
+          onUploadBusyChange?.(true);
+          try {
+            update(await uploadWorkflowImage(endpoint, file));
+          } catch (cause) {
+            setPickerError((errors) => ({
+              ...errors,
+              [key]: cause instanceof Error ? cause.message : "图片上传失败。",
+            }));
+          } finally {
+            uploading.current = false;
+            setUploadingKey(null);
+            onUploadBusyChange?.(false);
+          }
         };
         const choose = async (pathKind: WorkflowPathKind) => {
           try {
@@ -213,6 +312,27 @@ export function WorkflowInput({
                 value={String(current[key] ?? "")}
                 onChange={(event) => update(event.target.value)}
               />
+            ) : kind === "image-asset" ? (
+              <>
+                <ImageAssetField
+                  id={fieldId}
+                  label={label}
+                  value={String(current[key] ?? "")}
+                  disabled={disabled}
+                  uploading={uploadingKey === key}
+                  onChange={update}
+                  onFile={(file) => void upload(file)}
+                />
+                {pickerError[key] ? (
+                  <small className="workflow-field-error" role="alert">
+                    {pickerError[key]}
+                  </small>
+                ) : (
+                  <small className="workflow-field-hint">
+                    上传后保存图片资产 ID，可在下次运行中复用。
+                  </small>
+                )}
+              </>
             ) : kind === "image" || kind === "directory" ? (
               <>
                 <div className="workflow-path-input">

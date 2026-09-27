@@ -39,6 +39,7 @@ export function WorkflowChat({
     workspace.state.provider === "codex" ? "codex" : "demo",
   );
   const [jsonMode, setJsonMode] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const [inputError, setInputError] = useState("");
   const scroll = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
@@ -84,7 +85,7 @@ export function WorkflowChat({
     runButton.current?.focus();
   }
   async function submit(input?: JsonValue, runMode = mode) {
-    if (workspace.busy) return;
+    if (workspace.busy || imageUploading) return;
     try {
       if (input === undefined) input = JSON.parse(text);
     } catch {
@@ -304,6 +305,8 @@ export function WorkflowChat({
                 text={text}
                 disabled={workspace.busy || Boolean(pending)}
                 onChange={workspace.setDraft}
+                endpoint={binding.endpoint}
+                onUploadBusyChange={setImageUploading}
               />
               {inputError || error ? (
                 <p role="alert" className="error">
@@ -334,6 +337,7 @@ export function WorkflowChat({
                   type="submit"
                   disabled={
                     workspace.busy ||
+                    imageUploading ||
                     Boolean(pending) ||
                     flow?.available === false
                   }

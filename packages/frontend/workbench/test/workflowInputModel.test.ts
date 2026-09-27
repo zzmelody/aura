@@ -13,6 +13,14 @@ test("workflow input fields infer useful controls from schema names and metadata
   assert.equal(workflowFieldKind("prompt", { type: "string" }), "long-text");
   assert.equal(workflowFieldKind("imagePath", { type: "string" }), "image");
   assert.equal(
+    workflowFieldKind("firstFrameAssetId", { type: "string" }),
+    "image-asset",
+  );
+  assert.equal(
+    workflowFieldKind("firstFramePrompt", { type: "string", maxLength: 1000 }),
+    "long-text",
+  );
+  assert.equal(
     workflowFieldKind("referenceFile", {
       type: "string",
       description: "选择一张参考图片",
@@ -61,6 +69,7 @@ test("workflow input fields infer useful controls from schema names and metadata
 
 test("workflow input fields provide readable localized copy", () => {
   assert.equal(workflowFieldLabel("referenceImagePath", {}), "参考图片");
+  assert.equal(workflowFieldLabel("firstFrameAssetId", {}), "首帧参考图");
   assert.equal(workflowFieldLabel("customValue", {}), "Custom Value");
   assert.equal(
     workflowFieldLabel("ignored", { title: "自定义标题" }),

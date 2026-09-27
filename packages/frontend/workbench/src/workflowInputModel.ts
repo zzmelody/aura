@@ -4,6 +4,7 @@ export type WorkflowFieldKind =
   | "boolean"
   | "directory"
   | "image"
+  | "image-asset"
   | "long-text"
   | "multi-select"
   | "number"
@@ -14,14 +15,20 @@ type SchemaObject = Record<string, JsonValue>;
 
 const labels: Record<string, string> = {
   assetName: "资源名称",
+  firstFrameAssetId: "首帧参考图",
+  firstFramePrompt: "首帧图片提示词",
   faceLimit: "面数上限",
   imageModel: "图像模型",
   imagePath: "输入图片",
   imageQuality: "图像质量",
+  lastFrameAssetId: "末帧参考图",
+  lastFramePrompt: "末帧图片提示词",
+  narration: "旁白",
   outputDirectory: "输出目录",
   prompt: "生成描述",
   referenceImagePath: "参考图片",
   task: "任务描述",
+  visualPrompt: "视频画面与运动提示词",
 };
 
 const optionLabels: Record<string, string> = {
@@ -74,11 +81,13 @@ export function workflowFieldKind(
   if (spec.type === "number" || spec.type === "integer") return "number";
 
   const explicit = spec["x-aura-control"] ?? spec.format;
+  if (explicit === "image-asset") return "image-asset";
   if (explicit === "image" || explicit === "image-path") return "image";
   if (explicit === "directory" || explicit === "directory-path")
     return "directory";
 
   const normalized = key.replaceAll(/[_-]/g, "").toLowerCase();
+  if (/(?:image|frame)assetid$/u.test(normalized)) return "image-asset";
   const description =
     typeof spec.description === "string" ? spec.description.toLowerCase() : "";
   if (
@@ -121,6 +130,7 @@ export function workflowFieldPlaceholder(
   spec: SchemaObject,
   nativePathPicker = false,
 ): string {
+  if (kind === "image-asset") return "上传图片，或粘贴已有的图片资产 ID";
   if (kind === "image")
     return nativePathPicker
       ? "选择图片，或粘贴路径"

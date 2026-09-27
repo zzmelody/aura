@@ -67,7 +67,7 @@ Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Sessi
 
 本地媒体模型以同包 `local-image`、`local-video`、`local-tts` Action 接入已有 ComfyUI / Qwen3-TTS HTTP 服务，`local-ai-service` 负责状态与显式启停。`orchestration/src/local-ai/` 是这三套受信任 Windows 部署的后端适配：复用 DSH subprocess，并用其公开 Win32 bindings 补充 Job 崩溃回收及跨宿主 GPU lease。模型进程由后端插件持有，不属于热加载 Action fiber；详情见 [本地模型 Actions](../packages/backend/orchestration/docs/local-ai-actions.md)。这条媒体工具链不替代 Agent 的 DSH 模型路由。
 
-内置 `short-video` Flow 将 TTS 与视频 Action 串接成单镜头样片，随后由 `short-video-audio` 检查 WAV 时长、`short-video-compose` 使用固定 FFmpeg 二进制合成旁白和烧录字幕。
+内置 `short-video` Flow 先生成 TTS 并由 `short-video-audio` 检查 WAV 时长，再按需通过 `local-image` 生成首末帧或使用工作流表单已上传的受管图片资产，最后调用 `local-video` 和使用固定 FFmpeg 二进制的 `short-video-compose` 合成旁白与烧录字幕。
 
 「工作流」首页用卡片展示用途与可用状态，点击卡片按需通过 `/flows/:flowId/source` 读取已注册入口源码，在卡片下方静态解析节点；编辑入口进入流程图/代码详情。画布与节点支持拖拽，位置只影响当前预览，不修改代码。注册时保留源码快照，热加载失败时预览与运行均继续使用最后可用版本；接口按目录 ID 查注册表，不接受文件路径，不返回辅助文件或凭据。源码预览不具备发布或修改后端代码的能力。
 
