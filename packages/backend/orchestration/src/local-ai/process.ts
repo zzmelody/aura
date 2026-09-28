@@ -127,7 +127,9 @@ export async function launchOwned(
           cwd: spec.cwd,
           stdio: {
             stdin: "ignore",
-            stdout: { maxBytes: 256 * 1024 },
+            // Busy Windows hosts can report hundreds of thousands of bytes of
+            // unrelated TCP connections; a truncated table must fail closed.
+            stdout: { maxBytes: 4 * 1024 * 1024 },
             stderr: { maxBytes: 1024 },
           },
           graceMs: 500,
