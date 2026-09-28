@@ -6,6 +6,7 @@ import { GeneratedArtifacts } from "./generated-artifacts.ts";
 import { videoRoutes } from "./video-routes.ts";
 import { contentRoutes } from "./content-routes.ts";
 import { topicRoutes } from "./topic-routes.ts";
+import { contentAnalyticsRoutes } from "./content-analytics-routes.ts";
 import { storeContentBytes } from "./content-media.ts";
 import { ActionFailure } from "./action-api.ts";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
@@ -400,6 +401,7 @@ export function createFlowApp(
   app.route("/video-projects", videoRoutes(host));
   app.route("/content-projects", contentRoutes(host));
   app.route("/topic-library", topicRoutes(host));
+  app.route("/content-analytics", contentAnalyticsRoutes(host));
 
   app.get("/catalog", async (context) =>
     context.json(await host.request("catalog")),

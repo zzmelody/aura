@@ -21,6 +21,7 @@
     "./short-video": "./src/short-video.ts",
     "./video-production": "./src/video-production.ts",
     "./content-production": "./src/content-production.ts",
+    "./content-review": "./src/content-review.ts",
     "./topic-production": "./src/topic-production.ts",
     "./plugin": "./src/plugin.ts",
     "./demo": "./src/demo.ts"

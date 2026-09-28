@@ -36,6 +36,9 @@ import { ContentResearch } from "@aura/content-research";
 import { TopicLibrary, topicDomainSpec, type TopicState } from "./topic-library.ts";
 import { topicRequest } from "./topic-routes.ts";
 import { ContentLibrary, contentDomainSpec, type ContentDocument } from "./content-library.ts";
+import { ContentAnalyticsLibrary, contentAnalyticsDomainSpec } from "./content-analytics.ts";
+import { contentAnalyticsRequest } from "./content-analytics-routes.ts";
+import type { ContentExperiment, ContentMetricSnapshot, ContentPublication, ContentReview } from "@aura/protocol/content-analytics";
 import { LocalAIManager } from "./local-ai/manager.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 
@@ -339,6 +342,14 @@ export async function apply(ctx: Context) {
   );
   const contentDomain = await ctx.storageDomain.open(contentDomainSpec);
   const contentLibrary = new ContentLibrary(contentDomain.table("projects") as unknown as Table<ContentDocument>, artifacts, process.env.AURA_FLOW_CWD ?? process.cwd());
+  const analyticsDomain = await ctx.storageDomain.open(contentAnalyticsDomainSpec);
+  const contentAnalytics = new ContentAnalyticsLibrary(
+    analyticsDomain.table("publications") as unknown as Table<ContentPublication>,
+    analyticsDomain.table("snapshots") as unknown as Table<ContentMetricSnapshot>,
+    analyticsDomain.table("reviews") as unknown as Table<ContentReview>,
+    analyticsDomain.table("experiments") as unknown as Table<ContentExperiment>,
+    contentLibrary,
+  );
   const research = new ContentResearch(resolve(process.env.DSH_HOME ?? process.env.AURA_FLOW_CWD ?? process.cwd(), "aura-content-research"));
   await research.initialize();
   const topicDomain = await ctx.storageDomain.open(topicDomainSpec);
@@ -354,6 +365,7 @@ export async function apply(ctx: Context) {
     videoLibrary,
     contentLibrary,
     topicLibrary,
+    contentAnalytics,
   );
 
   const domain = await ctx.storageDomain.open(spec);
@@ -400,6 +412,7 @@ export async function apply(ctx: Context) {
   videoLibrary.attach(engine);
   contentLibrary.attach(engine);
   topicLibrary.attach(engine);
+  contentAnalytics.attach(engine);
   await actionRuns.initialize();
   artifactIndex.attach((id) => engine.get(id), historicalArtifactReader(ctx));
 
@@ -474,6 +487,7 @@ export async function apply(ctx: Context) {
         throw new FlowError("编排服务正在回收空闲资源，请刷新。", 503);
       lastActivity = Date.now();
       if (method.startsWith("content-projects/")) return { ok: true, data: await contentRequest(contentLibrary, method.slice("content-projects/".length), params) };
+      if (method.startsWith("content-analytics/")) return { ok: true, data: await contentAnalyticsRequest(contentAnalytics, method.slice("content-analytics/".length), params) };
       if (method.startsWith("topic-library/")) return { ok: true, data: await topicRequest(topicLibrary, method.slice("topic-library/".length), params) };
       if (method.startsWith("video-projects/"))
         return {
@@ -630,6 +644,8 @@ export async function apply(ctx: Context) {
       await domain.close();
       await actionDomain.close();
       await videoDomain.close();
+      await contentDomain.close();
+      await analyticsDomain.close();
       await topicDomain.close();
       await research.close();
     };

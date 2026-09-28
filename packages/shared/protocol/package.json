@@ -12,7 +12,8 @@
     "./types": "./src/types.ts",
     "./research": "./src/research.ts",
     "./video": "./src/video.ts",
-    "./content": "./src/content.ts"
+    "./content": "./src/content.ts",
+    "./content-analytics": "./src/content-analytics.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

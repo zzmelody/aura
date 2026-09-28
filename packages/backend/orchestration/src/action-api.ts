@@ -87,6 +87,7 @@ export interface ActionContext {
   readonly videoProduction?: import("./video-library.ts").VideoLibrary;
   readonly contentProduction?: import("./content-library.ts").ContentLibrary;
   readonly topicLibrary?: import("./topic-library.ts").TopicLibrary;
+  readonly contentAnalytics?: import("./content-analytics.ts").ContentAnalyticsLibrary;
 }
 
 export type ActionBinding = Omit<
