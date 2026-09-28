@@ -59,7 +59,7 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 Flow 的模型参数由 `flow.agent({model,reasoningEffort,temperature,maxTokens,timeoutMs,...})` 按步骤声明，或通过 `defineFlow.agentDefaults` 提供公共默认值；步骤覆盖 Flow 默认，Flow 默认覆盖运行时配置。provider 仍绑定 Run.mode，脚本不接触凭据或任意 endpoint。入队时固定 Run 默认参数，Agent dispatch 前保存完整 `config` 并纳入请求指纹；重试与重放不读取新的环境默认值。`sessionController.selectModel` 选择模型，DSH Agent 的官方 `agent/request` scoped waterfall 将同一配置应用到每轮模型请求并写入 DSH request header。模型与思考强度先经过 DSH 能力校验，无效配置不会启动 Agent attempt。升级前未保存参数的未结束记录安全中断为 `agent_config_unrecoverable`；已完成历史继续可读。
 
-Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Session 边界校验并读取实际图片，不把 base64 或任意图片路径塞入 durable JSON。Veya 截图从会话绑定的 preview root 读取并校验原始 hash 后入库；DSH 规范化图片的 digest 单独保留。文本模型拒绝图片并返回明确错误，不退回只看路径的“视觉验收”。生成 GLB 由 Tripo 宿主登记 SHA-256 引用，只有已登记内容能通过 `veya.assets.import` 复制到 Veya 受控交换区，再由其原生 Cooker 编译。生成成功、登记失败时仍保存生成结果，不能因此重新付费。目录、进程、凭据仍属于后端领域能力；外部 Action 只调用一个 canonical 工具，组合仍在 Flow。
+Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Session 边界校验并读取实际图片，不把 base64 或任意图片路径塞入 durable JSON。Veya 截图从会话绑定的 preview root 读取并校验原始 hash 后入库；DSH 规范化图片的 digest 单独保留。文本模型拒绝图片并返回明确错误，不退回只看路径的“视觉验收”。生成 GLB 由 Tripo 宿主登记 SHA-256 引用，只有已登记内容能通过 `veya.assets.import` 复制到 Veya 受控交换区，再由其原生 Cooker 编译。`aura.veya.cloud-image` 是独立的单图能力：只提交一次付费云图请求，限定 8 MiB 方形 PNG，登记实际模型/任务/费用与不可变 SHA-256 artifact，再由 `veya.atmosphere.build` 受控转交 Cooker；请求结果不确定时不自动重试。生成成功、登记失败时仍保存可观测的计费信息，不能因此重新付费。目录、进程、凭据仍属于后端领域能力；外部 Veya Action 只调用一个 canonical 工具，组合仍在 Flow。
 
 ## 当前取舍
 

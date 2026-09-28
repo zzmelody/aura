@@ -101,6 +101,7 @@ const operations = new Map<string, Operation>([
     { method: "POST", tool: "veya.cooker.capabilities" },
   ],
   ["veya.cooker.submit", { method: "POST", tool: "veya.cooker.submit" }],
+  ["veya.atmosphere.build", { method: "POST", tool: "veya.atmosphere.build" }],
   ["veya.cooker.status", { method: "POST", tool: "veya.cooker.status" }],
   ["veya.cooker.cancel", { method: "POST", tool: "veya.cooker.cancel" }],
   ["veya.runtime.observe", { method: "POST", tool: "veya.runtime.observe" }],
@@ -237,8 +238,10 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
     const session = await this.session();
     if (capability === VEYA_WORLD_AGENT_CAPABILITY && this.media) {
       const body = object(input);
-      const ids: unknown[] =
-        operation === "veya.assets.import" ? [body.artifact_id] : [];
+      const staged: { id: unknown; format: "glb" | "png" }[] =
+        operation === "veya.assets.import" ? [{ id: body.artifact_id, format: "glb" }] : [];
+      if (operation === "veya.atmosphere.build" && body.source === "ai_cloud")
+        staged.push({ id: body.artifact_id, format: "png" });
       if (operation === "veya.cooker.submit" && Array.isArray(body.inputs))
         for (const item of body.inputs) {
           if (
@@ -248,18 +251,18 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
             typeof item.source === "string" &&
             item.source.startsWith("artifact://")
           )
-            ids.push(item.source.slice("artifact://".length));
+            staged.push({ id: item.source.slice("artifact://".length),
+              format: typeof item.destination === "string" && item.destination.endsWith(".png") ? "png" : "glb" });
         }
-      if (ids.length && !session.exchangeRoot)
+      if (staged.length && !session.exchangeRoot)
         throw new ActionFailure(
           "asset_exchange_unavailable: Update Veya to support managed asset imports.",
         );
-      for (const id of ids)
-        await this.media.artifacts.stageModel(
-          id,
-          session.exchangeRoot!,
-          signal,
-        );
+      for (const artifact of staged)
+        if (artifact.format === "png")
+          await this.media.artifacts.stageCloudPng(artifact.id, session.exchangeRoot!, signal);
+        else
+          await this.media.artifacts.stageModel(artifact.id, session.exchangeRoot!, signal);
     }
     const deadline = Date.now() + 10_000;
     let data: JsonValue;
