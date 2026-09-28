@@ -20,9 +20,9 @@ DSH SDK 的 `session.event` 现在以 `assistant/message` 提供完整助手消�
 
 右上角登录按钮调用 Aura 后端，再由 DSH `ctx.authorization.begin()` 启动 `llm-pi-ai/openai-codex` flow。浏览器环境优先使用 `http://localhost:1455/auth/callback` 本机回调，Aura 回到前台后也会立即刷新登录状态；若浏览器或代理无法访问回调端口，界面会接住 DSH 的 manual-code prompt，允许粘贴最终回调地址。手机和局域网页面使用设备码；若 OpenAI 账号未启用该方式，界面会明确提示改用浏览器。成功的 grant 由 DSH 凭据服务写入 `.aura/dsh/.credentials.yaml`；模型请求在同一 DSH home 下读取记录并自动刷新。Aura 不读取 Codex 应用缓存，不把 token 复制到另一种格式，也不直接实例化 pi-ai 模型客户端。
 
-Aura 后端优先采用进程已有的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 与 `NO_PROXY`。Windows 上没有显式代理环境时，runtime 会读取当前用户启用的手动系统代理，使浏览器登录后的令牌交换和 DSH 模型请求走同一路径；`localhost`、`127.0.0.1` 与 `::1` 始终绕过代理。代理配置只用于后端网络调度及子进程环境，不进入客户端响应或日志。
+Aura 后端优先采用进程已有的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 与 `NO_PROXY`。Windows 上没有显式代理环境时，runtime 会读取当前用户启用的手动系统代理，使浏览器登录后的令牌交换和 DSH 模型请求走同一路径；Flow DSH 子进程在首次模型调用前单独安装代理 dispatcher，以兼容 Electron 内嵌 Node 的网络环境。`localhost`、`127.0.0.1` 与 `::1` 始终绕过代理。代理配置只用于后端网络调度及子进程环境，不进入客户端响应或日志。
 
-对话使用 provider `openai-codex` 和默认模型 `gpt-5.6-terra`。模型、凭据或配额错误由 DSH 路径返回，不能静默切到本地演示。OpenAI 官方将 ChatGPT 登录和 API Key 登录区分为不同方式；API Key 使用单独的按量计费。参见 [OpenAI Codex 认证说明](https://learn.chatgpt.com/zh-Hans/docs/auth?surface=app)。
+对话使用 provider `openai-codex` 和默认模型 `gpt-5.6-terra`。模型、凭据或配额错误由 DSH 路径返回，不能静默切到本地演示。Flow 中若 DSH 的 OAuth 续期失败，运行会显示检查网络或代理、重新登录 Codex 的指引；已失败的运行需新建运行。原始令牌服务响应可能含非文本字节，不会复制到 Flow 记录或前端。OpenAI 官方将 ChatGPT 登录和 API Key 登录区分为不同方式；API Key 使用单独的按量计费。参见 [OpenAI Codex 认证说明](https://learn.chatgpt.com/zh-Hans/docs/auth?surface=app)。
 
 当前自动测试证明 DSH 注册了该 OAuth flow、脱敏状态可读取、手动回调可以提交、失败原因不会被后续轮询覆盖，完整 DSH profile 也能运行两轮流式演示；没有代替用户完成 OAuth，也没有消耗订阅额度。因此第一次真实请求需要你点击登录并完成账号页面后验收。
 

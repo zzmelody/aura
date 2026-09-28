@@ -47,7 +47,13 @@ const plainText = (content?: readonly ContentBlock[]) =>
     .map((part) => part.text)
     .join("\n");
 
-function agentFailure(message?: string): FlowError {
+export function agentFailure(message?: string): FlowError {
+  // DSH can include raw token-service response bytes in the error cause. Never
+  // forward those bytes to Flow storage or the client; give a recovery action.
+  if (/OAuth refresh failed for openai-codex|OpenAI Codex token refresh/i.test(message ?? ""))
+    return new FlowError(
+      "Codex 登录续期失败。请检查网络或代理，在右上角重新登录 Codex 后新建运行。",
+    );
   const status = message?.match(/\bHTTP\s+(\d{3})\b/i)?.[1];
   return new FlowError(
     status

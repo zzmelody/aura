@@ -42,6 +42,7 @@ import { contentAnalyticsRequest } from "./content-analytics-routes.ts";
 import type { ContentExperiment, ContentMetricSnapshot, ContentPublication, ContentReview } from "@aura/protocol/content-analytics";
 import { LocalAIManager } from "./local-ai/manager.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
+import { configureDshNetwork } from "./dsh-network.ts";
 
 const pluginIdentitySchema = z
   .object({
@@ -265,6 +266,9 @@ const actionSpec = defineDomain({
 });
 
 export async function apply(ctx: Context) {
+  // Electron's bundled Node does not inherit the parent's global dispatcher.
+  // Set it inside DSH as well, using only the backend proxy environment.
+  configureDshNetwork();
   const flowRoot = process.env.AURA_FLOW_ROOT;
   if (!flowRoot) throw new Error("AURA_FLOW_ROOT is required");
   const actionRoot = process.env.AURA_ACTION_ROOT;
