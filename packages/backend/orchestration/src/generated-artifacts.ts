@@ -146,6 +146,20 @@ export class GeneratedArtifacts {
     validateGlb(bytes);
     await publishBytes(exchange, `${artifactId}.glb`, bytes, signal);
   }
+
+  /** Stage only an immutable, already-registered square PNG for Veya clouds. */
+  async stageCloudPng(artifactId: unknown, exchange: string, signal: AbortSignal) {
+    if (typeof artifactId !== "string" || !/^[a-f0-9]{64}$/u.test(artifactId))
+      throw new ActionFailure("invalid_image_artifact: Expected a registered PNG hash.");
+    const bytes = await readBoundedFile(join(this.root, `${artifactId}.png`), 8 * 1024 * 1024, signal, this.root);
+    if (createHash("sha256").update(bytes).digest("hex") !== artifactId)
+      throw new ActionFailure("artifact_hash_mismatch: Cloud PNG bytes changed.");
+    const metadata = await sharp(bytes, { limitInputPixels: 4_194_304, failOn: "error" }).metadata();
+    if (metadata.format !== "png" || !metadata.width || metadata.width !== metadata.height ||
+        metadata.width < 256 || metadata.width > 2048)
+      throw new ActionFailure("invalid_image_artifact: Cloud PNG must be square 256–2048 px.");
+    await publishBytes(exchange, `${artifactId}.png`, bytes, signal);
+  }
 }
 
 export async function readBoundedFile(

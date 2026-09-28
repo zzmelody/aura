@@ -45,6 +45,7 @@ export async function startAuraRuntime(
     pluginSdkVersion,
     supportedCapabilities: [
       "aura.veya.world-agent",
+      "aura.veya.cloud-image",
       "aura.tripo.game-asset",
       "aura.flow.invoke",
     ],

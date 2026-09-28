@@ -267,6 +267,67 @@ export class TripoService implements TripoPort {
     }
   }
 
+  /** One billed image task; deliberately no submit retry or durable budget ledger. */
+  async generateCloudImage(
+    input: { prompt: string; model: "chat_image_2.5_flare" | "chat_image_2.5_sunburst"; quality: "low" | "medium" | "high" },
+    signal: AbortSignal,
+  ): Promise<{ bytes: Uint8Array; taskId: string; creditsConsumed: number | null; actualModel: string | null }> {
+    const client = this.#requireClient();
+    let release!: () => void;
+    const turn = new Promise<void>((resolve) => { release = resolve; });
+    const previous = this.#gameAssetQueue.catch(() => undefined);
+    this.#gameAssetQueue = previous.then(() => turn);
+    try {
+      await waitForQueueTurn(previous, signal);
+      signal.throwIfAborted();
+      const taskId = await client.textToImage({
+        prompt: input.prompt, model: input.model, quality: input.quality,
+        size: "1024x1024", background: "opaque", output_format: "png",
+      });
+      // A lost submit response may already be billed. The caller must stop;
+      // never issue a second textToImage call to resolve uncertainty.
+      const task = await client.waitForTask(taskId, {
+        pollingIntervalMs: 2_000, timeoutMs: 90_000, signal,
+      });
+      const raw = task.output?.generated_image_url;
+      if (typeof raw !== "string") throw new Error("Cloud image task returned no image URL; do not regenerate.");
+      const url = new URL(raw);
+      if (url.protocol !== "https:" || url.username || url.password)
+        throw new Error("Cloud image task returned an unsafe URL; do not regenerate.");
+      const response = await this.#fetch(url.href, { signal });
+      if (!response.ok || Number(response.headers.get("content-length")) > 8 * 1024 * 1024)
+        throw new Error("Cloud image download failed or exceeded 8 MiB; do not regenerate.");
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Cloud image response has no readable body; do not regenerate.");
+      const chunks: Uint8Array[] = [];
+      let length = 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          length += value.length;
+          if (length > 8 * 1024 * 1024)
+            throw new Error("Cloud image stream exceeded 8 MiB; do not regenerate.");
+          chunks.push(value);
+        }
+      } finally {
+        await reader.cancel().catch(() => undefined);
+        reader.releaseLock();
+      }
+      const bytes = new Uint8Array(length);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      if (bytes.length < 64 || bytes.length > 8 * 1024 * 1024)
+        throw new Error("Cloud image bytes are missing or oversized; do not regenerate.");
+      const credits = task.credits_consumed;
+      return { bytes, taskId,
+        creditsConsumed: typeof credits === "number" && Number.isFinite(credits) && credits >= 0 ? credits : null,
+        actualModel: typeof task.input?.model === "string" ? task.input.model : null };
+    } finally {
+      release();
+    }
+  }
+
   #requireClient(): TripoSdkPort {
     if (!this.#client) throw new TripoNotConfiguredError();
     return this.#client;
@@ -289,7 +350,9 @@ export async function createTripoService(
         baseUrl,
         fetch: options.fetch,
         timeoutMs: 60_000,
-        retries: 2,
+        // Paid submissions have no idempotency key. A lost response may have
+        // created a billable task, so the SDK must not retry POSTs implicitly.
+        retries: 0,
         userAgent: "aura-runtime/0.1",
       });
   return new TripoService(options.region, client, options.fetch);

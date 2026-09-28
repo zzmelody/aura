@@ -21,6 +21,7 @@ import {
 } from "./veya-world-agent.ts";
 import { AuraCapabilityRouter } from "./capability-router.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
+import { VEYA_CLOUD_IMAGE_CAPABILITY, VeyaCloudImageCapability } from "./veya-cloud-image.ts";
 import { GeneratedArtifacts } from "./generated-artifacts.ts";
 import { WorkflowArtifactIndex } from "./workflow-artifacts.ts";
 import { historicalArtifactReader } from "./artifact-history.ts";
@@ -324,6 +325,10 @@ export async function apply(ctx: Context) {
         ctx.attachments,
         true,
       ),
+    ] as const);
+    capabilityRoutes.push([
+      VEYA_CLOUD_IMAGE_CAPABILITY,
+      new VeyaCloudImageCapability(tripo, artifacts, ctx.attachments),
     ] as const);
   }
   const auraCapabilities = capabilityRoutes.length
