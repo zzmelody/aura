@@ -515,6 +515,9 @@ export class FlowEngine {
     if (this.closed || this.get(id).status !== "queued") return;
     const revision = await this.revision(id);
     if (!revision || this.closed || this.get(id).status !== "queued") return;
+    // Recovery reconstructs a revision without start()/startChild(). Pin it before
+    // resumed code resolves a not-yet-created child or grandchild Flow.
+    this.revisions.set(id, revision);
     const execution = new FlowExecution({
       ...revision,
       ports: this.options,

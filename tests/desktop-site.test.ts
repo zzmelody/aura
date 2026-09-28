@@ -13,7 +13,8 @@ import {
 
 test(
   "real Vite overrides an occupied explicit port and stops without touching the foreign service",
-  { timeout: 25000 },
+  // Windows process ownership checks use PowerShell and can outlast Vite startup.
+  { timeout: process.platform === "win32" ? 120000 : 25000 },
   async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "aura-vite-test-"));
     t.after(() => rm(directory, { recursive: true, force: true }));

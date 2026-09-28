@@ -25,13 +25,14 @@ interface MountedFlow {
 async function flowEntries(
   directory: string,
   kind: "flow" | "action",
+  typescript = false,
 ): Promise<string[]> {
   const matches: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) matches.push(...(await flowEntries(path, kind)));
-    if (entry.isFile() && entry.name.endsWith(`.${kind}.js`))
+    if (entry.isDirectory()) matches.push(...(await flowEntries(path, kind, typescript)));
+    if (entry.isFile() && (entry.name.endsWith(`.${kind}.js`) || (typescript && entry.name.endsWith(`.${kind}.ts`))))
       matches.push(path);
   }
   return matches;
@@ -115,14 +116,15 @@ export class CodeDiscovery {
         continue;
       }
 
-      const expected = join(directory, `${localId}.${this.kind}.js`);
-      const candidates = await flowEntries(directory, this.kind);
-      if (candidates.length !== 1 || candidates[0] !== expected) {
+      const candidates = await flowEntries(directory, this.kind, !this.plugin);
+      const allowed = [join(directory, `${localId}.${this.kind}.js`), ...(!this.plugin ? [join(directory, `${localId}.${this.kind}.ts`)] : [])];
+      const expected = candidates[0];
+      if (candidates.length !== 1 || !allowed.includes(expected)) {
         issues.add(flowId);
         await this.unmount(flowId);
         this.registry.problem(
           flowId,
-          `目录 ${localId} 必须且只能包含入口 ${localId}.${this.kind}.js。`,
+          `目录 ${localId} 必须且只能包含入口 ${localId}.${this.kind}.js${this.plugin ? "" : " 或 .ts"}。`,
         );
         continue;
       }

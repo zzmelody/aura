@@ -16,6 +16,7 @@ import {
   generateTripoGameAsset,
   type TripoGameAssetRequest,
   type TripoGameAssetResult,
+  type TripoPaidTaskJournal,
   type TripoGameAssetSdkPort,
 } from "./game-asset.ts";
 
@@ -27,6 +28,7 @@ export {
   type TripoGameAssetImageQuality,
   type TripoGameAssetRequest,
   type TripoGameAssetResult,
+  type TripoPaidTaskJournal,
   type TripoGameAssetStage,
 } from "./game-asset.ts";
 
@@ -247,6 +249,7 @@ export class TripoService implements TripoPort {
   async generateGameAsset(
     input: TripoGameAssetRequest,
     signal: AbortSignal,
+    journal?: import("./game-asset.ts").TripoPaidTaskJournal,
   ): Promise<TripoGameAssetResult> {
     const client = this.#requireClient();
     let release!: () => void;
@@ -258,7 +261,7 @@ export class TripoService implements TripoPort {
     try {
       await waitForQueueTurn(previous, signal);
       signal.throwIfAborted();
-      return await generateTripoGameAsset(client, input, this.#fetch, signal);
+      return await generateTripoGameAsset(client, input, this.#fetch, signal, journal);
     } finally {
       release();
     }

@@ -1,13 +1,16 @@
 import type { JsonValue } from "@aura/protocol/types";
+import type { Context } from "@deepseek-ai/cordis";
 import {
   TRIPO_GAME_ASSET_CAPABILITY,
   TripoGameAssetError,
   type TripoGameAssetRequest,
   type TripoGameAssetResult,
+  type TripoPaidTaskJournal,
 } from "@aura/tripo";
 import { z } from "zod";
 import { ActionFailure, type AuraCapabilityClient } from "./action-api.ts";
 import type { GeneratedArtifacts } from "./generated-artifacts.ts";
+import { TripoBudgetError, TripoBudgetJournal } from "./tripo-budget.ts";
 
 const requestSchema = z
   .object({
@@ -21,6 +24,10 @@ const requestSchema = z
       .optional(),
     imageQuality: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
     faceLimit: z.number().int().min(500).max(20_000).optional(),
+    generationKey: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+    referenceImage: z.object({ attachmentId: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+      mediaType: z.enum(["image/png", "image/jpeg", "image/webp"]), bytes: z.number().int().positive(),
+      width: z.number().int().positive(), height: z.number().int().positive() }).strict().optional(),
   })
   .strict();
 
@@ -28,6 +35,7 @@ export interface TripoGameAssetPort {
   generateGameAsset(
     input: TripoGameAssetRequest,
     signal: AbortSignal,
+    journal?: TripoPaidTaskJournal,
   ): Promise<TripoGameAssetResult>;
 }
 
@@ -36,15 +44,21 @@ export class TripoGameAssetCapability implements AuraCapabilityClient {
   readonly #tripo: TripoGameAssetPort;
   readonly artifacts?: GeneratedArtifacts;
   readonly defaultDirectory?: () => Promise<string | undefined>;
+  readonly attachments?: Pick<Context["attachments"], "readImage">;
+  readonly enforceBudget: boolean;
 
   constructor(
     tripo: TripoGameAssetPort,
     artifacts?: GeneratedArtifacts,
     defaultDirectory?: () => Promise<string | undefined>,
+    attachments?: Pick<Context["attachments"], "readImage">,
+    enforceBudget = false,
   ) {
     this.#tripo = tripo;
     this.artifacts = artifacts;
     this.defaultDirectory = defaultDirectory;
+    this.attachments = attachments;
+    this.enforceBudget = enforceBudget;
   }
 
   async invoke(
@@ -60,14 +74,26 @@ export class TripoGameAssetCapability implements AuraCapabilityClient {
     const parsed = requestSchema.safeParse(input);
     if (!parsed.success) throw new Error("Tripo game-asset input is invalid.");
     try {
-      const { useVeyaOutputDirectory, ...request } = parsed.data;
+      const { useVeyaOutputDirectory, referenceImage, generationKey, ...parsedRequest } = parsed.data;
+      const request: TripoGameAssetRequest = parsedRequest;
       if (useVeyaOutputDirectory && this.defaultDirectory) {
         // Missing Veya sessions preserve standalone generation's legacy default;
         // a connected packaged Veya binds a writable creation-project root.
         const directory = await this.defaultDirectory().catch(() => undefined);
         if (directory) request.outputDirectory = directory;
       }
-      const result = await this.#tripo.generateGameAsset(request, signal);
+      if (referenceImage) {
+        if (!this.attachments || request.referenceImagePath)
+          throw new Error("Managed reference image is unavailable or conflicts with a file path.");
+        const stored = await this.attachments.readImage(referenceImage as Parameters<Context["attachments"]["readImage"]>[0], signal);
+        request.referenceImage = { bytes: stored.data, contentType: referenceImage.mediaType };
+      }
+      const journal = this.enforceBudget ? new TripoBudgetJournal(request.outputDirectory, {
+        prompt: request.prompt, assetName: request.assetName, imageModel: request.imageModel,
+        imageQuality: request.imageQuality, faceLimit: request.faceLimit,
+        reference: referenceImage?.attachmentId ?? request.referenceImagePath,
+      }, generationKey) : undefined;
+      const result = await this.#tripo.generateGameAsset(request, signal, journal);
       // Preserve a completed paid result even if local registration fails. A
       // downstream import failure must not turn into another generation request.
       if (!this.artifacts) return result as unknown as JsonValue;
@@ -93,6 +119,8 @@ export class TripoGameAssetCapability implements AuraCapabilityClient {
       }
     } catch (error) {
       signal.throwIfAborted();
+      if (error instanceof TripoBudgetError)
+        throw new ActionFailure(error.message, { cause: error });
       if (error instanceof TripoGameAssetError)
         throw new ActionFailure(error.message, { cause: error });
       throw new ActionFailure(

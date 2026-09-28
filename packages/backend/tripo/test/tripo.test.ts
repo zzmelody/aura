@@ -15,6 +15,8 @@ import {
   createTripoService,
   TripoGameAssetError,
   TripoNotConfiguredError,
+  type TripoGameAssetResult,
+  type TripoPaidTaskJournal,
 } from "@aura/tripo";
 
 test("Tripo remains available but disabled when no backend key exists", async () => {
@@ -240,15 +242,30 @@ test("Tripo generates four GPT Image 2.5 views and publishes a game GLB", async 
       },
     });
 
-    const result = await service.generateGameAsset(
-      {
+    let published: TripoGameAssetResult | undefined;
+    const submitted = new Map<string, string>();
+    const journal: TripoPaidTaskJournal = {
+      workId: "observatory-test",
+      async prepare(stage) { return submitted.get(stage); },
+      async submitted(stage, taskId) { submitted.set(stage, taskId); },
+      async completed() {},
+      async result() { return published; },
+      async published(result) { published = result; },
+    };
+    const request = {
         prompt: "A compact brass observatory robot",
         outputDirectory: outputRoot,
         assetName: "observatory-robot",
         faceLimit: 12_000,
-      },
+      };
+    const result = await service.generateGameAsset(
+      request,
       new AbortController().signal,
+      journal,
     );
+    const callsAfterPublication = calls.length;
+    assert.deepEqual(await service.generateGameAsset(request, new AbortController().signal, journal), result);
+    assert.equal(calls.length, callsAfterPublication, "a recovered published result must not resubmit paid work");
 
     assert.match(result.outputDirectory, /observatory-robot-model-task$/u);
     assert.equal(result.imageModel, "chat_image_2.5_sunburst");

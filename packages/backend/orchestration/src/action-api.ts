@@ -85,6 +85,8 @@ export interface ActionContext {
   readonly aura?: AuraCapabilityClient;
   /** Host-owned project/version service for built-in production Actions. */
   readonly videoProduction?: import("./video-library.ts").VideoLibrary;
+  readonly contentProduction?: import("./content-library.ts").ContentLibrary;
+  readonly topicLibrary?: import("./topic-library.ts").TopicLibrary;
 }
 
 export type ActionBinding = Omit<

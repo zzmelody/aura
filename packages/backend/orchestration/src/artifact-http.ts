@@ -10,7 +10,7 @@ export interface ArtifactFile {
   artifact: Pick<WorkflowArtifact, "name" | "mimeType"> &
     Partial<Pick<WorkflowArtifact, "status">>;
   fileId: string;
-  format: WorkflowArtifact["format"];
+  format: WorkflowArtifact["format"] | "md" | "json" | "zip";
 }
 export function byteRange(
   header: string,
@@ -49,7 +49,7 @@ export async function artifactResponse(
   const { artifact, fileId, format } = descriptor;
   if (
     !validArtifactId(fileId) ||
-    !["png", "jpeg", "webp", "glb", "mp4", "wav", "srt"].includes(format)
+    !["png", "jpeg", "webp", "glb", "mp4", "wav", "srt", "md", "json", "zip"].includes(format)
   )
     throw new FlowError("产物不存在。", 404);
   const download = new URL(request.url).searchParams.get("download") === "1";

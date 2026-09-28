@@ -5,6 +5,8 @@
     "src/**/*.ts",
     "types/**/*.d.ts",
     "flow/**/*.js",
-    "action/**/*.js"
+    "action/**/*.js",
+    "flow/**/*.ts",
+    "action/**/*.ts"
   ]
 }

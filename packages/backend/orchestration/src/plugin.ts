@@ -31,6 +31,11 @@ import {
   type VideoDocument,
 } from "./video-library.ts";
 import { videoRequest } from "./video-routes.ts";
+import { contentRequest } from "./content-routes.ts";
+import { ContentResearch } from "@aura/content-research";
+import { TopicLibrary, topicDomainSpec, type TopicState } from "./topic-library.ts";
+import { topicRequest } from "./topic-routes.ts";
+import { ContentLibrary, contentDomainSpec, type ContentDocument } from "./content-library.ts";
 import { LocalAIManager } from "./local-ai/manager.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 
@@ -313,6 +318,8 @@ export async function apply(ctx: Context) {
         tripo,
         artifacts,
         veya ? () => veya.generatedOutputDirectory() : undefined,
+        ctx.attachments,
+        true,
       ),
     ] as const);
   }
@@ -330,13 +337,23 @@ export async function apply(ctx: Context) {
     artifacts,
     process.env.AURA_FLOW_CWD ?? process.cwd(),
   );
+  const contentDomain = await ctx.storageDomain.open(contentDomainSpec);
+  const contentLibrary = new ContentLibrary(contentDomain.table("projects") as unknown as Table<ContentDocument>, artifacts, process.env.AURA_FLOW_CWD ?? process.cwd());
+  const research = new ContentResearch(resolve(process.env.DSH_HOME ?? process.env.AURA_FLOW_CWD ?? process.cwd(), "aura-content-research"));
+  await research.initialize();
+  const topicDomain = await ctx.storageDomain.open(topicDomainSpec);
+  const topicLibrary = new TopicLibrary(topicDomain.table("libraries") as unknown as Table<TopicState>, research, artifacts);
+  ctx.effect(() => () => research.close(), "aura-research.lifecycle");
   const actionRuntime = new ActionRuntime(
+    // Source bodies and credentials stay in backend storage; the domain stores references.
     // Project records have their own domain and outlive run/session history.
     ctx,
     localAI,
     auraCapabilities,
     artifactIndex,
     videoLibrary,
+    contentLibrary,
+    topicLibrary,
   );
 
   const domain = await ctx.storageDomain.open(spec);
@@ -381,6 +398,8 @@ export async function apply(ctx: Context) {
       ),
   });
   videoLibrary.attach(engine);
+  contentLibrary.attach(engine);
+  topicLibrary.attach(engine);
   await actionRuns.initialize();
   artifactIndex.attach((id) => engine.get(id), historicalArtifactReader(ctx));
 
@@ -454,6 +473,8 @@ export async function apply(ctx: Context) {
       if (exiting)
         throw new FlowError("编排服务正在回收空闲资源，请刷新。", 503);
       lastActivity = Date.now();
+      if (method.startsWith("content-projects/")) return { ok: true, data: await contentRequest(contentLibrary, method.slice("content-projects/".length), params) };
+      if (method.startsWith("topic-library/")) return { ok: true, data: await topicRequest(topicLibrary, method.slice("topic-library/".length), params) };
       if (method.startsWith("video-projects/"))
         return {
           ok: true,
@@ -609,6 +630,8 @@ export async function apply(ctx: Context) {
       await domain.close();
       await actionDomain.close();
       await videoDomain.close();
+      await topicDomain.close();
+      await research.close();
     };
   }, "aura-orchestration.serve");
 }

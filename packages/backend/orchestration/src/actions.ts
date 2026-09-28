@@ -44,6 +44,8 @@ export class ActionRuntime {
   private aura?: AuraCapabilityClient;
   private artifacts?: WorkflowArtifactIndex;
   private videoProduction?: import("./video-library.ts").VideoLibrary;
+  private contentProduction?: import("./content-library.ts").ContentLibrary;
+  private topicLibrary?: import("./topic-library.ts").TopicLibrary;
 
   constructor(
     ctx: Context,
@@ -51,12 +53,16 @@ export class ActionRuntime {
     aura?: AuraCapabilityClient,
     artifacts?: WorkflowArtifactIndex,
     videoProduction?: import("./video-library.ts").VideoLibrary,
+    contentProduction?: import("./content-library.ts").ContentLibrary,
+    topicLibrary?: import("./topic-library.ts").TopicLibrary,
   ) {
     this.ctx = ctx;
     this.localAI = localAI;
     this.aura = aura;
     this.artifacts = artifacts;
     this.videoProduction = videoProduction;
+    this.contentProduction = contentProduction;
+    this.topicLibrary = topicLibrary;
     // Direct calls require an unscoped DSH registration. Keep these short-lived,
     // pinned definitions out of every Agent's model surface, without changing presets.
     const hideDirectTools = (agent: Agent) => {
@@ -86,6 +92,8 @@ export class ActionRuntime {
             action.tool(action.toolName, {
               ...binding,
               localAI: this.localAI,
+              contentProduction: action.id === "content-project" ? this.contentProduction : undefined,
+              topicLibrary: ["topic-library", "topic-collect"].includes(action.id) ? this.topicLibrary : undefined,
               videoProduction:
                 action.id === "video-project" || action.id === "video-compose"
                   ? this.videoProduction
@@ -124,6 +132,8 @@ export class ActionRuntime {
       action.tool(name, {
         ...binding,
         localAI: this.localAI,
+        contentProduction: action.id === "content-project" ? this.contentProduction : undefined,
+        topicLibrary: ["topic-library", "topic-collect"].includes(action.id) ? this.topicLibrary : undefined,
         videoProduction:
           action.id === "video-project" || action.id === "video-compose"
             ? this.videoProduction

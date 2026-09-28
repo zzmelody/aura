@@ -21,6 +21,8 @@ const VideoProjects = React.lazy(() =>
     default: module.VideoProjects,
   })),
 );
+const ContentProjects = React.lazy(() => import("./ContentProjects").then(module => ({ default: module.ContentProjects })));
+const TopicLibrary = React.lazy(() => import("./TopicLibrary").then(module => ({ default: module.TopicLibrary })));
 
 function WorkflowPreview({
   flow,
@@ -95,6 +97,8 @@ export function Workflows({
   const [initialLine, setInitialLine] = useState<number>();
   const [expanded, setExpanded] = useState<string>();
   const [query, setQuery] = useState("");
+  const [research, setResearch] = useState(() => sessionStorage.getItem("aura-topic-library-open") === "1");
+  const [content, setContent] = useState(() => sessionStorage.getItem("aura-content-studio-open") === "1");
   const [videos, setVideos] = useState(
     () => sessionStorage.getItem("aura-video-studio-open") === "1",
   );
@@ -102,6 +106,10 @@ export function Workflows({
   useEffect(() => {
     if (lastBrowse.current !== browseRevision) {
       setVideos(false);
+      setContent(false);
+      setResearch(false);
+      sessionStorage.removeItem("aura-topic-library-open");
+      sessionStorage.removeItem("aura-content-studio-open");
       sessionStorage.removeItem("aura-video-studio-open");
       lastBrowse.current = browseRevision;
     }
@@ -123,8 +131,8 @@ export function Workflows({
     if (editorRevision) edit("");
   }, [editorRevision]);
   useEffect(() => {
-    if (videos) onDetailChange(true);
-  }, [videos, onDetailChange, endpoint]);
+    if (videos || research || content) onDetailChange(true);
+  }, [videos, research, content, onDetailChange, endpoint]);
   const edit = (id: string, line?: number) => {
     setEditing(id);
     setInitialLine(line);
@@ -153,6 +161,7 @@ export function Workflows({
         />
       </React.Suspense>
     );
+  if (content) return <React.Suspense fallback={<div className="workspace-loading">正在打开内容制作项目…</div>}><ContentProjects key={endpoint} endpoint={endpoint} onDirtyChange={onDirtyChange} onBack={() => { setContent(false); sessionStorage.removeItem("aura-content-studio-open"); onDetailChange(false); }} /></React.Suspense>;
   if (editing !== null)
     return (
       <FlowStudio
@@ -171,6 +180,7 @@ export function Workflows({
         }}
       />
     );
+  if (research) return <React.Suspense fallback={<div className="workspace-loading">正在打开选题库…</div>}><TopicLibrary key={endpoint} endpoint={endpoint} onDirtyChange={onDirtyChange} onBack={() => { setResearch(false); sessionStorage.removeItem("aura-topic-library-open"); onDetailChange(false); }} /></React.Suspense>;
   return (
     <section className="workflow-library-page" aria-label="工作流列表">
       <header className="workflow-page-heading">
@@ -187,6 +197,8 @@ export function Workflows({
         <Play size={16} />
         多镜头剧情视频 · 打开视频项目
       </button>
+      <button className="video-project-entry tool-button" onClick={() => { setContent(true); sessionStorage.setItem("aura-content-studio-open", "1"); onDetailChange(true); }}><Play size={16} />自媒体内容制作 · 打开内容项目</button>
+      <button className="video-project-entry tool-button" onClick={() => { setResearch(true); sessionStorage.setItem("aura-topic-library-open", "1"); onDetailChange(true); }}><Search size={16} />选题研究 · 跨平台发现与持久选题库</button>
       <div className="workflow-page-tools">
         <label className="workflow-card-search">
           <Search size={16} />

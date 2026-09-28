@@ -56,6 +56,20 @@ async function addEntry(root: string, id: string) {
   return directory;
 }
 
+test("built-in discovery accepts TypeScript entries and rejects competing JS entries", async () => withRoot(async root => {
+  const directory = join(root, "typed");
+  await mkdir(directory);
+  await writeFile(join(directory, "typed.flow.ts"), "export default {};\n");
+  const registry = new FlowRegistry(), mock = loaderFor(registry), discovery = new FlowDiscovery(mock.loader, registry, root);
+  await discovery.refresh();
+  assert.equal(registry.catalog()[0].id, "typed");
+  assert.equal(mock.created[0].entry, join(directory, "typed.flow.ts"));
+  await writeFile(join(directory, "typed.flow.js"), "export default {};\n");
+  await discovery.refresh();
+  assert.equal(registry.catalog()[0].available, false);
+  await discovery.close();
+}));
+
 test("discovery accepts one exact entry and tracks add/remove without restart", async () =>
   withRoot(async (root) => {
     const registry = new FlowRegistry();
