@@ -304,16 +304,19 @@ importers:
 
   apps/server:
     dependencies:
+      '@aura/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/backend/plugin-sdk
       '@aura/runtime':
         specifier: workspace:*
         version: link:../../packages/backend/runtime
+      tsx:
+        specifier: 4.23.13
+        version: 4.23.13
     devDependencies:
       '@types/node':
         specifier: 24.10.1
         version: 24.10.1
-      tsx:
-        specifier: 4.23.13
-        version: 4.23.13
       typescript:
         specifier: ~5.9.2
         version: 5.9.3

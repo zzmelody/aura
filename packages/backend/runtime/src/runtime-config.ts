@@ -8,8 +8,9 @@ import type { AuraRuntimeOptions, RuntimeConfig } from "./types.ts";
 const defaultRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 const require = createRequire(import.meta.url);
 
+// Port 0 asks the OS for an ephemeral port; the bound port is reported by the listener.
 function resolvePort(value: number): number {
-  if (!Number.isSafeInteger(value) || value < 1 || value > 65_535)
+  if (!Number.isSafeInteger(value) || value < 0 || value > 65_535)
     throw new Error(`Aura runtime port is invalid: ${value}`);
   return value;
 }
@@ -67,7 +68,7 @@ export function isLoopbackRuntimeHost(host: string): boolean {
 export function resolveRuntimeConfig(
   options: AuraRuntimeOptions = {},
 ): RuntimeConfig {
-  const root = resolve(options.root ?? defaultRoot);
+  const root = resolve(options.root ?? (process.env.AURA_ROOT?.trim() || defaultRoot));
   const host = (options.host ?? process.env.HOST ?? "127.0.0.1").trim();
   if (!host) throw new Error("Aura runtime host cannot be empty.");
   const port = resolvePort(options.port ?? Number(process.env.PORT ?? 4311));

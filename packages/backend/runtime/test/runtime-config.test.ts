@@ -34,6 +34,17 @@ test("runtime configuration resolves paths and validates network settings", () =
   assert.equal(isLoopbackRuntimeHost("[::1]"), true);
   assert.equal(isLoopbackRuntimeHost("127.0.0.1"), true);
   assert.equal(isLoopbackRuntimeHost("0.0.0.0"), false);
-  assert.throws(() => resolveRuntimeConfig({ port: 0 }), /port is invalid/);
+  assert.equal(resolveRuntimeConfig({ root, port: 0 }).port, 0);
+  assert.throws(() => resolveRuntimeConfig({ port: -1 }), /port is invalid/);
+  assert.throws(() => resolveRuntimeConfig({ port: 65_536 }), /port is invalid/);
+  const previous = process.env.AURA_ROOT;
+  try {
+    process.env.AURA_ROOT = resolve("fixture-env-root");
+    assert.equal(resolveRuntimeConfig().root, resolve("fixture-env-root"));
+    assert.equal(resolveRuntimeConfig({ root }).root, root);
+  } finally {
+    if (previous === undefined) delete process.env.AURA_ROOT;
+    else process.env.AURA_ROOT = previous;
+  }
   assert.throws(() => resolveRuntimeConfig({ host: " " }), /cannot be empty/);
 });

@@ -5,6 +5,8 @@ const runtime = await startAuraRuntime();
 console.log(
   `Aura runtime: ${runtime.url} (DSH demo + DSH Codex subscription + Tripo 3D)`,
 );
+// Machine-readable readiness for launchers such as the Veya game.
+console.log(`AURA_READY ${runtime.url}`);
 
 let closing = false;
 const launcherPid = Number(process.env.AURA_LAUNCHER_PID ?? process.ppid);
