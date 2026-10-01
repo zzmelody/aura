@@ -13,7 +13,7 @@
 ```powershell
 Set-Location F:/aura
 $acceptRoot = 'C:/Users/15389/.codex/worktrees/wishing-altar/aura-world-e2e'
-$pluginRoot = 'C:/Users/15389/.codex/worktrees/wishing-altar/creative/aura-plugin'
+$pluginRoot = 'F:/creative/aura-plugin'
 $identityFile = "$acceptRoot/.aura/creator-acceptance/identity-0146.json"
 $workerInfo = 'C:/Users/15389/.codex/worktrees/wishing-altar/creative/build/creation-external-grants-validation/worker'
 $workerDescriptor = (Get-Content -Raw -LiteralPath "$workerInfo/launch-config.json" | ConvertFrom-Json).descriptor
