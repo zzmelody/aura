@@ -134,6 +134,8 @@ export interface FlowRegistrationConfig {
   directory: string;
   entry: string;
   plugin?: AuraPluginIdentity;
+  /** Trusted local package root, never projected into public catalog DTOs. */
+  pluginRoot?: string;
   capabilities?: string[];
 }
 

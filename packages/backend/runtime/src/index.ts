@@ -45,6 +45,7 @@ export async function startAuraRuntime(
     pluginSdkVersion,
     supportedCapabilities: [
       "aura.veya.world-agent",
+      "aura.veya.creator",
       "aura.veya.cloud-image",
       "aura.tripo.game-asset",
       "aura.flow.invoke",
@@ -80,16 +81,18 @@ export async function startAuraRuntime(
       modelURL: demoModel.url,
       codexModel: config.codexModel,
       flowRoots: plugins.flowRoots.map(
-        ({ path, namespace, plugin, capabilities }) => ({
+        ({ path, pluginRoot, namespace, plugin, capabilities }) => ({
           root: path,
+          pluginRoot,
           namespace,
           plugin,
           capabilities,
         }),
       ),
       actionRoots: plugins.actionRoots.map(
-        ({ path, namespace, plugin, capabilities }) => ({
+        ({ path, pluginRoot, namespace, plugin, capabilities }) => ({
           root: path,
+          pluginRoot,
           namespace,
           plugin,
           capabilities,
@@ -103,16 +106,18 @@ export async function startAuraRuntime(
     pluginManager.setActivator((resolution) =>
       flows!.configureContributions({
         flowRoots: resolution.flowRoots.map(
-          ({ path, namespace, plugin, capabilities }) => ({
+          ({ path, pluginRoot, namespace, plugin, capabilities }) => ({
             root: path,
+            pluginRoot,
             namespace,
             plugin,
             capabilities,
           }),
         ),
         actionRoots: resolution.actionRoots.map(
-          ({ path, namespace, plugin, capabilities }) => ({
+          ({ path, pluginRoot, namespace, plugin, capabilities }) => ({
             root: path,
+            pluginRoot,
             namespace,
             plugin,
             capabilities,

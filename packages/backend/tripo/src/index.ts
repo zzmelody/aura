@@ -267,10 +267,11 @@ export class TripoService implements TripoPort {
     }
   }
 
-  /** One billed image task; deliberately no submit retry or durable budget ledger. */
+  /** A billed image task; the caller journals submission before wait/download. */
   async generateCloudImage(
     input: { prompt: string; model: "chat_image_2.5_flare" | "chat_image_2.5_sunburst"; quality: "low" | "medium" | "high" },
     signal: AbortSignal,
+    journal?: { taskId?: string; submitted(taskId: string): Promise<void> },
   ): Promise<{ bytes: Uint8Array; taskId: string; creditsConsumed: number | null; actualModel: string | null }> {
     const client = this.#requireClient();
     let release!: () => void;
@@ -280,10 +281,11 @@ export class TripoService implements TripoPort {
     try {
       await waitForQueueTurn(previous, signal);
       signal.throwIfAborted();
-      const taskId = await client.textToImage({
+      const taskId = journal?.taskId ?? await client.textToImage({
         prompt: input.prompt, model: input.model, quality: input.quality,
         size: "1024x1024", background: "opaque", output_format: "png",
       });
+      if (journal && !journal.taskId) await journal.submitted(taskId);
       // A lost submit response may already be billed. The caller must stop;
       // never issue a second textToImage call to resolve uncertainty.
       const task = await client.waitForTask(taskId, {

@@ -1,0 +1,14 @@
+{
+  "artifactId": "REPLACE_VERIFIED_WORLD_ARTIFACT_SHA256",
+  "homeWorldId": "REPLACE_ACTUAL_PROFILE_HOME_WORLD_ID",
+  "playerId": "player",
+  "targetId": "REPLACE_COMPOSED_STABLE_READING_ENTITY_ID",
+  "ownerTargetId": "REPLACE_COMPOSED_DIALOGUE_OWNER_ENTITY_ID",
+  "scalarKey": "REPLACE_EXACT_NAMESPACED_READ_SCALAR_KEY",
+  "scalarBefore": null,
+  "scalarAfter": true,
+  "expectedText": "REPLACE_EXACT_LOCKED_READING_TEXT",
+  "returnTargetId": "return_home",
+  "toReading": [],
+  "toReturn": []
+}

@@ -79,6 +79,7 @@ const manifestSchema = z
   .strict();
 
 export interface PluginContributionRoot {
+  pluginRoot: string;
   path: string;
   namespace: string;
   plugin: AuraPluginIdentity;
@@ -173,6 +174,7 @@ async function validatePlugin(
   options: LoadAuraPluginsOptions,
 ): Promise<{
   identity: AuraPluginIdentity;
+  pluginRoot: string;
   capabilities: string[];
   actionRoot?: string;
   flowRoot?: string;
@@ -258,6 +260,7 @@ async function validatePlugin(
   };
   return {
     identity,
+    pluginRoot: root,
     capabilities: [...manifest.capabilities],
     ...(manifest.contributes.actions
       ? {
@@ -371,6 +374,7 @@ async function resolveAuraPluginConfiguration(
       seen.add(plugin.identity.id);
       const root = (path: string): PluginContributionRoot => ({
         path,
+        pluginRoot: plugin.pluginRoot,
         namespace: plugin.identity.id,
         plugin: plugin.identity,
         capabilities: [...plugin.capabilities],

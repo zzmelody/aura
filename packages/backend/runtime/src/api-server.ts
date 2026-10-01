@@ -3,6 +3,9 @@ import { validateMessages } from "@aura/protocol";
 import type { ChatEvent } from "@aura/protocol/types";
 import type { TripoPort } from "@aura/tripo";
 import { Hono } from "hono";
+import { randomUUID } from "node:crypto";
+import { readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { bodyLimit } from "hono/body-limit";
 import { stream } from "hono/streaming";
 import { createCodexAuthApp } from "./codex-auth-routes.ts";
@@ -23,6 +26,8 @@ import type {
 import { createPluginSettingsApp } from "./plugin-settings-routes.ts";
 import { createTripoApp } from "./tripo-routes.ts";
 import { isRecord } from "./validation.ts";
+import { createVeyaCreatorApp, VeyaCreatorService } from "./veya-creator-routes.ts";
+import { isLoopbackRuntimeHost } from "./runtime-config.ts";
 
 interface ApiServerOptions {
   config: RuntimeConfig;
@@ -113,10 +118,12 @@ export function createApiApp({
   flows,
   pluginSettings,
   pluginSettingsAccessible = true,
+  creator,
   lifecycle = { shuttingDown: false, admittedRequests: 0 },
 }: Omit<ApiServerOptions, "config" | "tripo"> & {
   tripo?: TripoPort;
   lifecycle?: ApiLifecycle;
+  creator?: VeyaCreatorService;
 }) {
   const app = new Hono();
   app.use("*", localOriginPolicy);
@@ -132,6 +139,7 @@ export function createApiApp({
   app.route("/auth/codex", createCodexAuthApp(codexAuth));
   if (tripo) app.route("/tripo", createTripoApp(tripo));
   if (flows) app.route("/flows", createFlowApp(flows));
+  if (creator) app.route("/veya/creator/v1", createVeyaCreatorApp(creator));
   if (pluginSettings)
     app.route(
       "/plugins/config",
@@ -193,16 +201,32 @@ export async function startApiServer({
     shuttingDown: false,
     admittedRequests: 0,
   };
+  const creator = flows && isLoopbackRuntimeHost(config.host)
+    ? new VeyaCreatorService(config.root, flows) : undefined;
+  if (creator) await creator.initialize();
   const app = createApiApp({
     codexAuth,
     dsh,
     tripo,
     flows,
+    creator,
     pluginSettings,
     pluginSettingsAccessible,
     lifecycle,
   });
   const { server, port } = await startHonoServer(app, config.host, config.port);
+  const sessionPath = creator ? join(creator.directory, "session.json") : undefined;
+  try {
+    if (creator && sessionPath) {
+      const temporary = `${sessionPath}.${randomUUID()}.tmp`;
+      try {
+        await writeFile(temporary, JSON.stringify({ protocol: "aura-veya-creator/1",
+          base_url: `${formatHttpUrl(config.host, port)}/veya/creator/v1/`,
+          token: creator.bootstrapToken }), { mode: 0o600, flag: "wx" });
+        await rename(temporary, sessionPath);
+      } catch (error) { await unlink(temporary).catch(() => undefined); throw error; }
+    }
+  } catch (error) { await closeHonoServer(server); throw error; }
 
   return {
     url: formatHttpUrl(config.host, port),
@@ -210,6 +234,12 @@ export async function startApiServer({
       if (lifecycle.shuttingDown) return;
       lifecycle.shuttingDown = true;
       await closeHonoServer(server);
+      if (creator && sessionPath) {
+        try {
+          const current = JSON.parse(await readFile(sessionPath, "utf8")) as { token?: string };
+          if (current.token === creator.bootstrapToken) await unlink(sessionPath);
+        } catch { /* A newer session may already own this path. */ }
+      }
     },
   };
 }

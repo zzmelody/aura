@@ -206,6 +206,7 @@ export interface TripoPaidTaskJournal {
   prepare(stage: "front" | "left" | "back" | "right" | "model", kind: "image" | "model"): Promise<string | undefined>;
   submitted(stage: "front" | "left" | "back" | "right" | "model", taskId: string): Promise<void>;
   completed(stage: "front" | "left" | "back" | "right" | "model", credits: number): Promise<void>;
+  costUnknown?(stage: "front" | "left" | "back" | "right" | "model"): Promise<void>;
   result(): Promise<TripoGameAssetResult | undefined>;
   published(result: TripoGameAssetResult): Promise<void>;
 }
@@ -544,8 +545,10 @@ export async function generateTripoGameAsset(
       const task = await client.waitForTask(taskId, waitOptions(signal, timeout));
       if (journal) {
         const credits = task.credits_consumed;
-        if (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0)
+        if (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0) {
+          await journal.costUnknown?.(stage);
           throw new Error("Paid task completed without verifiable credit usage.");
+        }
         await journal.completed(stage, credits);
       }
       return { taskId, task };

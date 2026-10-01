@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
@@ -57,4 +57,43 @@ test("unknown paid outcome is not retried", async () => {
   await assert.rejects(capability.invoke(VEYA_CLOUD_IMAGE_CAPABILITY, "generate",
     { prompt: "abstract cloud mask" }, new AbortController().signal), /cloud_image_result_unknown/u);
   assert.equal(calls, 1);
+});
+
+test("creator clouds reuse paid bytes after admission failure and journal known submissions before wait", async () => {
+  const root = await mkdtemp(join(tmpdir(), "aura-cloud-image-"));
+  try {
+    await mkdir(join(root, ".aura"));
+    await writeFile(join(root, ".aura", "world-agent-budget.json"), JSON.stringify({ schemaVersion: 1,
+      accountingUnit: "tripo_credits", maxCredits: 20, maxCreationCredits: 8,
+      imageStageCredits: 2, modelStageCredits: 5, cloudStageCredits: 3 }));
+    const png = await sharp({ create: { width: 256, height: 256, channels: 4,
+      background: { r: 150, g: 150, b: 150, alpha: 1 } } }).png().toBuffer();
+    let submissions = 0, admissionFails = true;
+    const capability = new VeyaCloudImageCapability({
+      async generateCloudImage(_request, _signal, journal) {
+        if (!journal?.taskId) {
+          submissions++;
+          await journal!.submitted("known-cloud");
+          throw new Error("wait interrupted");
+        }
+        assert.equal(journal.taskId, "known-cloud");
+        return { bytes: png, taskId: journal.taskId, creditsConsumed: 2, actualModel: "chat_image_2.5_flare" };
+      },
+    }, new GeneratedArtifacts(join(root, "store")), {
+      async saveImage() {
+        if (admissionFails) throw new Error("local admission unavailable");
+        return { attachmentId: "sha256:" + "a".repeat(64) } as never;
+      },
+    }, async () => ({ projectRoot: root, creationId: "creation-test" }));
+    const input = { prompt: "abstract clouds", generationKey: "b".repeat(64) };
+    const signal = new AbortController().signal;
+    await assert.rejects(capability.invoke(VEYA_CLOUD_IMAGE_CAPABILITY, "generate", input, signal), /result_unknown/u);
+    const failed = await capability.invoke(VEYA_CLOUD_IMAGE_CAPABILITY, "generate", input, signal) as { status: string };
+    assert.equal(failed.status, "artifact_registration_failed");
+    admissionFails = false;
+    const ready = await capability.invoke(VEYA_CLOUD_IMAGE_CAPABILITY, "generate", input, signal) as { status: string };
+    assert.equal(ready.status, "ready");
+    assert.equal(submissions, 1);
+    await assert.rejects(capability.invoke(VEYA_CLOUD_IMAGE_CAPABILITY, "generate", { ...input, prompt: "changed" }, signal), /identity conflict/u);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

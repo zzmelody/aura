@@ -11,6 +11,7 @@ import { FlowEngine } from "./engine.ts";
 import { FlowRegistry } from "./registry.ts";
 import { actionRunSchema, FlowError, runSchema } from "./schema.ts";
 import { dshSessions } from "./sessions.ts";
+import type { FlowRun } from "@aura/protocol/types";
 import type { ContributionRoot, FlowDomain, Table } from "./types.ts";
 import type { ActionRun, AuraPluginStatus } from "@aura/protocol/types";
 import { ActionRegistry } from "./action-registry.ts";
@@ -19,6 +20,8 @@ import {
   VEYA_WORLD_AGENT_CAPABILITY,
   VeyaWorldAgentCapability,
 } from "./veya-world-agent.ts";
+import { VeyaCreatorBindings, VeyaCreatorCapability, VEYA_CREATOR_CAPABILITY } from "./veya-creator-bindings.ts";
+import { VeyaCreatorLifecycle } from "./veya-creator-lifecycle.ts";
 import { AuraCapabilityRouter } from "./capability-router.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
 import { VEYA_CLOUD_IMAGE_CAPABILITY, VeyaCloudImageCapability } from "./veya-cloud-image.ts";
@@ -54,6 +57,7 @@ const pluginIdentitySchema = z
 const contributionRootSchema = z
   .object({
     root: z.string().trim().min(1).max(4_096),
+    pluginRoot: z.string().min(1).max(4096).optional(),
     namespace: z.string().trim().min(1).max(64).optional(),
     plugin: pluginIdentitySchema.optional(),
     capabilities: z.array(z.string().trim().min(1)).max(32).optional(),
@@ -86,6 +90,7 @@ function rootKey(root: ContributionRoot): string {
   return JSON.stringify([
     process.platform === "win32" ? path.toLowerCase() : path,
     root.namespace ?? null,
+    root.pluginRoot ?? null,
     root.plugin ?? null,
     [...(root.capabilities ?? [])].sort(),
   ]);
@@ -190,7 +195,7 @@ class ContributionDiscoveries {
 
 async function extendHmrRoots(ctx: Context, roots: ContributionRoot[]) {
   const paths = await Promise.all(
-    roots.map(({ root }) => realpath(resolve(root)).catch(() => resolve(root))),
+    roots.map(({ root, pluginRoot }) => realpath(resolve(pluginRoot ?? root)).catch(() => resolve(pluginRoot ?? root))),
   );
   type DynamicHmr = {
     config: { root: string[] };
@@ -303,13 +308,21 @@ export async function apply(ctx: Context) {
   ctx.effect(() => () => localAI.close(), "aura-local-ai.lifecycle");
   const worldAgentSessionPath = process.env.AURA_VEYA_WORLD_AGENT_SESSION_PATH;
   const capabilityRoutes = [];
-  const veya = worldAgentSessionPath
-    ? new VeyaWorldAgentCapability(worldAgentSessionPath, fetch, {
+  const creatorBindings = new VeyaCreatorBindings(process.env.AURA_FLOW_CWD ?? process.cwd());
+  let creatorGet: (id: string) => FlowRun = () => { throw new Error("Creator engine is not ready."); };
+  const budgetContext = async (runId?: string) => {
+    const binding = runId ? await creatorBindings.binding(runId, id => creatorGet(id)) : undefined;
+    return binding ? { projectRoot: creatorBindings.projectRoot,
+      creationId: binding.record.recoveryBudgetCreationId ?? binding.run.requestId,
+      ...(binding.record.recovery || binding.record.productionGrant || binding.record.materialsGrant ? { paidWorkForbidden: true } : {}) } : undefined;
+  };
+  const veya = new VeyaWorldAgentCapability(worldAgentSessionPath ?? "", fetch, {
         artifacts,
         attachments: ctx.attachments,
-      })
-    : undefined;
-  if (veya) capabilityRoutes.push([VEYA_WORLD_AGENT_CAPABILITY, veya] as const);
+      });
+  const creatorLifecycle = new VeyaCreatorLifecycle(creatorBindings, id => creatorGet(id), veya);
+  capabilityRoutes.push([VEYA_WORLD_AGENT_CAPABILITY, creatorLifecycle] as const);
+  capabilityRoutes.push([VEYA_CREATOR_CAPABILITY, new VeyaCreatorCapability(creatorBindings, id => creatorGet(id), creatorLifecycle)] as const);
   const tripoCredentialPath = process.env.AURA_TRIPO_CREDENTIAL_PATH;
   if (tripoCredentialPath) {
     const region = process.env.AURA_TRIPO_REGION;
@@ -325,14 +338,15 @@ export async function apply(ctx: Context) {
       new TripoGameAssetCapability(
         tripo,
         artifacts,
-        veya ? () => veya.generatedOutputDirectory() : undefined,
+        (runId) => veya.generatedOutputDirectory(runId),
         ctx.attachments,
         true,
+        budgetContext,
       ),
     ] as const);
     capabilityRoutes.push([
       VEYA_CLOUD_IMAGE_CAPABILITY,
-      new VeyaCloudImageCapability(tripo, artifacts, ctx.attachments),
+      new VeyaCloudImageCapability(tripo, artifacts, ctx.attachments, budgetContext, creatorBindings.projectRoot),
     ] as const);
   }
   const auraCapabilities = capabilityRoutes.length
@@ -418,6 +432,8 @@ export async function apply(ctx: Context) {
         }),
       ),
   });
+  creatorGet = (id) => engine.get(id);
+  veya.setRunSessionResolver((runId, operation, input) => creatorBindings.resolve(runId, (id) => engine.get(id), operation, input));
   videoLibrary.attach(engine);
   contentLibrary.attach(engine);
   topicLibrary.attach(engine);
@@ -558,12 +574,20 @@ export async function apply(ctx: Context) {
         case "answer":
         case "resolve": {
           const { id: _id, stepKey: key, ...body } = params;
+          let cleanupError: unknown;
+          if (method === "cancel") {
+            try { await creatorLifecycle.markCancelling(id); } catch (error) { cleanupError = error; }
+          }
           data = await engine.command(
             id,
             method,
             body,
             typeof key === "string" ? key : undefined,
           );
+          if (method === "cancel") {
+            if (cleanupError) throw cleanupError;
+            await creatorLifecycle.cleanup(id);
+          }
           break;
         }
         case "action/start":

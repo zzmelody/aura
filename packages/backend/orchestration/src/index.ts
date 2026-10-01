@@ -26,6 +26,14 @@ import {
   provisionProfile,
 } from "./profile.ts";
 import { FlowError, jsonValue } from "./schema.ts";
+export { readCreatorLeases } from "./veya-creator-lifecycle.ts";
+export { readCreatorBindingDocument, commitCreatorBindingDocument } from "./veya-creator-design-grants.ts";
+export { readProductionGrant, writeProductionGrant, validateProductionGrant, validateProductionBinding, validatePendingProductionClaims, verifyProductionWorker,
+  productionDigest, productionRecoveryBoundary, cookerSubmissionFingerprint, type ProductionGrant, type ProductionGrantRef, type WorldProductionRecovery } from "./veya-creator-production-grants.ts";
+export { expectedAtmosphereSources, environmentShaderPins, matchesEnvironmentShader, type AtmosphereSources } from "./veya-atmosphere-provenance.ts";
+export { readAssetReuseGrant, verifyAssetReuseCatalog, validateInheritedAssetReuseBinding, type AssetReuseGrant, type AssetReuseItem } from "./veya-creator-asset-reuse.ts";
+export { readMaterialsGrant, writeMaterialsGrant, validateMaterialsGrant, validateMaterialsBinding, verifyMaterialsWorker,
+  materialIdentity, materialSubmissionFingerprint, type MaterialsGrant, type ProductionMaterials } from "./veya-creator-materials.ts";
 import type {
   ContributionConfiguration,
   FlowRpcResult,
@@ -126,8 +134,8 @@ export class OrchestrationHost {
     ];
     await provisionProfile(
       dshHome,
-      flowRoots.map(({ root }) => root),
-      actionRoots.map(({ root }) => root),
+      flowRoots.map((entry) => entry.pluginRoot ?? entry.root),
+      actionRoots.map((entry) => entry.pluginRoot ?? entry.root),
     );
     const child = spawn(
       process.execPath,

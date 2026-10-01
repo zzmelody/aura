@@ -14,10 +14,11 @@ export class AuraCapabilityRouter implements AuraCapabilityClient {
     operation: string,
     input: JsonValue,
     signal: AbortSignal,
+    context?: { readonly runId?: string },
   ): Promise<JsonValue> {
     const client = this.#routes.get(capability);
     if (!client)
       throw new Error(`Aura host capability is unavailable: ${capability}`);
-    return client.invoke(capability, operation, input, signal);
+    return client.invoke(capability, operation, input, signal, context);
   }
 }

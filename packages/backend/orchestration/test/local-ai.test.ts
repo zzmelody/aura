@@ -71,6 +71,9 @@ async function fixture(withAssets = false) {
   let startedTTS = false;
   let ownedPort = true;
   let portDelay = 0;
+  let beforePromptWrite: (() => Promise<void>) | undefined;
+  let onStoppedSockets: (() => void) | undefined;
+  let stopReturns = 0;
   const servers = new Set<ServerType>();
   const manager = new LocalAIManager({} as SubprocessRuntime, root, {
     assets,
@@ -94,6 +97,16 @@ async function fixture(withAssets = false) {
       assert.equal(live, 1, "model processes must never overlap");
       const entry = entries.find((d) => d.id === spec.argv[1])!;
       const app = new Hono();
+      // A closed HTTP socket does not stop its async handler. The fake process
+      // must establish the same write quiescence as a terminated child process.
+      const handlers = new Set<Promise<void>>();
+      app.use("*", async (_c, next) => {
+        let complete!: () => void;
+        const done = new Promise<void>((resolve) => { complete = resolve; });
+        handlers.add(done);
+        try { await next(); }
+        finally { handlers.delete(done); complete(); }
+      });
       app.get("/system_stats", (c) =>
         c.json(unhealthy ? {} : { system: {}, devices: [] }),
       );
@@ -126,6 +139,7 @@ async function fixture(withAssets = false) {
             ? join(spec.argv[spec.argv.indexOf("--temp-directory") + 1], "temp")
             : spec.argv[spec.argv.indexOf("--output-directory") + 1];
           const path = join(target, subfolder, filename);
+          await beforePromptWrite?.();
           await mkdir(dirname(path), { recursive: true });
           await writeFile(
             path,
@@ -206,6 +220,9 @@ async function fixture(withAssets = false) {
           stops++;
           live--;
           await closeServer(server);
+          onStoppedSockets?.();
+          await Promise.all([...handlers]);
+          stopReturns++;
           servers.delete(server);
         },
       };
@@ -220,6 +237,9 @@ async function fixture(withAssets = false) {
     get counts() {
       return { launches, stops, live, lease };
     },
+    get stopReturns() { return stopReturns; },
+    set beforePromptWrite(value: (() => Promise<void>) | undefined) { beforePromptWrite = value; },
+    set onStoppedSockets(value: (() => void) | undefined) { onStoppedSockets = value; },
     get graph() {
       return lastGraph;
     },
@@ -706,6 +726,35 @@ test("ComfyUI rejects ambiguous/UI/non-JSON/oversize workflows and invalid overr
     );
     assert.equal(f.counts.launches, 0);
   } finally {
+    await f.close();
+  }
+});
+
+test("ComfyUI cancellation waits for owned in-flight writes before removing its job", async () => {
+  // The timeout-only case cannot reliably place cancellation inside a file write.
+  // Explicit barriers reproduce a disconnected handler still holding work.
+  const f = await fixture();
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const socketsClosed = Promise.withResolvers<void>();
+  const abort = new AbortController();
+  f.beforePromptWrite = async () => { entered.resolve(); await release.promise; };
+  f.onStoppedSockets = socketsClosed.resolve;
+  try {
+    const running = f.manager.comfyWorkflow(
+      { service: "qwen-image", workflow: customGraph() }, abort.signal,
+    );
+    const rejected = assert.rejects(running);
+    await entered.promise;
+    abort.abort(new Error("fixture cancellation during prompt write"));
+    await socketsClosed.promise;
+    assert.equal(f.stopReturns, 0, "closing sockets must not claim process quiescence");
+    release.resolve();
+    await rejected;
+    assert.equal(f.stopReturns, 1);
+    assert.deepEqual(await readdir(f.outputs), [], "the cancelled write must finish before job removal");
+  } finally {
+    release.resolve();
     await f.close();
   }
 });

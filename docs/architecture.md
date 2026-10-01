@@ -49,7 +49,7 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 `packages/backend/orchestration`（`@aura/orchestration`）统一拥有代码 Flow 的发现、Cordis Loader/HMR 注册、执行、动态步骤/session 映射、运行持久化和 `/flows/*` API。Flow 位于该包的 `flow/<flow-id>/<flow-id>.flow.js`，用 JavaScript 条件、循环和 `sequence/parallel` 回调作用域表达控制流，并通过 `@aura/orchestration/flow` 获得 `defineFlow`、Zod 与声明文件补全。作用域内的 `flow.flow()` 以规范 ID 创建持久化 child Run，固定子版本并保存父子关系；嵌套运行内联调度，不占顶层 FIFO 槽。定义设置 `service: true` 时，运行时才把它列入 `/flows/services` 并允许外部应用通过 `/flows/:flowId/invoke` 创建 durable Run；调用返回状态链接，客户端断开不取消执行。`@aura/runtime` 只创建并关闭宿主、转交 HTTP 命名空间；前端「流程」页面只根据后端 JSON Schema 收集参数并渲染 DTO。shared/protocol 仅包含通信类型，不执行 Flow 或装配 prompt。
 
-流程使用独立、长驻且空闲可回收的 `aura-flow` DSH profile。每个 `scope.agent()` attempt 都产生独立 preset/session，复用 DSH Session Controller、领域存储、JSONL、模型路由和取消；Cordis HMR 复用 DSH 已有模块依赖图与事务回滚。运行开始时固定代码定义和 Flow 目录内容 hash，后续热更新只影响新运行。客户端断开不取消流程。Run 先持久化排队，默认最多同时执行 32 个顶层 Run；暂停、人工 checkpoint 和未知结果等待不占并发槽。重启先加载定义并校验同一 source hash，再从脚本入口重放；完成步骤按作用域路径及请求指纹返回存档输出，DSH 完成回合可认领输出，未知副作用等待人工处理。旧 active 记录缺少 durable identity 时标记 `legacy_unrecoverable`，已完成历史保持可读。Flow JS 是拥有完整 Node.js 权限的受信任后端代码。普通 `/chat` 链路仍保留原实现，流程不依赖客户端对话历史。实现、恢复约束与扩展配置见 [编排包说明](../packages/backend/orchestration/README.md)。
+流程使用独立、长驻且空闲可回收的 `aura-flow` DSH profile。每个 `scope.agent()` attempt 都产生独立 preset/session，复用 DSH Session Controller、领域存储、JSONL、模型路由和取消；Cordis HMR 复用 DSH 已有模块依赖图与事务回滚。运行开始时固定代码定义和贡献内容 hash（外部插件包含插件根内静态 ESM 依赖闭包），后续热更新只影响新运行。客户端断开不取消流程。Run 先持久化排队，默认最多同时执行 32 个顶层 Run；暂停、人工 checkpoint 和未知结果等待不占并发槽。重启先加载定义并校验同一 source hash，再从脚本入口重放；完成步骤按作用域路径及请求指纹返回存档输出，DSH 完成回合可认领输出，未知副作用等待人工处理。旧 active 记录缺少 durable identity 时标记 `legacy_unrecoverable`，已完成历史保持可读。Flow JS 是拥有完整 Node.js 权限的受信任后端代码。普通 `/chat` 链路仍保留原实现，流程不依赖客户端对话历史。实现、恢复约束与扩展配置见 [编排包说明](../packages/backend/orchestration/README.md)。
 
 同包的 `action/<action-id>/<action-id>.action.js` 提供可热加载的工具扩展，公开 `@aura/orchestration/action` 和声明文件。Action 使用 DSH 工具 Schema DSL，复用 DSH ToolRuntime 的校验、策略、结果渲染和协作式超时；每个 Flow Agent 固定使用原生工具呈现并以空白名单屏蔽全部继承工具，`scope.agent({ actions: [...] })` 再将固定版本注册到指定 Agent scope，因此模型上下文只包含显式配置的 Aura Action，未配置时工具集合为空。`scope.action()` 直接调用时保存独立 Action step 的 input/output，Agent 内部调用继续保留在 DSH session 日志中。Flow 开始时同时固定 Action 定义快照，步骤身份为作用域路径加本地 ID，共享调用并发限制。重试由调用声明，默认不重试；仅声明 `recovery: "idempotent"` 的直接 Action 可自动重试，跨 attempt 使用同一 idempotency key。普通 Action 中断后需人工重试、提交结果或终止。Agent 已启动工具而回合未完成时同样需要人工处理。后端 `host.invokeAction()` 使用同一执行适配，独立记录写入 `aura_code_actions` domain，不提供通用 Action HTTP 执行接口。前端只渲染 catalog 和不同步骤 DTO；Action context 第一版不提供调用 Flow 的接口，完整 Node.js 权限仍按受信任代码处理。
 
@@ -86,3 +86,11 @@ Codex 默认模型是 `gpt-5.6-terra`，推理档位为 medium，传输为 SSE�
 工作流产物通过 `@aura/orchestration` 的 `GeneratedArtifacts` 与独立 `WorkflowArtifactIndex` 登记、生成缩略图及迁移历史记录；不修改 Action 输出和 durable 重放身份。shared/protocol 的 `WorkflowArtifact` / `WorkflowArtifacts` 只传文件 ID、可用状态、元数据和来源步骤。`/flows/runs/:runId/artifacts` 与其内容路由验证运行关联；二进制由 Hono 流式发送，不进入 DSH JSON-RPC。已生成结果不因预览登记失败而触发再次生成。
 
 workbench 在工作流回复与步骤详情展示同一套文件卡片，使用原有轮询节奏同步产物。图片弹层支持缩放/拖动，MP4 使用浏览器原生播放器，GLB 使用按需加载的 `@google/model-viewer`；列表只加载缩略图或占位图，打开弹层才加载模型。`model-viewer` 和 Three.js 由三个应用通过 peer dependency 提供同一运行时，解码器由根构建插件统一部署到各宿主产物，无运行时 CDN 依赖。Web、Electron 和 Capacitor 共享 DOM 与 HTTP 文件地址，不向 renderer 暴露磁盘读取能力。
+
+### Veya 创作接入与共享插件代码
+
+本机 Creator 服务将创作请求固定到一个验证 worker session，子 Flow/Action 继承绑定；`aura.veya.creator` 返回经过筛选的需求授权与数量上限。付费记录绑定 Aura 项目和创作身份，云图和模型任务共享已声明计费单位的额度，已知任务恢复不重发。成果通过受管 manifest/blob 的精确哈希读取，Run 完成不等于前台交付。接口及当前验证范围见 [Veya Creator 服务](veya-creator-service.md)。
+
+试玩租约由编排宿主记录并清理，不依赖已取消的 Flow。租约把根 Run、原生 operation 与准确 playtest ID 绑定；清理结果未知时保留 worker 占用及 needs_attention。尚未导出的已付费物件可通过受信 previousRequestId 创建关联恢复，复用原规格、资产和账本，禁止新增付费。
+
+外部贡献的版本 hash 包含其目录以及插件根内静态 ESM 依赖闭包，共享 schema/prompt 的变更也改变版本。可信插件根由 extensions 传入，不进入公共 catalog。Cordis HMR 监听包含共享模块的插件根；重启时无法匹配原版本继续保持 revision mismatch，不能用新 helper 重放旧副作用。

@@ -59,7 +59,7 @@ export class ActionRegistry {
       throw new FlowError("Action timeoutMs 必须在 1 到 600000 毫秒之间。");
     const inputSchema = jsonValue(tool.parameters, "Action input schema");
     const outputSchema = jsonValue(tool.output.schema, "Action output schema");
-    const sourceHash = await hashFlowDirectory(config.directory);
+    const sourceHash = await hashFlowDirectory(config.directory, config.pluginRoot);
     this.loaded.set(id, {
       ...definition,
       id,

@@ -342,6 +342,77 @@ test("persisted schemas reject executable refinements instead of silently losing
   assert.throws(() => validateSaved(schema, { count: 2.5 }));
 });
 
+test("persisted length checks retain native bounds but reject explicit conditional checks", () => {
+  // The former guard rejected Zod 4.6's built-in when function. Merely allowing
+  // its check names would instead lose explicit, executable conditions.
+  for (const schema of [
+    z.string().min(1).max(2),
+    z.array(z.enum(["brass", "stone"])).min(1).max(2),
+    z.string().length(2),
+    z.array(z.string()).length(2),
+  ]) {
+    const persisted = JSON.parse(JSON.stringify(savedSchema(schema)));
+    const values = ["", "甲", "甲乙", "甲乙丙", "🌙", "🌙🌙", [], ["brass"], ["brass", "stone"], ["brass", "stone", "brass"]];
+    for (const value of values) {
+      if (schema.safeParse(value).success)
+        assert.deepEqual(validateSaved(persisted, value), value);
+      else assert.throws(() => validateSaved(persisted, value));
+    }
+  }
+  for (const schema of [z.string().min(1), z.string().max(2), z.array(z.string()).length(2)]) {
+    // The low-level check definition is also exposed to trusted plugin authors.
+    schema._zod.def.checks![0]!._zod.def.when = () => false;
+    assert.throws(() => savedSchema(schema), /Schema/);
+  }
+  assert.throws(() => savedSchema(z.string().refine(() => true, { when: () => true })), /Schema/);
+});
+
+test("text, single and multiple clarification answers survive JSON persistence and engine restart", async () => {
+  // Actual checkpoint persistence/replay, rather than only schema conversion:
+  // production Wish could previously fail before creating a waiting_input step.
+  const answerSchema = z.object({
+    "garden_geometry.anchors": z.string().min(1).max(2000),
+    material: z.enum(["brass", "stone"]),
+    details: z.array(z.enum(["enamel", "engraving", "light"])).min(1).max(2),
+  }).strict();
+  const workflow = (flow: FlowScope) => flow.checkpoint({ id: "clarify-1", prompt: "请补充制作信息", schema: answerSchema });
+  const first = await setup(workflow);
+  const run = await first.engine.start(req());
+  let second: Awaited<ReturnType<typeof setup>> | undefined;
+  try {
+    const waiting = await first.engine.wait(run.id);
+    assert.equal(waiting.status, "waiting_input");
+    await first.engine.close();
+    const serialized = table();
+    await serialized.put(run.id, JSON.parse(JSON.stringify(waiting)));
+    second = await setup(workflow, { table: serialized });
+    const valid = { "garden_geometry.anchors": "桌面锚点已提供", material: "brass", details: ["enamel", "light"] };
+    for (const answers of [
+      { ...valid, "garden_geometry.anchors": "" },
+      { ...valid, "garden_geometry.anchors": "字".repeat(2001) },
+      { ...valid, material: "invented" },
+      { ...valid, details: [] },
+      { ...valid, details: ["enamel", "light", "engraving"] },
+      { ...valid, details: ["invented"] },
+      { ...valid, unasked: true },
+    ]) {
+      await assert.rejects(second.engine.command(run.id, "answer", { requestId: randomUUID(), output: answers }, "main/clarify-1"));
+      assert.equal(second.engine.get(run.id).status, "waiting_input");
+    }
+    const answer = { requestId: randomUUID(), output: valid };
+    await second.engine.command(run.id, "answer", answer, "main/clarify-1");
+    const completed = await second.engine.wait(run.id);
+    assert.equal(completed.id, run.id);
+    assert.equal(completed.status, "completed");
+    assert.deepEqual(completed.output, valid);
+    await second.engine.command(run.id, "answer", answer, "main/clarify-1");
+    assert.equal(second.engine.get(run.id).steps.length, 1);
+  } finally {
+    await first.engine.close();
+    await second?.engine.close();
+  }
+});
+
 function table(): Table<FlowRun> {
   const rows = new Map<string, FlowRun>();
   let chain: Promise<unknown> = Promise.resolve();

@@ -91,12 +91,19 @@ test("Veya capability preserves canonical tool names on the native Agent protoco
         "veya.world.undo",
         "veya.world.redo",
         "veya.draft.create",
+        "veya.creation.module.write",
+        "veya.creation.module.read",
+        "veya.creation.export",
+        "veya.draft.compose",
+        "veya.playtest.save_resume",
+        "veya.preview.performance",
         "veya.draft.read",
         "veya.draft.update",
         "veya.draft.discard",
         "veya.playtest.begin",
         "veya.playtest.end",
         "veya.character.navigate",
+        "veya.character.inspect",
         "veya.character.act",
         "veya.character.cancel",
         "veya.travel.preload",
@@ -200,6 +207,7 @@ test("Veya runtime tools require the native Agent tool protocol", async () => {
       "veya.system.context",
       "veya.runtime.observe",
       "veya.runtime.inspect",
+      "veya.character.inspect",
       "veya.action.perform",
       "veya.dialogue.choose",
       "veya.player.respawn",
@@ -283,4 +291,52 @@ test("Veya capability requires an exact loopback descriptor and sanitizes failur
       },
     );
   });
+});
+
+// The ordinary error-code test cannot cover native compose repair attribution
+// or prevent a VM's source path/stack from leaking through a new diagnostic.
+test("Veya failures preserve bounded typed diagnostics but reject free-form diagnostic fields", async () => {
+  await fixture(async sessionPath => {
+    const request = (async () => new Response(JSON.stringify({ ok: false, error: "validation_failed",
+      message: "C:/private/worker/secret.lua:90 stack trace", diagnostics: [
+        { code: "author_failed", stage: "author", module_id: "c".repeat(64), namespace: "prop_local", entity_id: "plaque",
+          component: "dialogue", field: "text", line: 9, message: token, path: "C:/private/source.lua", stack: "secret" },
+        { code: "invalid_field", component: token, field: "C:/private/source.lua", line: -1 },
+        { code: "C:/private/invalid", message: token },
+        { code: "ignored_fourth" },
+      ] }), { status: 422 })) as typeof fetch;
+    const client = new VeyaWorldAgentCapability(sessionPath, request);
+    await assert.rejects(client.invoke(VEYA_WORLD_AGENT_CAPABILITY, "veya.draft.compose", {}, new AbortController().signal), (error: unknown) => {
+      const text = (error as Error).message;
+      assert.deepEqual(JSON.parse(text.split(" diagnostics=")[1]!), [
+        { code: "author_failed", stage: "author", namespace: "prop_local", entity_id: "plaque", component: "dialogue",
+          field: "text", module_id: "c".repeat(64), line: 9 }, { code: "invalid_field" },
+      ]);
+      assert.doesNotMatch(text, /private|secret|stack|ignored_fourth/u);
+      assert.ok(!text.includes(token));
+      assert.ok(text.length < 2000); return true;
+    });
+  }, { protocol: "veya-world-http/1", tools_protocol: "veya-agent-tools/1", base_url: "http://127.0.0.1:49152", token, pid: 42 });
+});
+
+// The canonical mapping test cannot detect a retry accidentally allocating a
+// second native sampling request; performance polling must retain byte identity.
+test("performance not-ready polling retains the same native request and cancellation", async () => {
+  await fixture(async sessionPath => {
+    const sent: string[] = [];
+    const request = (async (_url: string | URL | Request, init?: RequestInit) => {
+      sent.push(String(init?.body));
+      return new Response(JSON.stringify(sent.length < 3
+        ? {ok:false,error:"performance_not_ready"}
+        : {ok:true,data:{performance:{passed:true,p95_ms:11,p99_ms:12},content_hash:"c".repeat(64)}}), {status:sent.length < 3 ? 409 : 200});
+    }) as typeof fetch;
+    const client = new VeyaWorldAgentCapability(sessionPath, request);
+    const input = {request_id:"stable-sample",candidate_hash:"a".repeat(64),sample_seconds:10};
+    const result = await client.invoke(VEYA_WORLD_AGENT_CAPABILITY,"veya.preview.performance",input,new AbortController().signal);
+    assert.equal(sent.length,3); assert.equal(new Set(sent).size,1);
+    assert.equal((result as {content_hash:string}).content_hash,"c".repeat(64));
+    const controller=new AbortController();
+    const cancelled=new VeyaWorldAgentCapability(sessionPath,(async()=>{controller.abort();return new Response(JSON.stringify({ok:false,error:"performance_not_ready"}),{status:409});}) as typeof fetch);
+    await assert.rejects(cancelled.invoke(VEYA_WORLD_AGENT_CAPABILITY,"veya.preview.performance",input,controller.signal), /abort/iu);
+  }, {protocol:"veya-world-http/1",base_url:"http://127.0.0.1:49152",token,tools_protocol:"veya-agent-tools/1"});
 });

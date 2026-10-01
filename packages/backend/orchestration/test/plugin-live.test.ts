@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
@@ -39,32 +40,52 @@ test(
     const flowRoot = join(root, "builtin-flow");
     const actionRoot = join(root, "builtin-action");
     const pluginRoot = join(root, "external-flow");
-    const flowDirectory = join(pluginRoot, "story");
+    const contributions = join(pluginRoot, "flows");
+    const flowDirectory = join(contributions, "story");
+    const pluginActions = join(pluginRoot, "actions");
+    const actionDirectory = join(pluginActions, "context");
     await Promise.all([
       mkdir(flowRoot, { recursive: true }),
       mkdir(actionRoot, { recursive: true }),
       mkdir(flowDirectory, { recursive: true }),
+      mkdir(actionDirectory, { recursive: true }),
+      mkdir(join(pluginRoot, "lib"), { recursive: true }),
+      mkdir(join(pluginRoot, "node_modules", "@aura"), { recursive: true }),
     ]);
-    const apiUrl = new URL("../src/flow-api.ts", import.meta.url).href;
-    const helper = join(flowDirectory, "helper.js");
+    await symlink(fileURLToPath(new URL("../../plugin-sdk", import.meta.url)), join(pluginRoot, "node_modules", "@aura", "plugin-sdk"), "junction");
+    const helper = join(pluginRoot, "lib", "helper.js");
     await writeFile(helper, 'export const version = "v1";\n');
+    // Real plugin Action identity must survive checkpoint resume. Agent tool refs
+    // already included plugin metadata; the direct Action branch used to drop it.
+    await writeFile(join(actionDirectory, "context.action.js"), `
+import { defineAction } from "@aura/plugin-sdk/action";
+import { version } from "../../lib/helper.js";
+export default defineAction({
+  title: "Context", description: "Pinned plugin Action context",
+  parameters: {}, timeoutMs: 1000, recovery: "idempotent",
+  output: { schema: { type: "string" }, render: (_, value) => [{ type: "text", text: value }] },
+  execute: async () => version,
+});
+`);
     await writeFile(
       join(flowDirectory, "story.flow.js"),
       `
-import { defineFlow, z } from ${JSON.stringify(apiUrl)};
-import { version } from "./helper.js";
+import { defineFlow, z } from "@aura/plugin-sdk/flow";
+import { version } from "../../lib/helper.js";
 export default defineFlow({
   title: "Live plugin " + version,
   input: z.object({ checkpoint: z.boolean() }),
   output: z.object({ report: z.string() }),
   async run(ctx, input) {
-    if (input.checkpoint) {
-      await ctx.sequence({ id: "main" }, (flow) => flow.checkpoint({
+    await ctx.sequence({ id: "main" }, async (flow) => {
+      const context = await flow.action({ id: "context", action: "test.live/context", input: {} });
+      if (context.output !== version) throw new Error("Action version changed");
+      if (input.checkpoint) await flow.checkpoint({
         id: "approval",
         prompt: "Continue",
         schema: z.object({ ok: z.boolean() }),
-      }));
-    }
+      });
+    });
     return { report: version };
   },
 });
@@ -77,8 +98,8 @@ export default defineFlow({
       version: "1.0.0",
     };
     const configuration = {
-      flowRoots: [{ root: pluginRoot, namespace: plugin.id, plugin }],
-      actionRoots: [],
+      flowRoots: [{ root: contributions, pluginRoot, namespace: plugin.id, plugin }],
+      actionRoots: [{ root: pluginActions, pluginRoot, namespace: plugin.id, plugin }],
       plugins: [{ ...plugin, enabled: true, available: true }],
     };
     const host = new OrchestrationHost({
@@ -129,6 +150,11 @@ export default defineFlow({
       });
       const waiting = await host.request<FlowRun>("wait", { id: pinned.id });
       assert.equal(waiting.status, "waiting_input");
+      // A shared dependency can change while an existing Run awaits input.
+      // Its captured module environment must remain the old version.
+      await writeFile(helper, 'export const version = "v2-hot";\n');
+      await catalogFlow(host, "test.live/story", flow => flow?.available === true &&
+        flow.title.endsWith("v2-hot") && flow.sourceHash !== waiting.flow.sourceHash);
 
       await host.configureContributions({
         flowRoots: [],
@@ -138,7 +164,7 @@ export default defineFlow({
       await catalogFlow(host, "test.live/story", (flow) => flow === undefined);
       await host.request("answer", {
         id: pinned.id,
-        stepKey: "main/approval",
+        stepKey: waiting.steps.find(step => step.kind === "checkpoint")!.stepKey,
         requestId: randomUUID(),
         output: { ok: true },
       });
@@ -150,7 +176,7 @@ export default defineFlow({
       await catalogFlow(
         host,
         "test.live/story",
-        (flow) => flow?.available === true && flow.title.endsWith("v2"),
+        (flow) => flow?.available === true && flow.title.endsWith("v2-hot"),
       );
 
       const brokenRoot = join(root, "broken-external-flow");
@@ -184,6 +210,25 @@ export default defineFlow({
         true,
       );
       assert.equal(rolledBack.plugins[0]?.id, plugin.id);
+      const restartRun = await host.request<FlowRun>("start", {
+        requestId: randomUUID(), flowId: "test.live/story", mode: "demo", input: { checkpoint: true },
+      });
+      const restartWaiting = await host.request<FlowRun>("wait", { id: restartRun.id });
+      assert.equal(restartWaiting.status, "waiting_input");
+      await host.close();
+      await writeFile(helper, 'export const version = "v3";\n');
+      const restarted = new OrchestrationHost({ root, flowRoot, actionRoot, dshHome: join(root, "dsh"),
+        modelURL: "http://127.0.0.1:1/v1", ...configuration });
+      try {
+        await restarted.request<FlowRun>("answer", { id: restartRun.id,
+          stepKey: restartWaiting.steps.find(step => step.kind === "checkpoint")!.stepKey,
+          requestId: randomUUID(), output: { ok: true } });
+        const rejected = await restarted.request<FlowRun>("wait", { id: restartRun.id });
+        assert.equal(rejected.status, "interrupted");
+        assert.match(rejected.error ?? "", /revision_mismatch/u);
+        assert.equal(rejected.flow.sourceHash, restartWaiting.flow.sourceHash);
+      } finally { await restarted.close(); }
+
     } finally {
       await host.close();
       assert.equal(dirname(resolve(root)), resolve(tmpdir()));

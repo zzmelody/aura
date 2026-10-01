@@ -51,6 +51,7 @@ export interface AuraCapabilityClient {
     operation: string,
     input: JsonValue,
     signal: AbortSignal,
+    context?: { readonly runId?: string },
   ): Promise<JsonValue>;
 }
 
@@ -117,6 +118,8 @@ export interface ActionRegistrationConfig {
   directory: string;
   entry: string;
   plugin?: AuraPluginIdentity;
+  /** Trusted local package root, never projected into public catalog DTOs. */
+  pluginRoot?: string;
   capabilities?: string[];
 }
 

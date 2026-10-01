@@ -45,6 +45,7 @@ export class CodeDiscovery {
   private kind: "flow" | "action";
   readonly root: string;
   readonly namespace?: string;
+  readonly pluginRoot?: string;
   readonly plugin?: ContributionRoot["plugin"];
   readonly capabilities?: ContributionRoot["capabilities"];
   private mounted = new Map<string, MountedFlow>();
@@ -61,6 +62,7 @@ export class CodeDiscovery {
     this.loader = loader;
     this.registry = registry;
     this.root = typeof root === "string" ? root : root.root;
+    this.pluginRoot = typeof root === "string" ? undefined : root.pluginRoot;
     this.namespace = typeof root === "string" ? undefined : root.namespace;
     this.plugin = typeof root === "string" ? undefined : root.plugin;
     this.capabilities =
@@ -77,6 +79,7 @@ export class CodeDiscovery {
   descriptor(): ContributionRoot {
     return {
       root: this.root,
+      ...(this.pluginRoot ? { pluginRoot: this.pluginRoot } : {}),
       ...(this.namespace ? { namespace: this.namespace } : {}),
       ...(this.plugin ? { plugin: this.plugin } : {}),
       ...(this.capabilities ? { capabilities: [...this.capabilities] } : {}),
@@ -129,7 +132,14 @@ export class CodeDiscovery {
         continue;
       }
 
-      const signature = await hashFlowDirectory(directory);
+      let signature: string;
+      try { signature = await hashFlowDirectory(directory, this.pluginRoot); }
+      catch {
+        issues.add(flowId);
+        if (this.mounted.has(flowId)) this.registry.reloadProblem(flowId, "Plugin dependency revision could not be validated.");
+        else this.registry.problem(flowId, "Plugin dependency revision could not be validated.");
+        continue;
+      }
       const current = this.mounted.get(flowId);
       if (this.kind === "flow") {
         try {
@@ -168,6 +178,7 @@ export class CodeDiscovery {
         directory,
         entry: expected,
         plugin: this.plugin,
+        pluginRoot: this.pluginRoot,
         capabilities: this.capabilities,
       };
       try {

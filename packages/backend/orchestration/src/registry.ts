@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { readFile } from "node:fs/promises";
+import { hashContribution } from "./contribution-hash.ts";
 import type {
   FlowCatalogEntry,
   FlowSource,
@@ -55,32 +54,7 @@ const definitionSchema = z
   })
   .strict();
 
-async function sourceFiles(
-  directory: string,
-  root = directory,
-): Promise<string[]> {
-  const paths: string[] = [];
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) paths.push(...(await sourceFiles(path, root)));
-    if (entry.isFile()) paths.push(relative(root, path).replaceAll("\\", "/"));
-  }
-  return paths;
-}
-
-/** Stable revision of every regular file owned by one Flow directory. */
-export async function hashFlowDirectory(directory: string): Promise<string> {
-  const hash = createHash("sha256");
-  const paths = (await sourceFiles(directory)).sort();
-  for (const path of paths) {
-    hash.update(path);
-    hash.update("\0");
-    hash.update(await readFile(join(directory, path)));
-    hash.update("\0");
-  }
-  return hash.digest("hex");
-}
+export { hashContribution as hashFlowDirectory } from "./contribution-hash.ts";
 
 /** Last-known-good Flow registry populated by Loader-managed Flow plugins. */
 export class FlowRegistry {
@@ -92,7 +66,7 @@ export class FlowRegistry {
   async register(config: FlowRegistrationConfig, input: FlowDefinition) {
     const id = parse(contributionIdSchema, config.flowId);
     const definition = parse(definitionSchema, input);
-    const sourceHash = await hashFlowDirectory(config.directory);
+    const sourceHash = await hashContribution(config.directory, config.pluginRoot);
     const code = await readFile(config.entry, "utf8");
     validateFlowSource(code, {
       allowRootOperations: Boolean(config.plugin),

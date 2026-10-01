@@ -13,6 +13,27 @@ export const VEYA_WORLD_AGENT_CAPABILITY = "aura.veya.world-agent";
 
 type Operation = { method: "GET" | "POST"; path?: string; tool?: string };
 
+/** Only typed native diagnostics cross the model boundary. Never derive these
+ * fields by parsing arbitrary VM/importer messages that may contain paths. */
+function failureDiagnostics(value: JsonValue | undefined, token: string): string {
+  if (!Array.isArray(value)) return "";
+  const diagnostics: Record<string, JsonValue>[] = [];
+  for (const item of value.slice(0, 3)) {
+    if (!item || Array.isArray(item) || typeof item !== "object" || typeof item.code !== "string" ||
+        !/^[a-z][a-z0-9_]{0,63}$/u.test(item.code) || item.code === token) continue;
+    const entry: Record<string, JsonValue> = { code: item.code };
+    for (const key of ["stage", "namespace", "entity_id", "component", "field"]) {
+      const field = item[key];
+      if (typeof field === "string" && /^[A-Za-z_][A-Za-z0-9_.-]{0,95}$/u.test(field) && field !== token) entry[key] = field;
+    }
+    if (typeof item.module_id === "string" && /^[a-f0-9]{64}$/u.test(item.module_id) && item.module_id !== token) entry.module_id = item.module_id;
+    if (typeof item.line === "number" && Number.isSafeInteger(item.line) && item.line >= 1 && item.line <= 8192) entry.line = item.line;
+    if (JSON.stringify([...diagnostics, entry]).length > 1400) break;
+    diagnostics.push(entry);
+  }
+  return diagnostics.length ? ` diagnostics=${JSON.stringify(diagnostics)}` : "";
+}
+
 const operations = new Map<string, Operation>([
   ["veya.assets.import", { method: "POST", tool: "veya.assets.import" }],
   ...["mode", "undo", "redo"].map((name): [string, Operation] => [
@@ -20,6 +41,13 @@ const operations = new Map<string, Operation>([
     { method: "POST", path: `/v2/worlds/${name}`, tool: `veya.world.${name}` },
   ]),
   ...[
+    "creation.module.write",
+    "creation.module.read",
+    "creation.export",
+    "creation.checkout",
+    "draft.compose",
+    "preview.performance",
+    "playtest.save_resume",
     "draft.create",
     "draft.read",
     "draft.update",
@@ -27,6 +55,7 @@ const operations = new Map<string, Operation>([
     "playtest.begin",
     "playtest.end",
     "character.navigate",
+    "character.inspect",
     "character.act",
     "character.cancel",
   ].map((name): [string, Operation] => [
@@ -191,6 +220,7 @@ function responseObject(value: unknown): Record<string, JsonValue> {
 export class VeyaWorldAgentCapability implements AuraCapabilityClient {
   readonly sessionPath: string;
   readonly request: Fetch;
+  private runSessionPath?: (runId: string, operation?: string, input?: JsonValue) => Promise<string | undefined>;
   readonly media?: {
     artifacts: GeneratedArtifacts;
     attachments: Pick<Context["attachments"], "saveImage">;
@@ -209,10 +239,18 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
     this.media = media;
   }
 
-  private async session(): Promise<SessionDescriptor> {
+  setRunSessionResolver(resolve: (runId: string, operation?: string, input?: JsonValue) => Promise<string | undefined>) {
+    this.runSessionPath = resolve;
+  }
+
+  private async session(runId?: string, operation?: string, input?: JsonValue): Promise<SessionDescriptor> {
+    const boundPath = runId && this.runSessionPath
+      ? await this.runSessionPath(runId, operation, input)
+      : undefined;
+    const path = boundPath ?? this.sessionPath;
     let content: string;
     try {
-      content = await readFile(this.sessionPath, "utf8");
+      content = await readFile(path, "utf8");
     } catch {
       throw new Error(
         "Veya World Agent is not running or its session descriptor is unavailable.",
@@ -221,7 +259,10 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
     if (Buffer.byteLength(content) > 8_192)
       throw new Error("Veya World Agent session descriptor is too large.");
     try {
-      return descriptor(JSON.parse(content) as unknown);
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      if (boundPath !== undefined && parsed.role !== "creator-worker")
+        throw new Error("Veya creator worker descriptor is invalid.");
+      return descriptor(parsed);
     } catch (error) {
       if (error instanceof SyntaxError)
         throw new Error("Veya World Agent session descriptor is invalid.");
@@ -234,8 +275,14 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
     operation: string,
     input: JsonValue,
     signal: AbortSignal,
+    context?: { readonly runId?: string },
   ): Promise<JsonValue> {
-    const session = await this.session();
+    const source = object(input);
+    const creatorArtifactRead = operation === "veya.world.read" &&
+      (source.artifact_id !== undefined || source.artifact_content_hash !== undefined);
+    if ((operation === "veya.creation.checkout" || creatorArtifactRead) && (!context?.runId || !this.runSessionPath))
+      throw new ActionFailure("creator_artifact_binding_mismatch");
+    const session = await this.session(context?.runId, operation, input);
     if (capability === VEYA_WORLD_AGENT_CAPABILITY && this.media) {
       const body = object(input);
       const staged: { id: unknown; format: "glb" | "png" }[] =
@@ -264,7 +311,7 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
         else
           await this.media.artifacts.stageModel(artifact.id, session.exchangeRoot!, signal);
     }
-    const deadline = Date.now() + 10_000;
+    const deadline = Date.now() + (operation === "veya.preview.performance" ? 35_000 : 10_000);
     let data: JsonValue;
     for (;;) {
       try {
@@ -278,9 +325,9 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
         break;
       } catch (error) {
         if (
-          operation !== "veya.preview.capture" ||
+          !["veya.preview.capture", "veya.preview.performance"].includes(operation) ||
           !(error instanceof ActionFailure) ||
-          !error.message.startsWith("Veya preview_not_ready ") ||
+          !error.message.startsWith(operation === "veya.preview.performance" ? "Veya performance_not_ready " : "Veya preview_not_ready ") ||
           Date.now() >= deadline
         )
           throw error;
@@ -324,8 +371,8 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
   }
 
   /** Trusted producer configuration; not an Agent filesystem operation. */
-  async generatedOutputDirectory() {
-    return (await this.session()).generationRoot;
+  async generatedOutputDirectory(runId?: string) {
+    return (await this.session(runId)).generationRoot;
   }
 
   private async invokeOnce(
@@ -404,7 +451,7 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
         ? " The world changed; read its latest revision before editing."
         : "";
     throw new ActionFailure(
-      `Veya ${safeCode} (HTTP ${response.status}).${explanation}`,
+      `Veya ${safeCode} (HTTP ${response.status}).${explanation}${failureDiagnostics(envelope.diagnostics, session.token)}`,
     );
   }
 }

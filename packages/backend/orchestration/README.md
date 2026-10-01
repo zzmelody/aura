@@ -77,7 +77,7 @@ V1 不支持 parallel 分支内的 checkpoint。运行时暂停会退出作用�
 
 `memo` 可封装时间、随机数和只读计算，必须返回 JSON；在结果落盘前崩溃时允许重新计算。外部写副作用必须通过 Action。普通 JS 代码每次重放都会重新执行，必须保证它基于固定输入、已存档结果和相同代码走出一致路径。重放时同一步骤的请求指纹变化，或完成时存在未访问的历史步骤，都会以 `FLOW_REPLAY_MISMATCH` 中断。
 
-输入、输出、memo 和人工答案使用不超过 256 KiB 的 JSON；Agent 输出为 1–80,000 字符。checkpoint/memo 的 Zod Schema 必须能转换为可存档和重新校验的 JSON Schema；依赖执行代码的 transforms、refine/superRefine、overwrite（包括 trim）等规则会在持久化前明确报错，避免恢复时丢失校验。
+输入、输出、memo 和人工答案使用不超过 256 KiB 的 JSON；Agent 输出为 1–80,000 字符。checkpoint/memo 的 Zod Schema 必须能转换为可存档和重新校验的 JSON Schema；依赖执行代码的 transforms、refine/superRefine、overwrite（包括 trim）及自定义 `when` 等规则会在持久化前明确报错，避免恢复时丢失校验。Zod 自身为字符串/数组 min/max/length 安装的长度类型条件按原生函数身份识别，仍可持久化为标准 JSON Schema；仅相同 check 名称不能放行自定义条件。
 
 ## 每个 Agent 的模型参数
 
@@ -89,9 +89,9 @@ Veya 的现有 `world-preview` Action 由 `aura.veya.world-agent` 宿主能力�
 
 ### Veya 生成资产交接
 
-Tripo capability 成功后在 `<DSH_HOME>/aura-generated-assets/` 登记不可变 GLB（SHA-256 ID，最多 200 MiB），保留原有路径、task IDs、manifest 和费用字段。若登记失败，仍返回生成结果与 `artifactRegistration`，防止导入失败触发再次付费。`veya.assets.import` 只接受已登记 ID；宿主复制到 Veya 描述符绑定的 exchange root，原生宿主再次验证并调用随产品提供的 Cooker。`veya.cooker.submit` 的声明源也可使用 `artifact://<sha256>`。没有新增任意路径读写 Action。
+Tripo capability 成功后在 `<DSH_HOME>/aura-generated-assets/` 登记不可变 GLB（SHA-256 ID，最多 200 MiB），普通独立生成保留原有路径、task IDs、manifest 和费用字段。绑定 Creator 的调用只返回受管资产引用、任务 ID 和费用等筛选字段，不暴露本机路径；登记失败返回稳定的 `artifactRegistration` 状态，保留付费结果供后续重试。`veya.assets.import` 只接受已登记 ID；宿主复制到 Veya 描述符绑定的 exchange root，原生宿主再次验证并调用随产品提供的 Cooker。`veya.cooker.submit` 的声明源也可使用 `artifact://<sha256>`。没有新增任意路径读写 Action。
 
-模型 Action 未指定输出目录时，连接开发 Veya 使用项目 `assets/generated/`，发行版使用其可写创作项目目录；默认根来自可信会话描述符的 `generation_root`。显式用户输出目录及未连接 Veya 的独立生成保留原行为。会话根目录、token 和上游 URL 不交给 Agent 选择。长任务状态有界等待仍复用同一个 canonical 工具，不是新的 Flow/Agent 层；完整付费恢复和额度账本尚未实现。
+模型 Action 未指定输出目录时，连接开发 Veya 使用项目 `assets/generated/`，发行版使用其可写创作项目目录；默认根来自可信会话描述符的 `generation_root`。普通独立生成的显式用户输出目录保留原行为；Creator 调用固定使用绑定 worker 的受管目录，拒绝任意本机参考图或输出路径。会话根目录、token 和上游 URL 不交给 Agent 选择。长任务有界等待复用同一 canonical 工具。模型与云图通过项目级持久账本记录预留、已知任务和实际费用；绑定创作身份后更换 worker 不重置额度。Creator 默认货币额度无限，部署可配置有限额度；未知提交或费用仍阻止新增付费。详见 [Creator 服务与预算](../../../docs/veya-creator-service.md)。
 
 ### 参数优先级
 
@@ -215,7 +215,7 @@ unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算�
 
 `FlowDiscovery` 在首次启动、catalog 读取、运行开始前和后台短周期扫描时检查内置及已启用外部根的直接子目录。非法 ID、入口名不一致、缺少入口或多个 `*.flow.js` 都会作为不可用项进入 catalog。外部贡献使用 `<plugin-id>/<local-id>` 规范 ID，内置贡献保持原有 ID；DSH 工具名由后端映射为安全名称，持久化和公开接口始终保留规范 ID。
 
-外部插件的 manifest、信任、能力声明和根目录由 `@aura/extensions` 在进入编排宿主前校验，插件代码只通过 `@aura/plugin-sdk/action` 与 `@aura/plugin-sdk/flow` 接入。宿主不支持 manifest 请求的任一 capability 时插件整体保持不可用，不带着缺失能力部分加载。运行时可通过内部 `plugins/configure` RPC 动态替换多根发现器并扩展 HMR 监听；加载失败会恢复上一组根。插件版本和贡献目录 hash 会随定义固定到运行记录，因此目录启停与插件内容 HMR 只影响新运行，已创建运行继续使用固定版本。Aura 不替插件执行安装、构建或生命周期脚本。
+外部插件的 manifest、信任、能力声明和根目录由 `@aura/extensions` 在进入编排宿主前校验，插件代码只通过 `@aura/plugin-sdk/action` 与 `@aura/plugin-sdk/flow` 接入。宿主不支持 manifest 请求的任一 capability 时插件整体保持不可用，不带着缺失能力部分加载。运行时可通过内部 `plugins/configure` RPC 动态替换多根发现器并扩展 HMR 监听；加载失败会恢复上一组根。插件版本与贡献 hash 随定义固定到运行记录。hash 包含贡献目录和插件根内静态 ESM 依赖闭包，共享 schema/prompt 修改也使版本变化。可信 pluginRoot 仅由 Extensions 内部传递；本地依赖越界和计算式动态 import 被拒绝。HMR 监听整个插件根，目录启停和内容更新只影响新运行。进程内已有运行继续使用固定版本；重启后原版本不存在则以 `revision_mismatch` 停止，不能使用新 helper 重放旧运行。Aura 不替插件执行安装、构建或生命周期脚本。
 
 ## API
 
@@ -297,7 +297,7 @@ Discovery 对旧根 `ctx.agent/action` 和原生 Promise 并发给出行号诊�
 
 ## 验证
 
-Veya capability 还转发 canonical `veya.world.mode/undo/redo`、`veya.draft.create/read/update/discard`、`veya.playtest.begin/end` 与 `veya.character.navigate/act/cancel`。新增 draft/playtest/character 操作仅接受原生 Agent 协议，不回退到旧 ContentAPI。失败时以 `ActionFailure` 保留有界领域错误码；不直接公开可能含本机路径的任意原生错误。该适配器不代表已具备图片附件、资产交接或付费任务的持久恢复能力。
+Veya capability 还转发 canonical `veya.world.mode/undo/redo`、`veya.draft.create/read/update/discard/compose`、`veya.playtest.begin/end/save_resume`、`veya.creation.module.write/read`、`veya.creation.export`、`veya.preview.performance` 与 `veya.character.navigate/act/cancel`。这些新工具仅接受原生 Agent 协议，不回退到旧 ContentAPI。性能采样等待保留同一请求，不把 `performance_not_ready` 误报成通过。失败时以 `ActionFailure` 保留有界领域错误码，不公开可能含本机路径的原生错误。图片附件、资产交接和付费恢复由前述宿主边界实现；数据测试并不证明真实 renderer、供应商生成或原生内容验收。
 
 执行 `pnpm --filter @aura/orchestration typecheck`、`pnpm --filter @aura/orchestration test`，再运行 `pnpm run check` 和 Web build。测试覆盖 FIFO、作用域、暂停、checkpoint、retry、未知结果、版本冲突和写盘故障；真实 DSH 测试使用临时目录及本地模拟模型，强制 SIGKILL 验证无工具 Agent 恢复、工具副作用隔离、历史读取和 HMR，不调用付费模型。
 

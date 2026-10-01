@@ -468,7 +468,7 @@ export class FlowEngine {
       for (const step of run.steps) {
         const refs =
           step.kind === "action" && step.sourceHash
-            ? [{ id: step.actionId, sourceHash: step.sourceHash }]
+            ? [{ id: step.actionId, sourceHash: step.sourceHash, plugin: step.plugin }]
             : step.kind === "agent" || step.kind === undefined
               ? (step.actions ?? [])
               : [];

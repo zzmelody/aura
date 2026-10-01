@@ -5,6 +5,7 @@ import { actionCapabilities } from "../src/actions.ts";
 import { AuraCapabilityRouter } from "../src/capability-router.ts";
 import { TripoGameAssetCapability } from "../src/tripo-game-asset.ts";
 import { TripoGameAssetError } from "@aura/tripo";
+import type { GeneratedArtifacts } from "../src/generated-artifacts.ts";
 
 test("Action host capabilities are limited to manifest grants", async () => {
   const calls: string[] = [];
@@ -37,6 +38,57 @@ test("Action host capabilities are limited to manifest grants", async () => {
     /was not declared by example\.plugin\/plain/u,
   );
   assert.deepEqual(calls, ["aura.veya.world-agent:worlds.list"]);
+});
+
+test("Action capability forwards its durable Run identity to the host", async () => {
+  const seen: unknown[] = [];
+  const host = new AuraCapabilityRouter([["aura.veya.world-agent", {
+    async invoke(_capability, _operation, _input, _signal, context) {
+      seen.push(context);
+      return { ok: true };
+    },
+  }]]);
+  const granted = actionCapabilities(
+    { id: "veya/world-list", capabilities: ["aura.veya.world-agent"] },
+    host, "creation-child-run",
+  );
+  await granted?.invoke("aura.veya.world-agent", "veya.world.list", {},
+    new AbortController().signal);
+  assert.deepEqual(seen, [{ runId: "creation-child-run" }]);
+});
+
+test("Paid Veya generation refuses a missing worker output directory", async () => {
+  let submitted = false;
+  const tripo = new TripoGameAssetCapability({
+    async generateGameAsset() { submitted = true; throw new Error("unexpected"); },
+  }, undefined, async () => { throw new Error("worker lost"); });
+  await assert.rejects(tripo.invoke("aura.tripo.game-asset", "generate", {
+    prompt: "a brass chest", outputDirectory: "F:\\foreground\\assets",
+    useVeyaOutputDirectory: true,
+  }, new AbortController().signal, { runId: "creation-child-run" }), ActionFailure);
+  assert.equal(submitted, false);
+});
+
+test("creator model results keep host paths private and still retain paid task metadata", async () => {
+  let calls = 0;
+  const tripo = new TripoGameAssetCapability({
+    async generateGameAsset(input) {
+      calls++; assert.equal(input.outputDirectory, "C:/worker/generated");
+      return { outputDirectory: "C:/private", modelPath: "C:/private/model.glb", previewPath: "C:/private/preview.png",
+        imagePaths: { front: "C:/private/front.png", left: "C:/private/left.png", back: "C:/private/back.png", right: "C:/private/right.png" },
+        manifestPath: "C:/private/manifest.json", taskIds: { front: "f", left: "l", back: "b", right: "r", model: "m" },
+        creditsConsumed: 5, imageModel: "chat_image_2.5_sunburst", modelVersion: "P1-20260311", faceLimit: 1000 };
+    },
+  }, { async registerModel() { throw new Error("C:/private/registration details"); } } as unknown as GeneratedArtifacts,
+  async () => "C:/worker/generated", undefined, false, async () => ({ projectRoot: "C:/project", creationId: "creation" }));
+  const signal = new AbortController().signal;
+  const input = { prompt: "brass bell", useVeyaOutputDirectory: true };
+  const result = await tripo.invoke("aura.tripo.game-asset", "generate", input, signal, { runId: "child" });
+  assert.equal(JSON.stringify(result).includes("private"), false);
+  assert.equal((result as { taskIds: { model: string } }).taskIds.model, "m");
+  assert.equal((result as { artifactRegistration: { code: string } }).artifactRegistration.code, "artifact_registration_failed");
+  await assert.rejects(tripo.invoke("aura.tripo.game-asset", "generate", { ...input, useVeyaOutputDirectory: false }, signal, { runId: "child" }), /managed worker output/u);
+  assert.equal(calls, 1);
 });
 
 test("Tripo game asset capability validates and routes one bounded operation", async () => {

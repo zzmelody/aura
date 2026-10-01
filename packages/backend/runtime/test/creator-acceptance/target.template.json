@@ -1,0 +1,7 @@
+{
+  "worldId": "REPLACE_OWNED_CHECKOUT_WORLD_ID",
+  "baseRevision": 1,
+  "baseHash": "REPLACE_LATEST_AUTHORED_CONTENT_SHA256",
+  "allowedEntityIds": ["REPLACE_EXPLICIT_ENTITY_ID"],
+  "allowSpawnChange": false
+}

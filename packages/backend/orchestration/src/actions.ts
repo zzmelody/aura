@@ -17,6 +17,7 @@ const internalPrefix = "aura_direct_";
 export function actionCapabilities(
   action: Pick<LoadedAction, "id" | "capabilities">,
   host: AuraCapabilityClient | undefined,
+  runId?: string,
 ): AuraCapabilityClient | undefined {
   if (!host) return undefined;
   const allowed = new Set(action.capabilities);
@@ -31,7 +32,7 @@ export function actionCapabilities(
         throw new Error(
           `Aura host capability was not declared by ${action.id}: ${capability}`,
         );
-      return host.invoke(capability, operation, input, signal);
+      return host.invoke(capability, operation, input, signal, { runId });
     },
   });
 }
@@ -102,12 +103,12 @@ export class ActionRuntime {
                 action.id === "video-project" || action.id === "video-compose"
                   ? this.videoProduction
                   : undefined,
-              aura: actionCapabilities(action, this.aura),
+              aura: actionCapabilities(action, this.aura, binding.runId),
               bindCall: artifactCallBinding(
                 this.artifacts,
                 binding,
                 this.localAI,
-                actionCapabilities(action, this.aura),
+                actionCapabilities(action, this.aura, binding.runId),
               ),
             }),
           ),
@@ -143,12 +144,12 @@ export class ActionRuntime {
           action.id === "video-project" || action.id === "video-compose"
             ? this.videoProduction
             : undefined,
-        aura: actionCapabilities(action, this.aura),
+        aura: actionCapabilities(action, this.aura, binding.runId),
         bindCall: artifactCallBinding(
           this.artifacts,
           binding,
           this.localAI,
-          actionCapabilities(action, this.aura),
+          actionCapabilities(action, this.aura, binding.runId),
         ),
       }),
     );

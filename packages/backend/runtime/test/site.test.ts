@@ -378,8 +378,11 @@ test("multiple projects run concurrently with separate status and ports", async 
   await until(() => opened.length === 2 || site.getStatus(first.id).state === "error" || site.getStatus(second.id).state === "error");
   const firstStatus = site.getStatus(first.id);
   const secondStatus = site.getStatus(second.id);
-  assert.equal(firstStatus.state, "running", JSON.stringify(firstStatus));
-  assert.equal(secondStatus.state, "running", JSON.stringify(secondStatus));
+  // Either project can end the wait; retain both outcomes rather than losing
+  // the triggering failure behind the other project's still-starting state.
+  const concurrentStatus = JSON.stringify({ first: firstStatus, second: secondStatus, opened });
+  assert.equal(firstStatus.state, "running", concurrentStatus);
+  assert.equal(secondStatus.state, "running", concurrentStatus);
   assert.notEqual(firstStatus.project!.url, secondStatus.project!.url);
   await site.stop(first.id);
   assert.equal(site.getStatus(first.id).state, "stopped");
