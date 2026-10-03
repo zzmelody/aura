@@ -195,7 +195,8 @@
   scrollbar-gutter: stable;
 }
 .session-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
   align-items: center;
   min-width: 0;
   border-radius: 7px;
@@ -208,8 +209,7 @@
 }
 .session-row .session-item {
   min-width: 0;
-  flex: 1;
-  width: auto;
+  width: 100%;
   min-height: 34px;
   margin: 0;
   padding: 6px 5px 6px 28px;
@@ -246,9 +246,6 @@
 }
 .session-execution-status.completed {
   color: var(--success);
-}
-.session-row .session-execution-status.completed {
-  opacity: 0.65;
 }
 .session-execution-status.failed {
   color: var(--danger);
@@ -607,38 +604,34 @@
   }
 }
 
-/*
- * Row tail: time, then one icon slot. At rest the slot shows the execution
- * status; on hover or focus the archive button takes its place. Actions that
- * used to sit behind "..." live in the row's right-click menu.
- */
+/* Hover swaps only the reserved tail; the title keeps the same width. */
 .session-row-tail {
+  display: grid;
+  align-items: center;
+  justify-items: end;
+  min-width: 0;
+  padding-right: 6px;
+}
+.session-row-tail > * {
+  grid-area: 1 / 1;
+}
+.session-row-meta {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  margin-right: 4px;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  transition: opacity 110ms ease;
 }
 .session-row-time {
   color: var(--muted);
   font-size: 10px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
   pointer-events: none;
-}
-.session-row-slot {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-}
-.session-row-slot > * {
-  grid-area: 1 / 1;
-}
-.session-row-slot .session-execution-status {
-  /* The status sits on top of the archive button; never let it eat clicks. */
-  pointer-events: none;
-  transition: opacity 110ms ease;
 }
 .session-archive {
   width: 24px;
@@ -647,40 +640,37 @@
   border-radius: 6px;
   opacity: 0;
   pointer-events: none;
-  /* Archiving removes the row, so the button reads as a soft warning. */
-  color: color-mix(in srgb, var(--danger) 78%, var(--muted));
-  transition: opacity 110ms ease;
+  color: var(--muted);
+  transition: opacity 110ms ease, color 110ms ease;
 }
 .session-row:is(:hover, :focus-within, .menu-open) .session-archive {
   opacity: 1;
   pointer-events: auto;
 }
-.session-row:is(:hover, :focus-within, .menu-open) .session-row-slot .session-execution-status {
+.session-row:is(:hover, :focus-within, .menu-open) .session-row-meta {
   opacity: 0;
+  pointer-events: none;
 }
 .session-row.menu-open {
   background: var(--elevated);
 }
 .session-archive:hover,
 .session-archive:focus-visible {
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--danger);
-}
-/* On hover the time steps aside too; only the archive action remains. */
-.session-row-time {
-  transition: opacity 110ms ease;
-}
-.session-row:is(:hover, :focus-within, .menu-open) .session-row-time {
-  opacity: 0;
+  background: transparent;
+  color: var(--text);
 }
 @media (hover: none) {
   /* Touch has no hover: keep status visible, archive via long-press menu. */
   .session-archive {
     display: none;
   }
+  .session-row:is(:hover, :focus-within, .menu-open) .session-row-meta {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .session-row-slot .session-execution-status,
+  .session-row-meta,
   .session-archive {
     transition: none;
   }

@@ -277,7 +277,7 @@ export function WorkspaceSidebar({
                           className={`session-item${selected ? " selected" : ""}`}
                           aria-current={selected ? "true" : undefined}
                           aria-label={`打开会话：${label}`}
-                          title={`${label}\n${new Date(session.updatedAt).toLocaleString("zh-CN")} · ${status.label}${session.archivedAt ? " · 已归档" : ""}`}
+                          aria-description={`${new Date(session.updatedAt).toLocaleString("zh-CN")} · ${status.label}${session.archivedAt ? " · 已归档" : ""}`}
                           onClick={() => open(session.id)}
                         >
                           {session.workflow ? (
@@ -289,30 +289,32 @@ export function WorkspaceSidebar({
                           ) : null}
                           <span className="session-name">{label}</span>
                         </button>
-                        {/* Resting: time then status. Hover: archive takes the status slot. */}
+                        {/* Metadata and archive share a reserved column, never the title. */}
                         <div className="session-row-tail">
-                          <time
-                            className="session-row-time"
-                            dateTime={new Date(session.updatedAt).toISOString()}
-                          >
-                            {sidebarSessionTime(session.updatedAt, now)}
-                          </time>
-                          <span className="session-row-slot">
-                            <SessionStatus status={status} />
-                            <button
-                              type="button"
-                              className="icon-control session-archive"
-                              aria-label={`${session.archivedAt ? "取消归档" : "归档"}：${label}`}
-                              title={session.archivedAt ? "取消归档" : "归档"}
-                              onClick={() => archiveWithUndo(session, label)}
+                          <span className="session-row-meta">
+                            <time
+                              className="session-row-time"
+                              dateTime={new Date(session.updatedAt).toISOString()}
                             >
-                              {session.archivedAt ? (
-                                <ArchiveRestore size={14} />
-                              ) : (
-                                <Archive size={14} />
-                              )}
-                            </button>
+                              {sidebarSessionTime(session.updatedAt, now)}
+                            </time>
+                            {status.kind !== "completed" && status.kind !== "idle" ? (
+                              <SessionStatus status={status} />
+                            ) : null}
                           </span>
+                          <button
+                            type="button"
+                            className="icon-control session-archive"
+                            aria-label={`${session.archivedAt ? "取消归档" : "归档"}：${label}`}
+                            title={session.archivedAt ? "取消归档" : "归档"}
+                            onClick={() => archiveWithUndo(session, label)}
+                          >
+                            {session.archivedAt ? (
+                              <ArchiveRestore size={14} />
+                            ) : (
+                              <Archive size={14} />
+                            )}
+                          </button>
                         </div>
                       </div>
                     );
