@@ -21,6 +21,30 @@ import {
   FlowError,
 } from "../src/schema.ts";
 
+test("Codex defaults to GPT-6.1 Sol xhigh and retains explicit overrides", () => {
+  const previous = process.env.AURA_CODEX_MODEL;
+  try {
+    delete process.env.AURA_CODEX_MODEL;
+    const defaults = agentDefaults("codex");
+    assert.equal(defaults.model, "gpt-6.1-sol");
+    assert.equal(defaults.reasoningEffort, "xhigh");
+    assert.equal(agentDefaults("demo").reasoningEffort, "off");
+    process.env.AURA_CODEX_MODEL = "gpt-5.6-terra";
+    assert.equal(agentDefaults("codex").model, "gpt-5.6-terra");
+    assert.equal(
+      agentDefaults("codex", { reasoningEffort: "high" }).reasoningEffort,
+      "high",
+    );
+    assert.equal(
+      agentConfig(defaults, { reasoningEffort: "medium" }).reasoningEffort,
+      "medium",
+    );
+  } finally {
+    if (previous === undefined) delete process.env.AURA_CODEX_MODEL;
+    else process.env.AURA_CODEX_MODEL = previous;
+  }
+});
+
 test("Agent options validate bounds and inherit step > Flow > runtime defaults", () => {
   const defaults = agentDefaults(
     "demo",

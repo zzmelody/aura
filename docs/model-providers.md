@@ -6,6 +6,12 @@ DSH SDK 的 `session.event` 现在以 `assistant/message` 提供完整助手消�
 
 ## Codex 订阅
 
+### 会话内切换
+
+聊天输入区提供「模型」与「思考」选择器。`GET /chat/models?mode=codex|demo` 从实际执行聊天的 DSH 宿主读取可用模型及各自档位，不依赖前端硬编码列表。选择按会话、模式分别保存在原有工作区记录中，新会话默认继承运行时设置；生成中禁用切换，后续消息使用新选择。切换模型时保留兼容的显式档位，不兼容则改为新模型默认；已有配置失效时显示错误，不静默换模型。
+
+`POST /chat` 和 `POST /chat/codex` 接受可选的 `modelConfig: { model?, reasoningEffort? }`，不接受 provider、endpoint 或凭据。后端通过 DSH 精确能力校验后，在新建聊天 Agent 的会话事件中记录选择，仍由 DSH Session Controller 接收 prompt、取消和持久化。聊天不调用会写入全局默认值的 `selectModel()`；结束后释放自己持有的 DSH Agent handle。选择不会传给手动或工具启动的 Flow，`defineFlow.agentDefaults`、步骤覆盖和持久化运行配置完全独立。
+
 当前实现保留 DSH 作为执行层。ChatGPT 订阅登录不是一个通用 API Key；Aura 使用 DSH `dsh-llm-pi-ai` 已提供的 `openai-codex` OAuth flow：
 
 ```yaml
@@ -13,7 +19,7 @@ DSH SDK 的 `session.event` 现在以 `assistant/message` 提供完整助手消�
   config:
     providers:
       openai-codex:
-        reasoning: medium
+        reasoning: xhigh
         transport: sse
         cacheRetention: short
 ```
@@ -22,7 +28,9 @@ DSH SDK 的 `session.event` 现在以 `assistant/message` 提供完整助手消�
 
 Aura 后端优先采用进程已有的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 与 `NO_PROXY`。Windows 上没有显式代理环境时，runtime 会读取当前用户启用的手动系统代理，使浏览器登录后的令牌交换和 DSH 模型请求走同一路径；Flow DSH 子进程在首次模型调用前单独安装代理 dispatcher，以兼容 Electron 内嵌 Node 的网络环境。`localhost`、`127.0.0.1` 与 `::1` 始终绕过代理。代理配置只用于后端网络调度及子进程环境，不进入客户端响应或日志。
 
-对话使用 provider `openai-codex` 和默认模型 `gpt-5.6-terra`。模型、凭据或配额错误由 DSH 路径返回，不能静默切到本地演示。Flow 中若 DSH 的 OAuth 续期失败，运行会显示检查网络或代理、重新登录 Codex 的指引；已失败的运行需新建运行。原始令牌服务响应可能含非文本字节，不会复制到 Flow 记录或前端。OpenAI 官方将 ChatGPT 登录和 API Key 登录区分为不同方式；API Key 使用单独的按量计费。参见 [OpenAI Codex 认证说明](https://learn.chatgpt.com/zh-Hans/docs/auth?surface=app)。
+对话使用 provider `openai-codex` 和默认模型 `gpt-6.1-sol`，默认思考强度为 `xhigh`（Extra high）。模型、凭据或配额错误由 DSH 路径返回，不能静默切到本地演示。Flow 中若 DSH 的 OAuth 续期失败，运行会显示检查网络或代理、重新登录 Codex 的指引；已失败的运行需新建运行。原始令牌服务响应可能含非文本字节，不会复制到 Flow 记录或前端。OpenAI 官方将 ChatGPT 登录和 API Key 登录区分为不同方式；API Key 使用单独的按量计费。参见 [OpenAI Codex 认证说明](https://learn.chatgpt.com/zh-Hans/docs/auth?surface=app)。
+
+当前锁定目录尚未包含 GPT-6.1 Sol。`@aura/dsh-auth` 的 `codexProviderProfile()` 通过公开的 DSH `listModels()` 保留原目录，并用官方 `models` 配置补充该型号；授权组合与编排 profile 复用同一配置，不修改依赖源码。文本/图片输入、1,050,000 上下文和 `low/medium/high/xhigh/max` 档位依据 [OpenAI 模型文档](https://developers.openai.com/api/docs/models/gpt-6.1-sol)。128,000 输出容量仅作目录元数据，不新增请求硬上限。未来 DSH 原生收录该型号时自动使用其原生元数据。配置可在本地验证，但账号实际可用性仍由上游决定。
 
 当前自动测试证明 DSH 注册了该 OAuth flow、脱敏状态可读取、手动回调可以提交、失败原因不会被后续轮询覆盖，完整 DSH profile 也能运行两轮流式演示；没有代替用户完成 OAuth，也没有消耗订阅额度。因此第一次真实请求需要你点击登录并完成账号页面后验收。
 

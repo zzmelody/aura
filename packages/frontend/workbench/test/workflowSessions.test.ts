@@ -4,6 +4,7 @@ import { initialState } from "@aura/core";
 import type { FlowRun, FlowRunSummary } from "@aura/protocol/types";
 import {
   applyWorkflowRun,
+  chatHistory,
   mergeWorkflowRuns,
   workflowRunKey,
   isWorkflowActive,
@@ -58,6 +59,18 @@ test("server history becomes workflow conversations and polling preserves identi
   );
   assert.equal(completed.sessions.length, 1);
   assert.equal(completed.sessions[0].messages[1].status, "complete");
+});
+
+test("archived running conversations still receive status updates without reimport or lost metadata", () => {
+  const state = mergeWorkflowRuns(initialState(), [summary], endpoint);
+  state.sessions[0].archivedAt = 200;
+  state.sessions[0].title = "Renamed task";
+  const completed = mergeWorkflowRuns(state, [{ ...summary, status: "completed" }], endpoint);
+  assert.equal(completed.sessions.length, 1);
+  assert.equal(completed.sessions[0].archivedAt, 200);
+  assert.equal(completed.sessions[0].title, "Renamed task");
+  assert.equal(completed.sessions[0].messages[1].workflowPhase, "completed");
+  assert.equal(completed.hiddenWorkflowRuns, undefined);
 });
 
 test("multiple runs stay in their originating conversation and endpoints do not collide", () => {
@@ -126,5 +139,88 @@ test("full output updates only its run and survives later summary polls", () => 
   assert.equal(
     applyWorkflowRun(updated, "https://other.example", run),
     updated,
+  );
+});
+
+test("runs started from an ordinary chat stay inside that chat", () => {
+  const ref = { id: "research", title: "Research", endpoint };
+  const state = {
+    ...initialState(),
+    sessions: [
+      {
+        id: "chat",
+        title: "plain",
+        updatedAt: 1,
+        messages: [
+          { id: "q", role: "user" as const, text: "hi", status: "complete" as const },
+          {
+            id: "run-1:output",
+            role: "assistant" as const,
+            text: "正在运行",
+            status: "streaming" as const,
+            workflowRunId: "run-1",
+            workflowPhase: "queued" as const,
+            workflow: ref,
+          },
+        ],
+      },
+    ],
+  };
+  const merged = mergeWorkflowRuns(state, [summary], endpoint);
+  assert.equal(merged.sessions.length, 1);
+  assert.equal(merged.sessions[0].workflow, undefined);
+  assert.equal(merged.sessions[0].messages[1].workflowPhase, "running");
+  const other = mergeWorkflowRuns(state, [summary], "http://127.0.0.1:9999");
+  assert.equal(other.sessions.length, 2);
+  const run = {
+    id: "run-1",
+    flowId: "research",
+    title: "Research",
+    status: "completed",
+    mode: "demo",
+    createdAt: 100,
+    input: { task: "A task" },
+    output: { report: "done" },
+    steps: [],
+  } as unknown as FlowRun;
+  const applied = applyWorkflowRun(merged, endpoint, run);
+  assert.equal(applied.sessions[0].messages[1].text, "done");
+  assert.equal(applied.sessions[0].messages[1].status, "complete");
+  assert.equal(applied.sessions[0].messages[0].text, "hi");
+});
+
+test("chat context summarizes settled runs and drops run inputs", () => {
+  const ref = { id: "research", title: "Research", endpoint };
+  const history = chatHistory([
+    { id: "q", role: "user", text: "hi", status: "complete" },
+    { id: "run-1:input", role: "user", text: "{\"task\":\"x\"}", status: "complete" },
+    {
+      id: "run-1:output",
+      role: "assistant",
+      text: "report body",
+      status: "complete",
+      workflowRunId: "run-1",
+      workflowPhase: "completed",
+      workflow: ref,
+    },
+    { id: "run-2:input", role: "user", text: "y", status: "complete" },
+    {
+      id: "run-2:output",
+      role: "assistant",
+      text: "正在运行",
+      status: "streaming",
+      workflowRunId: "run-2",
+      workflowPhase: "running",
+      workflow: ref,
+    },
+    { id: "f", role: "user", text: "结果怎么样？", status: "complete" },
+  ]);
+  assert.deepEqual(
+    history.map((m) => [m.role, m.text]),
+    [
+      ["user", "hi"],
+      ["assistant", "[Research · 已完成]\nreport body"],
+      ["user", "结果怎么样？"],
+    ],
   );
 });

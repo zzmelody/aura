@@ -1,12 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { initialState, restoreState, STORAGE_KEY } from "@aura/core";
-import { reply } from "./transport";
-import type { Message, Workspace } from "@aura/core/types";
-import type { FlowCatalogEntry } from "@aura/protocol/types";
+import { reply, type ReplyChunk } from "./transport";
+import type {
+  ChatImage,
+  Message,
+  Session,
+  Workspace,
+} from "@aura/core/types";
+import type {
+  FlowCatalogEntry,
+  ChatModelSelection,
+  FlowMode,
+  JsonValue,
+} from "@aura/protocol/types";
 import { useWorkflowSessions } from "./useWorkflowSessions";
 import {
+  chatHistory,
   isWorkflowActive,
   isWorkflowOpen,
+  messageEndpoint,
   workflowRunKey,
 } from "./workflowSessions";
 
@@ -20,6 +32,8 @@ export function useWorkspace() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [runningIds, setRunningIds] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [newChatConfig, setNewChatConfig] = useState<NonNullable<Session["modelConfig"]>>({});
+  const newChatConfigRef = useRef(newChatConfig);
   const controllers = useRef(new Map<string, AbortController>());
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
@@ -29,9 +43,9 @@ export function useWorkspace() {
   const workflowRunning = state.sessions
     .filter(
       (session) =>
-        session.workflow &&
-        session.messages.some((message) =>
-          isWorkflowActive(message.workflowPhase),
+        session.messages.some(
+          (message) =>
+            message.workflowRunId && isWorkflowActive(message.workflowPhase),
         ),
     )
     .map((session) => session.id);
@@ -84,8 +98,66 @@ export function useWorkspace() {
       ),
     }));
   }
-  async function send(text: string, retryLast = false, context?: string) {
-    if (!text.trim() || text.length > 4000) return;
+  /**
+   * Places a tool-started run before the streaming reply. A summary poll may
+   * already have imported the run as its own workflow session; fold it back.
+   */
+  function attachChatRun(
+    sessionId: string,
+    beforeId: string,
+    run: Extract<ReplyChunk, { type: "workflow" }>,
+  ) {
+    const endpoint = workflows.endpoint;
+    const imported = `workflow:${workflowRunKey(endpoint, run.runId)}`;
+    setState((s) => ({
+      ...s,
+      sessions: s.sessions
+        .filter((session) => session.id !== imported)
+        .map((session) => {
+          if (
+            session.id !== sessionId ||
+            session.messages.some(
+              (message) => message.workflowRunId === run.runId,
+            )
+          )
+            return session;
+          const at = session.messages.findIndex((m) => m.id === beforeId);
+          const records: Message[] = [
+            {
+              id: `${run.runId}:input`,
+              role: "user",
+              text: run.inputPreview,
+              status: "complete",
+            },
+            {
+              id: `${run.runId}:output`,
+              role: "assistant",
+              text: "正在运行",
+              status: "streaming",
+              workflowRunId: run.runId,
+              workflowPhase: "queued",
+              workflow: { id: run.flowId, title: run.title, endpoint },
+            },
+          ];
+          const messages =
+            at < 0
+              ? [...session.messages, ...records]
+              : [
+                  ...session.messages.slice(0, at),
+                  ...records,
+                  ...session.messages.slice(at),
+                ];
+          return { ...session, messages: messages.slice(-200) };
+        }),
+    }));
+  }
+  async function send(
+    text: string,
+    retryLast = false,
+    context?: string,
+    images: ChatImage[] = [],
+  ) {
+    if ((!text.trim() && !images.length) || text.length > 4000) return;
     const current = stateRef.current;
     if (
       current.sessions.find((session) => session.id === activeIdRef.current)
@@ -100,6 +172,7 @@ export function useWorkspace() {
       role: "user",
       text: text.trim(),
       status: "complete",
+      ...(images.length ? { images: images.slice(0, 4) } : {}),
     };
     const assistant: Message = {
       id: id(),
@@ -107,18 +180,20 @@ export function useWorkspace() {
       text: "",
       status: "streaming",
     };
-    const stored =
-      current.sessions.find((s) => s.id === sessionId)?.messages ?? [];
+    const previous = current.sessions.find((s) => s.id === sessionId);
+    const modelConfig = previous ? previous.modelConfig : newChatConfigRef.current;
+    const stored = previous?.messages ?? [];
     const history = retryLast
       ? stored.slice(0, -1).slice(-199)
       : [...stored.slice(-198), user];
     const next = {
+      ...previous,
       id: sessionId,
       title:
-        current.sessions.find((s) => s.id === sessionId)?.title ??
-        text.trim().slice(0, 28),
+        previous?.title ?? (text.trim() || "图片对话").slice(0, 28),
       updatedAt: Date.now(),
       messages: [...history, assistant],
+      ...(modelConfig ? { modelConfig } : {}),
     };
     setState((s) => ({
       ...s,
@@ -147,13 +222,18 @@ export function useWorkspace() {
                 },
               ]
             : []),
-          ...history.filter((m) => m.status !== "error"),
+          ...chatHistory(history.filter((m) => m.status !== "error")),
         ],
         current.provider,
         current.endpoint,
         sessionId,
         abort.signal,
+        modelConfig?.[current.provider === "codex" ? "codex" : "demo"],
       )) {
+        if (typeof chunk !== "string") {
+          attachChatRun(sessionId, assistant.id, chunk);
+          continue;
+        }
         accumulated += chunk;
         updateMessage(sessionId, assistant.id, { text: accumulated });
       }
@@ -181,16 +261,56 @@ export function useWorkspace() {
     ready,
     saveError,
     active,
+    chatModelConfig: active ? (active.modelConfig ?? {}) : newChatConfig,
+    setChatModelConfig: (mode: FlowMode, selection: ChatModelSelection) => {
+      const sessionId = activeIdRef.current;
+      if (!sessionId) {
+        const next = { ...newChatConfigRef.current, [mode]: selection };
+        newChatConfigRef.current = next;
+        setNewChatConfig(next);
+        return;
+      }
+      if (controllers.current.has(sessionId)) return;
+      setState((current) => ({
+        ...current,
+        sessions: current.sessions.map((session) =>
+          session.id === sessionId && !session.workflow
+            ? { ...session, modelConfig: { ...session.modelConfig, [mode]: selection } }
+            : session,
+        ),
+      }));
+    },
     busy:
       (activeId !== null && allRunningIds.includes(activeId)) ||
       Boolean(
-        active?.workflow &&
-        active.messages.some((message) =>
-          isWorkflowOpen(message.workflowPhase),
+        active?.messages.some(
+          (message) =>
+            message.workflowRunId && isWorkflowOpen(message.workflowPhase),
         ),
       ),
     runningIds: allRunningIds,
     workflows,
+    /** Runs a Flow inside the active ordinary chat, creating one if needed. */
+    startChatWorkflow: async (
+      flow: FlowCatalogEntry,
+      input: JsonValue,
+      mode: FlowMode,
+    ) => {
+      const current = stateRef.current.sessions.find(
+        (session) => session.id === activeIdRef.current,
+      );
+      if (current?.workflow) return;
+      const seed: Session = current ?? {
+        id: id(),
+        title: flow.title,
+        updatedAt: Date.now(),
+        messages: [],
+        modelConfig: newChatConfigRef.current,
+      };
+      activeIdRef.current = seed.id;
+      setActiveId(seed.id);
+      return workflows.start(seed.id, input, mode, flow, seed);
+    },
     newWorkflowChat: (flow: FlowCatalogEntry, endpoint: string) => {
       const sessionId = id();
       const session = {
@@ -211,6 +331,7 @@ export function useWorkspace() {
       }));
       activeIdRef.current = sessionId;
       setActiveId(sessionId);
+      return sessionId;
     },
     draft: drafts[activeId ?? "new"] ?? "",
     setDraft: (value: string) => {
@@ -224,12 +345,19 @@ export function useWorkspace() {
         messages.at(-1)?.status === "error" &&
         messages.at(-2)?.role === "user"
       )
-        void send(messages.at(-2)!.text, true, context);
+        void send(
+          messages.at(-2)!.text,
+          true,
+          context,
+          messages.at(-2)!.images,
+        );
     },
     stop: () => {
       if (activeId) controllers.current.get(activeId)?.abort();
     },
     newChat: () => {
+      newChatConfigRef.current = {};
+      setNewChatConfig({});
       activeIdRef.current = null;
       setActiveId(null);
     },
@@ -237,11 +365,39 @@ export function useWorkspace() {
       activeIdRef.current = value;
       setActiveId(value);
     },
+    renameChat: (sessionId: string, title: string) => {
+      const name = title.trim().replace(/\s+/gu, " ").slice(0, 100);
+      if (!name) return;
+      setState((current) => ({
+        ...current,
+        sessions: current.sessions.map((session) =>
+          session.id === sessionId ? { ...session, title: name } : session,
+        ),
+      }));
+    },
+    archiveChat: (sessionId: string, archived = true) => {
+      setState((current) => ({
+        ...current,
+        sessions: current.sessions.map((session) => {
+          if (session.id !== sessionId) return session;
+          if (archived) return { ...session, archivedAt: Date.now() };
+          const { archivedAt: _archivedAt, ...rest } = session;
+          return rest;
+        }),
+      }));
+    },
+    stopSession: (sessionId: string) => {
+      controllers.current.get(sessionId)?.abort();
+      void workflows.cancel(sessionId);
+    },
     removeChat: (value: string) => {
-      if (!allRunningIds.includes(value)) {
+      const removing = stateRef.current.sessions.find(session => session.id === value);
+      if (!allRunningIds.includes(value) && !workflows.hasOpenRun(value) && !removing?.workflow?.pending && !removing?.pendingWorkflow) {
         if (value === activeId) {
           activeIdRef.current = null;
           setActiveId(null);
+          newChatConfigRef.current = {};
+          setNewChatConfig({});
         }
         setDrafts((current) => {
           const next = { ...current };
@@ -253,16 +409,14 @@ export function useWorkspace() {
           hiddenWorkflowRuns: [
             ...(s.hiddenWorkflowRuns ?? []),
             ...s.sessions
-              .filter((session) => session.id === value && session.workflow)
+              .filter((session) => session.id === value)
               .flatMap((session) =>
-                session.messages
-                  .filter((message) => message.workflowRunId)
-                  .map((message) =>
-                    workflowRunKey(
-                      session.workflow!.endpoint,
-                      message.workflowRunId!,
-                    ),
-                  ),
+                session.messages.flatMap((message) => {
+                  const source = messageEndpoint(session, message);
+                  return message.workflowRunId && source
+                    ? [workflowRunKey(source, message.workflowRunId)]
+                    : [];
+                }),
               ),
           ].slice(-500),
           sessions: s.sessions.filter((item) => item.id !== value),

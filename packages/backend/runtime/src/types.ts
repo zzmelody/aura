@@ -1,6 +1,8 @@
 import type {
   ChatEvent,
   ChatMessage,
+  ChatModelCatalog,
+  ChatModelSelection,
   CodexAuthStatus,
   CodexLoginRequest,
   AuraPluginSettingsState,
@@ -31,30 +33,11 @@ export interface RuntimeConfig {
   port: number;
   dshHome: string;
   credentialPath: string;
-  dshExecutable: string;
   codexModel: string;
   tripoCredentialPath: string;
   tripoRegion: TripoRegion;
   pluginConfigPath: string;
   worldAgentSessionPath: string;
-}
-
-export type RuntimeMode = "demo" | "codex-subscription";
-
-/** One DSH provider route selected by the HTTP API. */
-export interface DshRoute {
-  provider: string;
-  model: string;
-  reasoningEffort: string;
-  maxTokens: number;
-  mode: RuntimeMode;
-}
-
-export interface DshRunnerOptions {
-  root: string;
-  dshHome: string;
-  dshExecutable: string;
-  demoModelUrl: string;
 }
 
 /** Authorization capability consumed by the HTTP adapter. */
@@ -66,14 +49,21 @@ export interface CodexAuthPort {
   cancelLogin(): Promise<CodexAuthStatus>;
 }
 
-/** DSH streaming capability consumed by the HTTP adapter. */
-export interface DshSessionPort {
-  stream(
-    messages: ChatMessage[],
+/** Chat target selected by the HTTP API route. */
+export interface ChatRoute {
+  /** Flow mode of the chat model and of any workflow it starts. */
+  mode: "demo" | "codex";
+  model?: string;
+}
+
+/** Streams one chat turn; workflow tool starts arrive as `workflow` events. */
+export interface ChatPort {
+  chatModels(mode: ChatRoute["mode"], signal: AbortSignal): Promise<ChatModelCatalog>;
+  chat(
+    turn: { messages: ChatMessage[]; mode: ChatRoute["mode"] } & ChatModelSelection,
     emit: (event: ChatEvent) => void,
-    route: DshRoute,
     signal: AbortSignal,
-  ): Promise<void>;
+  ): Promise<{ model: string }>;
 }
 
 /** Fixed-path plugin configuration exposed only by a loopback runtime. */

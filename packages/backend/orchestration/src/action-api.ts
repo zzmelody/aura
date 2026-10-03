@@ -89,6 +89,8 @@ export interface ActionContext {
   readonly contentProduction?: import("./content-library.ts").ContentLibrary;
   readonly topicLibrary?: import("./topic-library.ts").TopicLibrary;
   readonly contentAnalytics?: import("./content-analytics.ts").ContentAnalyticsLibrary;
+  /** GPT Image 2.5 via the host's Tripo account; `available` is false when unconfigured. */
+  readonly gptImage?: import("./gpt-image.ts").GptImageClient;
 }
 
 export type ActionBinding = Omit<
@@ -98,7 +100,7 @@ export type ActionBinding = Omit<
   /** Host-only call-scoped adapters; never exposed to model/tool parameters. */
   bindCall?: (
     callId: string,
-  ) => Pick<ActionContext, "localAI" | "aura" | "artifacts">;
+  ) => Pick<ActionContext, "localAI" | "aura" | "artifacts" | "gptImage">;
 };
 
 export type ActionDefinition<

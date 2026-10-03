@@ -10,6 +10,7 @@ declare global {
       openExternal?(url: string): Promise<void>;
       site?: SiteHostApi;
       workflowFiles?: WorkflowFileHostApi;
+      chrome?: { setTheme(dark: boolean): Promise<void> };
     };
   }
 }

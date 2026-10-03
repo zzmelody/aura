@@ -39,6 +39,31 @@ export function hasWorkflowContent(value: JsonValue | undefined): boolean {
   return true;
 }
 
+/**
+ * True when a value carries nothing beyond local file locations and plain
+ * numbers, so a ready media artifact can stand in for it.
+ */
+export function onlyFileReferences(
+  value: JsonValue | undefined,
+  key?: string,
+): boolean {
+  if (value === undefined || value === null) return true;
+  // Generator metadata describes the file rather than adding new content.
+  if (key && /^(engine|model|service|seed|taskId|width|height|durationSeconds)$/u.test(key))
+    return typeof value !== "object";
+  if (typeof value === "string")
+    return (
+      /^(?:[a-zA-Z]:[\\/]|\/)[^\n]*\.[a-zA-Z0-9]{2,5}$/u.test(value.trim()) ||
+      // Content IDs of generated assets are references too.
+      /^[a-f0-9]{64}$/u.test(value)
+    );
+  if (typeof value === "number" || typeof value === "boolean") return true;
+  if (Array.isArray(value)) return value.every((item) => onlyFileReferences(item));
+  return Object.entries(value).every(([field, item]) =>
+    onlyFileReferences(item, field),
+  );
+}
+
 export function workflowProgress(run: FlowRun | undefined) {
   const steps = run?.steps ?? [];
   return {

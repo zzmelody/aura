@@ -97,3 +97,31 @@ test("progress keeps concurrent active steps and does not count failures as comp
   assert.equal(workflowDuration(0, 65000), "1 分 5 秒");
   assert.equal(workflowDuration(0, 3660000), "1 小时 1 分");
 });
+
+test("outputs made only of local file paths can fold behind their media", async () => {
+  const { onlyFileReferences } = await import("../src/workflowPresentation.ts");
+  assert.equal(
+    onlyFileReferences({ audioPath: String.raw`F:\aura\.aura\job\speech.wav` }),
+    true,
+  );
+  assert.equal(onlyFileReferences({ videoPath: "/tmp/out/final.mp4", durationSeconds: 4 }), true);
+  assert.equal(onlyFileReferences({ files: ["C:/a/b.png", "C:/a/c.png"] }), true);
+  assert.equal(onlyFileReferences({ audioPath: "F:/x/a.wav", note: "旁白偏快" }), false);
+  assert.equal(onlyFileReferences({ report: "完成" }), false);
+  assert.equal(
+    onlyFileReferences({ imagePath: "C:/a/out.png", imageAssetId: "a".repeat(64), seed: 7 }),
+    true,
+  );
+  assert.equal(
+    onlyFileReferences({
+      imagePath: "C:/a/out.png",
+      engine: "gpt",
+      model: "chat_image_2.5_flare",
+    }),
+    true,
+  );
+  assert.equal(
+    onlyFileReferences({ imagePath: "C:/a/out.png", note: "已改用本机模型" }),
+    false,
+  );
+});

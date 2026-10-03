@@ -1,0 +1,390 @@
+/*
+ * Conversation and output stream. One reading column, quiet chrome, the
+ * composer as a single floating card. Scoped under .chat-screen so these
+ * rules win over the older shared styles without !important.
+ */
+.chat-screen {
+  --chat-column: 760px;
+}
+.standalone .chat-screen {
+  max-width: none;
+}
+
+/* Header: session title only, centred on the reading column. */
+.chat-screen .chat-title {
+  width: 100%;
+  max-width: calc(var(--chat-column) + 48px);
+  margin: 0 auto;
+  min-height: 48px;
+  padding: 10px 24px 6px;
+}
+.chat-screen .chat-title > strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.chat-screen .chat-title .badge {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Transcript: full-width scroll, centred content, room above the composer. */
+.chat-screen .chat-transcript {
+  padding: 8px 24px 32px;
+  scroll-padding-bottom: 24px;
+}
+.chat-screen .chat-transcript > * {
+  max-width: var(--chat-column);
+  margin-left: auto;
+  margin-right: auto;
+}
+.chat-screen .chat-message {
+  margin-bottom: 28px;
+}
+
+/* User turns: right-aligned, compact bubble, readable size. */
+.chat-screen .from-user {
+  flex-direction: column;
+  align-items: flex-end;
+}
+.chat-screen .from-user .message-body {
+  max-width: min(600px, 82%);
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 18px 18px 6px 18px;
+  background: var(--user);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.chat-screen .from-user .message-images {
+  max-width: min(600px, 82%);
+  margin: 0 0 6px;
+}
+.chat-screen .from-user .message-images img {
+  height: 140px;
+  max-width: 220px;
+  border-radius: 14px;
+}
+.chat-screen .from-user .message-images a {
+  border-radius: 14px;
+}
+
+/* Assistant turns: no bubble, document-like text on the page. */
+.chat-screen .from-assistant .message-author {
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--secondary);
+  font-size: 12px;
+}
+.chat-screen .from-assistant .message-author strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.chat-screen .from-assistant .generating-label {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--accent);
+  font-size: 11px;
+}
+.chat-screen .from-assistant .message-body {
+  padding-left: 28px;
+  font-size: 14px;
+  line-height: 1.75;
+  white-space: normal;
+}
+.chat-screen .from-assistant .message-body.error {
+  padding: 10px 14px;
+  margin-left: 28px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+  white-space: pre-wrap;
+}
+.chat-screen .message-body .workflow-rich-text {
+  font-size: 14px;
+  line-height: 1.75;
+}
+.chat-screen .message-body .workflow-rich-text p {
+  margin: 0 0 12px;
+}
+.chat-screen .message-body .workflow-rich-text :is(ul, ol) {
+  margin: 0 0 12px;
+  padding-left: 22px;
+}
+.chat-screen .message-body .workflow-rich-text li + li {
+  margin-top: 4px;
+}
+.chat-screen .message-body .workflow-rich-text code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--elevated);
+  font-size: 12.5px;
+}
+.chat-screen .message-body .workflow-rich-text pre {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: auto;
+}
+.chat-screen .message-body .workflow-rich-text pre code {
+  padding: 0;
+  background: none;
+}
+.chat-screen .from-assistant .thinking {
+  color: var(--muted);
+  font-size: 13px;
+}
+.chat-screen .from-assistant .message-actions {
+  gap: 2px;
+  margin: 6px 0 0 24px;
+  opacity: 0;
+  transition: opacity 110ms ease;
+}
+.chat-screen .from-assistant:hover .message-actions,
+.chat-screen .from-assistant:focus-within .message-actions,
+.chat-screen .from-assistant:last-child .message-actions,
+.chat-screen .message-body.error ~ .message-actions {
+  opacity: 1;
+}
+.chat-screen .message-actions .icon-control {
+  width: 28px;
+  height: 28px;
+}
+
+/* Workflow runs in the stream align with assistant text. */
+.chat-screen .chat-transcript .workflow-turn {
+  margin-bottom: 28px;
+}
+.chat-screen .chat-transcript .workflow-message-user {
+  margin-bottom: 12px;
+}
+.chat-screen .chat-transcript .workflow-user-bubble {
+  border: 0;
+  border-radius: 18px 18px 6px 18px;
+  background: var(--user);
+  font-size: 13px;
+}
+.chat-screen .chat-transcript .workflow-message-assistant {
+  border-radius: 16px;
+  padding: 14px 16px 12px;
+}
+
+/*
+ * Composer, after Codex: one rounded card. The textarea fills the top;
+ * the bottom row holds "+", the mode, a spacer, the model picker and send.
+ */
+.chat-screen .chat-composer-area {
+  position: relative;
+  width: 100%;
+  max-width: calc(var(--chat-column) + 48px);
+  margin: 0 auto;
+  padding: 0 24px 16px;
+}
+.chat-screen .chat-composer {
+  padding: 12px 10px 8px 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 24px;
+  background: var(--elevated);
+  box-shadow: none;
+  transition: border-color 110ms ease;
+}
+.chat-screen .chat-composer:focus-within {
+  border-color: var(--border);
+  box-shadow: none;
+}
+.chat-screen .chat-composer textarea {
+  min-height: 40px;
+  max-height: 220px;
+  padding: 2px 2px 10px;
+  resize: none;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.chat-screen .chat-composer textarea::placeholder {
+  color: var(--muted);
+}
+.chat-screen .composer-tools {
+  gap: 2px;
+  margin-left: -6px;
+}
+.chat-screen .composer-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+.chat-screen .composer-count {
+  margin-left: 0;
+}
+.chat-screen .composer-flow-button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+}
+.chat-screen .composer-flow-button:hover:not(:disabled),
+.chat-screen .composer-flow-button.open {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.chat-screen .provider-select select {
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 13px;
+}
+.chat-screen .provider-select select:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+.chat-screen .chat-model-trigger:hover:not(:disabled),
+.chat-screen .chat-model-trigger[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.chat-screen .send-button {
+  width: 34px;
+  height: 34px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-text) !important;
+}
+.chat-screen .send-button:disabled {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--muted) !important;
+  opacity: 1;
+}
+.chat-screen .composer-attachments {
+  padding: 0 0 8px;
+}
+.chat-screen .composer-attachment {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+}
+.chat-screen .composer-flow-chip,
+.chat-screen .composer-context {
+  padding: 0 4px 8px;
+}
+.chat-screen .composer-attach-error {
+  margin: 8px 8px 0;
+}
+/* Only demo modes show a footnote, and only as one quiet centred line. */
+.chat-screen .composer-footnote {
+  display: block;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* "+" menu: images and workflows behind one entry point. */
+.composer-add {
+  position: relative;
+}
+.composer-add-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  z-index: 30;
+  display: grid;
+  gap: 2px;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--elevated);
+  box-shadow: 0 16px 40px color-mix(in srgb, #000 28%, transparent);
+}
+.composer-add-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+.composer-add-item svg {
+  flex-shrink: 0;
+  color: var(--secondary);
+}
+.composer-add-item span {
+  display: grid;
+  gap: 1px;
+}
+.composer-add-item small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.composer-add-item:hover:not(:disabled),
+.composer-add-item:focus-visible {
+  background: var(--soft);
+  outline: none;
+}
+.composer-add-item:disabled {
+  opacity: 0.5;
+}
+
+/* Text fades into the composer instead of ending at a hard edge. */
+.chat-screen .chat-composer-area::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 28px;
+  background: linear-gradient(to bottom, transparent, var(--background));
+  pointer-events: none;
+}
+
+/* Empty state sits in the visual middle of the column. */
+.chat-screen .chat-home {
+  margin-top: max(48px, 12vh);
+}
+.chat-screen .chat-quick {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+.chat-screen .chat-quick button {
+  border-radius: 14px;
+}
+
+@media (max-width: 700px) {
+  .chat-screen .chat-title,
+  .chat-screen .chat-composer-area {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .chat-screen .chat-transcript {
+    padding: 8px 12px 24px;
+  }
+  .chat-screen .from-assistant .message-body,
+  .chat-screen .from-assistant .message-actions {
+    padding-left: 0;
+    margin-left: 0;
+  }
+  .chat-screen .from-user .message-body {
+    max-width: 90%;
+  }
+  .chat-screen .provider-select select {
+    padding: 0 4px;
+    font-size: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-screen .chat-composer,
+  .chat-screen .from-assistant .message-actions {
+    transition: none;
+  }
+}

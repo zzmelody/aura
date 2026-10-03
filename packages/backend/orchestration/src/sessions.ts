@@ -54,6 +54,15 @@ export function agentFailure(message?: string): FlowError {
     return new FlowError(
       "Codex 登录续期失败。请检查网络或代理，在右上角重新登录 Codex 后新建运行。",
     );
+  // The DSH catalog lists some API-only models a ChatGPT subscription rejects.
+  const unsupported = message?.match(
+    /The '([\w.-]{1,80})' model is not supported when using Codex with a ChatGPT account/u,
+  )?.[1];
+  if (unsupported)
+    return new FlowError(
+      `模型 ${unsupported} 不支持 Codex 订阅账号，请换一个模型再试。`,
+      422,
+    );
   const status = message?.match(/\bHTTP\s+(\d{3})\b/i)?.[1];
   return new FlowError(
     status

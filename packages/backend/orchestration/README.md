@@ -130,8 +130,8 @@ export default defineFlow({
 
 | 参数              | 范围与默认行为                                                                                                                                                                        |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`           | 当前模式 provider 下的模型 ID，1–200 字符。Codex 默认 `AURA_CODEX_MODEL` 或 `gpt-5.6-terra`；Demo 默认 `deepseek-v4-flash`                                                            |
-| `reasoningEffort` | DSH 对所选模型支持的准确档位；Codex 默认 `medium`，Demo profile 仅支持 `off`。不做静默降档或别名转换                                                                                  |
+| `model`           | 当前模式 provider 下的模型 ID，1–200 字符。Codex 默认 `AURA_CODEX_MODEL` 或 `gpt-6.1-sol`；Demo 默认 `deepseek-v4-flash`                                                            |
+| `reasoningEffort` | DSH 对所选模型支持的准确档位；Codex 默认 `xhigh`（Extra high），Demo profile 仅支持 `off`。不做静默降档或别名转换                                                                                  |
 | `temperature`     | 0–2；不设置时交给供应商默认。透传到 DSH，请求是否接受该参数由具体模型决定                                                                                                             |
 | `maxTokens`       | 1–1,000,000 的整数，具体模型还可能有更低限制。Demo 默认 4096。**当前锁定版本的 Codex 适配器不转发此字段，因此 Codex 模式显式设置会报 `AGENT_OPTION_UNSUPPORTED`，不承诺伪造的硬上限** |
 | `timeoutMs`       | 1,000–600,000 的整数；默认 180,000。限制每次 Agent attempt 的总时长，不是整个 Run 或单次模型请求的时长                                                                                |

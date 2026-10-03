@@ -1,4 +1,4 @@
-import type { Message, Workspace } from "@aura/core/types";
+import type { Message, Session, Workspace } from "@aura/core/types";
 import type {
   FlowPhase,
   FlowStepPhase,
@@ -37,6 +37,16 @@ const messageStatus = (phase: FlowPhase): Message["status"] =>
         ? "stopped"
         : "complete";
 
+/** Service origin of a run message, whether the session is bound or ordinary. */
+export const messageEndpoint = (session: Session, message: Message) =>
+  message.workflow?.endpoint ?? session.workflow?.endpoint;
+const holdsRun = (session: Session, endpoint: string, runId: string) =>
+  session.messages.some(
+    (message) =>
+      message.workflowRunId === runId &&
+      messageEndpoint(session, message) === endpoint,
+  );
+
 export function mergeWorkflowRuns(
   state: Workspace,
   runs: FlowRunSummary[],
@@ -46,10 +56,8 @@ export function mergeWorkflowRuns(
   let sessions = state.sessions;
   const hidden = new Set(state.hiddenWorkflowRuns);
   for (const run of runs) {
-    const found = sessions.find(
-      (session) =>
-        session.workflow?.endpoint === endpoint &&
-        session.messages.some((message) => message.workflowRunId === run.id),
+    const found = sessions.find((session) =>
+      holdsRun(session, endpoint, run.id),
     );
     if (!found) {
       if (!importUnknown || hidden.has(workflowRunKey(endpoint, run.id)))
@@ -146,7 +154,7 @@ export function applyWorkflowRun(
   ).slice(0, 24000);
   let changed = false;
   const sessions = state.sessions.map((session) => {
-    if (session.workflow?.endpoint !== endpoint) return session;
+    if (!holdsRun(session, endpoint, run.id)) return session;
     const messages = session.messages.map((message) => {
       if (
         message.role === "user" &&
@@ -254,4 +262,37 @@ export async function workflowApi<T>(
       response.status,
     );
   return value as T;
+}
+
+/**
+ * Chat context for an ordinary conversation: a run's input record is dropped,
+ * a settled run becomes one short assistant summary, and open runs are left
+ * out until they finish.
+ */
+export function chatHistory(messages: Message[]): Message[] {
+  const inputs = new Set(
+    messages.flatMap((message) =>
+      message.workflowRunId ? [`${message.workflowRunId}:input`] : [],
+    ),
+  );
+  return messages.flatMap((message): Message[] => {
+    if (inputs.has(message.id)) return [];
+    if (!message.workflowRunId) return [message];
+    if (isWorkflowOpen(message.workflowPhase) || message.status === "streaming")
+      return [];
+    const title = message.workflow?.title ?? "工作流";
+    const label = message.workflowPhase
+      ? workflowPhaseLabels[message.workflowPhase]
+      : "已结束";
+    const text = message.text.trim().slice(0, 2000);
+    return [
+      {
+        ...message,
+        role: "assistant",
+        status: "complete",
+        text: `[${title} · ${label}]${text ? `
+${text}` : ""}`,
+      },
+    ];
+  });
 }

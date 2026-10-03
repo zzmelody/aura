@@ -20,6 +20,7 @@ import type {
 import type { Message } from "@aura/core/types";
 import {
   hasWorkflowContent,
+  onlyFileReferences,
   storedWorkflowValue,
   workflowDuration,
   workflowProgress,
@@ -28,14 +29,33 @@ import { WorkflowData, WorkflowJson, WorkflowRichText } from "./WorkflowValue";
 import {
   WorkflowArtifactProvider,
   WorkflowArtifactGallery,
+  useHasArtifacts,
 } from "./WorkflowArtifacts";
 import { WorkflowControls } from "./WorkflowControls";
+import { WorkflowVideoResult } from "./WorkflowVideoResult";
+import { videoCompositionResult } from "../videoResult";
 import {
   isWorkflowActive,
   isWorkflowOpen,
   workflowApi,
   workflowPhaseLabels,
 } from "../workflowSessions";
+
+/**
+ * When the run produced playable or viewable files, those are the result; an
+ * output that only restates their local paths folds into a details row.
+ */
+function RunOutput({ value }: { value: JsonValue }) {
+  const hasArtifacts = useHasArtifacts();
+  if (hasArtifacts && onlyFileReferences(value))
+    return (
+      <details className="workflow-output-details">
+        <summary>文件位置与原始数据</summary>
+        <WorkflowData value={value} />
+      </details>
+    );
+  return <WorkflowData value={value} />;
+}
 
 export function NestedFlowRun({
   endpoint,
@@ -180,9 +200,41 @@ function StepHistory({
         stepKey={step.stepKey ?? step.id}
         attempt={attempt}
       />
-      {step.error ? <p className="error">{step.error}</p> : null}
-      {step.scopePath?.length ? (
-        <p className="muted">执行路径：{step.stepKey}</p>
+      {step.error ? (
+        <p className="workflow-step-error" role="alert">
+          {step.error}
+        </p>
+      ) : null}
+      {step.scopePath?.length || (step.attempts?.length ?? 0) > 1 ? (
+        <div className="workflow-step-meta">
+          {step.scopePath?.length ? (
+            <code title="执行路径">{step.stepKey}</code>
+          ) : null}
+          {(step.attempts?.length ?? 0) > 1 ? (
+            <div
+              className="workflow-step-attempts"
+              role="radiogroup"
+              aria-label="执行尝试"
+            >
+              {step.attempts!.map((value) => (
+                <button
+                  key={value.number}
+                  type="button"
+                  role="radio"
+                  aria-checked={attempt === value.number}
+                  className={`phase-${value.status}${attempt === value.number ? " selected" : ""}`}
+                  title={workflowPhaseLabels[value.status]}
+                  onClick={() => {
+                    setHistory(undefined);
+                    setAttempt(value.number);
+                  }}
+                >
+                  第 {value.number} 次
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : null}
       {!step.kind || step.kind === "agent" ? (
         step.config ? (
@@ -205,27 +257,8 @@ function StepHistory({
           <p className="muted">旧记录未存档模型配置。</p>
         )
       ) : null}
-      {step.attempts?.length ? (
-        <label>
-          执行尝试{" "}
-          <select
-            aria-label="执行尝试"
-            value={attempt}
-            onChange={(event) => {
-              setHistory(undefined);
-              setAttempt(Number(event.target.value));
-            }}
-          >
-            {step.attempts.map((value) => (
-              <option key={value.number} value={value.number}>
-                第 {value.number} 次 · {workflowPhaseLabels[value.status]}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : null}
       {step.attempts?.find((value) => value.number === attempt)?.error ? (
-        <p className="muted">
+        <p className="workflow-step-error">
           {step.attempts.find((value) => value.number === attempt)?.error}
         </p>
       ) : null}
@@ -255,20 +288,29 @@ function StepHistory({
             ) : null}
           </>
         ) : (
-          <>
+          <div
+            className={`workflow-step-io${step.kind === "action" ? "" : " single"}`}
+          >
             {step.kind === "action" ? (
-              <>
-                <h4>工具输入</h4>
+              <section className="workflow-step-panel" aria-label="工具输入">
+                <h4>输入</h4>
                 <WorkflowData value={step.input} />
-              </>
+              </section>
             ) : null}
-            <h4>{step.kind === "checkpoint" ? "已提交答案" : "步骤输出"}</h4>
-            {step.output === undefined ? (
-              <p className="muted">等待输出</p>
-            ) : (
-              <WorkflowData value={step.output} />
-            )}
-          </>
+            <section
+              className="workflow-step-panel"
+              aria-label={
+                step.kind === "checkpoint" ? "已提交答案" : "步骤输出"
+              }
+            >
+              <h4>{step.kind === "checkpoint" ? "已提交答案" : "输出"}</h4>
+              {step.output === undefined ? (
+                <p className="muted">等待输出</p>
+              ) : (
+                <WorkflowData value={step.output} />
+              )}
+            </section>
+          </div>
         )
       ) : (
         <>
@@ -338,9 +380,12 @@ export function WorkflowRunResult({
   input,
   index,
   inputSchema,
+  title,
   onCancel,
 }: {
   endpoint: string;
+  /** Flow name shown when the run lives in an ordinary conversation. */
+  title?: string;
   message: Message;
   cached?: FlowRun;
   receive(endpoint: string, run: FlowRun): void;
@@ -395,10 +440,54 @@ export function WorkflowRunResult({
       ? storedWorkflowValue(message.text)
       : undefined;
   const output = cached ? cached.output : savedOutput;
+  const composition = videoCompositionResult(output);
+  const videoRun = Boolean(
+    composition ||
+    cached?.flow.id === "multi-shot-video" ||
+    message.workflow?.id === "multi-shot-video",
+  );
   const problem =
     cached?.error ?? (phase === "failed" && !cached ? message.text : undefined);
   const PhaseIcon =
     phase === "completed" ? CheckCircle2 : active ? LoaderCircle : CircleAlert;
+  const steps = cached?.steps.length ? (
+    <ol className="workflow-stream-steps" aria-label="执行步骤">
+      {cached.steps.map((step) => {
+        const key = step.stepKey ?? step.id;
+        const expanded = key === stepId;
+        return (
+          <li className={`phase-${step.status}`} key={key}>
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setStepId(expanded ? undefined : key)}
+            >
+              <span className="workflow-step-state" aria-hidden="true">
+                <StepStateIcon status={step.status} />
+              </span>
+              <span className="workflow-step-copy">
+                <strong>{step.label}</strong>
+                <small>{workflowPhaseLabels[step.status]}</small>
+              </span>
+            </button>
+            {expanded ? (
+              <StepHistory
+                key={key}
+                endpoint={endpoint}
+                runId={id}
+                step={step}
+              />
+            ) : null}
+          </li>
+        );
+      })}
+    </ol>
+  ) : active ? (
+    <div className="workflow-stream-starting">
+      <LoaderCircle size={15} className="workflow-spinner" />
+      正在准备执行步骤…
+    </div>
+  ) : null;
   return (
     <WorkflowArtifactProvider
       key={`${endpoint}/${id}`}
@@ -419,6 +508,11 @@ export function WorkflowRunResult({
           <div className="workflow-user-bubble">
             {inputValue === undefined ? (
               <p className="workflow-value-empty">正在读取本次输入…</p>
+            ) : videoRun ? (
+              <details className="workflow-output-details">
+                <summary>视频制作参数</summary>
+                <WorkflowData value={inputValue} schema={inputSchema} />
+              </details>
             ) : (
               <WorkflowData value={inputValue} schema={inputSchema} />
             )}
@@ -431,7 +525,7 @@ export function WorkflowRunResult({
             </span>
             <div className="workflow-response-identity">
               <div>
-                <strong id={titleId}>工作流</strong>
+                <strong id={titleId}>{title ?? "工作流"}</strong>
                 <span className="workflow-run-number">第 {index} 次执行</span>
               </div>
               <div className="workflow-run-meta">
@@ -493,61 +587,76 @@ export function WorkflowRunResult({
             />
           ) : null}
           <div
-            className="workflow-stream"
+            className={`workflow-stream${composition ? " workflow-video-stream" : ""}`}
             aria-live={active ? "polite" : "off"}
           >
-            {cached?.steps.length ? (
-              <ol className="workflow-stream-steps" aria-label="执行步骤">
-                {cached.steps.map((step) => {
-                  const key = step.stepKey ?? step.id;
-                  const expanded = key === stepId;
-                  return (
-                    <li className={`phase-${step.status}`} key={key}>
-                      <button
-                        type="button"
-                        aria-expanded={expanded}
-                        onClick={() => setStepId(expanded ? undefined : key)}
+            {!composition ? steps : null}
+            <section className="workflow-stream-output" aria-label="本次输出">
+              {composition ? (
+                <WorkflowVideoResult
+                  key={composition.id}
+                  endpoint={endpoint}
+                  composition={composition}
+                  raw={output!}
+                />
+              ) : videoRun && phase !== "completed" ? (
+                // The final cut always has a place on a video card, even before it exists.
+                <div className="video-result-pending" aria-label="成片">
+                  <div className="video-result-pending-frame">
+                    {active ? (
+                      <div role="status">
+                        <LoaderCircle size={22} className="workflow-spinner" />
+                        <span>成片制作中</span>
+                      </div>
+                    ) : (
+                      <div>
+                        <CircleAlert size={22} />
+                        <span>未生成成片</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="video-result-pending-copy">
+                    <strong>
+                      {active ? "成片会在这里出现" : "这次没有完成成片"}
+                    </strong>
+                    <p>
+                      {active
+                        ? progress.total
+                          ? `已完成 ${progress.completed} / ${progress.total} 步${progress.current.length ? ` · 正在${progress.current[0]}` : ""}`
+                          : "正在准备镜头…"
+                        : "可在下方步骤中查看原因，处理后再次运行。"}
+                    </p>
+                    {active && progress.total ? (
+                      <div
+                        className="video-result-progress"
+                        role="progressbar"
+                        aria-label="成片进度"
+                        aria-valuemin={0}
+                        aria-valuemax={progress.total}
+                        aria-valuenow={progress.completed}
                       >
                         <span
-                          className="workflow-step-state"
-                          aria-hidden="true"
-                        >
-                          <StepStateIcon status={step.status} />
-                        </span>
-                        <span className="workflow-step-copy">
-                          <strong>{step.label}</strong>
-                          <small>{workflowPhaseLabels[step.status]}</small>
-                        </span>
-                      </button>
-                      {expanded ? (
-                        <StepHistory
-                          key={key}
-                          endpoint={endpoint}
-                          runId={id}
-                          step={step}
+                          style={{
+                            width: `${Math.round((progress.completed / progress.total) * 100)}%`,
+                          }}
                         />
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ol>
-            ) : active ? (
-              <div className="workflow-stream-starting">
-                <LoaderCircle size={15} className="workflow-spinner" />
-                正在准备执行步骤…
-              </div>
-            ) : null}
-            <section className="workflow-stream-output" aria-label="本次输出">
-              <WorkflowArtifactGallery />
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <WorkflowArtifactGallery />
+              )}
               {problem ? (
                 <div className="workflow-run-problem" role="alert">
                   <CircleAlert size={16} />
                   <WorkflowRichText text={problem} />
                 </div>
               ) : null}
-              {hasWorkflowContent(output) &&
-              !(problem && output === problem) ? (
-                <WorkflowData value={output} />
+              {/* Video cards already show the final-cut slot; skip the generic placeholder. */}
+              {composition || (videoRun && phase !== "completed") ? null : hasWorkflowContent(output) &&
+                !(problem && output === problem) ? (
+                <RunOutput value={output!} />
               ) : (
                 <div className="workflow-output-placeholder">
                   {active ? (
@@ -570,6 +679,14 @@ export function WorkflowRunResult({
                 <WorkflowJson value={output} />
               ) : null}
             </section>
+            {composition && steps ? (
+              <details className="workflow-video-steps">
+                <summary>
+                  执行步骤 · {progress.completed} / {progress.total} 已完成
+                </summary>
+                {steps}
+              </details>
+            ) : null}
           </div>
           <footer className="workflow-response-meta" aria-label="执行进度">
             <span className="workflow-current-step">

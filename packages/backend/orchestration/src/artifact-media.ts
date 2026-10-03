@@ -8,7 +8,14 @@ export const artifactHash = (value: string | Uint8Array) =>
 export const validArtifactId = (id: string) => /^[a-f0-9]{64}$/.test(id);
 export type ArtifactMedia = Pick<
   WorkflowArtifact,
-  "kind" | "format" | "mimeType" | "bytes" | "width" | "height" | "status"
+  | "kind"
+  | "format"
+  | "mimeType"
+  | "bytes"
+  | "width"
+  | "height"
+  | "durationSeconds"
+  | "status"
 >;
 
 /** Do not let a GLB cause browser requests to an external texture/buffer URI. */
@@ -61,12 +68,13 @@ export async function inspectArtifact(bytes: Buffer): Promise<ArtifactMedia> {
     bytes.toString("ascii", 0, 4) === "RIFF" &&
     bytes.toString("ascii", 8, 12) === "WAVE"
   ) {
-    wavDuration(bytes);
+    const durationSeconds = wavDuration(bytes);
     return {
       kind: "audio",
       format: "wav",
       mimeType: "audio/wav",
       bytes: bytes.length,
+      durationSeconds: Math.round(durationSeconds * 100) / 100,
       status: "ready",
     };
   }

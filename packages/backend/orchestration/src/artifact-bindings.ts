@@ -9,6 +9,7 @@ export function artifactCallBinding(
   binding: ActionBinding,
   localAI?: LocalAIClient,
   aura?: AuraCapabilityClient,
+  gptImage?: import("./gpt-image.ts").GptImageClient,
 ): ActionBinding["bindCall"] {
   if (!index || !binding.runId || !binding.stepId) return undefined;
   return (callId) => {
@@ -36,7 +37,15 @@ export function artifactCallBinding(
             comfyWorkflow: async (...args) =>
               capture(await localAI.comfyWorkflow(...args), "comfy-workflow"),
             video: (...args) => localAI.video(...args),
-            tts: (...args) => localAI.tts(...args),
+            tts: async (...args) =>
+              capture(await localAI.tts(...args), "local-tts"),
+          }
+        : undefined,
+      gptImage: gptImage
+        ? {
+            available: () => gptImage.available(),
+            generate: async (...args) =>
+              capture(await gptImage.generate(...args), "gpt-image"),
           }
         : undefined,
       aura: aura

@@ -93,3 +93,16 @@ export interface EngineOptions {
     cwd: string;
   };
 }
+
+/** One chat request handled by the long-lived DSH host. */
+export interface ChatTurn {
+  messages: import("@aura/protocol/types").ChatMessage[];
+  mode: import("@aura/protocol/types").FlowMode;
+  /** Session-local overrides; never inherited by chat workflow tools. */
+  model?: string;
+  reasoningEffort?: string;
+}
+/** Streamed chat output: reply text or a workflow started by a tool call. */
+export type ChatStreamEvent =
+  | { type: "delta"; text: string }
+  | ({ type: "workflow" } & import("@aura/protocol/types").ChatWorkflowStart);

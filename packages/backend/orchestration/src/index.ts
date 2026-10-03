@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { artifactResponse, type ArtifactFile } from "./artifact-http.ts";
 import { GeneratedArtifacts } from "./generated-artifacts.ts";
@@ -12,6 +13,7 @@ import { ActionFailure } from "./action-api.ts";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
 import type {
   ActionRun,
+  ChatModelCatalog,
   FlowCatalog,
   FlowMode,
   FlowRun,
@@ -26,7 +28,10 @@ import {
   provisionProfile,
 } from "./profile.ts";
 import { FlowError, jsonValue } from "./schema.ts";
+export { FlowError } from "./schema.ts";
+import type { ChatStreamEvent, ChatTurn } from "./types.ts";
 export { readCreatorLeases } from "./veya-creator-lifecycle.ts";
+export {readAvatarBindings,writeAvatarBindings,avatarDecisionFlow,type AvatarBinding,type AvatarJournal} from "./veya-avatar-bindings.ts";
 export { readCreatorBindingDocument, commitCreatorBindingDocument } from "./veya-creator-design-grants.ts";
 export { readProductionGrant, writeProductionGrant, validateProductionGrant, validateProductionBinding, validatePendingProductionClaims, verifyProductionWorker,
   productionDigest, productionRecoveryBoundary, cookerSubmissionFingerprint, type ProductionGrant, type ProductionGrantRef, type WorldProductionRecovery } from "./veya-creator-production-grants.ts";
@@ -52,9 +57,36 @@ export class OrchestrationHost {
   options: HostOptions;
   opening: ReturnType<OrchestrationHost["launch"]> | undefined;
   closed = false;
+  /** Per-request listeners for `chat/event` notifications from the DSH host. */
+  readonly chatListeners = new Map<string, (event: ChatStreamEvent) => void>();
 
   constructor(options: HostOptions) {
     this.options = { ...options };
+  }
+
+  /** Serves one uploaded image by content ID, for chat thumbnails. */
+  async imageAssetContent(assetId: string, request: Request) {
+    if (!/^[a-f0-9]{64}$/u.test(assetId))
+      throw new FlowError("图片不存在。", 404);
+    const root = join(this.options.dshHome, "aura-generated-assets");
+    for (const format of ["png", "jpeg", "webp"] as const) {
+      try {
+        await stat(join(root, `${assetId}.${format}`));
+      } catch {
+        continue;
+      }
+      return artifactResponse(
+        root,
+        {
+          artifact: { name: `image.${format}`, mimeType: `image/${format}` },
+          fileId: assetId,
+          format,
+        },
+        request,
+        false,
+      );
+    }
+    throw new FlowError("图片不存在。", 404);
   }
 
   /** Admit browser uploads without sending binary data through the DSH JSON-RPC link. */
@@ -167,7 +199,7 @@ export class OrchestrationHost {
                 AURA_TRIPO_REGION: this.options.tripoRegion ?? "global",
               }
             : {}),
-          AURA_CODEX_MODEL: codexModel || "gpt-5.6-terra",
+        AURA_CODEX_MODEL: codexModel || "gpt-6.1-sol",
           AURA_DEMO_KEY: "demo-only-not-a-real-key",
           AURA_DEMO_BASE_URL: modelURL,
           NO_PROXY: "127.0.0.1,localhost",
@@ -188,6 +220,10 @@ export class OrchestrationHost {
         this.opening = undefined;
         resolve();
       });
+    });
+    rpc.onNotification((method, params) => {
+      if (method !== "chat/event" || typeof params.chatId !== "string") return;
+      this.chatListeners.get(params.chatId)?.(params.event as ChatStreamEvent);
     });
     rpc.start();
     try {
@@ -231,6 +267,36 @@ export class OrchestrationHost {
     }
     if (!result.ok) throw new FlowError(result.message, result.status);
     return result.data;
+  }
+
+  /**
+   * Streams one chat turn through the long-lived DSH host, where the model may
+   * start chat workflows as tools. Events arrive before the request settles.
+   */
+  chatModels(mode: FlowMode, signal: AbortSignal): Promise<ChatModelCatalog> {
+    return this.request("chat/models", { mode }, signal);
+  }
+
+  async chat(
+    turn: ChatTurn,
+    emit: (event: ChatStreamEvent) => void,
+    signal: AbortSignal,
+  ): Promise<{ model: string }> {
+    const chatId = randomUUID();
+    this.chatListeners.set(chatId, emit);
+    const { rpc } = await this.open();
+    const onAbort = () => rpc.notify("chat/cancel", { chatId });
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      return await this.request<{ model: string }>(
+        "chat",
+        { chatId, ...turn },
+        AbortSignal.any([signal, AbortSignal.timeout(180_000)]),
+      );
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      this.chatListeners.delete(chatId);
+    }
   }
 
   /** Direct backend invocation using the same durable engine as HTTP calls. */
@@ -348,7 +414,7 @@ export function createFlowApp(
     Partial<
       Pick<
         OrchestrationHost,
-        "artifactContent" | "uploadImage" | "videoAssetContent" | "uploadContentAsset" | "contentAssetContent" | "topicAssetContent"
+        "artifactContent" | "uploadImage" | "imageAssetContent" | "videoAssetContent" | "uploadContentAsset" | "contentAssetContent" | "topicAssetContent"
       >
     >,
 ) {
@@ -375,6 +441,11 @@ export function createFlowApp(
       onError: (context) => context.json({ message: "Flow 请求过大。" }, 413),
     })(context, next),
   );
+
+  app.get("/assets/images/:id", async (context) => {
+    if (!host.imageAssetContent) throw new FlowError("图片资产服务不可用。", 503);
+    return host.imageAssetContent(context.req.param("id"), context.req.raw);
+  });
 
   app.post("/assets/images", async (context) => {
     if (!host.uploadImage) throw new FlowError("图片资产服务不可用。", 503);

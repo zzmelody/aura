@@ -1,4 +1,11 @@
-import type { Message, Session, Workspace, WorkflowBinding } from "./types.ts";
+import { validateChatModelSelection } from "@aura/protocol";
+import type {
+  Message,
+  Session,
+  Workspace,
+  WorkflowBinding,
+  WorkflowRef,
+} from "./types.ts";
 
 /** Version-one storage key; moving modules does not migrate or erase records. */
 export const STORAGE_KEY = "aura.workspace.v1";
@@ -19,6 +26,56 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function restoreRef(value: unknown): WorkflowRef | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.title !== "string" ||
+    typeof value.endpoint !== "string"
+  )
+    return undefined;
+  const endpoint = validateEndpoint(value.endpoint);
+  return endpoint ? { id: value.id, title: value.title, endpoint } : undefined;
+}
+
+function restoreImages(value: unknown[]): NonNullable<Message["images"]> {
+  return value
+    .filter(
+      (image): image is Record<string, unknown> =>
+        isRecord(image) &&
+        typeof image.assetId === "string" &&
+        /^[a-f0-9]{64}$/u.test(image.assetId) &&
+        ["image/png", "image/jpeg", "image/webp"].includes(
+          image.mimeType as string,
+        ),
+    )
+    .slice(0, 4)
+    .map((image) => ({
+      assetId: image.assetId as string,
+      mimeType: image.mimeType as "image/png" | "image/jpeg" | "image/webp",
+      ...(typeof image.width === "number" ? { width: image.width } : {}),
+      ...(typeof image.height === "number" ? { height: image.height } : {}),
+      ...(typeof image.name === "string" ? { name: image.name.slice(0, 180) } : {}),
+    }));
+}
+
+function restoreBinding(value: unknown): WorkflowBinding | undefined {
+  const ref = restoreRef(value);
+  if (!ref || !isRecord(value)) return undefined;
+  return {
+    ...ref,
+    ...(value.inputSchema && typeof value.inputSchema === "object"
+      ? { inputSchema: value.inputSchema as WorkflowBinding["inputSchema"] }
+      : {}),
+    ...(isRecord(value.pending) &&
+    typeof value.pending.requestId === "string" &&
+    (value.pending.mode === "demo" || value.pending.mode === "codex") &&
+    value.pending.input !== undefined
+      ? { pending: value.pending as WorkflowBinding["pending"] }
+      : {}),
+  };
+}
+
 /**
  * Restores bounded v1 history and marks interrupted generation as stopped.
  */
@@ -37,31 +94,11 @@ export function restoreState(value: unknown): Workspace {
     )
       continue;
     const messages: Message[] = [];
-    const binding = isRecord(s.workflow) ? s.workflow : undefined;
-    const workflow: WorkflowBinding | undefined =
-      binding &&
-      typeof binding.id === "string" &&
-      typeof binding.title === "string" &&
-      typeof binding.endpoint === "string" &&
-      validateEndpoint(binding.endpoint)
-        ? {
-            id: binding.id,
-            title: binding.title,
-            endpoint: validateEndpoint(binding.endpoint)!,
-            ...(binding.inputSchema && typeof binding.inputSchema === "object"
-              ? {
-                  inputSchema:
-                    binding.inputSchema as WorkflowBinding["inputSchema"],
-                }
-              : {}),
-            ...(isRecord(binding.pending) &&
-            typeof binding.pending.requestId === "string" &&
-            (binding.pending.mode === "demo" ||
-              binding.pending.mode === "codex") &&
-            binding.pending.input !== undefined
-              ? { pending: binding.pending as WorkflowBinding["pending"] }
-              : {}),
-          }
+    const workflow = restoreBinding(s.workflow);
+    const pendingBinding = restoreBinding(s.pendingWorkflow);
+    const pendingWorkflow =
+      !workflow && pendingBinding?.pending
+        ? { ...pendingBinding, pending: pendingBinding.pending }
         : undefined;
     for (const m of s.messages) {
       if (
@@ -71,6 +108,7 @@ export function restoreState(value: unknown): Workspace {
         typeof m.text !== "string"
       )
         continue;
+      const ref = restoreRef(m.workflow);
       messages.push({
         id: m.id,
         role: m.role,
@@ -81,10 +119,14 @@ export function restoreState(value: unknown): Workspace {
             : m.status === "stopped" || m.status === "error"
               ? m.status
               : "complete",
-        ...(workflow && typeof m.workflowRunId === "string"
+        ...(m.role === "user" && Array.isArray(m.images)
+          ? { images: restoreImages(m.images) }
+          : {}),
+        ...(ref && !workflow ? { workflow: ref } : {}),
+        ...((workflow || ref) && typeof m.workflowRunId === "string"
           ? { workflowRunId: m.workflowRunId }
           : {}),
-        ...(workflow &&
+        ...((workflow || ref) &&
         typeof m.workflowPhase === "string" &&
         [
           "queued",
@@ -107,7 +149,18 @@ export function restoreState(value: unknown): Workspace {
       title: s.title,
       updatedAt: s.updatedAt,
       messages: messages.slice(-200),
+      ...(typeof s.archivedAt === "number" && Number.isFinite(s.archivedAt) && s.archivedAt > 0
+        ? { archivedAt: s.archivedAt }
+        : {}),
+      ...(!workflow && isRecord(s.modelConfig)
+        ? { modelConfig: Object.fromEntries(
+            Object.entries(s.modelConfig).filter(([mode, config]) =>
+              (mode === "codex" || mode === "demo") && validateChatModelSelection(config),
+            ),
+          ) }
+        : {}),
       ...(workflow ? { workflow } : {}),
+      ...(pendingWorkflow ? { pendingWorkflow } : {}),
     });
   }
   return {
@@ -123,6 +176,9 @@ export function restoreState(value: unknown): Workspace {
         ? value.provider
         : "offline",
     sessions,
+    ...(typeof value.sidebarWidth === "number" && Number.isFinite(value.sidebarWidth)
+      ? { sidebarWidth: Math.max(240, Math.min(480, Math.round(value.sidebarWidth))) }
+      : {}),
     ...(Array.isArray(value.hiddenWorkflowRuns)
       ? {
           hiddenWorkflowRuns: value.hiddenWorkflowRuns

@@ -22,13 +22,12 @@ import {
   AlertTriangle,
   Check,
   FolderPlus,
-  PlugZap,
   RefreshCw,
   Save,
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { Button, Label, useTheme } from "@aura/ui/components";
+import { Label, useTheme } from "@aura/ui/components";
 import { fonts, type as textType } from "@aura/ui/theme";
 import {
   editablePluginEntries,
@@ -152,29 +151,11 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
       ]}
     >
       <View style={styles.heading}>
-        <View
-          style={[
-            styles.mark,
-            { backgroundColor: colors.soft, borderColor: colors.border },
-          ]}
-        >
-          <PlugZap size={20} color={colors.accent} strokeWidth={1.7} />
-        </View>
-        <View style={{ flex: 1, gap: 4 }}>
-          <Text
-            style={{
-              color: colors.text,
-              fontFamily: fonts.medium,
-              fontSize: 14,
-            }}
-          >
-            外部插件坞
-          </Text>
-          <Text style={[textType.small, { color: colors.secondary }]}>
-            显式接入本机 Action 与 Flow 目录
-          </Text>
-        </View>
-        <View style={[styles.counter, { borderColor: colors.border }]}>
+        <ShieldCheck size={16} color={colors.secondary} />
+        <Text style={[textType.small, { color: colors.secondary, flex: 1 }]}>
+          只启用你信任的目录；Aura 只校验已有依赖，不会自动安装或下载内容。
+        </Text>
+        <View style={[styles.counter, { backgroundColor: colors.soft }]}>
           <Text
             style={{
               color: colors.accent,
@@ -182,22 +163,9 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
               fontSize: 10,
             }}
           >
-            {String(activeCount).padStart(2, "0")} ACTIVE
+            {activeCount} 个已启用
           </Text>
         </View>
-      </View>
-
-      <View
-        style={[
-          styles.trust,
-          { backgroundColor: colors.input, borderColor: colors.border },
-        ]}
-      >
-        <ShieldCheck size={17} color={colors.secondary} />
-        <Text style={[textType.small, { color: colors.secondary, flex: 1 }]}>
-          插件 JavaScript 以完整 Node.js 权限运行。只启用你信任的目录；Aura
-          只校验已有依赖，不会自动安装或下载内容。
-        </Text>
       </View>
 
       {loading && !settings ? (
@@ -404,23 +372,24 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
                 {settings.configPath}
               </Text>
             </View>
-            <Button
-              secondary
-              compact
-              icon={RefreshCw}
+            <button
+              type="button"
+              className="tool-button"
               disabled={loading || saving}
-              onPress={() => void refresh()}
+              onClick={() => void refresh()}
             >
+              <RefreshCw size={14} />
               重新读取
-            </Button>
-            <Button
-              compact
-              icon={Save}
+            </button>
+            <button
+              type="button"
+              className="primary-button"
               disabled={!dirty || loading || saving}
-              onPress={() => void save()}
+              onClick={() => void save()}
             >
+              <Save size={14} />
               {saving ? "正在校验…" : "保存目录"}
-            </Button>
+            </button>
           </View>
         </>
       ) : null}
@@ -429,29 +398,12 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
 }
 
 const styles = StyleSheet.create({
-  bay: { padding: 20, borderRadius: 10, borderWidth: 1, gap: 16 },
+  bay: { padding: 16, borderRadius: 12, borderWidth: 1, gap: 14 },
   heading: { flexDirection: "row", alignItems: "center", gap: 12 },
-  mark: {
-    width: 42,
-    height: 42,
-    borderRadius: 9,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   counter: {
-    borderWidth: 1,
-    borderRadius: 5,
+    borderRadius: 999,
     paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  trust: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderRadius: 8,
+    paddingVertical: 3,
   },
   loading: {
     minHeight: 110,

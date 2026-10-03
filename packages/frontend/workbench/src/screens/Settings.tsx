@@ -1,60 +1,168 @@
-import React, { useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from "@aura/ui/web";
+import React, { useEffect, useRef, useState } from "react";
+import { Switch } from "@aura/ui/web";
 import {
   Check,
   ChevronRight,
+  Info,
   Monitor,
   Moon,
+  Palette,
+  PlugZap,
   Radio,
+  Sparkles,
   Sun,
-  WandSparkles,
   Wifi,
 } from "lucide-react";
-import {
-  Button,
-  Label,
-  Orb,
-  Reveal,
-  SectionHeading,
-  useTheme,
-} from "@aura/ui/components";
-import { fonts, palettes, type as textType } from "@aura/ui/theme";
+import { useTheme } from "@aura/ui/components";
+import { palettes } from "@aura/ui/theme";
 import { validateEndpoint } from "@aura/core";
+import type { ThemeMode, Workspace } from "@aura/core/types";
 import type { WorkspaceController } from "../useWorkspace";
-import type { ThemeMode } from "@aura/core/types";
+import type { CodexAuthController } from "../useCodexAuth";
+import { CodexLoginButton } from "../CodexLoginButton";
 import { PluginDirectorySettings } from "./PluginDirectorySettings.tsx";
+import "./settings.css";
+
+const sections = [
+  { id: "appearance", label: "外观", icon: Palette },
+  { id: "models", label: "模型与账号", icon: Sparkles },
+  { id: "connection", label: "连接", icon: Wifi },
+  { id: "plugins", label: "插件", icon: PlugZap },
+  { id: "about", label: "关于", icon: Info },
+] as const;
+type SectionId = (typeof sections)[number]["id"];
+
+const themes: {
+  id: ThemeMode;
+  title: string;
+  hint: string;
+  icon: typeof Moon;
+}[] = [
+  { id: "dark", title: "夜航", hint: "深色", icon: Moon },
+  { id: "light", title: "晨雾", hint: "浅色", icon: Sun },
+  { id: "system", title: "跟随系统", hint: "自动切换", icon: Monitor },
+];
+
+const providers: {
+  id: Workspace["provider"];
+  title: string;
+  hint: string;
+}[] = [
+  { id: "offline", title: "本地演示", hint: "无需联网，规则生成回复" },
+  { id: "dsh", title: "DSH 演示", hint: "经工作台服务，可调用工作流" },
+  { id: "codex", title: "Codex 订阅", hint: "真实模型，需要登录 Codex" },
+];
+
+/** Miniature window drawn from one palette, so the choice previews itself. */
+function ThemePreview({ mode }: { mode: "dark" | "light" }) {
+  const p = palettes[mode];
+  return (
+    <span
+      className="settings-theme-preview"
+      style={{ background: p.background, borderColor: p.border }}
+      aria-hidden="true"
+    >
+      <span style={{ background: p.surface, borderColor: p.border }}>
+        <i style={{ background: p.soft }} />
+        <i style={{ background: p.border }} />
+        <i style={{ background: p.border }} />
+      </span>
+      <span>
+        <i style={{ background: p.text, width: "58%" }} />
+        <i style={{ background: p.secondary, width: "82%" }} />
+        <i style={{ background: p.primary, width: "34%", height: 8 }} />
+      </span>
+    </span>
+  );
+}
+
+function Row({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="settings-row">
+      <div className="settings-row-copy">
+        <strong>{title}</strong>
+        {hint ? <span>{hint}</span> : null}
+      </div>
+      {children ? <div className="settings-row-control">{children}</div> : null}
+    </div>
+  );
+}
 
 export function SettingsScreen({
   workspace,
+  codexAuth,
   systemReduced,
 }: {
   workspace: WorkspaceController;
+  codexAuth: CodexAuthController;
   systemReduced: boolean;
 }) {
-  const { colors, dark } = useTheme();
+  const { colors } = useTheme();
   const [address, setAddress] = useState(
     workspace.state.endpoint || "http://127.0.0.1:4311",
   );
-  const [connection, setConnection] = useState("");
+  const [connection, setConnection] = useState<{
+    tone: "ok" | "error" | "info";
+    text: string;
+  }>();
   const [checking, setChecking] = useState(false);
-  const [preview, setPreview] = useState(false);
+  const [lab, setLab] = useState(false);
+  const [active, setActive] = useState<SectionId>("appearance");
+  const scroller = useRef<HTMLDivElement>(null);
+
+  // The active section is the last one whose top has passed the reading line;
+  // at the very bottom the final section wins even when it is short.
+  const jumping = useRef<SectionId | null>(null);
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root) return;
+    const update = () => {
+      if (jumping.current) return;
+      const line = root.getBoundingClientRect().top + 48;
+      let current: SectionId = sections[0].id;
+      for (const { id } of sections) {
+        const node = root.querySelector(`#settings-${id}`);
+        if (node && node.getBoundingClientRect().top <= line) current = id;
+      }
+      if (root.scrollTop + root.clientHeight >= root.scrollHeight - 2)
+        current = sections[sections.length - 1].id;
+      setActive(current);
+    };
+    root.addEventListener("scroll", update, { passive: true });
+    return () => root.removeEventListener("scroll", update);
+  }, []);
+
+  function jump(id: SectionId) {
+    setActive(id);
+    // Keep the clicked item highlighted while smooth scrolling passes others.
+    jumping.current = id;
+    window.setTimeout(() => {
+      if (jumping.current === id) jumping.current = null;
+    }, 700);
+    scroller.current
+      ?.querySelector(`#settings-${id}`)
+      ?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
   async function connect() {
     const endpoint = validateEndpoint(address);
     if (!endpoint) {
-      setConnection("请输入完整服务地址，例如 http://192.168.1.8:4311");
+      setConnection({
+        tone: "error",
+        text: "请输入完整服务地址，例如 http://192.168.1.8:4311",
+      });
       return;
     }
     setChecking(true);
-    setConnection("");
+    setConnection(undefined);
     const abort = new AbortController();
     const timeout = setTimeout(() => abort.abort(), 8000);
     try {
@@ -69,403 +177,313 @@ export function SettingsScreen({
         !health.modes.includes("dsh-demo")
       )
         throw new Error("此地址没有运行 Aura 对话服务。");
-      workspace.setState((s) => ({ ...s, endpoint, provider: "dsh" }));
-      setConnection("连接成功。新消息将通过官方 DSH 演示链路。");
+      workspace.setState((s) => ({
+        ...s,
+        endpoint,
+        provider: s.provider === "offline" ? "dsh" : s.provider,
+      }));
+      setConnection({ tone: "ok", text: "已连接工作台服务。" });
     } catch (e) {
-      setConnection(
-        e instanceof Error && e.name !== "AbortError"
-          ? "连接失败。请确认地址、网络与工作台服务。"
-          : "连接超时，请检查工作台地址。",
-      );
+      setConnection({
+        tone: "error",
+        text:
+          e instanceof Error && e.name !== "AbortError"
+            ? "连接失败。请确认地址、网络与工作台服务。"
+            : "连接超时，请检查工作台地址。",
+      });
     } finally {
       clearTimeout(timeout);
       setChecking(false);
     }
   }
+
+  const switchColors = { false: colors.border, true: colors.primary };
+  const codex = codexAuth.status;
+  const codexLabel =
+    codex.state === "authenticated"
+      ? "已登录"
+      : codex.state === "pending"
+        ? "登录中"
+        : codex.state === "error"
+          ? "登录失败"
+          : "未登录";
+
   return (
-    <ScrollView
-      contentContainerStyle={styles.page}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Reveal>
-        <Label>MAKE IT YOURS</Label>
-        <Text style={[textType.title, { color: colors.text, marginTop: 14 }]}>
-          以你喜欢的方式。
-        </Text>
-        <Text
-          style={[
-            textType.body,
-            { color: colors.secondary, marginTop: 8, marginBottom: 18 },
-          ]}
-        >
-          让工作台，成为你的空间。
-        </Text>
-      </Reveal>
-      <SectionHeading title="外观" meta="01 / APPEARANCE" />
-      <View style={styles.themes}>
-        {[
-          { id: "dark", title: "夜航", en: "MIDNIGHT", icon: Moon },
-          { id: "light", title: "晨雾", en: "DAYBREAK", icon: Sun },
-        ].map(({ id, title, en, icon: Icon }) => {
-          const palette = palettes[id as "dark" | "light"];
-          return (
-            <Pressable
-              key={id}
-              accessibilityRole="radio"
-              accessibilityLabel={`${title} · ${id === "dark" ? "深色" : "浅色"}主题`}
-              accessibilityState={{ checked: workspace.state.theme === id }}
-              onPress={() =>
-                workspace.setState((s) => ({ ...s, theme: id as ThemeMode }))
-              }
-              style={[
-                styles.themeChoice,
-                {
-                  backgroundColor: palette.background,
-                  borderColor:
-                    workspace.state.theme === id
-                      ? colors.accent
-                      : colors.border,
-                  borderWidth: workspace.state.theme === id ? 2 : 1,
-                },
-              ]}
+    <div className="settings-page">
+      <nav className="settings-nav" aria-label="设置分类">
+        <h1>设置</h1>
+        {sections.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            className={active === id ? "selected" : ""}
+            aria-current={active === id ? "true" : undefined}
+            onClick={() => jump(id)}
+          >
+            <Icon size={16} />
+            {label}
+          </button>
+        ))}
+      </nav>
+      <div className="settings-scroll" ref={scroller}>
+        <div className="settings-content">
+          <section id="settings-appearance" aria-labelledby="settings-appearance-title">
+            <header className="settings-section-head">
+              <h2 id="settings-appearance-title">外观</h2>
+              <p>主题和动效只保存在这台设备上。</p>
+            </header>
+            <div
+              className="settings-themes"
+              role="radiogroup"
+              aria-label="界面主题"
             >
-              <View style={styles.miniApp}>
-                <View
-                  style={{
-                    height: 7,
-                    width: 29,
-                    backgroundColor: palette.accent,
-                    borderRadius: 4,
-                  }}
-                />
-                <View
-                  style={{
-                    height: 30,
-                    width: "75%",
-                    backgroundColor: palette.surface,
-                    borderRadius: 7,
-                    marginTop: 14,
-                    borderWidth: 1,
-                    borderColor: palette.border,
-                  }}
-                />
-                <View
-                  style={{
-                    height: 7,
-                    width: "50%",
-                    backgroundColor: palette.border,
-                    borderRadius: 4,
-                    marginTop: 9,
-                  }}
-                />
-                <View
-                  style={{
-                    height: 7,
-                    width: "68%",
-                    backgroundColor: palette.border,
-                    borderRadius: 4,
-                    marginTop: 6,
-                  }}
-                />
-              </View>
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 7 }}
+              {themes.map(({ id, title, hint, icon: Icon }) => {
+                const selected = workspace.state.theme === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    className={`settings-theme${selected ? " selected" : ""}`}
+                    onClick={() =>
+                      workspace.setState((s) => ({ ...s, theme: id }))
+                    }
+                  >
+                    {id === "system" ? (
+                      <span className="settings-theme-split" aria-hidden="true">
+                        <ThemePreview mode="dark" />
+                        <ThemePreview mode="light" />
+                      </span>
+                    ) : (
+                      <ThemePreview mode={id} />
+                    )}
+                    <span className="settings-theme-label">
+                      <Icon size={14} />
+                      <strong>{title}</strong>
+                      <span>{hint}</span>
+                      {selected ? <Check size={14} className="settings-check" /> : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="settings-group">
+              <Row
+                title="减少动态效果"
+                hint={
+                  systemReduced
+                    ? "已遵循系统的减少动态效果设置"
+                    : "关闭轨道旋转与入场过渡，按钮仍保留即时反馈"
+                }
               >
-                <Icon color={palette.accent} size={16} />
-                <Text
-                  style={{
-                    color: palette.text,
-                    fontFamily: fonts.medium,
-                    fontSize: 14,
+                <Switch
+                  accessibilityLabel="减少动态效果"
+                  value={workspace.state.reduceMotion || systemReduced}
+                  disabled={systemReduced}
+                  onValueChange={(value) =>
+                    workspace.setState((s) => ({ ...s, reduceMotion: value }))
+                  }
+                  trackColor={switchColors}
+                  thumbColor="#FFFFFF"
+                />
+              </Row>
+              <button
+                type="button"
+                className="settings-row settings-row-button"
+                aria-expanded={lab}
+                onClick={() => setLab((value) => !value)}
+              >
+                <span className="settings-row-copy">
+                  <strong>主题实验室</strong>
+                  <span>查看字体、色板与动效参数</span>
+                </span>
+                <ChevronRight
+                  size={16}
+                  className={`settings-chevron${lab ? " open" : ""}`}
+                />
+              </button>
+              {lab ? (
+                <div className="settings-lab">
+                  <div className="settings-lab-type">
+                    <span>Aa. aura</span>
+                    <p>
+                      Manrope · 界面与标题
+                      <br />
+                      IBM Plex Mono · 数字与技术标签
+                      <br />
+                      中文 · 设备原生中文字体
+                    </p>
+                  </div>
+                  <div className="settings-swatches">
+                    {(
+                      ["background", "surface", "soft", "accent", "primary"] as const
+                    ).map((key) => (
+                      <div key={key}>
+                        <span style={{ background: colors[key] }} />
+                        <code>{key}</code>
+                      </div>
+                    ))}
+                  </div>
+                  <code className="settings-lab-motion">
+                    PRESS 110ms · REVEAL 420ms · ORBIT 24s
+                  </code>
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section id="settings-models" aria-labelledby="settings-models-title">
+            <header className="settings-section-head">
+              <h2 id="settings-models-title">模型与账号</h2>
+              <p>新对话默认使用的回复方式。工作流的运行模式在运行时单独选择。</p>
+            </header>
+            <div
+              className="settings-group settings-choices"
+              role="radiogroup"
+              aria-label="默认对话模型"
+            >
+              {providers.map(({ id, title, hint }) => {
+                const selected = workspace.state.provider === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    disabled={workspace.busy}
+                    className={`settings-row settings-choice${selected ? " selected" : ""}`}
+                    onClick={() =>
+                      workspace.setState((s) => ({
+                        ...s,
+                        provider: id,
+                        endpoint:
+                          id === "offline"
+                            ? s.endpoint
+                            : s.endpoint || "http://127.0.0.1:4311",
+                      }))
+                    }
+                  >
+                    <span className="settings-radio" aria-hidden="true" />
+                    <span className="settings-row-copy">
+                      <strong>{title}</strong>
+                      <span>{hint}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="settings-group">
+              <Row
+                title="Codex 账号"
+                hint={
+                  <>
+                    <span className={`settings-state ${codex.state}`}>
+                      {codexLabel}
+                    </span>
+                    {codex.state === "error" ? ` · ${codex.message}` : ""}
+                  </>
+                }
+              >
+                <CodexLoginButton auth={codexAuth} compact={false} />
+              </Row>
+              <Row title="默认 Codex 模型" hint="后端默认配置；可在每个会话的输入框下单独覆盖模型与思考强度">
+                <code className="settings-value">{codex.model}</code>
+              </Row>
+            </div>
+          </section>
+
+          <section id="settings-connection" aria-labelledby="settings-connection-title">
+            <header className="settings-section-head">
+              <h2 id="settings-connection-title">连接</h2>
+              <p>工作台服务负责对话、工作流和工作台数据。手机连接时请填写电脑的局域网 IP。</p>
+            </header>
+            <div className="settings-group">
+              <div className="settings-row settings-row-stack">
+                <label className="settings-row-copy" htmlFor="settings-endpoint">
+                  <strong>工作台服务地址</strong>
+                  <span>
+                    当前：
+                    <code>{workspace.state.endpoint || "http://127.0.0.1:4311"}</code>
+                  </span>
+                </label>
+                <form
+                  className="settings-endpoint"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void connect();
                   }}
                 >
-                  {title}
-                </Text>
-                {workspace.state.theme === id ? (
-                  <Check
-                    size={16}
-                    color={palette.accent}
-                    style={{ marginLeft: "auto" }}
+                  <input
+                    id="settings-endpoint"
+                    value={address}
+                    onChange={(event) => setAddress(event.target.value)}
+                    placeholder="http://192.168.1.8:4311"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    inputMode="url"
                   />
+                  <button
+                    type="submit"
+                    className="tool-button"
+                    disabled={checking || workspace.busy}
+                  >
+                    <Wifi size={14} />
+                    {checking ? "正在连接…" : "测试并连接"}
+                  </button>
+                </form>
+                {connection ? (
+                  <p
+                    className={`settings-feedback ${connection.tone}`}
+                    aria-live="polite"
+                  >
+                    {connection.text}
+                  </p>
                 ) : null}
-              </View>
-              <Text
-                style={[
-                  textType.label,
-                  { color: palette.muted, fontSize: 8, marginTop: 7 },
-                ]}
-              >
-                {en}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <View style={[styles.row, { borderColor: colors.border }]}>
-        <View style={styles.rowLabel}>
-          <Monitor size={18} color={colors.secondary} />
-          <Text style={[textType.body, { color: colors.text }]}>跟随系统</Text>
-        </View>
-        <Switch
-          accessibilityLabel="跟随系统主题"
-          value={workspace.state.theme === "system"}
-          onValueChange={(value) =>
-            workspace.setState((s) => ({
-              ...s,
-              theme: value ? "system" : dark ? "dark" : "light",
-            }))
-          }
-          trackColor={{ false: colors.border, true: colors.primary }}
-          thumbColor="#FFFFFF"
-        />
-      </View>
-      <View style={[styles.row, { borderColor: colors.border }]}>
-        <View style={{ gap: 4, flex: 1 }}>
-          <View style={styles.rowLabel}>
-            <WandSparkles size={18} color={colors.secondary} />
-            <Text style={[textType.body, { color: colors.text }]}>
-              减少动态效果
-            </Text>
-          </View>
-          <Text
-            style={[textType.small, { color: colors.muted, paddingLeft: 30 }]}
-          >
-            {systemReduced
-              ? "已遵循系统的减少动态效果设置"
-              : "关闭轨道旋转与入场过渡"}
-          </Text>
-        </View>
-        <Switch
-          accessibilityLabel="减少动态效果"
-          value={workspace.state.reduceMotion || systemReduced}
-          disabled={systemReduced}
-          onValueChange={(value) =>
-            workspace.setState((s) => ({ ...s, reduceMotion: value }))
-          }
-          trackColor={{ false: colors.border, true: colors.primary }}
-          thumbColor="#FFFFFF"
-        />
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="查看主题设计规范"
-        onPress={() => setPreview((v) => !v)}
-        style={[styles.row, { borderColor: colors.border }]}
-      >
-        <Text style={[textType.body, { color: colors.text }]}>主题实验室</Text>
-        <ChevronRight
-          size={18}
-          color={colors.muted}
-          style={{ transform: `rotate(${preview ? "90deg" : "0deg"})` }}
-        />
-      </Pressable>
-      {preview ? (
-        <Reveal
-          style={[
-            styles.lab,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-        >
-          <Label>CHROMATIC / TYPOGRAPHIC / KINETIC</Label>
-          <Text
-            style={{
-              fontFamily: fonts.display,
-              color: colors.text,
-              fontSize: 40,
-              letterSpacing: -2,
-              marginVertical: 16,
-            }}
-          >
-            Aa. aura
-          </Text>
-          <Text style={[textType.small, { color: colors.secondary }]}>
-            Manrope · 界面与标题{"\n"}IBM Plex Mono · 数字与技术标签{"\n"}中文 ·
-            设备原生中文字体
-          </Text>
-          <View style={{ flexDirection: "row", gap: 8, marginTop: 20 }}>
-            {["background", "surface", "soft", "accent", "primary"].map(
-              (key) => (
-                <View key={key} style={{ flex: 1, gap: 6 }}>
-                  <View
-                    style={{
-                      height: 36,
-                      borderRadius: 9,
-                      backgroundColor: colors[key as keyof typeof colors],
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                    }}
-                  />
-                  <Text
-                    style={{
-                      fontFamily: fonts.mono,
-                      color: colors.muted,
-                      fontSize: 8,
+              </div>
+              {workspace.state.provider !== "offline" ? (
+                <Row title="断开工作台" hint="切回本地演示，不影响已保存的会话">
+                  <button
+                    type="button"
+                    className="tool-button"
+                    disabled={workspace.busy}
+                    onClick={() => {
+                      workspace.setState((s) => ({ ...s, provider: "offline" }));
+                      setConnection({ tone: "info", text: "已切回本地演示。" });
                     }}
                   >
-                    {colors[key as keyof typeof colors]}
-                  </Text>
-                </View>
-              ),
-            )}
-          </View>
-          <Orb compact />
-          <Label>PRESS 110ms · REVEAL 420ms · ORBIT 24s</Label>
-        </Reveal>
-      ) : null}
-      <View style={{ marginTop: 34 }}>
-        <SectionHeading title="对话服务" meta="02 / CONNECTION" />
-        <View
-          style={[
-            styles.service,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Radio size={20} color={colors.accent} />
-            <Text
-              style={{
-                color: colors.text,
-                fontFamily: fonts.medium,
-                fontSize: 14,
-              }}
-            >
-              {workspace.state.provider === "offline"
-                ? "本地演示"
-                : workspace.state.provider === "codex"
-                  ? "DSH · Codex 订阅"
-                  : "DSH 演示服务"}
-            </Text>
-            <View
-              style={{
-                marginLeft: "auto",
-                width: 6,
-                height: 6,
-                backgroundColor: colors.success,
-                borderRadius: 3,
-              }}
+                    <Radio size={14} />
+                    使用本地演示
+                  </button>
+                </Row>
+              ) : null}
+            </div>
+          </section>
+
+          <section id="settings-plugins" aria-labelledby="settings-plugins-title">
+            <header className="settings-section-head">
+              <h2 id="settings-plugins-title">插件</h2>
+              <p>显式接入本机的 Action 与 Flow 目录。插件以完整 Node.js 权限运行。</p>
+            </header>
+            <PluginDirectorySettings
+              endpoint={workspace.state.endpoint || "http://127.0.0.1:4311"}
             />
-          </View>
-          <Text
-            style={[
-              textType.small,
-              { color: colors.secondary, marginTop: 12, marginBottom: 18 },
-            ]}
-          >
-            本地模式无需联网。连接工作台后可以使用 DSH 演示；登录 Codex
-            后，真实回复仍由 DSH 的模型适配器与会话链路处理。
-          </Text>
-          {workspace.state.provider !== "offline" ? (
-            <Button
-              secondary
-              compact
-              disabled={workspace.busy}
-              icon={Radio}
-              onPress={() => {
-                workspace.setState((s) => ({ ...s, provider: "offline" }));
-                setConnection("已切回本地演示。");
-              }}
-            >
-              使用本地演示
-            </Button>
-          ) : null}
-          <Text
-            style={[
-              textType.small,
-              { color: colors.muted, marginTop: 18, marginBottom: 8 },
-            ]}
-          >
-            工作台服务地址
-          </Text>
-          <TextInput
-            accessibilityLabel="工作台服务地址"
-            value={address}
-            onChangeText={setAddress}
-            placeholder="http://192.168.1.8:4311"
-            placeholderTextColor={colors.muted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            style={[
-              styles.address,
-              {
-                color: colors.text,
-                backgroundColor: colors.input,
-                borderColor: colors.border,
-              },
-            ]}
-          />
-          <Text
-            style={[
-              textType.small,
-              { color: colors.muted, marginTop: 8, marginBottom: 16 },
-            ]}
-          >
-            手机连接时请填写电脑的局域网 IP。
-          </Text>
-          <Button
-            secondary
-            compact
-            icon={Wifi}
-            disabled={checking || workspace.busy}
-            onPress={() => void connect()}
-          >
-            {checking ? "正在连接…" : "测试并连接"}
-          </Button>
-          {connection ? (
-            <Text
-              accessibilityLiveRegion="polite"
-              style={[textType.small, { color: colors.accent, marginTop: 12 }]}
-            >
-              {connection}
-            </Text>
-          ) : null}
-        </View>
-      </View>
-      <View style={{ marginTop: 34 }}>
-        <SectionHeading title="外部插件" meta="03 / EXTENSIONS" />
-        <PluginDirectorySettings
-          endpoint={workspace.state.endpoint || "http://127.0.0.1:4311"}
-        />
-      </View>
-      <View style={{ alignItems: "center", marginTop: 32, gap: 6 }}>
-        <Label>AURA / VERSION 0.1.0</Label>
-        <Text style={[textType.small, { color: colors.muted }]}>
-          专注于日常，也给灵感留白。
-        </Text>
-      </View>
-    </ScrollView>
+          </section>
+
+          <section id="settings-about" aria-labelledby="settings-about-title">
+            <header className="settings-section-head">
+              <h2 id="settings-about-title">关于</h2>
+            </header>
+            <div className="settings-group">
+              <Row title="Aura" hint="专注于日常，也给灵感留白。">
+                <code className="settings-value">v0.1.0</code>
+              </Row>
+              <Row title="本地数据" hint="会话与偏好保存在本机浏览器存储；模型凭据只保存在后端。" />
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  page: {
-    padding: 24,
-    paddingBottom: 36,
-    width: "100%",
-    maxWidth: 760,
-    alignSelf: "center",
-  },
-  themes: { flexDirection: "row", gap: 12 },
-  themeChoice: { flex: 1, borderRadius: 10, padding: 17 },
-  miniApp: { marginBottom: 22, paddingHorizontal: 2 },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    minHeight: 66,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingVertical: 14,
-    gap: 12,
-  },
-  rowLabel: { flexDirection: "row", gap: 12, alignItems: "center" },
-  lab: { padding: 18, marginTop: 16, borderWidth: 1, borderRadius: 10 },
-  service: { padding: 20, borderRadius: 10, borderWidth: 1 },
-  address: {
-    fontFamily: fonts.mono,
-    fontSize: 13,
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 14,
-    minHeight: 48,
-  },
-});

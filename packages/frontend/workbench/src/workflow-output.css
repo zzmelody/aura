@@ -1,0 +1,362 @@
+/* Workflow run card: one bordered card per run, media first, raw data folded. */
+.workflow-message-assistant {
+  min-width: 0;
+  padding: 14px 16px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.workflow-response-heading {
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.workflow-response-mark {
+  width: 28px;
+  height: 28px;
+  flex-basis: 28px;
+  border-radius: 8px;
+  background: var(--soft);
+}
+.workflow-response-identity strong {
+  font-size: 13px;
+}
+.workflow-run-number {
+  font-size: 11px;
+}
+.workflow-response-heading .workflow-run-meta {
+  font-size: 11px;
+}
+.workflow-response-heading .workflow-status-badge {
+  margin-top: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+/* Steps read as a compact checklist, separated from the result. */
+.workflow-stream-steps {
+  margin: 0 0 12px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: var(--background);
+}
+.workflow-stream-steps > li > button {
+  padding: 6px 6px 6px 2px;
+  font-size: 13px;
+}
+.workflow-step-state {
+  background: var(--background);
+}
+.workflow-stream-output {
+  padding-top: 4px;
+  border-top: 0;
+}
+
+/* Generated files. */
+.workflow-artifacts {
+  margin: 0 0 10px;
+}
+.artifact-inline-list {
+  display: grid;
+  gap: 10px;
+}
+.artifact-inline {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--background);
+}
+.artifact-inline video {
+  width: 100%;
+  max-height: 460px;
+  border-radius: 8px;
+  background: #000;
+}
+.artifact-inline-video video {
+  justify-self: center;
+  width: auto;
+  max-width: 100%;
+}
+.artifact-inline audio {
+  width: 100%;
+  height: 40px;
+}
+.artifact-inline figcaption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.artifact-inline-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--accent);
+}
+.artifact-inline-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.artifact-inline-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+.artifact-inline-copy small {
+  color: var(--muted);
+  font:
+    11px "IBM Plex Mono",
+    monospace;
+}
+.artifact-inline-actions {
+  display: flex;
+  gap: 4px;
+}
+.artifact-inline-actions .icon-control {
+  text-decoration: none;
+}
+.artifact-grid {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+.artifact-card {
+  border-radius: 12px;
+}
+
+/* Local paths become compact, copyable file chips. */
+.workflow-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--secondary);
+  vertical-align: middle;
+}
+.workflow-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+}
+.workflow-file-folder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font:
+    11px "IBM Plex Mono",
+    monospace;
+}
+.workflow-file-chip .icon-control {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+}
+
+/* Output fields: label above value, tighter rhythm. */
+.workflow-stream-output .workflow-value-fields {
+  gap: 12px;
+}
+.workflow-stream-output .workflow-value-field > dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.workflow-output-details {
+  margin-top: 2px;
+}
+.workflow-output-details > summary {
+  width: fit-content;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.workflow-output-details > summary:hover {
+  color: var(--text);
+}
+.workflow-output-details[open] > summary {
+  margin-bottom: 10px;
+}
+.workflow-response-meta {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+
+@media (max-width: 600px) {
+  .workflow-message-assistant {
+    padding: 12px;
+  }
+  .workflow-file-folder {
+    display: none;
+  }
+}
+
+/* Step details: quiet meta row, input and output as side-by-side panels. */
+.workflow-stream-steps .workflow-step-detail {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 10px 26px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.workflow-step-detail h4 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font:
+    10px/16px "IBM Plex Mono",
+    monospace;
+  font-weight: 400;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+.workflow-step-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.workflow-step-meta > code {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--elevated);
+  color: var(--secondary);
+  font:
+    11px "IBM Plex Mono",
+    monospace;
+}
+.workflow-step-attempts {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--elevated);
+}
+.workflow-step-attempts button {
+  min-height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 11px;
+}
+.workflow-step-attempts button.selected {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+}
+.workflow-step-attempts button.phase-failed {
+  color: var(--danger);
+}
+.workflow-step-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+}
+.workflow-step-io {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.workflow-step-io.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.workflow-step-panel {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--background);
+}
+.workflow-step-panel .workflow-value-fields {
+  gap: 8px;
+}
+.workflow-step-panel .workflow-value-field {
+  grid-template-columns: minmax(64px, 96px) minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 12px;
+}
+.workflow-step-panel .workflow-value-field > dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.workflow-step-panel .workflow-value-field > dd {
+  font-size: 12px;
+}
+/* Small numeric outputs read as rows, not oversized metric tiles. */
+.workflow-step-panel .workflow-value-metrics {
+  max-width: none;
+  grid-template-columns: minmax(0, 1fr);
+}
+.workflow-step-panel .workflow-value-metrics > .workflow-value-field {
+  grid-template-columns: minmax(64px, 96px) minmax(0, 1fr);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.workflow-step-panel .workflow-value-metrics .workflow-value-number {
+  font:
+    13px "IBM Plex Mono",
+    monospace;
+  color: var(--text);
+}
+.workflow-step-panel .workflow-json-toggle {
+  margin-top: 6px;
+  font-size: 11px;
+}
+.workflow-step-detail .workflow-history-actions {
+  border-top: 0;
+  font-size: 11px;
+}
+.workflow-step-detail .workflow-history-entry {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--background);
+}
+.workflow-step-detail .workflow-history-entry small {
+  font:
+    10px "IBM Plex Mono",
+    monospace;
+  letter-spacing: 0.6px;
+}
+@media (max-width: 760px) {
+  .workflow-step-io {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workflow-stream-steps .workflow-step-detail {
+    margin-left: 0;
+  }
+}
+/* Narrow panels: the file name matters more than its folder. */
+.workflow-step-panel .workflow-file-folder {
+  display: none;
+}
+.workflow-step-panel .workflow-file-chip {
+  max-width: 100%;
+}

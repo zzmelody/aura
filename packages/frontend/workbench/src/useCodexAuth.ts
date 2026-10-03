@@ -28,7 +28,7 @@ export function useCodexAuth(workspace: WorkspaceController) {
   const endpoint = workspace.state.endpoint || localRuntime;
   const [status, setStatus] = useState<CodexAuthStatus>({
     state: "signed_out",
-    model: "gpt-5.6-terra",
+    model: "gpt-6.1-sol",
   });
   const [loading, setLoading] = useState(true);
 
@@ -53,7 +53,7 @@ export function useCodexAuth(workspace: WorkspaceController) {
         setStatus({
           state: "error",
           message: "请先启动 Aura 工作台服务，再登录 Codex。",
-          model: "gpt-5.6-terra",
+          model: "gpt-6.1-sol",
         });
       } finally {
         setLoading(false);

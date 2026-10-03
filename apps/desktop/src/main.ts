@@ -8,6 +8,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { startAuraRuntime } from "@aura/runtime";
 import { closeSiteHost, installSiteHost } from "./site-host.ts";
 import { installWorkflowFileHost } from "./workflow-file-host.ts";
+import { installWindowHost } from "./window-host.ts";
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(sourceDir, "..");
@@ -17,6 +18,7 @@ let ownedRuntime: Awaited<ReturnType<typeof startAuraRuntime>> | null = null;
 let renderer: ServerType | null = null;
 installSiteHost();
 installWorkflowFileHost();
+installWindowHost();
 const development = !app.isPackaged && process.argv.includes("--dev");
 if (development) {
   const parentPid = Number(process.env.AURA_DEV_PARENT_PID);
@@ -101,12 +103,14 @@ async function openWorkbench() {
   await ensureRuntime();
   const url = await serveRenderer();
   const window = new BrowserWindow({
-    width: 1180,
-    height: 780,
+    width: 1360,
+    height: 860,
     minWidth: 760,
     minHeight: 600,
-    backgroundColor: "#0C0B10",
+    backgroundColor: "#171719",
     title: "Aura",
+    titleBarStyle: "hidden",
+    titleBarOverlay: { color: "#1d1d20", symbolColor: "#b5b5c0", height: 38 },
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -114,6 +118,7 @@ async function openWorkbench() {
       preload: resolve(appDir, "dist-host", "preload.cjs"),
     },
   });
+  window.setMenu(null);
   window.webContents.on("preload-error", (_event, _path, error) => {
     console.error("Aura desktop bridge failed to load:", error.message);
   });

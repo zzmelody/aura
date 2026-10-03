@@ -16,13 +16,7 @@ import type { FlowDraftController } from "../flowDraft";
 import { useFlowSource } from "../flowSource";
 import { FlowGraphView } from "./FlowGraphView";
 import { FlowStudio } from "./FlowStudio";
-const VideoProjects = React.lazy(() =>
-  import("./VideoProjects").then((module) => ({
-    default: module.VideoProjects,
-  })),
-);
-const ContentProjects = React.lazy(() => import("./ContentProjects").then(module => ({ default: module.ContentProjects })));
-const TopicLibrary = React.lazy(() => import("./TopicLibrary").then(module => ({ default: module.TopicLibrary })));
+import type { StudioTab } from "../types";
 
 function WorkflowPreview({
   flow,
@@ -81,7 +75,7 @@ export function Workflows({
   onAsk,
   onRun,
   onDetailChange,
-  onDirtyChange,
+  onOpenStudio,
 }: {
   browseRevision: number;
   endpoint: string;
@@ -91,33 +85,13 @@ export function Workflows({
   onAsk(): void;
   onRun(flow: FlowCatalogEntry): void;
   onDetailChange(open: boolean): void;
-  onDirtyChange?(dirty: boolean): void;
+  /** Flows backed by a dedicated studio open it instead of a bare run. */
+  onOpenStudio(studio: StudioTab): void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [initialLine, setInitialLine] = useState<number>();
   const [expanded, setExpanded] = useState<string>();
   const [query, setQuery] = useState("");
-  const [research, setResearch] = useState(() => sessionStorage.getItem("aura-topic-library-open") === "1");
-  const [content, setContent] = useState(() => sessionStorage.getItem("aura-content-studio-open") === "1");
-  const [videos, setVideos] = useState(
-    () => sessionStorage.getItem("aura-video-studio-open") === "1",
-  );
-  const lastBrowse = React.useRef(browseRevision);
-  useEffect(() => {
-    if (lastBrowse.current !== browseRevision) {
-      setVideos(false);
-      setContent(false);
-      setResearch(false);
-      sessionStorage.removeItem("aura-topic-library-open");
-      sessionStorage.removeItem("aura-content-studio-open");
-      sessionStorage.removeItem("aura-video-studio-open");
-      lastBrowse.current = browseRevision;
-    }
-  }, [browseRevision]);
-  const openVideos = () => {
-    setVideos(true);
-    sessionStorage.setItem("aura-video-studio-open", "1");
-  };
   useEffect(() => {
     setEditing(null);
     onDetailChange(false);
@@ -130,9 +104,6 @@ export function Workflows({
   useEffect(() => {
     if (editorRevision) edit("");
   }, [editorRevision]);
-  useEffect(() => {
-    if (videos || research || content) onDetailChange(true);
-  }, [videos, research, content, onDetailChange, endpoint]);
   const edit = (id: string, line?: number) => {
     setEditing(id);
     setInitialLine(line);
@@ -144,24 +115,6 @@ export function Workflows({
       .toLowerCase()
       .includes(query.trim().toLowerCase()),
   );
-  if (videos)
-    return (
-      <React.Suspense
-        fallback={<div className="workspace-loading">正在打开视频工作台…</div>}
-      >
-        <VideoProjects
-          key={endpoint}
-          endpoint={endpoint}
-          onDirtyChange={onDirtyChange}
-          onBack={() => {
-            setVideos(false);
-            sessionStorage.removeItem("aura-video-studio-open");
-            onDetailChange(false);
-          }}
-        />
-      </React.Suspense>
-    );
-  if (content) return <React.Suspense fallback={<div className="workspace-loading">正在打开内容制作项目…</div>}><ContentProjects key={endpoint} endpoint={endpoint} onDirtyChange={onDirtyChange} onBack={() => { setContent(false); sessionStorage.removeItem("aura-content-studio-open"); onDetailChange(false); }} /></React.Suspense>;
   if (editing !== null)
     return (
       <FlowStudio
@@ -180,25 +133,18 @@ export function Workflows({
         }}
       />
     );
-  if (research) return <React.Suspense fallback={<div className="workspace-loading">正在打开选题库…</div>}><TopicLibrary key={endpoint} endpoint={endpoint} onDirtyChange={onDirtyChange} onBack={() => { setResearch(false); sessionStorage.removeItem("aura-topic-library-open"); onDetailChange(false); }} /></React.Suspense>;
   return (
     <section className="workflow-library-page" aria-label="工作流列表">
       <header className="workflow-page-heading">
         <div>
           <h1>工作流</h1>
-          <p>把重复的工作，交给一段好流程。</p>
+          <p>底层能力目录。可在这里运行，也可在任何对话中输入 / 调用。</p>
         </div>
         <button className="tool-button" onClick={() => edit("")}>
           <Plus size={16} />
           创建工作流
         </button>
       </header>
-      <button className="video-project-entry tool-button" onClick={openVideos}>
-        <Play size={16} />
-        多镜头剧情视频 · 打开视频项目
-      </button>
-      <button className="video-project-entry tool-button" onClick={() => { setContent(true); sessionStorage.setItem("aura-content-studio-open", "1"); onDetailChange(true); }}><Play size={16} />自媒体内容制作 · 打开内容项目</button>
-      <button className="video-project-entry tool-button" onClick={() => { setResearch(true); sessionStorage.setItem("aura-topic-library-open", "1"); onDetailChange(true); }}><Search size={16} />选题研究 · 跨平台发现与持久选题库</button>
       <div className="workflow-page-tools">
         <label className="workflow-card-search">
           <Search size={16} />
@@ -289,7 +235,9 @@ export function Workflows({
                   aria-label={`运行工作流：${flow.title}`}
                   title="运行工作流"
                   onClick={() =>
-                    flow.id === "multi-shot-video" ? openVideos() : onRun(flow)
+                    flow.id === "multi-shot-video"
+                      ? onOpenStudio("studio:video")
+                      : onRun(flow)
                   }
                 >
                   <Play size={17} />

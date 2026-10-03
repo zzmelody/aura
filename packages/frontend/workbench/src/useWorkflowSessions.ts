@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { Workspace, Message } from "@aura/core/types";
+import type { Workspace, Message, Session } from "@aura/core/types";
 import type {
+  FlowCatalogEntry,
   FlowMode,
   FlowRun,
   FlowRunSummary,
@@ -9,9 +10,9 @@ import type {
 } from "@aura/protocol/types";
 import {
   applyWorkflowRun,
-  isWorkflowActive,
   isWorkflowOpen,
   mergeWorkflowRuns,
+  messageEndpoint,
   workflowApi,
   workflowRunKey,
   WorkflowApiError,
@@ -54,21 +55,22 @@ export function useWorkflowSessions(
         if (abort.signal.aborted) return;
         const pending = stateRef.current.sessions.some(
           (session) =>
-            session.workflow?.endpoint === endpoint && session.workflow.pending,
+            (session.workflow?.endpoint === endpoint &&
+              session.workflow.pending) ||
+            session.pendingWorkflow?.endpoint === endpoint,
         );
         const activeIds = new Set(
-          stateRef.current.sessions
-            .filter((session) => session.workflow?.endpoint === endpoint)
-            .flatMap((session) =>
-              session.messages
-                .filter(
-                  (message) =>
-                    message.workflowRunId &&
-                    (isWorkflowOpen(message.workflowPhase) ||
-                      message.status === "streaming"),
-                )
-                .map((message) => message.workflowRunId),
-            ),
+          stateRef.current.sessions.flatMap((session) =>
+            session.messages
+              .filter(
+                (message) =>
+                  message.workflowRunId &&
+                  messageEndpoint(session, message) === endpoint &&
+                  (isWorkflowOpen(message.workflowPhase) ||
+                    message.status === "streaming"),
+              )
+              .map((message) => message.workflowRunId),
+          ),
         );
         setState((current) =>
           mergeWorkflowRuns(
@@ -103,38 +105,71 @@ export function useWorkflowSessions(
     };
   }, [endpoint, ready, receive, setState]);
 
-  async function start(sessionId: string, input: JsonValue, mode: FlowMode) {
-    const session = stateRef.current.sessions.find(
-      (item) => item.id === sessionId,
-    );
-    const binding = session?.workflow;
+  /** Bound sessions run their own Flow; ordinary chats pass the chosen one. */
+  async function start(
+    sessionId: string,
+    input: JsonValue,
+    mode: FlowMode,
+    flow?: FlowCatalogEntry,
+    seed?: Session,
+  ) {
+    const session =
+      stateRef.current.sessions.find((item) => item.id === sessionId) ??
+      (seed?.id === sessionId ? seed : undefined);
+    const bound = session?.workflow;
+    const target =
+      bound ??
+      session?.pendingWorkflow ??
+      (flow
+        ? {
+            id: flow.id,
+            title: flow.title,
+            endpoint,
+            inputSchema: flow.inputSchema,
+          }
+        : undefined);
     if (
-      !binding ||
+      !session ||
+      !target ||
       submittingRef.current.has(sessionId) ||
       session.messages.some((message) => isWorkflowOpen(message.workflowPhase))
     )
       return;
-    const pending = binding.pending ?? {
+    const pending = (bound
+      ? bound.pending
+      : session.pendingWorkflow?.pending) ?? {
       requestId: crypto.randomUUID(),
       input,
       mode,
+    };
+    const withPending = (item: Session): Session =>
+      bound && item.workflow
+        ? { ...item, workflow: { ...item.workflow, pending } }
+        : { ...item, pendingWorkflow: { ...target, pending } };
+    const clearPending = (item: Session): Session => {
+      if (item.workflow) {
+        const { pending: _, ...workflow } = item.workflow;
+        return { ...item, workflow };
+      }
+      const { pendingWorkflow: _, ...rest } = item;
+      return rest;
     };
     submittingRef.current.add(sessionId);
     setSubmitting([...submittingRef.current]);
     setErrors((current) => ({ ...current, [sessionId]: "" }));
     setState((current) => ({
       ...current,
-      sessions: current.sessions.map((item) =>
-        item.id === sessionId && item.workflow
-          ? { ...item, workflow: { ...item.workflow, pending } }
-          : item,
-      ),
+      sessions: current.sessions.some((item) => item.id === sessionId)
+        ? current.sessions.map((item) =>
+            item.id === sessionId ? withPending(item) : item,
+          )
+        : [withPending(session), ...current.sessions].slice(0, 100),
     }));
     let acceptedRunId: string | undefined;
     try {
       const { runId } = await workflowApi<{ runId: string }>(
-        binding.endpoint,
-        `/${encodeURIComponent(binding.id)}/runs`,
+        target.endpoint,
+        `/${encodeURIComponent(target.id)}/runs`,
         pending,
       );
       acceptedRunId = runId;
@@ -142,12 +177,12 @@ export function useWorkflowSessions(
         ...current,
         sessions: current.sessions
           .map((item) => {
-            if (item.id !== sessionId || !item.workflow) return item;
-            const { pending: _, ...workflow } = item.workflow;
+            if (item.id !== sessionId) return item;
+            const cleared = clearPending(item);
             if (
               item.messages.some((message) => message.workflowRunId === runId)
             )
-              return { ...item, workflow };
+              return cleared;
             const values =
               pending.input &&
               typeof pending.input === "object" &&
@@ -158,6 +193,15 @@ export function useWorkflowSessions(
               values.length === 1 && typeof values[0] === "string"
                 ? values[0]
                 : JSON.stringify(pending.input, null, 2);
+            const ref = bound
+              ? {}
+              : {
+                  workflow: {
+                    id: target.id,
+                    title: target.title,
+                    endpoint: target.endpoint,
+                  },
+                };
             const messages: Message[] = [
               { id: `${runId}:input`, role: "user", text, status: "complete" },
               {
@@ -167,11 +211,11 @@ export function useWorkflowSessions(
                 status: "streaming",
                 workflowRunId: runId,
                 workflowPhase: "queued",
+                ...ref,
               },
             ];
             return {
-              ...item,
-              workflow,
+              ...cleared,
               updatedAt: Date.now(),
               messages: [...item.messages, ...messages].slice(-200),
             };
@@ -179,10 +223,10 @@ export function useWorkflowSessions(
           .sort((a, b) => b.updatedAt - a.updatedAt),
       }));
       const run = await workflowApi<FlowRun>(
-        binding.endpoint,
+        target.endpoint,
         `/runs/${encodeURIComponent(runId)}`,
       );
-      receive(binding.endpoint, run);
+      receive(target.endpoint, run);
     } catch (cause) {
       if (
         cause instanceof WorkflowApiError &&
@@ -191,11 +235,9 @@ export function useWorkflowSessions(
       ) {
         setState((current) => ({
           ...current,
-          sessions: current.sessions.map((item) => {
-            if (item.id !== sessionId || !item.workflow) return item;
-            const { pending: _, ...workflow } = item.workflow;
-            return { ...item, workflow };
-          }),
+          sessions: current.sessions.map((item) =>
+            item.id === sessionId ? clearPending(item) : item,
+          ),
         }));
       }
       setErrors((current) => ({
@@ -209,20 +251,33 @@ export function useWorkflowSessions(
     }
     return acceptedRunId;
   }
+  /** Drops an unconfirmed ordinary-chat submission the user chose to abandon. */
+  function discardPending(sessionId: string) {
+    setState((current) => ({
+      ...current,
+      sessions: current.sessions.map((item) => {
+        if (item.id !== sessionId || !item.pendingWorkflow) return item;
+        const { pendingWorkflow: _, ...rest } = item;
+        return rest;
+      }),
+    }));
+  }
   async function cancel(sessionId: string) {
     const session = stateRef.current.sessions.find(
       (item) => item.id === sessionId,
     );
-    const id = session?.messages
+    const open = session?.messages
       .slice()
       .reverse()
-      .find((message) => isWorkflowOpen(message.workflowPhase))?.workflowRunId;
-    if (!id || !session?.workflow) return;
+      .find((message) => isWorkflowOpen(message.workflowPhase));
+    const id = open?.workflowRunId;
+    const source = session && open ? messageEndpoint(session, open) : undefined;
+    if (!id || !source) return;
     try {
       receive(
-        session.workflow.endpoint,
+        source,
         await workflowApi<FlowRun>(
-          session.workflow.endpoint,
+          source,
           `/runs/${encodeURIComponent(id)}/cancel`,
           { requestId: crypto.randomUUID() },
         ),
@@ -234,5 +289,25 @@ export function useWorkflowSessions(
       }));
     }
   }
-  return { runs, start, cancel, receive, errors, submitting };
+  /** True while a run in this session still blocks another submission. */
+  const hasOpenRun = (sessionId?: string) =>
+    Boolean(
+      state.sessions
+        .find((item) => item.id === sessionId)
+        ?.messages.some(
+          (message) =>
+            message.workflowRunId && isWorkflowOpen(message.workflowPhase),
+        ),
+    );
+  return {
+    endpoint,
+    runs,
+    start,
+    cancel,
+    discardPending,
+    hasOpenRun,
+    receive,
+    errors,
+    submitting,
+  };
 }

@@ -1,7 +1,10 @@
-import type { ChatRequest } from "@aura/protocol/types";
+import type { ChatModelSelection, ChatRequest, ChatWorkflowStart } from "@aura/protocol/types";
 import { streamDemo } from "@aura/demo";
 import type { Message } from "@aura/core/types";
 import type { Workspace } from "@aura/core/types";
+
+/** Streamed reply text, or a workflow the chat model started as a tool. */
+export type ReplyChunk = string | ({ type: "workflow" } & ChatWorkflowStart);
 
 export async function* reply(
   messages: Message[],
@@ -9,9 +12,13 @@ export async function* reply(
   endpoint: string,
   sessionId: string,
   signal: AbortSignal,
-): AsyncGenerator<string> {
+  modelConfig?: ChatModelSelection,
+): AsyncGenerator<ReplyChunk> {
   if (provider === "offline") {
-    yield* streamDemo(messages, { signal });
+    yield* streamDemo(
+      messages.map(({ role, text }) => ({ role, text })),
+      { signal },
+    );
     return;
   }
   const response = await fetch(`${endpoint}${provider === "codex" ? "/chat/codex" : "/chat"}`, {
@@ -19,7 +26,14 @@ export async function* reply(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       sessionId,
-      messages: messages.map(({ role, text }) => ({ role, text })),
+      ...(modelConfig ? { modelConfig } : {}),
+      messages: messages.map(({ role, text, images }) => ({
+        role,
+        text,
+        ...(role === "user" && images?.length
+          ? { images: images.map((image) => image.assetId) }
+          : {}),
+      })),
     } satisfies ChatRequest),
     signal,
   });
@@ -41,6 +55,20 @@ export async function* reply(
         const event = JSON.parse(line);
         if (event.type === "delta" && typeof event.text === "string")
           yield event.text;
+        if (
+          event.type === "workflow" &&
+          typeof event.runId === "string" &&
+          typeof event.flowId === "string" &&
+          typeof event.title === "string"
+        )
+          yield {
+            type: "workflow",
+            flowId: event.flowId,
+            title: event.title,
+            runId: event.runId,
+            inputPreview:
+              typeof event.inputPreview === "string" ? event.inputPreview : "",
+          };
         if (event.type === "error")
           throw new Error(event.message || "对话服务暂时不可用");
         if (event.type === "done") completed = true;

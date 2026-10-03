@@ -1,5 +1,12 @@
 /** Text-only message accepted by the demo HTTP endpoint. */
-export type ChatMessage = { role: "user" | "assistant"; text: string };
+/** One conversation turn; user turns may attach uploaded image asset IDs. */
+export type ChatMessage = {
+  role: "user" | "assistant";
+  text: string;
+  images?: string[];
+};
+/** Images sent with one message; the model sees at most this many per request. */
+export const CHAT_IMAGE_LIMIT = 4;
 
 export type SitePackageManager = "pnpm" | "npm" | "yarn" | "bun";
 export interface SiteProject {
@@ -325,6 +332,8 @@ export interface WorkflowArtifact {
   bytes: number;
   width?: number;
   height?: number;
+  /** Measured playback length for audio artifacts. */
+  durationSeconds?: number;
   thumbnailId?: string;
   status: "ready" | "unavailable" | "unsupported";
 }
@@ -346,11 +355,37 @@ export interface FlowHistory {
 }
 
 /** POST /chat body; credentials are configured on the server, never here. */
-export type ChatRequest = { sessionId: string; messages: ChatMessage[] };
+export type ChatModelSelection = { model?: string; reasoningEffort?: string };
+export type ChatModelInfo = {
+  id: string;
+  name: string;
+  reasoningEfforts: { id: string; name: string }[];
+  defaultReasoningEffort?: string;
+};
+export type ChatModelCatalog = {
+  mode: FlowMode;
+  defaultModel: string;
+  models: ChatModelInfo[];
+};
+export type ChatRequest = {
+  sessionId: string;
+  messages: ChatMessage[];
+  /** Applies only to this chat request, never to a tool-started Flow. */
+  modelConfig?: ChatModelSelection;
+};
 
 /** One newline-delimited server event. A done event confirms completion. */
+/** A Flow run the chat model started through a tool call. */
+export interface ChatWorkflowStart {
+  flowId: string;
+  title: string;
+  runId: string;
+  /** Short human-readable record of the arguments the model chose. */
+  inputPreview: string;
+}
 export type ChatEvent =
   | { type: "delta"; text: string }
+  | ({ type: "workflow" } & ChatWorkflowStart)
   | { type: "error"; message: string }
   | { type: "done"; engine: "deepseek-harness"; mode: "demo" }
   | {

@@ -48,6 +48,7 @@ export class ActionRuntime {
   private contentProduction?: import("./content-library.ts").ContentLibrary;
   private topicLibrary?: import("./topic-library.ts").TopicLibrary;
   private contentAnalytics?: import("./content-analytics.ts").ContentAnalyticsLibrary;
+  private gptImage?: import("./gpt-image.ts").GptImageClient;
 
   constructor(
     ctx: Context,
@@ -58,6 +59,7 @@ export class ActionRuntime {
     contentProduction?: import("./content-library.ts").ContentLibrary,
     topicLibrary?: import("./topic-library.ts").TopicLibrary,
     contentAnalytics?: import("./content-analytics.ts").ContentAnalyticsLibrary,
+    gptImage?: import("./gpt-image.ts").GptImageClient,
   ) {
     this.ctx = ctx;
     this.localAI = localAI;
@@ -67,6 +69,7 @@ export class ActionRuntime {
     this.contentProduction = contentProduction;
     this.topicLibrary = topicLibrary;
     this.contentAnalytics = contentAnalytics;
+    this.gptImage = gptImage;
     // Direct calls require an unscoped DSH registration. Keep these short-lived,
     // pinned definitions out of every Agent's model surface, without changing presets.
     const hideDirectTools = (agent: Agent) => {
@@ -104,11 +107,13 @@ export class ActionRuntime {
                   ? this.videoProduction
                   : undefined,
               aura: actionCapabilities(action, this.aura, binding.runId),
+              gptImage: action.id === "image-generate" ? this.gptImage : undefined,
               bindCall: artifactCallBinding(
                 this.artifacts,
                 binding,
                 this.localAI,
                 actionCapabilities(action, this.aura, binding.runId),
+                action.id === "image-generate" ? this.gptImage : undefined,
               ),
             }),
           ),
@@ -145,11 +150,13 @@ export class ActionRuntime {
             ? this.videoProduction
             : undefined,
         aura: actionCapabilities(action, this.aura, binding.runId),
+        gptImage: action.id === "image-generate" ? this.gptImage : undefined,
         bindCall: artifactCallBinding(
           this.artifacts,
           binding,
           this.localAI,
           actionCapabilities(action, this.aura, binding.runId),
+          action.id === "image-generate" ? this.gptImage : undefined,
         ),
       }),
     );

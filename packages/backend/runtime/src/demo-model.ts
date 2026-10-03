@@ -13,6 +13,12 @@ import {
 } from "./http-server.ts";
 import type { DemoModelHandle } from "./types.ts";
 import { isRecord } from "./validation.ts";
+import {
+  demoToolCall,
+  demoToolReply,
+  hasToolResult,
+  type DemoToolCall,
+} from "./demo-chat-tools.ts";
 
 const historyMarker = "AURA_HISTORY_V1\n";
 
@@ -67,16 +73,54 @@ export function createDemoModelApp() {
       let body: unknown;
       let flowOutput: string | undefined;
       let messages: ChatMessage[];
+      let toolCall: DemoToolCall | undefined;
       try {
         body = (await context.req.json()) as unknown;
         flowOutput = flowDemoReply(isRecord(body) ? body.messages : undefined);
         messages = flowOutput === undefined ? extractHistory(body) : [];
+        if (flowOutput === undefined) {
+          toolCall = demoToolCall(body, messages);
+          if (!toolCall && hasToolResult(body)) flowOutput = demoToolReply(body);
+        }
       } catch (error) {
         console.error("[Aura demo model]", errorMessage(error));
         return context.body(null, 400);
       }
 
       return streamSSE(context, async (output) => {
+        if (toolCall) {
+          await output.writeSSE({
+            data: JSON.stringify({
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    role: "assistant",
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: `call_${crypto.randomUUID().replaceAll("-", "")}`,
+                        type: "function",
+                        function: {
+                          name: toolCall.name,
+                          arguments: JSON.stringify(toolCall.arguments),
+                        },
+                      },
+                    ],
+                  },
+                  finish_reason: null,
+                },
+              ],
+            }),
+          });
+          await output.writeSSE({
+            data: JSON.stringify({
+              choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+            }),
+          });
+          await output.writeSSE({ data: "[DONE]" });
+          return;
+        }
         const disconnected = new AbortController();
         output.onAbort(() => disconnected.abort());
         const chunks =

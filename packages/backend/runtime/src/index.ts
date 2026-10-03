@@ -5,12 +5,10 @@ import { OrchestrationHost } from "@aura/orchestration";
 import { createTripoService } from "@aura/tripo";
 import { startApiServer } from "./api-server.ts";
 import { startDemoModel } from "./demo-model.ts";
-import { DshSessionRunner } from "./dsh-session-runner.ts";
 import { configureRuntimeNetwork } from "./network-proxy.ts";
 import { pluginSdkVersion } from "./plugin-sdk-version.ts";
 import {
   isLoopbackRuntimeHost,
-  prepareDshProfile,
   resolveRuntimeConfig,
 } from "./runtime-config.ts";
 import type {
@@ -38,7 +36,6 @@ export async function startAuraRuntime(
 ): Promise<AuraRuntimeHandle> {
   const config = resolveRuntimeConfig(options);
   await configureRuntimeNetwork();
-  await prepareDshProfile(config);
   const pluginManager = await AuraPluginManager.create({
     configPath: config.pluginConfigPath,
     auraVersion: "0.1.0",
@@ -47,6 +44,7 @@ export async function startAuraRuntime(
       "aura.veya.world-agent",
       "aura.veya.creator",
       "aura.veya.cloud-image",
+      "aura.veya.material-maker",
       "aura.tripo.game-asset",
       "aura.flow.invoke",
     ],
@@ -63,18 +61,11 @@ export async function startAuraRuntime(
     apiKey: process.env.TRIPO_API_KEY,
   });
   let demoModel: DemoModelHandle | undefined;
-  let dsh: DshSessionRunner | undefined;
   let api: ApiServerHandle | undefined;
   let flows: OrchestrationHost | undefined;
 
   try {
     demoModel = await startDemoModel();
-    dsh = new DshSessionRunner({
-      root: config.root,
-      dshHome: config.dshHome,
-      dshExecutable: config.dshExecutable,
-      demoModelUrl: demoModel.url,
-    });
     flows = new OrchestrationHost({
       root: config.root,
       dshHome: config.dshHome,
@@ -129,7 +120,6 @@ export async function startAuraRuntime(
     api = await startApiServer({
       config,
       codexAuth,
-      dsh,
       tripo,
       flows,
       pluginSettings: pluginManager,
@@ -138,7 +128,6 @@ export async function startAuraRuntime(
   } catch (error) {
     const cleanups: Promise<void>[] = [codexAuth.close()];
     if (api) cleanups.push(api.close());
-    if (dsh) cleanups.push(dsh.close());
     if (flows) cleanups.push(flows.close());
     if (demoModel) cleanups.push(demoModel.close());
     await Promise.allSettled(cleanups);
@@ -155,7 +144,6 @@ export async function startAuraRuntime(
       const flowResults = await Promise.allSettled([flows.close()]);
       const results = await Promise.allSettled([
         api.close(),
-        dsh.close(),
         demoModel.close(),
         codexAuth.close(),
       ]);

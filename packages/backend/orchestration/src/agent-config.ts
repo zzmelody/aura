@@ -15,13 +15,13 @@ export function agentDefaults(
   mode: FlowMode,
   overrides: FlowAgentOptions = {},
   timeoutMs = 180_000,
-  codexModel = process.env.AURA_CODEX_MODEL || "gpt-5.6-terra",
+  codexModel = process.env.AURA_CODEX_MODEL || "gpt-6.1-sol",
 ): FlowAgentConfig {
   return agentConfig(
     {
       provider: mode === "codex" ? "openai-codex" : "deepseek-official",
       model: mode === "codex" ? codexModel : "deepseek-v4-flash",
-      reasoningEffort: mode === "codex" ? "medium" : "off",
+      reasoningEffort: mode === "codex" ? "xhigh" : "off",
       ...(mode === "demo" ? { maxTokens: 4096 } : {}),
       timeoutMs,
     },

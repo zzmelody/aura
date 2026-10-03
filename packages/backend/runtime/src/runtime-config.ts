@@ -72,7 +72,6 @@ export function resolveRuntimeConfig(
   const host = (options.host ?? process.env.HOST ?? "127.0.0.1").trim();
   if (!host) throw new Error("Aura runtime host cannot be empty.");
   const port = resolvePort(options.port ?? Number(process.env.PORT ?? 4311));
-  const dshPackage = require.resolve("@deepseek-ai/dsh/package.json");
 
   return {
     root,
@@ -80,8 +79,7 @@ export function resolveRuntimeConfig(
     port,
     dshHome: join(root, ".aura", "dsh"),
     credentialPath: join(root, ".aura", "dsh", ".credentials.yaml"),
-    dshExecutable: join(dirname(dshPackage), "lib", "bin.js"),
-    codexModel: process.env.AURA_CODEX_MODEL ?? "gpt-5.6-terra",
+    codexModel: process.env.AURA_CODEX_MODEL ?? "gpt-6.1-sol",
     tripoCredentialPath: join(root, ".aura", "tripo", "api-key"),
     tripoRegion: resolveTripoRegion(process.env.AURA_TRIPO_REGION),
     pluginConfigPath: resolve(
@@ -93,18 +91,4 @@ export function resolveRuntimeConfig(
         defaultWorldAgentSessionPath(),
     ),
   };
-}
-
-/** Installs only Aura-owned profile files into the ignored DSH home. */
-export async function prepareDshProfile(config: RuntimeConfig): Promise<void> {
-  const profileDirectory = join(config.dshHome, "profiles", "aura-sdk");
-  await mkdir(profileDirectory, { recursive: true });
-  await Promise.all(
-    ["package.json", "cordis.patch.yml"].map((name) =>
-      copyFile(
-        new URL(`../profile/${name}`, import.meta.url),
-        join(profileDirectory, name),
-      ),
-    ),
-  );
 }

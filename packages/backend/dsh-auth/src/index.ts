@@ -7,6 +7,9 @@ import LlmRuntime from "@deepseek-ai/dsh-llm";
 import * as PiAiAdapter from "@deepseek-ai/dsh-llm-pi-ai";
 import { recordKeyFor } from "@deepseek-ai/dsh-llm-pi-ai";
 import type { CodexAuthStatus } from "@aura/protocol/types";
+import { codexProviderProfile } from "./codex-profile.ts";
+
+export { codexProviderProfile } from "./codex-profile.ts";
 
 const providerId = "openai-codex";
 
@@ -52,6 +55,7 @@ export class CodexSubscriptionAuth {
     credentialPath: string;
     model?: string;
   }): Promise<CodexSubscriptionAuth> {
+    const providerProfile = await codexProviderProfile();
     const ctx = new Context();
     await ctx.plugin(LlmRuntime);
     await ctx.plugin(LocalCredentialProvider, {
@@ -61,16 +65,12 @@ export class CodexSubscriptionAuth {
     await ctx.plugin(AuthorizationService);
     await ctx.plugin(PiAiAdapter, {
       providers: {
-        [providerId]: {
-          reasoning: "medium",
-          transport: "sse",
-          cacheRetention: "short",
-        },
+        [providerId]: providerProfile,
       },
     });
     const instance = new CodexSubscriptionAuth(
       ctx,
-      options.model ?? "gpt-5.6-terra",
+      options.model ?? "gpt-6.1-sol",
     );
     if (!ctx.authorization.describe(instance.key)) {
       await ctx.fiber.dispose();
@@ -280,3 +280,11 @@ export class CodexSubscriptionAuth {
     await this.ctx.fiber.dispose();
   }
 }
+
+export {
+  codexAccountId,
+  codexTokenSource,
+  readCodexGrant,
+  type CodexAccessToken,
+  type CodexTokenSource,
+} from "./codex-token.ts";

@@ -6,6 +6,10 @@ const STATUS_CHANNEL = "aura:site:status";
 
 contextBridge.exposeInMainWorld("auraHost", {
   platform: "desktop" as const,
+  chrome: {
+    setTheme: (dark: boolean) =>
+      ipcRenderer.invoke("aura:window:theme", dark) as Promise<void>,
+  },
   workflowFiles: {
     choose: (kind: WorkflowPathKind) =>
       ipcRenderer.invoke("aura:workflow-files:choose", kind) as Promise<

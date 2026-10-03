@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -138,7 +138,7 @@ export default defineFlow({
             choices: [
               {
                 index: 0,
-                delta: { content: flowDemoReply(request.messages) },
+                delta: { content: flowDemoReply(request.messages) ?? "chat fixture reply" },
                 finish_reason: null,
               },
             ],
@@ -174,6 +174,28 @@ export default defineFlow({
       const initial = await waitForCatalog(host, (flow) => flow.available);
       assert.equal(initial.title, "HMR integration v1");
       const firstHash = initial.sourceHash;
+
+      const codexCatalog = await host.chatModels("codex", AbortSignal.timeout(15_000));
+      const sol = codexCatalog.models.find(({ id }) => id === "gpt-6.1-sol");
+      assert.ok(sol);
+      assert.equal(sol.defaultReasoningEffort, "xhigh");
+      assert.ok(sol.reasoningEfforts.some(({ id }) => id === "xhigh"));
+      const demoCatalog = await host.chatModels("demo", AbortSignal.timeout(15_000));
+      assert.ok(demoCatalog.models.some(({ id }) => id === "deepseek-v4-pro"));
+      const settingsPath = join(options.dshHome, "aura-flow-settings.yaml");
+      const settingsBefore = await readFile(settingsPath, "utf8").catch(() => "");
+      await Promise.all(["deepseek-v4-pro", "deepseek-v4-flash"].map((model) =>
+        host.chat({ mode: "demo", model, reasoningEffort: "off", messages: [{ role: "user", text: "hello" }] },
+          () => {}, AbortSignal.timeout(30_000)),
+      ));
+      assert.deepEqual(calls.map(({ model }) => model).sort(), ["deepseek-v4-flash", "deepseek-v4-pro"]);
+      assert.equal(await readFile(settingsPath, "utf8").catch(() => ""), settingsBefore,
+        "chat must not write DSH deployment defaults");
+      const beforeInvalid = calls.length;
+      await assert.rejects(host.chat({ mode: "demo", reasoningEffort: "invalid", messages: [{ role: "user", text: "hello" }] },
+        () => {}, AbortSignal.timeout(15_000)), /UNSUPPORTED_REASONING_EFFORT/);
+      assert.equal(calls.length, beforeInvalid, "invalid effort must fail before model I/O");
+      calls.length = 0;
 
       const run = await host.invokeFlow("hmr-check", {
         input: { task: "integration" },

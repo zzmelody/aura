@@ -1,4 +1,6 @@
-import React, { memo } from "react";
+import React, { memo, useEffect, useState } from "react";
+import { Check, Copy, FileAudio, FileImage, FileVideo, File } from "lucide-react";
+import { writeClipboard } from "../clipboard";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { JsonValue } from "@aura/protocol/types";
@@ -60,7 +62,74 @@ const labels: Record<string, string> = {
   metrics: "指标",
   audience: "适用人群",
   duration: "时长",
+  durationSeconds: "时长（秒）",
+  audioPath: "音频文件",
+  videoPath: "视频文件",
+  imagePath: "图片文件",
+  imageAssetId: "图片资产 ID",
+  engine: "生成引擎",
+  model: "模型",
+  note: "说明",
+  seed: "随机种子",
+  modelPath: "模型文件",
+  files: "文件",
+  speaker: "音色",
+  language: "语言",
+  narration: "旁白",
+  visualPrompt: "画面提示词",
 };
+
+/** Absolute local file paths (Windows drive or POSIX) with a file extension. */
+export function isLocalFilePath(value: string) {
+  return (
+    value.length <= 1024 &&
+    !value.includes("\n") &&
+    /^(?:[a-zA-Z]:[\\/]|\/)[^<>"|?*\n]*\.[a-zA-Z0-9]{2,5}$/u.test(value.trim())
+  );
+}
+
+const fileIcon = (name: string) =>
+  /\.(wav|mp3|m4a|flac|ogg)$/iu.test(name)
+    ? FileAudio
+    : /\.(mp4|mov|webm)$/iu.test(name)
+      ? FileVideo
+      : /\.(png|jpe?g|webp|gif)$/iu.test(name)
+        ? FileImage
+        : File;
+
+/** A path is a location, not content: show the name, keep the path copyable. */
+function FilePathChip({ path }: { path: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const parts = path.split(/[\\/]/u);
+  const name = parts.at(-1) ?? path;
+  const folder = parts.slice(-3, -1).join("/");
+  const Icon = fileIcon(name);
+  return (
+    <span className="workflow-file-chip" title={path}>
+      <Icon size={14} aria-hidden="true" />
+      <span className="workflow-file-name">{name}</span>
+      {folder ? <span className="workflow-file-folder">…/{folder}</span> : null}
+      <button
+        type="button"
+        className="icon-control"
+        aria-label={copied ? "已复制路径" : `复制 ${name} 的本地路径`}
+        title={copied ? "已复制" : "复制本地路径"}
+        onClick={() =>
+          void writeClipboard(path)
+            .then(() => setCopied(true))
+            .catch(() => undefined)
+        }
+      >
+        {copied ? <Check size={13} /> : <Copy size={13} />}
+      </button>
+    </span>
+  );
+}
 function labelFor(key: string, schema?: JsonValue) {
   const spec = asObject(schema);
   return typeof spec?.title === "string" ? spec.title : (labels[key] ?? key);
@@ -78,7 +147,12 @@ export function WorkflowValue({
 }) {
   if (value === undefined || value === null || value === "")
     return <span className="workflow-value-empty">未提供</span>;
-  if (typeof value === "string") return <WorkflowRichText text={value} />;
+  if (typeof value === "string")
+    return isLocalFilePath(value) ? (
+      <FilePathChip path={value.trim()} />
+    ) : (
+      <WorkflowRichText text={value} />
+    );
   if (typeof value === "boolean")
     return (
       <span className="workflow-value-boolean">{value ? "是" : "否"}</span>

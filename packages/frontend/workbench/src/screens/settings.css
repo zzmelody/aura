@@ -1,0 +1,396 @@
+/* Settings: section rail on the left, grouped rows on the right (Codex-style). */
+.settings-page {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--background);
+  color: var(--text);
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 20px 10px;
+  border-right: 1px solid var(--border);
+  overflow: auto;
+}
+.settings-nav h1 {
+  margin: 0 10px 12px;
+  font-size: 21px;
+  line-height: 30px;
+  font-weight: 600;
+  letter-spacing: -0.6px;
+}
+.settings-nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 13px;
+  text-align: left;
+}
+.settings-nav button:hover {
+  background: var(--elevated);
+  color: var(--text);
+}
+.settings-nav button.selected {
+  background: var(--soft);
+  color: var(--accent);
+}
+.settings-scroll {
+  min-height: 0;
+  overflow: auto;
+  scroll-padding-top: 16px;
+}
+.settings-content {
+  display: grid;
+  gap: 40px;
+  max-width: 760px;
+  padding: 28px 32px 64px;
+}
+.settings-content section {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.settings-section-head h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.settings-section-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* Grouped rows: one bordered card, hairlines between rows. */
+.settings-group {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 60px;
+  padding: 12px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.settings-group > .settings-row + .settings-row,
+.settings-group > .settings-row + .settings-lab,
+.settings-group > .settings-lab + .settings-row {
+  border-top: 1px solid var(--border);
+}
+.settings-row-copy {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.settings-row-copy strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.settings-row-copy > span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.settings-row-copy code,
+.settings-value {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--secondary);
+}
+.settings-row-control {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+.settings-row-button:hover,
+.settings-choice:hover:not(:disabled) {
+  background: var(--elevated);
+}
+.settings-row-stack {
+  display: grid;
+  align-items: stretch;
+  gap: 10px;
+}
+.settings-chevron {
+  color: var(--muted);
+  transition: transform 110ms ease;
+}
+.settings-chevron.open {
+  transform: rotate(90deg);
+}
+
+/* Theme cards preview their own palette. */
+.settings-themes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.settings-theme {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+.settings-theme:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.settings-theme.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.settings-theme-preview {
+  display: grid;
+  grid-template-columns: 30% 1fr;
+  height: 72px;
+  border: 1px solid;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.settings-theme-preview > span {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+}
+.settings-theme-preview > span:first-child {
+  border-right: 1px solid;
+}
+.settings-theme-preview i {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+}
+.settings-theme-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.settings-theme-split .settings-theme-preview {
+  height: 72px;
+  border-radius: 0;
+  grid-template-columns: 1fr;
+}
+.settings-theme-split .settings-theme-preview > span:first-child {
+  display: none;
+}
+.settings-theme-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 2px;
+  color: var(--secondary);
+}
+.settings-theme-label strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+.settings-theme-label > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.settings-check {
+  margin-left: auto;
+  color: var(--accent);
+}
+
+/* Radio rows for the default chat model. */
+.settings-choice:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.settings-radio {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+}
+.settings-choice.selected .settings-radio {
+  border: 5px solid var(--primary);
+}
+.settings-state {
+  color: var(--muted);
+}
+.settings-state.authenticated {
+  color: var(--success);
+}
+.settings-state.error {
+  color: var(--danger);
+}
+.settings-state.pending {
+  color: var(--accent);
+}
+
+/* Endpoint form. */
+.settings-endpoint {
+  display: flex;
+  gap: 8px;
+}
+.settings-endpoint input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+  font:
+    12px "IBM Plex Mono",
+    ui-monospace,
+    monospace;
+}
+.settings-endpoint input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.settings-endpoint .tool-button {
+  min-height: 34px;
+}
+.settings-feedback {
+  margin: 0;
+  font-size: 12px;
+}
+.settings-feedback.ok {
+  color: var(--success);
+}
+.settings-feedback.error {
+  color: var(--danger);
+}
+.settings-feedback.info {
+  color: var(--accent);
+}
+
+/* Theme lab. */
+.settings-lab {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: var(--background);
+}
+.settings-lab-type {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+}
+.settings-lab-type > span {
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -1.6px;
+}
+.settings-lab-type p {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.settings-swatches {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.settings-swatches > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.settings-swatches code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-swatches span {
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.settings-swatches code,
+.settings-lab-motion {
+  color: var(--muted);
+  font:
+    10px/16px "IBM Plex Mono",
+    monospace;
+  letter-spacing: 0.6px;
+}
+
+@media (max-width: 899px) {
+  .settings-page {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .settings-nav {
+    flex-direction: row;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .settings-nav h1 {
+    display: none;
+  }
+  .settings-nav button {
+    flex-shrink: 0;
+  }
+  .settings-content {
+    padding: 20px 16px 48px;
+    gap: 32px;
+  }
+}
+@media (max-width: 600px) {
+  .settings-themes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-theme {
+    grid-template-columns: 96px minmax(0, 1fr);
+    align-items: center;
+  }
+  .settings-theme-preview,
+  .settings-theme-split,
+  .settings-theme-split .settings-theme-preview {
+    height: 52px;
+  }
+  .settings-row:not(.settings-row-stack):not(.settings-choice):not(.settings-row-button) {
+    flex-wrap: wrap;
+  }
+  .settings-endpoint {
+    flex-direction: column;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-chevron {
+    transition: none;
+  }
+}

@@ -22,9 +22,11 @@ import {
 } from "./veya-world-agent.ts";
 import { VeyaCreatorBindings, VeyaCreatorCapability, VEYA_CREATOR_CAPABILITY } from "./veya-creator-bindings.ts";
 import { VeyaCreatorLifecycle } from "./veya-creator-lifecycle.ts";
+import {VeyaAvatarCapability} from "./veya-avatar-bindings.ts";
 import { AuraCapabilityRouter } from "./capability-router.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
 import { VEYA_CLOUD_IMAGE_CAPABILITY, VeyaCloudImageCapability } from "./veya-cloud-image.ts";
+import { VEYA_MATERIAL_MAKER_CAPABILITY, VeyaMaterialMakerCapability, resolveMaterialMakerExecutable, veyaProjectRootsFromPlugins } from "./veya-material-maker.ts";
 import { GeneratedArtifacts } from "./generated-artifacts.ts";
 import { WorkflowArtifactIndex } from "./workflow-artifacts.ts";
 import { historicalArtifactReader } from "./artifact-history.ts";
@@ -46,6 +48,10 @@ import type { ContentExperiment, ContentMetricSnapshot, ContentPublication, Cont
 import { LocalAIManager } from "./local-ai/manager.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 import { configureDshNetwork } from "./dsh-network.ts";
+import { chatService } from "./chat.ts";
+import { chatModelCatalog, RejectedChatModels } from "./chat-models.ts";
+import { GptImageService, codexImageRequest } from "./gpt-image.ts";
+import { codexTokenSource } from "@aura/dsh-auth";
 
 const pluginIdentitySchema = z
   .object({
@@ -308,6 +314,20 @@ export async function apply(ctx: Context) {
   ctx.effect(() => () => localAI.close(), "aura-local-ai.lifecycle");
   const worldAgentSessionPath = process.env.AURA_VEYA_WORLD_AGENT_SESSION_PATH;
   const capabilityRoutes = [];
+  // GPT images use the signed-in Codex subscription, the same login as chat.
+  const codexModel = process.env.AURA_CODEX_MODEL || "gpt-6.1-sol";
+  const codexTokens = codexTokenSource(ctx, codexModel);
+  const gptImage = new GptImageService({
+    request: codexImageRequest(codexTokens, codexModel),
+    signedIn: () => codexTokens.signedIn(),
+    artifacts,
+    outputRoot: resolve(
+      process.env.AURA_FLOW_CWD ?? process.cwd(),
+      ".aura",
+      "local-ai",
+      "outputs",
+    ),
+  });
   const creatorBindings = new VeyaCreatorBindings(process.env.AURA_FLOW_CWD ?? process.cwd());
   let creatorGet: (id: string) => FlowRun = () => { throw new Error("Creator engine is not ready."); };
   const budgetContext = async (runId?: string) => {
@@ -321,7 +341,7 @@ export async function apply(ctx: Context) {
         attachments: ctx.attachments,
       });
   const creatorLifecycle = new VeyaCreatorLifecycle(creatorBindings, id => creatorGet(id), veya);
-  capabilityRoutes.push([VEYA_WORLD_AGENT_CAPABILITY, creatorLifecycle] as const);
+  capabilityRoutes.push([VEYA_WORLD_AGENT_CAPABILITY, new VeyaAvatarCapability(creatorBindings.projectRoot,id=>creatorGet(id),creatorLifecycle)] as const);
   capabilityRoutes.push([VEYA_CREATOR_CAPABILITY, new VeyaCreatorCapability(creatorBindings, id => creatorGet(id), creatorLifecycle)] as const);
   const tripoCredentialPath = process.env.AURA_TRIPO_CREDENTIAL_PATH;
   if (tripoCredentialPath) {
@@ -349,6 +369,12 @@ export async function apply(ctx: Context) {
       new VeyaCloudImageCapability(tripo, artifacts, ctx.attachments, budgetContext, creatorBindings.projectRoot),
     ] as const);
   }
+  capabilityRoutes.push([
+    VEYA_MATERIAL_MAKER_CAPABILITY,
+    new VeyaMaterialMakerCapability(artifacts, ctx.attachments, undefined,
+      resolveMaterialMakerExecutable(veyaProjectRootsFromPlugins(actionRoots.map((root) => root.pluginRoot))),
+      creatorBindings.projectRoot),
+  ] as const);
   const auraCapabilities = capabilityRoutes.length
     ? new AuraCapabilityRouter(capabilityRoutes)
     : undefined;
@@ -389,6 +415,7 @@ export async function apply(ctx: Context) {
     contentLibrary,
     topicLibrary,
     contentAnalytics,
+    gptImage,
   );
 
   const domain = await ctx.storageDomain.open(spec);
@@ -506,6 +533,36 @@ export async function apply(ctx: Context) {
     }
   };
 
+  // Chat tools reach only run admission, video project creation and topic
+  // research; streamed deltas travel back as notifications keyed by chatId.
+  const chat = chatService(ctx, {
+    start: (input) => engine.start(input),
+    get: (id) => engine.get(id),
+    async createVideo(name, script) {
+      const detail = (await videoRequest(videoLibrary, "create", {
+        name,
+        script,
+      })) as { project: { id: string; revisionId: string } };
+      return { id: detail.project.id, revisionId: detail.project.revisionId };
+    },
+    startVideo: (id, revisionId, requestId) =>
+      videoLibrary.start(id, {
+        revisionId,
+        requestId,
+        target: { kind: "project" },
+        mode: "reuse",
+      }),
+    startResearch: (input) =>
+      topicLibrary.start(input) as Promise<{ jobId: string; runId: string }>,
+  }, artifacts);
+  const chats = new Map<string, AbortController>();
+  const rejectedChatModels = new RejectedChatModels();
+
+  transport.onNotification((method, params) => {
+    if (method === "chat/cancel" && typeof params.chatId === "string")
+      chats.get(params.chatId)?.abort(new Error("客户端已取消对话。"));
+  });
+
   transport.onRequest(async (method, params) => {
     try {
       if (exiting)
@@ -590,6 +647,64 @@ export async function apply(ctx: Context) {
           }
           break;
         }
+        case "chat/models": {
+          const mode = z.enum(["demo", "codex"]).safeParse(params.mode);
+          if (!mode.success) throw new FlowError("无效的对话模式。", 400);
+          data = await chatModelCatalog(
+            ctx.llm,
+            mode.data,
+            AbortSignal.timeout(15_000),
+            rejectedChatModels,
+          );
+          break;
+        }
+        case "chat": {
+          const chatId = typeof params.chatId === "string" ? params.chatId : "";
+          const turn = z
+            .object({
+              messages: z
+                .array(
+                  z.object({
+                    role: z.enum(["user", "assistant"]),
+                    text: z.string().max(80_000),
+                    images: z
+                      .array(z.string().regex(/^[a-f0-9]{64}$/u))
+                      .max(4)
+                      .optional(),
+                  }),
+                )
+                .min(1)
+                .max(200),
+              mode: z.enum(["demo", "codex"]),
+              model: z.string().trim().min(1).max(200).optional(),
+              reasoningEffort: z.string().trim().min(1).max(80).optional(),
+            })
+            .safeParse(params);
+          if (!chatId || chatId.length > 200 || !turn.success)
+            throw new FlowError("无效的对话请求。", 400);
+          if (chats.size >= 2) throw new FlowError("对话服务忙，请稍后再试。", 503);
+          const abort = new AbortController();
+          chats.set(chatId, abort);
+          try {
+            data = await chat(
+              turn.data,
+              (event) => transport.notify("chat/event", { chatId, event }),
+              abort.signal,
+            );
+          } catch (error) {
+            // agentFailure names the model when the subscription refuses it.
+            const refused =
+              error instanceof FlowError
+                ? error.message.match(/^模型 (\S+) 不支持 Codex 订阅账号/u)?.[1]
+                : undefined;
+            if (refused && turn.data.mode === "codex")
+              rejectedChatModels.reject("codex", refused);
+            throw error;
+          } finally {
+            chats.delete(chatId);
+          }
+          break;
+        }
         case "action/start":
           data = await actionRuns.start(params);
           break;
@@ -660,6 +775,7 @@ export async function apply(ctx: Context) {
       if (
         !engine.running.size &&
         !actionRuns.running.size &&
+        !chats.size &&
         Date.now() - lastActivity > 300_000
       )
         void disposeAndExit();

@@ -21,7 +21,7 @@
 - 工作区检查覆盖 app/library 元数据、平台依赖方向、`workspace:*`、显式导出、未声明依赖、跨包相对导入、应用被依赖和依赖环。
 - 12 个 Aura app/library 类型检查目标纳入严格类型检查；Aura 自有应用、包、脚本和测试统一使用 TypeScript 源码。
 - `pnpm run check` 通过，共 59 项自动测试，覆盖协议校验、工作区规则、源码约束、会话恢复、Hono API、Origin/body limit/NDJSON/SSE、Runtime 配置、DSH Codex OAuth flow，以及真实 DSH 代码 Flow/Action 的发现、独立 session、辅助模块 HMR、失败回滚与前端节点图解析。
-- 后端运行时通过真实 `dsh --profile aura-sdk` 进程完成两轮流式演示，并拒绝非法请求。该测试验证 Aura 沿 DSH SDK、agent loop 和 session events 工作，不代表真实 Codex 模型调用。
+- 后端对话经 `aura-flow` 宿主内的短期 DSH session 完成流式演示，并拒绝非法请求。演示模型按规则发出工具调用，验证「对话 → 工具 → Flow 运行 → `workflow` 事件 → 运行卡片」整条链路；不代表真实 Codex 模型的意图判断。
 - `pnpm run build` 通过；浏览器、Electron renderer 与 Capacitor 三个入口均由 Vite 从同一套 React Web 工作台构建，本地字体随各端产物输出。
 
 ## Web、Electron 与 Capacitor 验证

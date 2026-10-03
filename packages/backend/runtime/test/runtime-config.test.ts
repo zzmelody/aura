@@ -7,6 +7,19 @@ import {
   resolveRuntimeConfig,
 } from "../src/runtime-config.ts";
 
+test("runtime uses GPT-6.1 Sol unless AURA_CODEX_MODEL overrides it", () => {
+  const previous = process.env.AURA_CODEX_MODEL;
+  try {
+    delete process.env.AURA_CODEX_MODEL;
+    assert.equal(resolveRuntimeConfig().codexModel, "gpt-6.1-sol");
+    process.env.AURA_CODEX_MODEL = "gpt-5.6-terra";
+    assert.equal(resolveRuntimeConfig().codexModel, "gpt-5.6-terra");
+  } finally {
+    if (previous === undefined) delete process.env.AURA_CODEX_MODEL;
+    else process.env.AURA_CODEX_MODEL = previous;
+  }
+});
+
 test("runtime configuration resolves paths and validates network settings", () => {
   const root = resolve("fixture-runtime-root");
   const config = resolveRuntimeConfig({ root, host: "::1", port: 4_321 });

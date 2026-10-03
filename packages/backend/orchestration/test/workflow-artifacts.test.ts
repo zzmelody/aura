@@ -469,3 +469,73 @@ test("artifact routes delegate only identifiers, support HEAD and preserve binar
     ["run", "abc", true, "HEAD"],
   ]);
 });
+
+test("local TTS WAV outputs become playable audio artifacts", () =>
+  fixture(async (root, index) => {
+    const samples = 8000;
+    const wav = Buffer.alloc(44 + samples * 2);
+    wav.write("RIFF", 0);
+    wav.writeUInt32LE(wav.length - 8, 4);
+    wav.write("WAVE", 8);
+    wav.write("fmt ", 12);
+    wav.writeUInt32LE(16, 16);
+    wav.writeUInt16LE(1, 20);
+    wav.writeUInt16LE(1, 22);
+    wav.writeUInt32LE(16000, 24);
+    wav.writeUInt32LE(32000, 28);
+    wav.writeUInt16LE(2, 32);
+    wav.writeUInt16LE(16, 34);
+    wav.write("data", 36);
+    wav.writeUInt32LE(samples * 2, 40);
+    const speech = join(root, "speech.wav");
+    await writeFile(speech, wav);
+    await index.capture(
+      { ...owner, stepKey: "speech" },
+      { service: "qwen3-tts", seed: 1, files: [speech] },
+      "local-tts",
+    );
+    const { artifacts } = await index.list("run");
+    await index.settle();
+    const audio = artifacts.find((artifact) => artifact.stepKey === "speech");
+    assert.equal(audio?.kind, "audio");
+    assert.equal(audio?.format, "wav");
+    assert.equal(audio?.mimeType, "audio/wav");
+    assert.equal(audio?.status, "ready");
+    assert.equal(audio?.durationSeconds, 0.5);
+  }));
+
+test("uploaded chat images are served and read back only by verified content ID", async () => {
+  const { OrchestrationHost } = await import("../src/index.ts");
+  const { artifactHash } = await import("../src/artifact-media.ts");
+  const root = await realpath(await mkdtemp(join(tmpdir(), "aura-chat-image-")));
+  try {
+    const dshHome = join(root, "dsh");
+    const store = new GeneratedArtifacts(join(dshHome, "aura-generated-assets"));
+    const bytes = await sharp({
+      create: { width: 8, height: 6, channels: 3, background: "#8052EA" },
+    })
+      .png()
+      .toBuffer();
+    const { artifactId } = await store.registerImage(bytes, AbortSignal.timeout(5000));
+    assert.equal(artifactId, artifactHash(bytes));
+    const read = await store.readImage(artifactId, AbortSignal.timeout(5000));
+    assert.equal(read.mediaType, "image/png");
+    assert.equal(read.bytes.length, bytes.length);
+
+    const host = new OrchestrationHost({ root, dshHome, modelURL: "http://127.0.0.1:1/v1" });
+    const ok = await host.imageAssetContent(artifactId, new Request("http://x/img"));
+    assert.equal(ok.status, 200);
+    assert.equal(ok.headers.get("content-type"), "image/png");
+    assert.equal((await ok.arrayBuffer()).byteLength, bytes.length);
+    await assert.rejects(host.imageAssetContent("../etc", new Request("http://x/img")), /图片不存在/u);
+    await assert.rejects(host.imageAssetContent("f".repeat(64), new Request("http://x/img")), /图片不存在/u);
+
+    // A file whose bytes no longer match its name is refused on both paths.
+    const forged = "e".repeat(64);
+    await writeFile(join(store.root, `${forged}.png`), bytes);
+    await assert.rejects(store.readImage(forged, AbortSignal.timeout(5000)), /内容已改变/u);
+    await assert.rejects(host.imageAssetContent(forged, new Request("http://x/img")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

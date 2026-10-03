@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexSubscriptionAuth } from "@aura/dsh-auth";
+import { ReasoningEffortId } from "@deepseek-ai/dsh-llm";
 
 test("DSH registers an openai-codex authorization flow without network access", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "aura-dsh-auth-"));
@@ -14,8 +15,28 @@ test("DSH registers an openai-codex authorization flow without network access", 
   t.after(() => authorization.close());
   assert.deepEqual(await authorization.status(), {
     state: "signed_out",
-    model: "gpt-5.6-terra",
+    model: "gpt-6.1-sol",
   });
+  const config = await authorization.ctx.llm.resolveCallConfig({
+    provider: "openai-codex",
+    model: authorization.modelId,
+  });
+  assert.equal(config.model, "gpt-6.1-sol");
+  assert.equal(config.reasoningEffort, "xhigh");
+  assert.equal(config.maxTokens, undefined);
+  const models = await authorization.ctx.llm.listModels("openai-codex");
+  assert.ok(models.some(({ id }) => id === "gpt-5.6-terra"));
+  assert.deepEqual(
+    models.find(({ id }) => id === "gpt-6.1-sol")?.inputModalities,
+    ["text", "image"],
+  );
+  await assert.rejects(
+    authorization.ctx.llm.resolveCallConfig({
+      ...config,
+      reasoningEffort: ReasoningEffortId("off"),
+    }),
+    { code: "UNSUPPORTED_REASONING_EFFORT" },
+  );
 });
 
 test("Aura can complete DSH's manual browser callback prompt", async (t) => {
@@ -71,7 +92,7 @@ test("Aura can complete DSH's manual browser callback prompt", async (t) => {
     method: "browser",
     authUrl: "https://auth.openai.com/oauth/authorize?test=true",
     message: "Open browser",
-    model: "gpt-5.6-terra",
+    model: "gpt-6.1-sol",
     prompt: {
       kind: "text",
       message: "Paste callback URL",
@@ -89,7 +110,7 @@ test("Aura can complete DSH's manual browser callback prompt", async (t) => {
   );
   assert.deepEqual(await authorization.status(), {
     state: "signed_out",
-    model: "gpt-5.6-terra",
+    model: "gpt-6.1-sol",
   });
   assert.equal(process.env.PI_OAUTH_CALLBACK_HOST, callbackHostBefore);
 });
@@ -120,11 +141,11 @@ test("a failed DSH login remains visible after status polling", async (t) => {
   assert.deepEqual(await authorization.status(), {
     state: "error",
     message: "已收到登录回调，但 OpenAI 令牌交换失败；请检查网络或代理后重试。",
-    model: "gpt-5.6-terra",
+    model: "gpt-6.1-sol",
   });
   assert.deepEqual(await authorization.status(), {
     state: "error",
     message: "已收到登录回调，但 OpenAI 令牌交换失败；请检查网络或代理后重试。",
-    model: "gpt-5.6-terra",
+    model: "gpt-6.1-sol",
   });
 });

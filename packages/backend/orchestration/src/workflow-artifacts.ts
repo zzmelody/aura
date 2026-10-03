@@ -46,6 +46,7 @@ const fileFormat = (path: string): WorkflowArtifact["format"] | undefined =>
     ".webp": "webp",
     ".glb": "glb",
     ".mp4": "mp4",
+    ".wav": "wav",
   })[extname(path).toLowerCase()] as WorkflowArtifact["format"] | undefined;
 
 /** Sidecar-only indexing: never rewrites durable Action output or replay identity. */
@@ -140,9 +141,23 @@ export class WorkflowArtifactIndex {
       id: key,
       artifactId: key,
       name: (options.name ?? path).split(/[\\/]/).at(-1)!.slice(0, 180),
-      kind: format === "glb" ? "model" : format === "mp4" ? "video" : "image",
+      kind:
+        format === "glb"
+          ? "model"
+          : format === "mp4"
+            ? "video"
+            : format === "wav"
+              ? "audio"
+              : "image",
       format,
-      mimeType: format === "glb" ? "model/gltf-binary" : format === "mp4" ? "video/mp4" : `image/${format}`,
+      mimeType:
+        format === "glb"
+          ? "model/gltf-binary"
+          : format === "mp4"
+            ? "video/mp4"
+            : format === "wav"
+              ? "audio/wav"
+              : `image/${format}`,
       bytes: 0,
       status: "unavailable",
     };
@@ -222,7 +237,9 @@ export class WorkflowArtifactIndex {
         return;
       }
       if (
-        ["local-image", "comfy-workflow"].includes(producer) &&
+        ["local-image", "comfy-workflow", "local-tts", "gpt-image"].includes(
+          producer,
+        ) &&
         Array.isArray(result.files)
       ) {
         for (const path of result.files.slice(0, 100))
@@ -326,7 +343,8 @@ export class WorkflowArtifactIndex {
   }
 
   private fingerprint(run: FlowRun) {
-    return artifactHash(JSON.stringify([1, run.status, run.steps, run.output]));
+    // Version 2 admits local TTS audio; bumping it rescans earlier runs once.
+    return artifactHash(JSON.stringify([2, run.status, run.steps, run.output]));
   }
   private async migrate(id: string, retry: boolean) {
     const run = this.run!(id);

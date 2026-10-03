@@ -1,5 +1,5 @@
-import { createFlowApp, type OrchestrationHost } from "@aura/orchestration";
-import { validateMessages } from "@aura/protocol";
+import { createFlowApp, FlowError, type OrchestrationHost } from "@aura/orchestration";
+import { validateMessages, validateChatModelSelection } from "@aura/protocol";
 import type { ChatEvent } from "@aura/protocol/types";
 import type { TripoPort } from "@aura/tripo";
 import { Hono } from "hono";
@@ -19,8 +19,8 @@ import type {
   ApiServerHandle,
   AuraPluginSettingsPort,
   CodexAuthPort,
-  DshRoute,
-  DshSessionPort,
+  ChatPort,
+  ChatRoute,
   RuntimeConfig,
 } from "./types.ts";
 import { createPluginSettingsApp } from "./plugin-settings-routes.ts";
@@ -28,11 +28,12 @@ import { createTripoApp } from "./tripo-routes.ts";
 import { isRecord } from "./validation.ts";
 import { createVeyaCreatorApp, VeyaCreatorService } from "./veya-creator-routes.ts";
 import { isLoopbackRuntimeHost } from "./runtime-config.ts";
+import {createVeyaAvatarApp,VeyaAvatarService} from "./veya-avatar-routes.ts";
 
 interface ApiServerOptions {
   config: RuntimeConfig;
   codexAuth: CodexAuthPort;
-  dsh: DshSessionPort;
+  chat?: ChatPort;
   tripo: TripoPort;
   flows?: OrchestrationHost;
   pluginSettings?: AuraPluginSettingsPort;
@@ -47,8 +48,8 @@ interface ApiLifecycle {
 function registerChatRoute(
   app: Hono,
   path: string,
-  route: () => DshRoute,
-  dsh: DshSessionPort,
+  route: () => ChatRoute,
+  chat: ChatPort | undefined,
   lifecycle: ApiLifecycle,
 ) {
   app.post(
@@ -69,7 +70,8 @@ function registerChatRoute(
           !validateMessages(messages) ||
           typeof body.sessionId !== "string" ||
           body.sessionId.length < 1 ||
-          body.sessionId.length > 200
+          body.sessionId.length > 200 ||
+          (body.modelConfig !== undefined && !validateChatModelSelection(body.modelConfig))
         )
           throw new Error("Invalid chat request.");
 
@@ -91,12 +93,30 @@ function registerChatRoute(
               .catch(() => undefined);
           };
           try {
-            await dsh.stream(messages, emit, route(), disconnected.signal);
+            if (!chat) throw new Error("Chat host is unavailable.");
+            const target = route();
+            const { model } = await chat.chat(
+              { messages, ...target, ...(body.modelConfig ?? {}) },
+              emit,
+              disconnected.signal,
+            );
+            emit(
+              target.mode === "codex"
+                ? {
+                    type: "done",
+                    engine: "deepseek-harness",
+                    mode: "codex-subscription",
+                    model,
+                  }
+                : { type: "done", engine: "deepseek-harness", mode: "demo" },
+            );
             await pendingWrite;
-          } catch {
+          } catch (error) {
             emit({
               type: "error",
-              message: "DSH 请求暂时不可用，请检查服务终端和登录状态后重试。",
+              message: error instanceof FlowError && error.status === 422
+                ? error.message
+                : "DSH 请求暂时不可用，请检查服务终端和登录状态后重试。",
             });
             await pendingWrite;
           } finally {
@@ -113,7 +133,7 @@ function registerChatRoute(
 /** Builds the complete Hono API without opening a network listener. */
 export function createApiApp({
   codexAuth,
-  dsh,
+  chat,
   tripo,
   flows,
   pluginSettings,
@@ -140,36 +160,42 @@ export function createApiApp({
   if (tripo) app.route("/tripo", createTripoApp(tripo));
   if (flows) app.route("/flows", createFlowApp(flows));
   if (creator) app.route("/veya/creator/v1", createVeyaCreatorApp(creator));
+  if(creator&&flows)app.route("/veya/avatar/v1",createVeyaAvatarApp(new VeyaAvatarService(creator.projectRoot,flows,creator.bootstrapToken)));
   if (pluginSettings)
     app.route(
       "/plugins/config",
       createPluginSettingsApp(pluginSettings, pluginSettingsAccessible),
     );
 
+  app.get("/chat/models", async (context) => {
+    const mode = context.req.query("mode") ?? "codex";
+    if (mode !== "codex" && mode !== "demo")
+      return context.json({ message: "无效的对话模式。" }, 400);
+    const host = chat ?? flows;
+    if (!host || lifecycle.shuttingDown)
+      return context.json({ message: "对话模型目录暂时不可用。" }, 503);
+    try {
+      context.header("Cache-Control", "no-store");
+      return context.json(await host.chatModels(mode, AbortSignal.any([
+        context.req.raw.signal, AbortSignal.timeout(20_000),
+      ])));
+    } catch {
+      return context.json({ message: "无法读取 DSH 模型目录，请重试。" }, 503);
+    }
+  });
+
   registerChatRoute(
     app,
     "/chat",
-    () => ({
-      provider: "deepseek-official",
-      model: "deepseek-v4-flash",
-      reasoningEffort: "off",
-      maxTokens: 2_048,
-      mode: "demo",
-    }),
-    dsh,
+    () => ({ mode: "demo" }),
+    chat ?? flows,
     lifecycle,
   );
   registerChatRoute(
     app,
     "/chat/codex",
-    () => ({
-      provider: "openai-codex",
-      model: codexAuth.modelId,
-      reasoningEffort: "medium",
-      maxTokens: 4_096,
-      mode: "codex-subscription",
-    }),
-    dsh,
+    () => ({ mode: "codex", model: codexAuth.modelId }),
+    chat ?? flows,
     lifecycle,
   );
 
@@ -191,7 +217,6 @@ export function createApiApp({
 export async function startApiServer({
   config,
   codexAuth,
-  dsh,
   tripo,
   flows,
   pluginSettings,
@@ -206,7 +231,6 @@ export async function startApiServer({
   if (creator) await creator.initialize();
   const app = createApiApp({
     codexAuth,
-    dsh,
     tripo,
     flows,
     creator,

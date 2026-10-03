@@ -94,6 +94,30 @@ export class GeneratedArtifacts {
     return filename;
   }
 
+  /** Reads one uploaded image back by content ID; the hash must still match. */
+  async readImage(artifactId: string, signal: AbortSignal) {
+    if (!/^[a-f0-9]{64}$/u.test(artifactId))
+      throw new ActionFailure("invalid_image_id: 需要图片资产 ID。");
+    for (const format of ["png", "jpeg", "webp"] as const) {
+      let bytes: Buffer;
+      try {
+        bytes = await readBoundedFile(
+          join(this.root, `${artifactId}.${format}`),
+          32 * 1024 * 1024,
+          signal,
+          this.root,
+        );
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      if (artifactHash(bytes) !== artifactId)
+        throw new ActionFailure("invalid_image_id: 图片内容已改变。");
+      return { bytes, mediaType: `image/${format}` as const };
+    }
+    throw new ActionFailure("invalid_image_id: 图片不存在，请重新上传。");
+  }
+
   async registerFile(path: string, signal: AbortSignal, root?: string) {
     const bytes = await readBoundedFile(path, MAX_MODEL_BYTES, signal, root);
     const media = await inspectArtifact(bytes);

@@ -4,6 +4,8 @@ import type { Session } from "@aura/core/types";
 import {
   groupSidebarSessions,
   sidebarSessionTitle,
+  sidebarSessionStatus,
+  sidebarSessionTime,
 } from "../src/sidebarSessions.ts";
 
 const session: Session = {
@@ -24,6 +26,20 @@ const session: Session = {
     endpoint: "http://localhost:4311",
   },
 };
+test("sidebar time stays compact at unit boundaries and tolerates future clocks", () => {
+  const now = Date.UTC(2026, 9, 3);
+  const ago = (seconds: number) => sidebarSessionTime(now - seconds * 1000, now);
+  assert.equal(ago(0), "刚刚");
+  assert.equal(ago(59), "刚刚");
+  assert.equal(ago(60), "1分钟前");
+  assert.equal(ago(3599), "59分钟前");
+  assert.equal(ago(3600), "1小时前");
+  assert.equal(ago(86400), "1天前");
+  assert.equal(ago(30 * 86400), "1个月前");
+  assert.equal(ago(365 * 86400), "1年前");
+  assert.equal(ago(-60), "刚刚");
+  assert.equal(sidebarSessionTime(Number.NaN, now), "—");
+});
 test("workflow rows identify their task while preserving custom conversation names", () => {
   assert.equal(sidebarSessionTitle(session), "Compare options for launch");
   assert.equal(
@@ -58,4 +74,24 @@ test("sidebar groups share workflow bindings without mixing endpoints or ordinar
     ["one", "two"],
   );
   assert.equal(groups[2].workflow, false);
+});
+
+test("sidebar distinguishes Flow waits, pauses, failures and ordinary chat states", () => {
+  const state = (phase: NonNullable<Session["messages"][number]["workflowPhase"]>) => sidebarSessionStatus({
+    ...session, messages: [...session.messages, { id: "output", role: "assistant", text: "", status: "complete", workflowRunId: "run", workflowPhase: phase }],
+  });
+  assert.deepEqual(state("queued"), { kind: "queued", label: "等待执行" });
+  assert.equal(state("running").kind, "running");
+  assert.equal(state("waiting_input").label, "等待输入");
+  assert.equal(state("needs_attention").kind, "attention");
+  assert.equal(state("paused").kind, "paused");
+  assert.equal(state("failed").kind, "failed");
+  assert.equal(state("completed").kind, "completed");
+  assert.equal(state("cancelled").kind, "stopped");
+  assert.equal(state("interrupted").label, "已中断");
+  const chat = { ...session, workflow: undefined, messages: [{ id: "reply", role: "assistant" as const, text: "", status: "streaming" as const }] };
+  assert.deepEqual(sidebarSessionStatus(chat), { kind: "running", label: "正在生成" });
+  assert.equal(sidebarSessionStatus({ ...chat, archivedAt: 1 }).kind, "running");
+  assert.equal(sidebarSessionStatus({ ...chat, messages: [{ ...chat.messages[0], status: "error" }] }).kind, "failed");
+  assert.equal(sidebarSessionStatus({ ...chat, messages: [{ ...chat.messages[0], status: "stopped" }] }).kind, "stopped");
 });

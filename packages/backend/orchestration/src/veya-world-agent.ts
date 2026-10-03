@@ -35,6 +35,7 @@ function failureDiagnostics(value: JsonValue | undefined, token: string): string
 }
 
 const operations = new Map<string, Operation>([
+  ...["decision.context","memory.search","perception.query","plan.validate"].map((name):[string,Operation]=>[`veya.avatar.${name}`,{method:"POST",tool:`veya.avatar.${name}`}]),
   ["veya.assets.import", { method: "POST", tool: "veya.assets.import" }],
   ...["mode", "undo", "redo"].map((name): [string, Operation] => [
     `veya.world.${name}`,

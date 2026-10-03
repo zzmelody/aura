@@ -31,20 +31,20 @@ apps/desktop ────┘          │            ├─→ Codex auth routes
 | 模块                    | 单一职责                                          | 不应承担                     |
 | ----------------------- | ------------------------------------------------- | ---------------------------- |
 | `index.ts`              | 组合依赖、启动服务、统一关闭                      | 路由判断、协议解析、模型逻辑 |
-| `runtime-config.ts`     | 解析配置，定位 DSH 与 Veya session，安装 profile | 启动网络服务                 |
+| `runtime-config.ts`     | 解析配置，定位 DSH home 与 Veya session          | 启动网络服务                 |
 | `api-server.ts`         | Hono、CORS、健康检查、并发准入、对话路由          | OAuth 细节、子进程协议细节   |
 | `codex-auth-routes.ts`  | 把授权端口映射为脱敏 HTTP API                     | 读取或保存 token             |
-| `dsh-session-runner.ts` | 启动 DSH、JSON-RPC 握手、转发事件、取消和回收     | HTTP 输入校验、凭据管理      |
 | `demo-model.ts`         | 提供开发期 OpenAI-compatible loopback 模型        | 对外提供生产模型服务         |
+| `demo-chat-tools.ts`    | 演示模型按规则选择对话工作流工具，保证离线可复现  | 判断真实模型意图             |
 | `tripo-routes.ts`       | 校验 Tripo 请求并投影异步任务状态                 | 保存 Key 或实现 Tripo API    |
 | `http-server.ts`        | Hono Node 适配器生命周期与本地 Origin 中间件      | 业务路由                     |
 | `validation.ts`         | 运行时无关的基础类型守卫                          | HTTP body 解析、领域状态变更 |
 
-HTTP 层只依赖 `CodexAuthPort`、`DshSessionPort` 与 `TripoPort`，组合根再注入真实实现。Hono app 可以通过标准 Fetch `Request` 在进程内测试，不需要启动端口、OAuth、DSH 子进程或真实 Tripo 请求，供应商实现也不会反向依赖 HTTP。
+HTTP 层只依赖 `CodexAuthPort`、`ChatPort` 与 `TripoPort`，组合根再注入真实实现。Hono app 可以通过标准 Fetch `Request` 在进程内测试，不需要启动端口、OAuth、DSH 子进程或真实 Tripo 请求，供应商实现也不会反向依赖 HTTP。
 
 ## 4. 请求与授权流程
 
-对话请求由 Hono 完成路由、body limit 与 JSON 解析，再通过共享协议校验输入；随后 DSH runner 为本次请求创建隔离进程，执行 `initialize → session/prompt → session.event → shutdown`。响应使用 Hono streaming helper 输出 NDJSON；客户端断开、60 秒超时或 Runtime 关闭都会终止子进程。内部演示模型使用 Hono SSE helper 提供 OpenAI-compatible 流。
+对话请求由 Hono 完成路由、body limit 与 JSON 解析，再通过共享协议校验输入；随后交给长驻的 `aura-flow` 编排宿主（`OrchestrationHost.chat`），在其中为本次请求创建短期 DSH session（preset `chat-v1`）。用户消息可带最多 4 个已上传图片的内容 ID；Codex 模式下编排宿主按 ID 读取并校验哈希后，把最近的最多 4 张作为图片内容交给模型，演示模式只传文字标记。图片经 `POST /flows/assets/images` 上传，`GET /flows/assets/images/:id` 只按内容 ID 返回已上传图片。响应使用 Hono streaming helper 输出 NDJSON，事件为 `delta`、`workflow`（含 flowId、标题、runId、参数摘要）、`error`、`done`；宿主把流式事件作为 `chat/event` JSON-RPC 通知回传，客户端断开会发送 `chat/cancel`，180 秒超时兜底。内部演示模型使用 Hono SSE helper 提供 OpenAI-compatible 流。
 
 Codex 登录由用户交互触发。HTTP 路由只转发 DSH notice、manual prompt 和脱敏状态；OAuth grant 由 DSH credentials service 写入 `.aura/dsh/.credentials.yaml`。Runtime、前端响应和日志均不得读取或输出 access token、refresh token 或 API key。
 
