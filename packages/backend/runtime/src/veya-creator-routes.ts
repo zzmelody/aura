@@ -1,3 +1,4 @@
+import { creatorProgress } from "./veya-creator-progress.ts";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
@@ -589,8 +590,10 @@ export class VeyaCreatorService {
       try { artifact = await this.artifact(binding); } catch { /* No unverified delivery projection. */ }
     }
     const verified = artifact !== undefined;
+    const progress = await creatorProgress(run, id => this.flow.request<FlowRun>("get", { id }), this.projectRoot, binding.recoveryBudgetCreationId ?? run.requestId);
+    if (run.status === "completed") progress.stage = verified ? "delivery" : "attention";
     return {
-      ...history, text, failureReason: failureReason || (run.status === "completed" && !verified ? "delivery_unverified" : ""),
+      ...history, text, progress, failureReason: failureReason || (run.status === "completed" && !verified ? "delivery_unverified" : ""),
       runId: run.id, runStatus,
       phase: run.status === "needs_attention" ? "needs_attention" : run.status === "waiting_input" ? "clarification" :
         run.status === "completed" ? (verified ? "preparing_delivery" : "needs_attention") : "production",
