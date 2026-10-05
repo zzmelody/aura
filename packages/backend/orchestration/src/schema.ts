@@ -32,9 +32,10 @@ export const startSchema = z
     requestId: z.uuid(),
     flowId: contributionIdSchema,
     input: z.unknown(),
-    mode: z.enum(["demo", "codex"]),
+    mode: z.enum(["demo", "codex", "lumina", "custom"]),
     /** Internal HTTP-boundary guard; callers cannot publish an unlisted Flow. */
     serviceOnly: z.boolean().optional(),
+    useConfiguredModel: z.boolean().optional(),
   })
   .strict();
 
@@ -53,7 +54,7 @@ export const agentOptionsSchema = z.object(agentOptionFields).strict();
 export const agentConfigSchema = z
   .object({
     ...agentOptionFields,
-    provider: z.enum(["openai-codex", "deepseek-official"]),
+    provider: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/u),
     model: agentOptionFields.model.unwrap(),
     reasoningEffort: agentOptionFields.reasoningEffort.unwrap(),
     timeoutMs: agentOptionFields.timeoutMs.unwrap(),
@@ -235,7 +236,7 @@ export const actionStartSchema = z
     requestId: z.uuid(),
     actionId: contributionIdSchema,
     input: z.unknown(),
-    mode: z.enum(["demo", "codex"]),
+    mode: z.enum(["demo", "codex", "lumina", "custom"]),
   })
   .strict();
 
@@ -247,7 +248,7 @@ export const actionRunSchema = z.object({
   plugin: pluginIdentitySchema.optional(),
   input: z.json(),
   output: z.json().optional(),
-  mode: z.enum(["demo", "codex"]),
+  mode: z.enum(["demo", "codex", "lumina", "custom"]),
   status: phaseSchema,
   createdAt: z.number(),
   finishedAt: z.number().optional(),
@@ -265,7 +266,7 @@ export const runSchema = z.object({
     plugin: pluginIdentitySchema.optional(),
   }),
   input: z.json(),
-  mode: z.enum(["demo", "codex"]),
+  mode: z.enum(["demo", "codex", "lumina", "custom"]),
   status: runPhaseSchema,
   durableVersion: z.literal(1).optional(),
   agentDefaults: agentConfigSchema.optional(),

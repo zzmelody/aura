@@ -32,7 +32,7 @@ export async function chatImages(
   signal: AbortSignal,
 ) {
   const chosen = new Set<string>();
-  if (turn.mode === "codex")
+  if (turn.mode !== "demo")
     for (const message of [...turn.messages].reverse())
       for (const id of [...(message.images ?? [])].reverse())
         if (chosen.size < CHAT_IMAGE_LIMIT) chosen.add(id);
@@ -54,7 +54,7 @@ export async function chatImages(
   const history = turn.messages.map(({ role, text, images }) => {
     if (!images?.length) return { role, text };
     const note =
-      turn.mode === "codex"
+      turn.mode !== "demo"
         ? `[用户附图：${images.map((id) => labels.get(id) ?? "较早的图片，未随本次请求附带").join("、")}]`
         : `[用户附了 ${images.length} 张图片；演示模型无法查看图片内容]`;
     return { role, text: text ? `${text}\n${note}` : note };
@@ -84,7 +84,7 @@ export function chatService(
     const config = await resolveChatModel(ctx.llm, turn.mode, {
       ...(turn.model ? { model: turn.model } : {}),
       ...(turn.reasoningEffort ? { reasoningEffort: turn.reasoningEffort } : {}),
-    }, stop);
+    }, stop, turn.defaults);
     const sessionId = SessionId(randomUUID());
     const preset = (await ctx.agentPresets.resolve("chat-v1")).id;
     const handle = await ctx.agents.create({

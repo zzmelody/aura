@@ -56,7 +56,7 @@ export type Workspace = {
   theme: ThemeMode;
   reduceMotion: boolean;
   endpoint: string;
-  provider: "offline" | "dsh" | "codex";
+  provider: "offline" | "dsh" | "codex" | "lumina" | "custom";
   sessions: Session[];
   sidebarWidth?: number;
   hiddenWorkflowRuns?: string[];

@@ -2,6 +2,9 @@ import type { ChatModelSelection, ChatRequest, ChatWorkflowStart } from "@aura/p
 import { streamDemo } from "@aura/demo";
 import type { Message } from "@aura/core/types";
 import type { Workspace } from "@aura/core/types";
+import { providerMode } from "@aura/core";
+
+const chatPaths = { demo: "/chat", codex: "/chat/codex", lumina: "/chat/lumina", custom: "/chat/custom" } as const;
 
 /** Streamed reply text, or a workflow the chat model started as a tool. */
 export type ReplyChunk = string | ({ type: "workflow" } & ChatWorkflowStart);
@@ -21,7 +24,7 @@ export async function* reply(
     );
     return;
   }
-  const response = await fetch(`${endpoint}${provider === "codex" ? "/chat/codex" : "/chat"}`, {
+  const response = await fetch(`${endpoint}${chatPaths[providerMode(provider)]}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

@@ -1,3 +1,4 @@
+import { providerMode } from "@aura/core";
 import React, { useEffect, useId, useRef, useState } from "react";
 import {
   ArrowUp,
@@ -317,14 +318,15 @@ export function ChatScreen({
     ? workspace.workflows.submitting.includes(session.id)
     : false;
   const runError = session ? workspace.workflows.errors[session.id] : "";
-  const providerName =
-    workspace.state.provider === "codex"
-      ? "Codex"
-      : workspace.state.provider === "offline"
-        ? "本地演示"
-        : "DSH 演示";
-  const defaultMode: FlowMode =
-    workspace.state.provider === "codex" ? "codex" : "demo";
+  const providerName = {
+    offline: "本地演示",
+    dsh: "DSH 演示",
+    codex: "Codex",
+    lumina: "Lumina",
+    custom: "自定义 API",
+  }[workspace.state.provider];
+  const defaultMode: FlowMode = providerMode(workspace.state.provider);
+  const realModel = defaultMode !== "demo";
   useEffect(() => {
     nearBottom.current = true;
     setSelected(undefined);
@@ -757,6 +759,8 @@ export function ChatScreen({
                 <option value="offline">本地演示</option>
                 <option value="dsh">DSH 演示</option>
                 <option value="codex">Codex 订阅</option>
+                <option value="lumina">Lumina</option>
+                <option value="custom">自定义 API</option>
               </select>
             </label>
             <span className="composer-spacer" />
@@ -798,7 +802,7 @@ export function ChatScreen({
             {attachError}
           </p>
         ) : null}
-        {workspace.state.provider !== "codex" ? (
+        {!realModel ? (
           <p className="composer-footnote">
             {attachments.length && workspace.state.provider === "dsh"
               ? "演示模式 · 图片不会被模型查看"

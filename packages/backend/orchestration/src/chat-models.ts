@@ -7,8 +7,10 @@ import {
 import type {
   ChatModelCatalog,
   ChatModelSelection,
+  FlowAgentConfig,
   FlowMode,
 } from "@aura/protocol/types";
+import { modelVendor } from "@aura/protocol/models";
 import { agentDefaults } from "./agent-config.ts";
 import { FlowError } from "./schema.ts";
 
@@ -51,8 +53,10 @@ export async function chatModelCatalog(
   mode: FlowMode,
   signal: AbortSignal,
   rejected?: RejectedChatModels,
+  defaults: FlowAgentConfig = agentDefaults(mode),
 ): Promise<ChatModelCatalog> {
-  const defaults = agentDefaults(mode);
+  // Gateway catalogs mix vendors; subscription catalogs are single-vendor.
+  const grouped = mode === "lumina" || mode === "custom";
   const models = (await llm.listModels(defaults.provider)).filter(
     ({ id }) => id === defaults.model || !rejected?.has(mode, id),
   );
@@ -66,6 +70,7 @@ export async function chatModelCatalog(
         return {
           id,
           name,
+          ...(grouped ? { vendor: modelVendor(id) } : {}),
           reasoningEfforts: (info.reasoning?.efforts ?? []).map(
             ({ id, name }) => ({ id, name }),
           ),
@@ -82,8 +87,8 @@ export async function resolveChatModel(
   mode: FlowMode,
   selection: ChatModelSelection,
   signal: AbortSignal,
+  defaults: FlowAgentConfig = agentDefaults(mode),
 ) {
-  const defaults = agentDefaults(mode);
   const model = selection.model ?? defaults.model;
   try {
     const info = await llm.resolveModelInfo(defaults.provider, model, signal);

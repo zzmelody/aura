@@ -63,7 +63,7 @@ export interface SessionPort {
     step: FlowAgentStep & {
       input: string;
       images?: import("./flow-api.ts").FlowImageReference[];
-      mode: "demo" | "codex";
+      mode: import("@aura/protocol/types").FlowMode;
       timeoutMs: number;
       signal: AbortSignal;
       runId: string;
@@ -78,6 +78,7 @@ export interface SessionPort {
 }
 
 export interface EngineOptions {
+  resolveAgentDefaults?(mode: import("@aura/protocol/types").FlowMode | "configured"): Promise<FlowAgentConfig>;
   domain: FlowDomain;
   sessions: SessionPort;
   registry: {
@@ -100,6 +101,8 @@ export interface ChatTurn {
   mode: import("@aura/protocol/types").FlowMode;
   /** Session-local overrides; never inherited by chat workflow tools. */
   model?: string;
+  /** Resolved server-side for gateway modes; never accepted from a client. */
+  defaults?: import("@aura/protocol/types").FlowAgentConfig;
   reasoningEffort?: string;
 }
 /** Streamed chat output: reply text or a workflow started by a tool call. */

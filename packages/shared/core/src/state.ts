@@ -1,4 +1,5 @@
 import { validateChatModelSelection } from "@aura/protocol";
+import type { FlowMode } from "@aura/protocol/types";
 import type {
   Message,
   Session,
@@ -6,6 +7,13 @@ import type {
   WorkflowBinding,
   WorkflowRef,
 } from "./types.ts";
+
+const flowModes = new Set<string>(["demo", "codex", "lumina", "custom"]);
+
+/** Flow and chat mode served by a workspace provider; DSH demo and offline share demo. */
+export function providerMode(provider: Workspace["provider"]): FlowMode {
+  return provider === "offline" || provider === "dsh" ? "demo" : provider;
+}
 
 /** Version-one storage key; moving modules does not migrate or erase records. */
 export const STORAGE_KEY = "aura.workspace.v1";
@@ -69,7 +77,7 @@ function restoreBinding(value: unknown): WorkflowBinding | undefined {
       : {}),
     ...(isRecord(value.pending) &&
     typeof value.pending.requestId === "string" &&
-    (value.pending.mode === "demo" || value.pending.mode === "codex") &&
+    flowModes.has(String(value.pending.mode)) &&
     value.pending.input !== undefined
       ? { pending: value.pending as WorkflowBinding["pending"] }
       : {}),
@@ -155,7 +163,7 @@ export function restoreState(value: unknown): Workspace {
       ...(!workflow && isRecord(s.modelConfig)
         ? { modelConfig: Object.fromEntries(
             Object.entries(s.modelConfig).filter(([mode, config]) =>
-              (mode === "codex" || mode === "demo") && validateChatModelSelection(config),
+              flowModes.has(mode) && validateChatModelSelection(config),
             ),
           ) }
         : {}),
@@ -172,8 +180,8 @@ export function restoreState(value: unknown): Workspace {
     reduceMotion: value.reduceMotion === true,
     endpoint: typeof value.endpoint === "string" ? value.endpoint : "",
     provider:
-      value.provider === "dsh" || value.provider === "codex"
-        ? value.provider
+      ["dsh", "codex", "lumina", "custom"].includes(String(value.provider))
+        ? (value.provider as Workspace["provider"])
         : "offline",
     sessions,
     ...(typeof value.sidebarWidth === "number" && Number.isFinite(value.sidebarWidth)

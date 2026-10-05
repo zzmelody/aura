@@ -75,7 +75,7 @@ export interface FlowAgentOptions {
 }
 /** Frozen before dispatch; every attempt of a logical Agent uses this configuration. */
 export interface FlowAgentConfig {
-  provider: "openai-codex" | "deepseek-official";
+  provider: string;
   model: string;
   reasoningEffort: string;
   maxTokens?: number;
@@ -97,7 +97,21 @@ export interface FlowRecoveryEvent {
   action?: "retry" | "submit_output" | "terminate";
   requestId?: string;
 }
-export type FlowMode = "demo" | "codex";
+export type FlowMode = "demo" | "codex" | "lumina" | "custom";
+
+export interface AiCustomProvider {
+  name: string;
+  api: "openai-completions" | "openai-responses" | "anthropic-messages";
+  baseURL: string;
+  images: boolean;
+  contextWindow: number;
+}
+export interface AiModelSettings {
+  mode: "codex" | "lumina" | "custom";
+  model: string;
+  reasoningEffort: string;
+  custom?: AiCustomProvider;
+}
 
 export interface AuraPluginIdentity {
   id: string;
@@ -361,6 +375,8 @@ export type ChatModelInfo = {
   name: string;
   reasoningEfforts: { id: string; name: string }[];
   defaultReasoningEffort?: string;
+  /** Model vendor label used to group gateway catalogs, e.g. "Anthropic". */
+  vendor?: string;
 };
 export type ChatModelCatalog = {
   mode: FlowMode;
@@ -391,7 +407,7 @@ export type ChatEvent =
   | {
       type: "done";
       engine: "deepseek-harness";
-      mode: "codex-subscription";
+      mode: "codex-subscription" | "lumina" | "custom";
       model: string;
     };
 

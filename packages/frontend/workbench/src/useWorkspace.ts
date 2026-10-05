@@ -1,3 +1,4 @@
+import { providerMode } from "@aura/core";
 import { useEffect, useRef, useState } from "react";
 import { initialState, restoreState, STORAGE_KEY } from "@aura/core";
 import { reply, type ReplyChunk } from "./transport";
@@ -228,7 +229,7 @@ export function useWorkspace() {
         current.endpoint,
         sessionId,
         abort.signal,
-        modelConfig?.[current.provider === "codex" ? "codex" : "demo"],
+        modelConfig?.[providerMode(current.provider)],
       )) {
         if (typeof chunk !== "string") {
           attachChatRun(sessionId, assistant.id, chunk);

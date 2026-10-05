@@ -14,7 +14,7 @@ export type {
 
 export { z };
 
-export type FlowMode = "demo" | "codex";
+export type FlowMode = "demo" | "codex" | "lumina" | "custom";
 
 /** Durable host-admitted raster reference; never a path, URL or base64 payload. */
 export interface FlowImageReference {

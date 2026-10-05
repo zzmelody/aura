@@ -29,8 +29,12 @@ import { isRecord } from "./validation.ts";
 import { createVeyaCreatorApp, VeyaCreatorService } from "./veya-creator-routes.ts";
 import { isLoopbackRuntimeHost } from "./runtime-config.ts";
 import {createVeyaAvatarApp,VeyaAvatarService} from "./veya-avatar-routes.ts";
+import {createVeyaNpcApp,VeyaNpcService} from "./veya-npc-routes.ts";
+import { createAiServicesApp } from "./ai-services-routes.ts";
+import type { AiServicesPort } from "./ai-services.ts";
 
 interface ApiServerOptions {
+  aiServices?: AiServicesPort;
   config: RuntimeConfig;
   codexAuth: CodexAuthPort;
   chat?: ChatPort;
@@ -101,14 +105,15 @@ function registerChatRoute(
               disconnected.signal,
             );
             emit(
-              target.mode === "codex"
-                ? {
+              target.mode === "demo"
+                ? { type: "done", engine: "deepseek-harness", mode: "demo" }
+                : {
                     type: "done",
                     engine: "deepseek-harness",
-                    mode: "codex-subscription",
+                    mode:
+                      target.mode === "codex" ? "codex-subscription" : target.mode,
                     model,
-                  }
-                : { type: "done", engine: "deepseek-harness", mode: "demo" },
+                  },
             );
             await pendingWrite;
           } catch (error) {
@@ -132,6 +137,7 @@ function registerChatRoute(
 
 /** Builds the complete Hono API without opening a network listener. */
 export function createApiApp({
+  aiServices,
   codexAuth,
   chat,
   tripo,
@@ -151,7 +157,7 @@ export function createApiApp({
   app.get("/health", (context) =>
     context.json({
       service: "aura-runtime",
-      modes: ["dsh-demo", "codex-subscription"],
+      modes: ["dsh-demo", "codex-subscription", "lumina", "custom"],
       keyRequired: false,
       integrations: { tripo: tripo?.configured ?? false },
     }),
@@ -160,7 +166,9 @@ export function createApiApp({
   if (tripo) app.route("/tripo", createTripoApp(tripo));
   if (flows) app.route("/flows", createFlowApp(flows));
   if (creator) app.route("/veya/creator/v1", createVeyaCreatorApp(creator));
+  if (aiServices) app.route("/ai/services", createAiServicesApp(aiServices, pluginSettingsAccessible, creator?.bootstrapToken));
   if(creator&&flows)app.route("/veya/avatar/v1",createVeyaAvatarApp(new VeyaAvatarService(creator.projectRoot,flows,creator.bootstrapToken)));
+  if(creator&&flows)app.route("/veya/npc/v1",createVeyaNpcApp(new VeyaNpcService(creator.projectRoot,flows,creator.bootstrapToken)));
   if (pluginSettings)
     app.route(
       "/plugins/config",
@@ -169,14 +177,14 @@ export function createApiApp({
 
   app.get("/chat/models", async (context) => {
     const mode = context.req.query("mode") ?? "codex";
-    if (mode !== "codex" && mode !== "demo")
+    if (!["codex", "demo", "lumina", "custom"].includes(mode))
       return context.json({ message: "无效的对话模式。" }, 400);
     const host = chat ?? flows;
     if (!host || lifecycle.shuttingDown)
       return context.json({ message: "对话模型目录暂时不可用。" }, 503);
     try {
       context.header("Cache-Control", "no-store");
-      return context.json(await host.chatModels(mode, AbortSignal.any([
+      return context.json(await host.chatModels(mode as ChatRoute["mode"], AbortSignal.any([
         context.req.raw.signal, AbortSignal.timeout(20_000),
       ])));
     } catch {
@@ -198,6 +206,9 @@ export function createApiApp({
     chat ?? flows,
     lifecycle,
   );
+  // Gateway routes resolve their provider and default model from saved settings.
+  registerChatRoute(app, "/chat/lumina", () => ({ mode: "lumina" }), chat ?? flows, lifecycle);
+  registerChatRoute(app, "/chat/custom", () => ({ mode: "custom" }), chat ?? flows, lifecycle);
 
   app.notFound((context) => context.body(null, 404));
   app.onError(
@@ -215,6 +226,7 @@ export function createApiApp({
 
 /** Starts the local Aura HTTP boundary over injected runtime services. */
 export async function startApiServer({
+  aiServices,
   config,
   codexAuth,
   tripo,
@@ -230,6 +242,7 @@ export async function startApiServer({
     ? new VeyaCreatorService(config.root, flows) : undefined;
   if (creator) await creator.initialize();
   const app = createApiApp({
+    aiServices,
     codexAuth,
     tripo,
     flows,

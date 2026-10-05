@@ -124,6 +124,8 @@ export const WorkflowRunForm = React.forwardRef<
         >
           <option value="demo">本地演示</option>
           <option value="codex">Codex</option>
+          <option value="lumina">Lumina</option>
+          <option value="custom">自定义 API</option>
         </select>
         <button
           type="button"

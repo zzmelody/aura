@@ -5,6 +5,7 @@ import type {
   ChatModelSelection,
   FlowMode,
 } from "@aura/protocol/types";
+import { groupModelsByVendor } from "@aura/protocol/models";
 import { selectChatModel } from "../chatModels";
 import "./chat-model-controls.css";
 
@@ -155,7 +156,17 @@ export function ChatModelControls({
             <>
               <div className="chat-model-menu-heading">模型</div>
               <div className="chat-model-menu-list" role="group" aria-label="模型">
-                {catalog.models.map((entry) => {
+                {(catalog.models.some((entry) => entry.vendor)
+                  ? groupModelsByVendor(catalog.models)
+                  : [{ vendor: "", models: catalog.models }]
+                ).map((group) => (
+                <React.Fragment key={group.vendor || "all"}>
+                {group.vendor ? (
+                  <div className="chat-model-menu-vendor" role="presentation">
+                    {group.vendor}
+                  </div>
+                ) : null}
+                {group.models.map((entry) => {
                   const checked = entry.id === modelId;
                   return (
                     <button
@@ -182,6 +193,8 @@ export function ChatModelControls({
                     </button>
                   );
                 })}
+                </React.Fragment>
+                ))}
               </div>
               {model?.reasoningEfforts.length ? (
                 <>

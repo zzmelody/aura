@@ -52,7 +52,7 @@ export interface CodexAuthPort {
 /** Chat target selected by the HTTP API route. */
 export interface ChatRoute {
   /** Flow mode of the chat model and of any workflow it starts. */
-  mode: "demo" | "codex";
+  mode: "demo" | "codex" | "lumina" | "custom";
   model?: string;
 }
 

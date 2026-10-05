@@ -394,3 +394,65 @@
     transition: none;
   }
 }
+
+/* Model service forms: Lumina key and custom gateway fields. */
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.settings-actions .tool-button,
+.settings-form-grid .tool-button {
+  min-height: 32px;
+}
+.settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+.settings-form-grid label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.settings-form-grid label.wide {
+  grid-column: 1 / -1;
+}
+.settings-form-grid input:not([type="checkbox"]),
+.settings-form-grid select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+  font: 12px "IBM Plex Mono", ui-monospace, monospace;
+}
+.settings-form-grid input:focus-visible,
+.settings-form-grid select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.settings-form-grid .settings-check-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: end;
+  min-height: 34px;
+  color: var(--secondary);
+  font-size: 12px;
+}
+.settings-form-grid .settings-check-field input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+@media (max-width: 720px) {
+  .settings-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

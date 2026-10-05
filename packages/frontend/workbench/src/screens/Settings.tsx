@@ -21,6 +21,7 @@ import type { WorkspaceController } from "../useWorkspace";
 import type { CodexAuthController } from "../useCodexAuth";
 import { CodexLoginButton } from "../CodexLoginButton";
 import { PluginDirectorySettings } from "./PluginDirectorySettings.tsx";
+import { ModelServiceSettings } from "./ModelServiceSettings.tsx";
 import "./settings.css";
 
 const sections = [
@@ -51,6 +52,8 @@ const providers: {
   { id: "offline", title: "本地演示", hint: "无需联网，规则生成回复" },
   { id: "dsh", title: "DSH 演示", hint: "经工作台服务，可调用工作流" },
   { id: "codex", title: "Codex 订阅", hint: "真实模型，需要登录 Codex" },
+  { id: "lumina", title: "Lumina", hint: "Lumina 网关，多家模型供应商，需要 API Key" },
+  { id: "custom", title: "自定义 API", hint: "OpenAI 或 Anthropic 兼容的自建服务" },
 ];
 
 /** Miniature window drawn from one palette, so the choice previews itself. */
@@ -391,6 +394,16 @@ export function SettingsScreen({
                 <code className="settings-value">{codex.model}</code>
               </Row>
             </div>
+            <ModelServiceSettings
+              endpoint={workspace.state.endpoint || "http://127.0.0.1:4311"}
+              onUse={(provider) =>
+                workspace.setState((s) => ({
+                  ...s,
+                  provider,
+                  endpoint: s.endpoint || "http://127.0.0.1:4311",
+                }))
+              }
+            />
           </section>
 
           <section id="settings-connection" aria-labelledby="settings-connection-title">

@@ -36,7 +36,11 @@ Aura 后端优先采用进程已有的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY
 
 ## 自定义 API
 
-后续自定义模型仍使用官方 `dsh-llm-pi-ai`，不新增一套 Aura 模型客户端。自定义网关需要明确协议、地址、凭据引用和真实模型 ID，例如：
+2026-10-03：Veya 的原生设置页已接入 Codex 订阅和自定义模型。受本机 bootstrap capability 保护的 `/ai/services` 负责保存非密钥配置；Key 留在 DSH credentials。支持 `openai-completions`、`openai-responses` 和 `anthropic-messages`，服务地址、模型 ID、上下文、图片输入能力及思考强度由玩家明确填写。留空 Key 只继承同一地址与协议的已存密钥；更换地址不携带旧密钥。所有协议按其服务约定填写 API Key。
+
+自定义模型继续使用官方 `dsh-llm-pi-ai`，不新增一套 Aura 模型客户端。每次保存产生不可变 provider 版本和凭据引用，并通过公开 settings seam 更新运行中的 DSH。新 Run 固定选定版本；子 Flow 继承父 Run 配置，修改设置不改变已有请求重试。Veya 的许愿、居民生成和 Avatar 决策通过受控服务参数 `useConfiguredModel` 选择当前模式；演示模式保持独立。清除历史密钥和退出账号要求没有未完成的 Flow；失败、中断、取消不会持续锁住配置，主动清除凭据后旧任务重试需要恢复原凭据。
+
+自定义网关对应的 DSH 配置示例：
 
 ```yaml
 - id: llm-pi-ai
@@ -54,6 +58,20 @@ Aura 后端优先采用进程已有的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY
 支持 Responses 的网关改用 `openai-responses`。`apiKeyEnv` 保存的是 DSH 凭据引用名称，不是密钥；密钥由后端凭据服务解析，不能进入客户端或仓库。目录中已有的 provider 可以继承官方目录，再用 `modelOverrides` 调整个别模型；`models` 会替换整份目录，不应与 `modelOverrides` 同时使用。
 
 本地实现依据是已安装的 [DSH pi-ai 插件说明](../node_modules/@deepseek-ai/dsh-llm-pi-ai/README.md)、[DSH 授权服务说明](../node_modules/@deepseek-ai/dsh-authorization/README.md) 和 [DSH 本地凭据说明](../node_modules/@deepseek-ai/dsh-credentials-local/README.md)。这些是只读安装依赖，不属于 Aura 源码。
+
+## Lumina 网关
+
+2026-10-04：Aura 内置 Lumina（`https://lumina.tripo3d.com/v1`，与 Claude Code 使用的同一网关）作为固定 DSH 路由 `aura-lumina`，走官方 `dsh-llm-pi-ai` 的 `openai-completions` 协议，不新增模型客户端。只需填写 API Key：工作台「设置 → 模型与账号 → Lumina」保存后写入 DSH credentials 的 `AURA_LUMINA_API_KEY`；启动环境若已设置同名变量则优先使用且界面只读。Key 不进入 `.aura/ai-services.json`、日志或前端响应。
+
+保存 Key 或点击「同步模型列表」时，后端经 DSH `discoverModels` 读取 `/v1/models`，过滤掉 embedding、rerank、图片生成和 `sub2api-*` 等路由别名，把对话模型 ID 记入 `ai-services.json` 的 `lumina.models`，并在下一次请求前通过 settings seam 更新运行中的 DSH。输入框的模型选择器按供应商分组（Anthropic、OpenAI、Google、DeepSeek、通义千问、智谱、Moonshot、MiniMax、阶跃星辰等），分组规则在 `@aura/protocol/models`，只依据模型 ID 前缀。默认模型为 `claude-sonnet-4-6`，思考强度 `high`；Lumina 未公布模态，DeepSeek、MiniMax、Step 按纯文本声明，其余按文本加图片声明。
+
+对话使用 `POST /chat/lumina`，工作流运行模式可选 `lumina`。2026-10-04 实测 DSH 路径可列出 40 个对话模型，`claude-sonnet-4-6` 与 `deepseek-v4-flash` 均返回正常回复。
+
+## 工作台自定义 API
+
+「设置 → 模型与账号 → 自定义 API」使用上文的 `/ai/services/model` 保存协议、地址、默认模型、上下文、图片能力与 Key，保存后立即检查连接并把服务列出的模型记为路由目录（`routes[*].catalog`），聊天时可在输入框按供应商切换。对话走 `POST /chat/custom`。
+
+`/ai/services` 仍只在仅绑定本机的 runtime 上开放。Veya 携带 bootstrap capability；本机工作台与插件设置一致，依赖本机绑定和来源策略，可不带 capability，但携带错误的 capability 一律拒绝。
 
 ## 本地剧情模型调研
 

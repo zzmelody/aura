@@ -25,6 +25,7 @@ import { palettes } from "@aura/ui/theme";
 import { useWorkspace } from "./useWorkspace";
 import { useCodexAuth } from "./useCodexAuth";
 import { CodexLoginButton } from "./CodexLoginButton";
+import { ModelServiceBadge } from "./ModelServiceBadge";
 import { HistoryScreen } from "./screens/Home";
 import { ChatScreen } from "./screens/Chat";
 import { SettingsScreen } from "./screens/Settings";
@@ -357,7 +358,17 @@ export default function App() {
                         <span>生成助手</span>
                       </button>
                     ) : null}
-                    <CodexLoginButton auth={codexAuth} compact={!wide} />
+                    {workspace.state.provider === "lumina" ||
+                    workspace.state.provider === "custom" ? (
+                      <ModelServiceBadge
+                        endpoint={codexAuth.endpoint}
+                        provider={workspace.state.provider}
+                        compact={!wide}
+                        onOpen={() => navigate("settings")}
+                      />
+                    ) : (
+                      <CodexLoginButton auth={codexAuth} compact={!wide} />
+                    )}
                   </div>
                 </header>
                 {workspace.saveError ? (

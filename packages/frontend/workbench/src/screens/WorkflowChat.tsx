@@ -1,3 +1,4 @@
+import { providerMode } from "@aura/core";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { GitBranch, Play, Plus } from "lucide-react";
 import type {
@@ -38,7 +39,7 @@ export function WorkflowChat({
       2,
     );
   const [mode, setMode] = useState<FlowMode>(
-    workspace.state.provider === "codex" ? "codex" : "demo",
+    providerMode(workspace.state.provider),
   );
   const scroll = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);

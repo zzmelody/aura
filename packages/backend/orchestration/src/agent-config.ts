@@ -1,3 +1,4 @@
+import { LUMINA_DEFAULT_MODEL, LUMINA_PROVIDER } from "@aura/dsh-auth";
 import type {
   FlowAgentConfig,
   FlowAgentOptions,
@@ -17,6 +18,17 @@ export function agentDefaults(
   timeoutMs = 180_000,
   codexModel = process.env.AURA_CODEX_MODEL || "gpt-6.1-sol",
 ): FlowAgentConfig {
+  if (mode === "custom") throw new FlowError("自定义模型尚未配置。", 422);
+  if (mode === "lumina")
+    return agentConfig(
+      {
+        provider: LUMINA_PROVIDER,
+        model: LUMINA_DEFAULT_MODEL,
+        reasoningEffort: "high",
+        timeoutMs,
+      },
+      overrides,
+    );
   return agentConfig(
     {
       provider: mode === "codex" ? "openai-codex" : "deepseek-official",

@@ -11,7 +11,9 @@ import { FlowEngine } from "./engine.ts";
 import { FlowRegistry } from "./registry.ts";
 import { actionRunSchema, FlowError, runSchema } from "./schema.ts";
 import { dshSessions } from "./sessions.ts";
-import type { FlowRun } from "@aura/protocol/types";
+import type { FlowMode, FlowRun } from "@aura/protocol/types";
+
+const chatModeSchema = z.enum(["demo", "codex", "lumina", "custom"]);
 import type { ContributionRoot, FlowDomain, Table } from "./types.ts";
 import type { ActionRun, AuraPluginStatus } from "@aura/protocol/types";
 import { ActionRegistry } from "./action-registry.ts";
@@ -23,6 +25,7 @@ import {
 import { VeyaCreatorBindings, VeyaCreatorCapability, VEYA_CREATOR_CAPABILITY } from "./veya-creator-bindings.ts";
 import { VeyaCreatorLifecycle } from "./veya-creator-lifecycle.ts";
 import {VeyaAvatarCapability} from "./veya-avatar-bindings.ts";
+import {VeyaNpcCapability} from "./veya-npc-bindings.ts";
 import { AuraCapabilityRouter } from "./capability-router.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
 import { VEYA_CLOUD_IMAGE_CAPABILITY, VeyaCloudImageCapability } from "./veya-cloud-image.ts";
@@ -51,7 +54,9 @@ import { configureDshNetwork } from "./dsh-network.ts";
 import { chatService } from "./chat.ts";
 import { chatModelCatalog, RejectedChatModels } from "./chat-models.ts";
 import { GptImageService, codexImageRequest } from "./gpt-image.ts";
-import { codexTokenSource } from "@aura/dsh-auth";
+import { codexTokenSource, readAiServices, customProfiles, luminaSettings, selectedAgentConfig } from "@aura/dsh-auth";
+import { agentDefaults } from "./agent-config.ts";
+import type {} from "@deepseek-ai/dsh-settings";
 
 const pluginIdentitySchema = z
   .object({
@@ -231,6 +236,7 @@ export const inject = [
   "hmr",
   "tools",
   "llm",
+  "settings",
   "subprocess",
   "attachments",
 ];
@@ -341,7 +347,7 @@ export async function apply(ctx: Context) {
         attachments: ctx.attachments,
       });
   const creatorLifecycle = new VeyaCreatorLifecycle(creatorBindings, id => creatorGet(id), veya);
-  capabilityRoutes.push([VEYA_WORLD_AGENT_CAPABILITY, new VeyaAvatarCapability(creatorBindings.projectRoot,id=>creatorGet(id),creatorLifecycle)] as const);
+  capabilityRoutes.push([VEYA_WORLD_AGENT_CAPABILITY, new VeyaNpcCapability(creatorBindings.projectRoot,id=>creatorGet(id),new VeyaAvatarCapability(creatorBindings.projectRoot,id=>creatorGet(id),creatorLifecycle))] as const);
   capabilityRoutes.push([VEYA_CREATOR_CAPABILITY, new VeyaCreatorCapability(creatorBindings, id => creatorGet(id), creatorLifecycle)] as const);
   const tripoCredentialPath = process.env.AURA_TRIPO_CREDENTIAL_PATH;
   if (tripoCredentialPath) {
@@ -352,6 +358,7 @@ export async function apply(ctx: Context) {
       credentialPath: tripoCredentialPath,
       region,
       apiKey: process.env.TRIPO_API_KEY,
+      resolveOptions: async () => ({ credentialPath: tripoCredentialPath, region: (await readAiServices(process.env.AURA_FLOW_CWD ?? process.cwd(), codexModel, region)).tripoRegion, apiKey: process.env.TRIPO_API_KEY }),
     });
     capabilityRoutes.push([
       TRIPO_GAME_ASSET_CAPABILITY,
@@ -436,7 +443,25 @@ export async function apply(ctx: Context) {
     refresh: refreshActions,
     cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
   });
+  /** Gateway routes are read per request so saved settings apply without a restart. */
+  const resolveModeDefaults = async (mode: FlowMode | "configured") => {
+      if (mode === "demo") return agentDefaults(mode);
+      const document = await readAiServices(process.env.AURA_FLOW_CWD ?? process.cwd(), process.env.AURA_CODEX_MODEL);
+      if (mode === "custom" || mode === "configured" && document.model.mode === "custom") {
+        const route = document.selectedRoute ? document.routes[document.selectedRoute] : undefined;
+        if (!route) throw new FlowError("请先配置自定义模型服务。", 422);
+        await ctx.settings.update("llm-pi-ai", { providers: customProfiles(document) });
+        return selectedAgentConfig({ ...document, model: route.settings });
+      }
+      if (mode === "lumina" || mode === "configured" && document.model.mode === "lumina") {
+        await ctx.settings.update("llm-pi-ai", { providers: customProfiles(document) });
+        return selectedAgentConfig({ ...document, model: luminaSettings(document) });
+      }
+      const codex = document.codex ?? (document.model.mode === "codex" ? document.model : undefined);
+      return codex ? selectedAgentConfig({ ...document, model: codex }) : agentDefaults("codex");
+  };
   const engine = new FlowEngine({
+    resolveAgentDefaults: resolveModeDefaults,
     // DSH's generic Domain table projection erases values at this boundary;
     // the concrete zod schema above validates persisted records.
     domain: domain as unknown as FlowDomain,
@@ -584,6 +609,10 @@ export async function apply(ctx: Context) {
       const stepId = typeof params.stepId === "string" ? params.stepId : "";
       let data;
       switch (method) {
+        case "ai-services/busy":
+          // Match Veya's terminal task states; a crashed Run must not lock settings forever.
+          data = [...engine.runs.entries()].some(([, run]) => !["completed", "failed", "cancelled", "interrupted"].includes(run.status));
+          break;
         case "initialize":
           await refreshFlows();
           await ctx.get("loader")?.await();
@@ -648,13 +677,14 @@ export async function apply(ctx: Context) {
           break;
         }
         case "chat/models": {
-          const mode = z.enum(["demo", "codex"]).safeParse(params.mode);
+          const mode = chatModeSchema.safeParse(params.mode);
           if (!mode.success) throw new FlowError("无效的对话模式。", 400);
           data = await chatModelCatalog(
             ctx.llm,
             mode.data,
             AbortSignal.timeout(15_000),
             rejectedChatModels,
+            await resolveModeDefaults(mode.data),
           );
           break;
         }
@@ -675,7 +705,7 @@ export async function apply(ctx: Context) {
                 )
                 .min(1)
                 .max(200),
-              mode: z.enum(["demo", "codex"]),
+              mode: chatModeSchema,
               model: z.string().trim().min(1).max(200).optional(),
               reasoningEffort: z.string().trim().min(1).max(80).optional(),
             })
@@ -687,7 +717,7 @@ export async function apply(ctx: Context) {
           chats.set(chatId, abort);
           try {
             data = await chat(
-              turn.data,
+              { ...turn.data, defaults: await resolveModeDefaults(turn.data.mode) },
               (event) => transport.notify("chat/event", { chatId, event }),
               abort.signal,
             );

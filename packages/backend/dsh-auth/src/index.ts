@@ -3,13 +3,15 @@ import AuthorizationService, {
   type AuthorizationInteraction,
 } from "@deepseek-ai/dsh-authorization";
 import LocalCredentialProvider from "@deepseek-ai/dsh-credentials-local";
-import LlmRuntime from "@deepseek-ai/dsh-llm";
+import LlmRuntime, { ReasoningEffortId } from "@deepseek-ai/dsh-llm";
 import * as PiAiAdapter from "@deepseek-ai/dsh-llm-pi-ai";
 import { recordKeyFor } from "@deepseek-ai/dsh-llm-pi-ai";
 import type { CodexAuthStatus } from "@aura/protocol/types";
 import { codexProviderProfile } from "./codex-profile.ts";
 
 export { codexProviderProfile } from "./codex-profile.ts";
+export { AiConfigurationError, aiServicesPath, readAiServices, writeAiServices, customProfiles, luminaProfile, luminaSettings, selectedAgentConfig, parseModelSettings, saveModelSettings, saveDiscoveredCatalog, secret, LUMINA_PROVIDER, LUMINA_BASE_URL, LUMINA_CREDENTIAL, LUMINA_DEFAULT_MODEL } from "./ai-services.ts";
+export type { AiServiceDocument, AiServiceRoute } from "./ai-services.ts";
 
 const providerId = "openai-codex";
 
@@ -271,6 +273,16 @@ export class CodexSubscriptionAuth {
     this.loginController?.abort();
     await this.login;
     return this.state;
+  }
+
+  async logout(): Promise<void> {
+    await this.cancelLogin();
+    await this.ctx.credentials.deleteRecord(this.key);
+    this.state = { state: "signed_out", model: this.modelId };
+  }
+
+  async validateModel(model: string, reasoningEffort: string): Promise<void> {
+    await this.ctx.llm.resolveCallConfig({ provider: providerId, model, reasoningEffort: ReasoningEffortId(reasoningEffort) });
   }
 
   /** Cancels login and disposes the DSH composition. */

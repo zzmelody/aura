@@ -41,12 +41,13 @@ export function useCodexAuth(workspace: WorkspaceController) {
         if (!response.ok) throw new Error("status unavailable");
         const next = (await response.json()) as CodexAuthStatus;
         setStatus(next);
+        // Signing in upgrades a demo provider; an explicit gateway choice stays.
         if (next.state === "authenticated")
-          workspace.setState((current) => ({
-            ...current,
-            endpoint,
-            provider: "codex",
-          }));
+          workspace.setState((current) =>
+            current.provider === "lumina" || current.provider === "custom"
+              ? current
+              : { ...current, endpoint, provider: "codex" },
+          );
         return next;
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") return;
