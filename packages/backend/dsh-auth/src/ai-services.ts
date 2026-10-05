@@ -439,7 +439,7 @@ export async function saveModelSettings(
       (previous.model.mode === "codex" ? previous.model : undefined),
     model: settings,
     selectedRoute: route,
-    routes: { ...previous.routes, [route]: { settings, credential: ref } },
+    routes: { ...previous.routes, [route]: { settings, credential: ref, ...(sameEndpoint && old?.catalog ? { catalog: old.catalog } : {}) } },
   };
   try {
     await writeAiServices(root, next);

@@ -62,10 +62,13 @@ export function createAiServicesApp(
   app.post("/check/model", async (context) =>
     context.json(
       await services.checkModel(
-        AbortSignal.any([context.req.raw.signal, AbortSignal.timeout(15_000)]),
+        AbortSignal.any([context.req.raw.signal, AbortSignal.timeout(60_000)]),
       ),
     ),
   );
+  app.post("/models", async (context) => context.json(await services.refreshModels(
+    AbortSignal.any([context.req.raw.signal, AbortSignal.timeout(15_000)]),
+  )));
   app.post("/check/tripo", async (context) =>
     context.json(
       await services.checkTripo(

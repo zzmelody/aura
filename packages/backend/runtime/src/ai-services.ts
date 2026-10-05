@@ -16,6 +16,7 @@ import {
   type AiServiceDocument,
   type CodexSubscriptionAuth,
 } from "@aura/dsh-auth";
+import { probeModelConnection, modelProbeFailure } from "./model-probe.ts";
 import { isChatModelId } from "@aura/protocol/models";
 import type { TripoService } from "@aura/tripo";
 import type { RuntimeConfig } from "./types.ts";
@@ -27,6 +28,7 @@ export interface AiServicesPort {
   saveLumina(source: unknown): Promise<unknown>;
   checkLumina(signal: AbortSignal): Promise<unknown>;
   checkModel(signal: AbortSignal): Promise<unknown>;
+  refreshModels(signal: AbortSignal): Promise<unknown>;
   checkTripo(signal: AbortSignal): Promise<unknown>;
   logout(): Promise<unknown>;
 }
@@ -36,6 +38,7 @@ const object = (value: unknown): value is Record<string, unknown> =>
 export class AiServices implements AiServicesPort {
   private writes: Promise<unknown> = Promise.resolve();
   private checks = { model: "未检查", tripo: "未检查", lumina: "未检查" };
+  private checkRuns = { model: 0, tripo: 0 };
   // Explicit fields: Node's strip-only TypeScript rejects parameter properties.
   private config: RuntimeConfig;
   private auth: CodexSubscriptionAuth;
@@ -122,6 +125,13 @@ export class AiServices implements AiServicesPort {
           : {}),
       },
       checks: { ...this.checks },
+      checkRuns: { ...this.checkRuns },
+      catalog: {
+        codex: (await this.auth.ctx.llm.listModels("openai-codex")).map(({ id }) => id).slice(0, 64),
+        custom: (route?.catalog ?? []).slice(0, 128),
+        customBaseURL: route?.settings.custom?.baseURL ?? "",
+        customApi: route?.settings.custom?.api ?? "",
+      },
     };
   }
   async saveModel(source: unknown) {
@@ -296,7 +306,7 @@ export class AiServices implements AiServicesPort {
       return this.settings();
     });
   }
-  async checkModel(signal: AbortSignal) {
+  async refreshModels(signal: AbortSignal) {
     return this.serialize(async () => {
       const document: AiServiceDocument = await readAiServices(
         this.config.root,
@@ -305,11 +315,6 @@ export class AiServices implements AiServicesPort {
       if (document.model.mode === "lumina") {
         await this.discoverLumina(signal);
         this.checks.model = this.checks.lumina;
-      } else if (document.model.mode === "codex") {
-        this.checks.model =
-          (await this.auth.status()).state === "authenticated"
-            ? "已登录；模型权限以实际请求为准"
-            : "请先登录 Codex";
       } else {
         const route = document.selectedRoute
           ? document.routes[document.selectedRoute]
@@ -325,8 +330,8 @@ export class AiServices implements AiServicesPort {
           const models = await this.auth.ctx.llm.discoverModels(
             "llm-pi-ai",
             {
-              baseURL: document.model.custom!.baseURL,
-              api: document.model.custom!.api,
+              baseURL: route.settings.custom!.baseURL,
+              api: route.settings.custom!.api,
               ...(key ? { apiKey: key.value } : {}),
             },
             signal,
@@ -338,15 +343,27 @@ export class AiServices implements AiServicesPort {
             this.config.codexModel,
             this.config.tripoRegion,
           );
-          this.checks.model = models.some(
-            (model) => model.id === document.model.model,
-          )
-            ? `连接成功，已同步 ${models.length} 个模型`
-            : "连接成功；服务未列出所填模型，请核对模型 ID";
+          this.checks.model = `已获取 ${models.filter(({ id }) => isChatModelId(id)).length} 个模型；尚未测试模型请求。`;
         } catch {
-          this.checks.model = "连接失败，请检查地址、协议、密钥和网络";
+          this.checks.model = "模型列表获取失败；可手填模型 ID 后测试连接。";
         }
       }
+      return this.settings();
+    });
+  }
+  async checkModel(signal: AbortSignal) {
+    return this.serialize(async () => {
+      const document = await readAiServices(this.config.root, this.config.codexModel);
+      const started = performance.now();
+      try {
+        if (document.model.mode === "codex" && (await this.auth.status()).state !== "authenticated")
+          throw { status: 401 };
+        const reply = await probeModelConnection(document, this.config.credentialPath, signal);
+        this.checks.model = `测试成功 · ${document.model.model} · ${Math.round(performance.now() - started)} ms · 回复：${reply}`;
+      } catch (error) {
+        this.checks.model = `测试失败 · ${document.model.model} · ${modelProbeFailure(error, signal)}`;
+      }
+      this.checkRuns.model++;
       return this.settings();
     });
   }
@@ -359,6 +376,7 @@ export class AiServices implements AiServicesPort {
       } catch {
         this.checks.tripo = "连接失败，请检查地区、密钥和网络";
       }
+      this.checkRuns.tripo++;
       return this.settings();
     });
   }

@@ -8,6 +8,8 @@ Runtime 使用 TypeScript 源码并按职责拆分：
 - `runtime-config.ts`：解析并校验运行配置，安装 Aura 自有 DSH profile；
 - `api-server.ts`：Hono HTTP 边界、并发准入和对话路由；
 - `codex-auth-routes.ts`：DSH 授权状态的脱敏 HTTP 投影；
+- `ai-services.ts` / `ai-services-routes.ts`：模型与 Tripo 设置、可选模型目录和本机受控测试入口；
+- `model-probe.ts`：经 DSH 的简短真实模型请求，复用已保存的 provider 与凭据，脱敏失败结果；获取模型目录不视为测试成功；
 - `tripo-routes.ts`：Tripo 异步生成任务的校验、提交与状态查询；
 - `plugin-settings-routes.ts`：仅在 loopback runtime 上开放受信任插件目录的读取与替换；
 - `dsh-session-runner.ts`：DSH SDK 子进程、JSON-RPC、事件流与取消；
