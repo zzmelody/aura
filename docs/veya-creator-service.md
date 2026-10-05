@@ -1,5 +1,9 @@
 # Veya Creator 本机服务
 
+2026-10-05 完成状态与交付状态纠正：Run completed 仅说明 Flow 执行结束，输出 status=blocked 投影为 runStatus=failed 和固定 production_failed，仍为 deliveryStatus=not_ready；原始 Run 历史不修改。这样游戏能终止旧制作并重新发送。输出未被阻断但成果校验失败才使用 delivery_unverified。任务投影不返回原始规格诊断，lease 清理分支同样保留安全原因。新增两种 completed 投影断言随历史契约通过，Runtime typecheck 通过。
+
+2026-10-05 游戏历史投影：所属客户端的 `/tasks` 列表和 `/tasks/:requestId` 状态提供原始愿望 `text`。状态另提供固定 `failureReason`：空字符串、`worker_unavailable`、`worker_upgrade_required`、`model_unauthorized`、`production_failed`、`cancelled`、`interrupted` 或 `delivery_unverified`。原始 Run 错误、工作进程诊断、模型 payload 和路径不返回；lease 清理投影也保留任务原文和安全原因。`veya-creator-history.test.ts` 一项通过，检查标题恢复、取消/中断/失败分类及原始错误不泄漏；无真实模型或生成请求。Veya 原生/UI 编译与实际布局由用户接手。
+
 此文档描述 Aura 宿主边界。真实世界/交互物制作、原生导出和渲染验收由 Veya 插件与打包 worker 提供；游戏 UI、CreationHost 托管和正式交付属于后续接入。协议测试不能证明真实生成成功。
 
 ## 用户接手测试（2026-10-01）

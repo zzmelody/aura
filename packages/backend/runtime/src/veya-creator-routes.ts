@@ -484,16 +484,28 @@ export class VeyaCreatorService {
   list(client: Client) {
     return Object.entries(this.state.bindings)
       .filter(([, binding]) => binding.playerId === client.playerId && binding.homeWorldId === client.homeWorldId)
-      .map(([requestId, binding]) => ({ requestId, runId: binding.runId, kind: binding.kind, ...(binding.craftAuthorization ? { craft: binding.craftAuthorization } : {}), operation: binding.input?.operation ?? (binding.kind === "prop" ? "create_prop" : "create_world") }));
+      .map(([requestId, binding]) => ({ requestId, runId: binding.runId, kind: binding.kind, text: binding.input?.text ?? "", ...(binding.craftAuthorization ? { craft: binding.craftAuthorization } : {}), operation: binding.input?.operation ?? (binding.kind === "prop" ? "create_prop" : "create_world") }));
   }
 
   async project(binding: Binding) {
-    if (!binding.runId) return { runStatus: "queued", deliveryStatus: "not_ready" };
+    const text = binding.input?.text ?? "";
+    if (!binding.runId) return { text, runStatus: "queued", deliveryStatus: "not_ready" };
     const run = await this.flow.request<FlowRun>("get", { id: binding.runId });
+    // Only fixed product reason codes cross into the game. Provider payloads,
+    // worker diagnostics, credentials and paths stay in backend diagnostics.
+    const failureReason = run.status === "completed" && object(run.output)?.status === "blocked" ? "production_failed" : run.status === "failed"
+      ? run.error === "creator_worker_capabilities_unavailable" || run.error === "creator_worker_binding_unavailable"
+        ? "worker_unavailable"
+        : run.error?.startsWith("creator_worker_upgrade_required:") ? "worker_upgrade_required"
+        : run.error === "model_unauthorized" ? "model_unauthorized" : "production_failed"
+      : run.status === "cancelled" ? "cancelled"
+      : run.status === "needs_attention" ? "production_needs_attention"
+      : run.status === "interrupted" ? "interrupted" : "";
+    const runStatus = run.status === "completed" && failureReason === "production_failed" ? "failed" : run.status;
     const lease = binding.creationSessionId ? (await readCreatorLeases(this.projectRoot)).leases[binding.creationSessionId] : undefined;
     if (lease?.rootRunId === run.id && (lease.cancelling || lease.state === "needs_attention" ||
         ["completed", "failed", "cancelled", "interrupted"].includes(run.status)))
-      return { runId: run.id, runStatus: run.status, phase: "needs_attention", deliveryStatus: "not_ready", cleanup: "needs_attention" };
+      return { text, failureReason, runId: run.id, runStatus, phase: "needs_attention", deliveryStatus: "not_ready", cleanup: "needs_attention" };
     let current = run;
     for (let depth = 0; depth < 8; ++depth) {
       const child = current.steps.find((step) => step.kind === "flow" && step.status === "waiting_input" && step.childRunId);
@@ -510,8 +522,9 @@ export class VeyaCreatorService {
     }
     const verified = artifact !== undefined;
     return {
-      runId: run.id, runStatus: run.status,
-      phase: run.status === "waiting_input" ? "clarification" :
+      text, failureReason: failureReason || (run.status === "completed" && !verified ? "delivery_unverified" : ""),
+      runId: run.id, runStatus,
+      phase: run.status === "needs_attention" ? "needs_attention" : run.status === "waiting_input" ? "clarification" :
         run.status === "completed" ? (verified ? "preparing_delivery" : "needs_attention") : "production",
       deliveryStatus: verified ? "pending_delivery" : "not_ready",
       ...(binding.craftAuthorization ? { craft: binding.craftAuthorization, craftStatus: object(run.output)?.status,
