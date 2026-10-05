@@ -21,8 +21,7 @@ AURA_TRIPO_REGION=global  -> https://openapi.tripo3d.ai/v3
 AURA_TRIPO_REGION=china   -> https://openapi.tripo3d.com/v3
 ```
 
-配置修改后重启 Runtime。`GET /tripo/status` 只返回 `configured`、区域、API 版本和
-能力列表，不会远程校验 Key，也不会返回凭据。
+Veya 设置页通过本机授权的 `/ai/services/tripo` 保存 Key 与地区，后续请求动态读取，无需重启 Runtime；仍有制作任务时拒绝修改。`TRIPO_API_KEY` 存在时界面只读。`POST /ai/services/check/tripo` 使用官方 SDK 查询账户余额，不提交付费任务；失败提示不透传供应商响应。`GET /tripo/status` 只返回 `configured`、区域、API 版本和能力列表，不会返回凭据。
 
 ## HTTP API
 

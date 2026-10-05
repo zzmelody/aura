@@ -104,12 +104,25 @@ test("outputs made only of local file paths can fold behind their media", async 
     onlyFileReferences({ audioPath: String.raw`F:\aura\.aura\job\speech.wav` }),
     true,
   );
-  assert.equal(onlyFileReferences({ videoPath: "/tmp/out/final.mp4", durationSeconds: 4 }), true);
-  assert.equal(onlyFileReferences({ files: ["C:/a/b.png", "C:/a/c.png"] }), true);
-  assert.equal(onlyFileReferences({ audioPath: "F:/x/a.wav", note: "旁白偏快" }), false);
+  assert.equal(
+    onlyFileReferences({ videoPath: "/tmp/out/final.mp4", durationSeconds: 4 }),
+    true,
+  );
+  assert.equal(
+    onlyFileReferences({ files: ["C:/a/b.png", "C:/a/c.png"] }),
+    true,
+  );
+  assert.equal(
+    onlyFileReferences({ audioPath: "F:/x/a.wav", note: "旁白偏快" }),
+    false,
+  );
   assert.equal(onlyFileReferences({ report: "完成" }), false);
   assert.equal(
-    onlyFileReferences({ imagePath: "C:/a/out.png", imageAssetId: "a".repeat(64), seed: 7 }),
+    onlyFileReferences({
+      imagePath: "C:/a/out.png",
+      imageAssetId: "a".repeat(64),
+      seed: 7,
+    }),
     true,
   );
   assert.equal(
@@ -122,6 +135,39 @@ test("outputs made only of local file paths can fold behind their media", async 
   );
   assert.equal(
     onlyFileReferences({ imagePath: "C:/a/out.png", note: "已改用本机模型" }),
+    false,
+  );
+});
+
+test("generated model metadata folds behind its preview without hiding reports or warnings", async () => {
+  const { onlyFileReferences } = await import("../src/workflowPresentation.ts");
+  const result = {
+    outputDirectory: "F:/creative/assets/generated/axe",
+    modelPath: "F:/creative/assets/generated/axe/model.glb",
+    previewPath: "F:/creative/assets/generated/axe/preview.png",
+    imagePaths: { front: "F:/creative/assets/generated/axe/view-front.png" },
+    manifestPath: "F:/creative/assets/generated/axe/manifest.json",
+    taskIds: {
+      front: "image-task-1",
+      model: "28cecb11-847e-4a85-bc8a-4eb01b95f7db",
+    },
+    imageModel: "chat_image_2.5_sunburst",
+    modelVersion: "P1-20260311",
+    creditsConsumed: 90,
+    faceLimit: 15000,
+    modelArtifact: { artifactId: "a".repeat(64), bytes: 1000, format: "glb" },
+  };
+  assert.equal(onlyFileReferences(result), true);
+  assert.equal(
+    onlyFileReferences({ ...result, note: "模型缺少贴图，请检查" }),
+    false,
+  );
+  assert.equal(
+    onlyFileReferences({ ...result, report: "## 模型验收\n尺寸偏大" }),
+    false,
+  );
+  assert.equal(
+    onlyFileReferences({ ...result, taskIds: { error: "生成失败，请重试" } }),
     false,
   );
 });

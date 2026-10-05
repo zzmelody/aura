@@ -30,7 +30,7 @@ import {
 import { FlowExecution } from "./execution.ts";
 import { FlowScheduler } from "./scheduler.ts";
 import { recoverRun } from "./recovery.ts";
-import { agentDefaults } from "./agent-config.ts";
+import { agentDefaults, agentConfig } from "./agent-config.ts";
 
 const MAX_NESTED_FLOW_DEPTH = 8;
 
@@ -183,6 +183,7 @@ export class FlowEngine {
     return this.serialize(async () => {
       if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
       const request = parse(startSchema, input);
+      if (request.useConfiguredModel && !request.serviceOnly) throw new FlowError("模型默认选择仅供受控服务使用。", 403);
       let publishedFlow: LoadedFlow | undefined;
       if (request.serviceOnly) {
         await this.options.refreshFlows();
@@ -199,7 +200,7 @@ export class FlowEngine {
       if (previous) {
         if (
           previous.flow.id !== request.flowId ||
-          previous.mode !== request.mode ||
+          (!request.useConfiguredModel && previous.mode !== request.mode) ||
           (previous.requestInputHash ?? fingerprint(previous.input)) !==
             fingerprint(jsonValue(request.input, "Flow 入参"))
         )
@@ -209,6 +210,9 @@ export class FlowEngine {
       if (!publishedFlow) await this.options.refreshFlows();
       const flow = publishedFlow ?? this.options.registry.get(request.flowId);
       const args = parseJson(flow.inputSchema, request.input, "Flow 入参");
+      const defaults = this.options.resolveAgentDefaults
+        ? agentConfig({ ...await this.options.resolveAgentDefaults(request.useConfiguredModel ? "configured" : request.mode), timeoutMs: flow.agentTimeoutMs }, flow.agentDefaults ?? {})
+        : agentDefaults(request.mode, flow.agentDefaults, flow.agentTimeoutMs);
       const actions =
         this.options.actions?.registry.snapshot() ??
         new Map<string, LoadedAction>();
@@ -223,18 +227,14 @@ export class FlowEngine {
           plugin: flow.plugin,
         },
         input: args,
-        mode: request.mode,
+        mode: request.useConfiguredModel ? (defaults.provider === "openai-codex" ? "codex" : "custom") : request.mode,
         status: "queued",
         createdAt: Date.now(),
         queuedAt: this.queueTime(),
         updatedAt: Date.now(),
         steps: [],
         durableVersion: 1,
-        agentDefaults: agentDefaults(
-          request.mode,
-          flow.agentDefaults,
-          flow.agentTimeoutMs,
-        ),
+        agentDefaults: defaults,
         requestInputHash: fingerprint(jsonValue(request.input, "Flow 入参")),
         actionVersions: [...actions.values()].map(
           ({ id, sourceHash, plugin }) => ({
@@ -365,11 +365,9 @@ export class FlowEngine {
         updatedAt: now,
         steps: [],
         durableVersion: 1,
-        agentDefaults: agentDefaults(
-          parent.mode,
-          flow.agentDefaults,
-          flow.agentTimeoutMs,
-        ),
+        agentDefaults: parent.agentDefaults
+          ? agentConfig({ ...parent.agentDefaults, timeoutMs: flow.agentTimeoutMs }, flow.agentDefaults ?? {})
+          : agentDefaults(parent.mode, flow.agentDefaults, flow.agentTimeoutMs),
         requestInputHash: step.requestInputHash,
         actionVersions: [...actions.values()].map(
           ({ id, sourceHash, plugin }) => ({ id, sourceHash, plugin }),

@@ -81,7 +81,7 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
           {
             provider: config.provider,
             model: config.model,
-            reasoningEffort: ReasoningEffortId(config.reasoningEffort),
+            ...(config.reasoningEffort === "off" && config.provider !== "openai-codex" ? {} : { reasoningEffort: ReasoningEffortId(config.reasoningEffort) }),
             ...(config.maxTokens === undefined
               ? {}
               : { maxTokens: config.maxTokens }),
@@ -156,7 +156,7 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
             return {
               provider: config.provider,
               model: config.model,
-              reasoningEffort: ReasoningEffortId(config.reasoningEffort),
+              ...(config.reasoningEffort === "off" && config.provider !== "openai-codex" ? {} : { reasoningEffort: ReasoningEffortId(config.reasoningEffort) }),
               ...(config.maxTokens === undefined
                 ? {}
                 : { maxTokens: config.maxTokens }),
@@ -170,7 +170,7 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
           sessionId,
           provider: config.provider,
           model: config.model,
-          reasoningEffort: config.reasoningEffort,
+          ...(config.reasoningEffort === "off" && config.provider !== "openai-codex" ? {} : { reasoningEffort: config.reasoningEffort }),
         });
         if (!savedRequestId)
           throw new FlowError("Agent attempt 缺少持久化 requestId。");

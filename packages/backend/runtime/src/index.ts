@@ -1,5 +1,6 @@
 /** Composition root shared by Aura's server and desktop application outputs. */
-import { CodexSubscriptionAuth } from "@aura/dsh-auth";
+import { CodexSubscriptionAuth, readAiServices } from "@aura/dsh-auth";
+import { AiServices } from "./ai-services.ts";
 import { AuraPluginManager } from "@aura/extensions";
 import { OrchestrationHost } from "@aura/orchestration";
 import { createTripoService } from "@aura/tripo";
@@ -59,6 +60,7 @@ export async function startAuraRuntime(
     credentialPath: config.tripoCredentialPath,
     region: config.tripoRegion,
     apiKey: process.env.TRIPO_API_KEY,
+    resolveOptions: async () => ({ credentialPath: config.tripoCredentialPath, region: (await readAiServices(config.root, config.codexModel, config.tripoRegion)).tripoRegion, apiKey: process.env.TRIPO_API_KEY }),
   });
   let demoModel: DemoModelHandle | undefined;
   let api: ApiServerHandle | undefined;
@@ -124,6 +126,7 @@ export async function startAuraRuntime(
       flows,
       pluginSettings: pluginManager,
       pluginSettingsAccessible: isLoopbackRuntimeHost(config.host),
+      aiServices: new AiServices(config, codexAuth, tripo, async () => flows?.opening ? flows.request<boolean>("ai-services/busy", {}) : false),
     });
   } catch (error) {
     const cleanups: Promise<void>[] = [codexAuth.close()];

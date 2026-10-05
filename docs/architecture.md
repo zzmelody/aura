@@ -65,6 +65,8 @@ Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Sessi
 
 ## 当前取舍
 
+Veya 创建后居民生成由固定服务 Flow `veya/veya-npc-agent` 承担，`/veya/npc/v1/recruitments` 对账按世界与持久招聘请求确定唯一 Run；启动前保存绑定，未知回执不重新调用模型。前台实例变化可更新会话绑定并读取同一结果，安装仍由 Veya 核对源指纹。Flow 的 World Agent 能力仅开放绑定的 `veya.npc.creation.context`；角色组装、资源预检、步行与日程门禁属于原生 Veya，不进入 Aura 前端或另一套执行器。
+
 `comfy-workflow` Action 从对象或本地 API JSON 文件调用所选 ComfyUI，支持节点参数覆盖、受管图片资产到 `LoadImage` 的绑定和输出节点筛选；普通界面画布 JSON 不做转换。文件内容在排队前固定并记录 hash，图片资产通过上传端点或 `local-image` 登记为内容哈希 ID；ComfyUI 执行每次使用独立 input/output/temp 目录，输入图在启动前按 ID 校验并暂存，保存/预览产物归档后删除中间目录。`local-video` 的预置模板可选择首帧、末帧图片资产；前端不解释 ComfyUI 图或调度模型。
 
 本地媒体模型以同包 `local-image`、`local-video`、`local-tts` Action 接入已有 ComfyUI / Qwen3-TTS HTTP 服务，`local-ai-service` 负责状态与显式启停。`orchestration/src/local-ai/` 是这三套受信任 Windows 部署的后端适配：复用 DSH subprocess，并用其公开 Win32 bindings 补充 Job 崩溃回收及跨宿主 GPU lease。模型进程由后端插件持有，不属于热加载 Action fiber；详情见 [本地模型 Actions](../packages/backend/orchestration/docs/local-ai-actions.md)。这条媒体工具链不替代 Agent 的 DSH 模型路由。
@@ -87,7 +89,7 @@ Codex 默认模型是 `gpt-6.1-sol`，推理档位为 `xhigh`（Extra high），
 
 工作流产物通过 `@aura/orchestration` 的 `GeneratedArtifacts` 与独立 `WorkflowArtifactIndex` 登记、生成缩略图及迁移历史记录；不修改 Action 输出和 durable 重放身份。shared/protocol 的 `WorkflowArtifact` / `WorkflowArtifacts` 只传文件 ID、可用状态、元数据和来源步骤。`/flows/runs/:runId/artifacts` 与其内容路由验证运行关联；二进制由 Hono 流式发送，不进入 DSH JSON-RPC。已生成结果不因预览登记失败而触发再次生成。
 
-workbench 在工作流回复与步骤详情展示同一套文件卡片，使用原有轮询节奏同步产物。图片弹层支持缩放/拖动，MP4 使用浏览器原生播放器，GLB 使用按需加载的 `@google/model-viewer`；列表只加载缩略图或占位图，打开弹层才加载模型。`model-viewer` 和 Three.js 由三个应用通过 peer dependency 提供同一运行时，解码器由根构建插件统一部署到各宿主产物，无运行时 CDN 依赖。Web、Electron 和 Capacitor 共享 DOM 与 HTTP 文件地址，不向 renderer 暴露磁盘读取能力。
+workbench 在工作流回复与步骤详情展示同一套文件卡片，使用原有轮询节奏同步产物。图片弹层支持缩放/拖动，MP4 使用浏览器原生播放器，GLB 使用按需加载的 `@google/model-viewer`，以独立卡片在对话内直接交互预览；模型卡片进入视区时加载查看器，其余图片加载缩略图，模型的参考图片默认折叠，放大操作仍打开弹层。`model-viewer` 和 Three.js 由三个应用通过 peer dependency 提供同一运行时，解码器由根构建插件统一部署到各宿主产物，无运行时 CDN 依赖。三个宿主按应用与 serve/build 隔离 Vite 缓存，开发期预优化查看器，避免并行开发或构建使懒加载依赖失效。Web、Electron 和 Capacitor 共享 DOM 与 HTTP 文件地址，不向 renderer 暴露磁盘读取能力。
 
 ### Veya 创作接入与共享插件代码
 

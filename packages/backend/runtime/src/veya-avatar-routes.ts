@@ -39,7 +39,7 @@ export class VeyaAvatarService{
    const hash=await this.context(path,r),journal=await readAvatarBindings(this.root),old=journal.bindings[key];if(old)return this.query(key,hash);
    if(Object.keys(journal.bindings).length>=1024)throw Error("avatar_dispatch_capacity");
    const row:AvatarBinding={key,requestId,sessionPath:path,sessionHash:hash,request:r as unknown as Record<string,JsonValue>,state:"starting"};journal.bindings[key]=row;await writeAvatarBindings(this.root,journal);
-   try{const run=await this.flow.request<FlowRun>("start",{requestId,flowId:avatarDecisionFlow,serviceOnly:true,mode:"codex",input:r});row.runId=run.id;row.state="running";await writeAvatarBindings(this.root,journal);return {key,status:run.status};}
+   try{const run=await this.flow.request<FlowRun>("start",{requestId,flowId:avatarDecisionFlow,serviceOnly:true,useConfiguredModel:true,mode:"codex",input:r});row.runId=run.id;row.state="running";await writeAvatarBindings(this.root,journal);return {key,status:run.status};}
    catch(e){row.state="unknown";await writeAvatarBindings(this.root,journal);throw e;}
   });this.queue=task.catch(()=>undefined);return task;
  }

@@ -38,6 +38,52 @@ test("Tripo remains available but disabled when no backend key exists", async ()
   );
 });
 
+test("saved Tripo key and region apply without restart and checks submit no paid tasks", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "aura-tripo-refresh-")),
+    credentialPath = join(root, "api-key");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  let region: "global" | "china" = "global";
+  const calls: Array<{
+    url: string;
+    authorization: string | null;
+    method: string;
+  }> = [];
+  const service = await createTripoService({
+    credentialPath,
+    region,
+    resolveOptions: async () => ({ credentialPath, region }),
+    async fetch(input, init) {
+      calls.push({
+        url: String(input),
+        authorization: new Headers(init?.headers).get("authorization"),
+        method: init?.method ?? "GET",
+      });
+      return Response.json({ code: 0, data: { balance: 100 } });
+    },
+  });
+  assert.equal(service.configured, false);
+  await writeFile(credentialPath, "fixture-global-key");
+  await service.checkConnection(AbortSignal.timeout(1000));
+  assert.deepEqual(calls.at(-1), {
+    url: "https://openapi.tripo3d.ai/v3/account/balance",
+    authorization: "Bearer fixture-global-key",
+    method: "GET",
+  });
+  region = "china";
+  await writeFile(credentialPath, "fixture-china-key");
+  await service.checkConnection();
+  assert.deepEqual(calls.at(-1), {
+    url: "https://openapi.tripo3d.com/v3/account/balance",
+    authorization: "Bearer fixture-china-key",
+    method: "GET",
+  });
+  assert.equal(service.status().region, "china");
+  await rm(credentialPath);
+  await assert.rejects(service.checkConnection(), TripoNotConfiguredError);
+  assert.equal(service.configured, false);
+  assert.equal(calls.length, 2);
+});
+
 test("Tripo uses the ignored credential file and sanitizes task output", async () => {
   const root = await mkdtemp(join(tmpdir(), "aura-tripo-key-"));
   const credentialPath = join(root, ".aura", "tripo", "api-key");
@@ -246,26 +292,45 @@ test("Tripo generates four GPT Image 2.5 views and publishes a game GLB", async 
     const submitted = new Map<string, string>();
     const journal: TripoPaidTaskJournal = {
       workId: "observatory-test",
-      async prepare(stage) { return submitted.get(stage); },
-      async submitted(stage, taskId) { submitted.set(stage, taskId); },
+      async prepare(stage) {
+        return submitted.get(stage);
+      },
+      async submitted(stage, taskId) {
+        submitted.set(stage, taskId);
+      },
       async completed() {},
-      async result() { return published; },
-      async published(result) { published = result; },
+      async result() {
+        return published;
+      },
+      async published(result) {
+        published = result;
+      },
     };
     const request = {
-        prompt: "A compact brass observatory robot",
-        outputDirectory: outputRoot,
-        assetName: "observatory-robot",
-        faceLimit: 12_000,
-      };
+      prompt: "A compact brass observatory robot",
+      outputDirectory: outputRoot,
+      assetName: "observatory-robot",
+      faceLimit: 12_000,
+    };
     const result = await service.generateGameAsset(
       request,
       new AbortController().signal,
       journal,
     );
     const callsAfterPublication = calls.length;
-    assert.deepEqual(await service.generateGameAsset(request, new AbortController().signal, journal), result);
-    assert.equal(calls.length, callsAfterPublication, "a recovered published result must not resubmit paid work");
+    assert.deepEqual(
+      await service.generateGameAsset(
+        request,
+        new AbortController().signal,
+        journal,
+      ),
+      result,
+    );
+    assert.equal(
+      calls.length,
+      callsAfterPublication,
+      "a recovered published result must not resubmit paid work",
+    );
 
     assert.match(result.outputDirectory, /observatory-robot-model-task$/u);
     assert.equal(result.imageModel, "chat_image_2.5_sunburst");

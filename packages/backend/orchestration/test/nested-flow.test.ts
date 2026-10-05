@@ -56,9 +56,11 @@ async function setup(
   flows: LoadedFlow[],
   records = table(),
   sessions: Partial<EngineOptions["sessions"]> = {},
+  resolveAgentDefaults?: EngineOptions["resolveAgentDefaults"],
 ) {
   const registry = new Map(flows.map((flow) => [flow.id, flow]));
   const engine = new FlowEngine({
+    resolveAgentDefaults,
     domain: { table: () => records },
     registry: {
       get: (id) => {
@@ -103,6 +105,31 @@ function request(flowId = "parent", value = 2) {
     mode: "demo" as const,
   };
 }
+
+test("configured creator admission and nested Flows keep the original provider after settings change", async () => {
+  let selected = { provider: "aura-custom-" + "a".repeat(32), model: "model-one", reasoningEffort: "off", timeoutMs: 1000 };
+  const first = { ...selected };
+  const child = loaded("child", (ctx, input) => ctx.sequence({ id: "main" }, async scope => {
+    await scope.agent({ id: "call", label: "Call", preset: "test", prompt: "child" }); return input;
+  }));
+  const parent = loaded("parent", (ctx, input) => ctx.sequence({ id: "main" }, async scope => {
+    await scope.memo({ id: "switch", schema: z.boolean(), compute: () => { selected = { ...selected, provider: "aura-custom-" + "b".repeat(32), model: "model-two" }; return true; } });
+    return (await scope.flow({ id: "child", flow: "child", input })).output;
+  }), { service: true });
+  const calls: unknown[] = [];
+  const { engine } = await setup([parent, child], undefined, { execute: async step => { calls.push(step.config); return "ready"; } }, async () => selected);
+  try {
+    const source = { ...request(), mode: "codex", serviceOnly: true, useConfiguredModel: true };
+    const started = await engine.start(source);
+    assert.equal((await engine.wait(started.id)).status, "completed");
+    assert.equal(started.mode, "custom");
+    assert.deepEqual(calls, [first]);
+    assert.equal((await engine.start(source)).id, started.id);
+    const next = await engine.start({ ...source, requestId: randomUUID() });
+    assert.equal(next.agentDefaults?.model, "model-two");
+    await assert.rejects(engine.start({ ...source, requestId: randomUUID(), serviceOnly: false }), /受控服务/);
+  } finally { await engine.close(); }
+});
 
 test("service-only starts require an explicitly published Flow", async () => {
   const internal = loaded("internal", async (_ctx, input) => input);

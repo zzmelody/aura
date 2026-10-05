@@ -3,8 +3,9 @@ import { createHash } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import type { FlowRun, JsonValue } from "@aura/protocol/types";
 import { ActionFailure, type AuraCapabilityClient } from "./action-api.ts";
-import { VEYA_WORLD_AGENT_CAPABILITY } from "./veya-world-agent.ts";
+import { VEYA_WORLD_AGENT_CAPABILITY, type VeyaRunSession } from "./veya-world-agent.ts";
 import { readCreatorBindingDocument } from "./veya-creator-design-grants.ts";
+import { assertCraftToolScope, craftToolScope, readVeyaCraftScope, verifyCraftForeground, type VeyaCraftScope } from "./veya-gameplay-craft.ts";
 import { readAssetReuseGrant, verifyAssetReuseCatalog, validateInheritedAssetReuseBinding, type AssetReuseGrant } from "./veya-creator-asset-reuse.ts";
 import { readProductionGrant, validateProductionBinding, validatePendingProductionClaims, verifyProductionWorker, productionDigest,
   type ProductionGrantRef, type ProductionGrant } from "./veya-creator-production-grants.ts";
@@ -22,6 +23,8 @@ export const CREATOR_REQUIRED_VERIFICATION = Object.freeze([
   "progress_projection", "creation_geometry", "stable_interaction_ids", "authored_identities",
 ]);
 type Binding = { sessionPath: string; creationSessionId?: string; runId?: string; homeWorldId?: string; kind?: string;
+  craftAuthorization?: VeyaCraftScope; foregroundSessionPath?: string;
+  craftOriginalAuthorization?: VeyaCraftScope;
   playerId?: string; worldProductionRecoveryRef?: ProductionGrantRef; productionGrant?: ProductionGrant;
   productionRecoveryClaimVersion?: 1; productionRecoveryClaim?: string;
   productionMaterialsRef?: ProductionGrantRef; materialsGrant?: MaterialsGrant;
@@ -39,8 +42,18 @@ export class VeyaCreatorBindings {
     this.path = join(projectRoot, ".aura", "veya-creator", "bindings.json");
   }
 
-  async resolve(runId: string, get: (runId: string) => FlowRun, operation?: string, input?: JsonValue): Promise<string | undefined> {
+  async resolve(runId: string, get: (runId: string) => FlowRun, operation?: string, input?: JsonValue): Promise<VeyaRunSession | undefined> {
     const bound = await this.binding(runId, get);
+    if (operation?.startsWith("veya.craft.")) {
+      if (!bound?.record.craftAuthorization || !bound.record.foregroundSessionPath) throw new ActionFailure("craft_authority_unavailable");
+      const original=readVeyaCraftScope(bound.record.craftOriginalAuthorization ?? bound.record.craftAuthorization);
+      const current=readVeyaCraftScope(bound.record.craftAuthorization);
+      try { assertCraftToolScope(original, input); await verifyCraftForeground(bound.record.foregroundSessionPath); }
+      catch { throw new ActionFailure("craft_scope_mismatch"); }
+      if(original.instanceId!==current.instanceId||original.runtimeEpoch!==current.runtimeEpoch)
+        return { path: bound.record.foregroundSessionPath, input: { ...(input as Record<string, JsonValue>), ...craftToolScope(current) }, outputScope: craftToolScope(original) };
+      return bound.record.foregroundSessionPath;
+    }
     if (bound?.record.materialsGrant && ["veya.cooker.submit", "veya.atmosphere.build"].includes(operation ?? "")) {
       const completed = bound.record.materialsGrant.proof.completedOperations.find(op => op.operation === operation &&
         op.fingerprint === materialSubmissionFingerprint(operation!, input));
@@ -111,7 +124,7 @@ export class VeyaCreatorBindings {
       if (depth >= 8) throw new ActionFailure("creator_run_ancestry_invalid");
       run = get(run.parent.runId);
     }
-    if (run.flow.id !== "veya/veya-wish") return undefined;
+    if (!["veya/veya-wish", "veya/veya-gameplay-craft"].includes(run.flow.id)) return undefined;
     let source: unknown;
     try {
       const bytes = await readFile(this.path);
@@ -124,6 +137,11 @@ export class VeyaCreatorBindings {
     let record = document?.version === 1 ? document.bindings?.[run.requestId] as Binding | undefined : undefined;
     if (!record || typeof record.sessionPath !== "string" || !isAbsolute(record.sessionPath))
       throw new ActionFailure("creator_worker_binding_unavailable");
+    if (run.flow.id === "veya/veya-gameplay-craft") {
+      try { const grant = readVeyaCraftScope(record.craftOriginalAuthorization ?? record.craftAuthorization); const actual = readVeyaCraftScope(run.input);
+        if (Object.entries(grant).some(([key, value]) => actual[key as keyof typeof actual] !== value) || !record.foregroundSessionPath) throw new Error("scope"); }
+      catch { throw new ActionFailure("craft_authority_unavailable"); }
+    } else if (record.craftAuthorization) throw new ActionFailure("craft_authority_unavailable");
     if (record.assetReuse && record.worldDesignRecovery) {
       try { const previous = document.bindings?.[record.input?.previousRequestId ?? ""] as Binding | undefined;
         validateInheritedAssetReuseBinding(record, previous, document.bindings?.[previous?.input?.previousRequestId ?? ""]); }
@@ -313,6 +331,9 @@ export class VeyaCreatorCapability implements AuraCapabilityClient {
       if (Number.isInteger(config.maxSkyImages) && config.maxSkyImages >= 0 && config.maxSkyImages <= 1)
         budget.maxSkyImages = config.maxSkyImages;
     } catch { /* Count defaults stay available; paid stages validate the monetary policy separately. */ }
+    if (bound.record.craftAuthorization) {
+      budget.maxAiAssets = Math.min(budget.maxAiAssets, 1); budget.maxCharacters = 0; budget.maxSkyImages = 0;
+    }
     if (bound.record.productionGrant) {
       const grant = bound.record.productionGrant;
       // The first durable context performs admission. Subsequent child contexts
@@ -339,6 +360,7 @@ export class VeyaCreatorCapability implements AuraCapabilityClient {
       }
     } catch { signal.throwIfAborted(); throw new ActionFailure("creator_procedural_sources_unavailable"); }
     const result: JsonValue = { schemaVersion: 1, creationId: bound.run.requestId, homeWorldId: bound.record.homeWorldId,
+      ...(bound.record.craftAuthorization ? { craftAuthorization: bound.record.craftOriginalAuthorization ?? bound.record.craftAuthorization } : {}),
       operation: bound.record.input?.operation ?? (bound.record.kind === "prop" ? "create_prop" : "create_world"),
       ...(bound.record.input?.targetWorldId ? { targetWorldId: bound.record.input.targetWorldId } : {}),
       ...(bound.record.input?.target ? { target: bound.record.input.target } : {}),

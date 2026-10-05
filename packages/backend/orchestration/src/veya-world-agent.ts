@@ -35,6 +35,9 @@ function failureDiagnostics(value: JsonValue | undefined, token: string): string
 }
 
 const operations = new Map<string, Operation>([
+  ...["list","grep","read"].map((name):[string,Operation]=>[`veya.sdk.${name}`,{method:"POST",tool:`veya.sdk.${name}`}]),
+  ...["context", "plan.validate", "result.validate"].map((name): [string, Operation] => [`veya.craft.${name}`, { method: "POST", tool: `veya.craft.${name}` }]),
+  ["veya.npc.creation.context",{method:"POST",tool:"veya.npc.creation.context"}],
   ...["decision.context","memory.search","perception.query","plan.validate"].map((name):[string,Operation]=>[`veya.avatar.${name}`,{method:"POST",tool:`veya.avatar.${name}`}]),
   ["veya.assets.import", { method: "POST", tool: "veya.assets.import" }],
   ...["mode", "undo", "redo"].map((name): [string, Operation] => [
@@ -148,7 +151,10 @@ interface SessionDescriptor {
   exchangeRoot?: string;
   previewRoot?: string;
   generationRoot?: string;
+  toolInput?: JsonValue;
+  toolOutputScope?: Record<string, JsonValue>;
 }
+export type VeyaRunSession = string | { path: string; input: JsonValue; outputScope: Record<string, JsonValue> };
 
 type Fetch = typeof fetch;
 
@@ -221,7 +227,7 @@ function responseObject(value: unknown): Record<string, JsonValue> {
 export class VeyaWorldAgentCapability implements AuraCapabilityClient {
   readonly sessionPath: string;
   readonly request: Fetch;
-  private runSessionPath?: (runId: string, operation?: string, input?: JsonValue) => Promise<string | undefined>;
+  private runSessionPath?: (runId: string, operation?: string, input?: JsonValue) => Promise<VeyaRunSession | undefined>;
   readonly media?: {
     artifacts: GeneratedArtifacts;
     attachments: Pick<Context["attachments"], "saveImage">;
@@ -240,14 +246,15 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
     this.media = media;
   }
 
-  setRunSessionResolver(resolve: (runId: string, operation?: string, input?: JsonValue) => Promise<string | undefined>) {
+  setRunSessionResolver(resolve: (runId: string, operation?: string, input?: JsonValue) => Promise<VeyaRunSession | undefined>) {
     this.runSessionPath = resolve;
   }
 
   private async session(runId?: string, operation?: string, input?: JsonValue): Promise<SessionDescriptor> {
-    const boundPath = runId && this.runSessionPath
+    const bound = runId && this.runSessionPath
       ? await this.runSessionPath(runId, operation, input)
       : undefined;
+    const boundPath = typeof bound === "string" ? bound : bound?.path;
     const path = boundPath ?? this.sessionPath;
     let content: string;
     try {
@@ -261,9 +268,10 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
       throw new Error("Veya World Agent session descriptor is too large.");
     try {
       const parsed = JSON.parse(content) as Record<string, unknown>;
-      if (boundPath !== undefined && parsed.role !== "creator-worker")
+      if (boundPath !== undefined && parsed.role !== "creator-worker" &&
+          !(operation?.startsWith("veya.craft.") && parsed.role === "game-runtime"))
         throw new Error("Veya creator worker descriptor is invalid.");
-      return descriptor(parsed);
+      return { ...descriptor(parsed), ...(bound && typeof bound !== "string" ? { toolInput: bound.input, toolOutputScope: bound.outputScope } : {}) };
     } catch (error) {
       if (error instanceof SyntaxError)
         throw new Error("Veya World Agent session descriptor is invalid.");
@@ -319,7 +327,7 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
         data = await this.invokeOnce(
           capability,
           operation,
-          input,
+          session.toolInput ?? input,
           signal,
           session,
         );
@@ -367,6 +375,12 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
         name: `veya-${capture.capture_id}.png`,
       });
       return { ...capture, image: image as unknown as JsonValue };
+    }
+    if(session.toolOutputScope&&operation.startsWith("veya.craft.")) {
+      const expected=object(session.toolInput??null),actual=object(data);
+      for(const key of ["world_id","instance_id","runtime_epoch","order_id"])
+        if(actual[key]!==expected[key])throw new ActionFailure("craft_scope_mismatch");
+      return {...actual,...session.toolOutputScope};
     }
     return data;
   }

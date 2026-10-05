@@ -168,6 +168,123 @@ function formatDuration(seconds: number) {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
+/** Keep the model in the conversation; load its viewer only near the viewport. */
+function InlineModel({
+  artifact,
+  group,
+}: {
+  artifact: WorkflowArtifact;
+  group: WorkflowArtifact[];
+}) {
+  const context = useContext(ArtifactContext)!;
+  const frame = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const ready = artifact.status === "ready";
+  useEffect(() => {
+    if (!ready || !frame.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "120px" },
+    );
+    observer.observe(frame.current);
+    return () => observer.disconnect();
+  }, [ready]);
+  return (
+    <figure
+      className="artifact-inline artifact-inline-model"
+      aria-label={`3D 模型：${artifact.name}`}
+    >
+      <figcaption>
+        <span className="artifact-inline-icon" aria-hidden="true">
+          <Box size={18} />
+        </span>
+        <span className="artifact-inline-copy">
+          <strong title={artifact.name}>{artifact.name}</strong>
+          <small>3D 模型 · {artifactMeta(artifact)}</small>
+        </span>
+        <span className="artifact-inline-actions">
+          {ready ? (
+            <button
+              type="button"
+              className="icon-control"
+              aria-label={`放大预览 ${artifact.name}`}
+              title="放大预览"
+              onClick={() => context.open(artifact, group)}
+            >
+              <Expand size={15} />
+            </button>
+          ) : (
+            <button className="text-control" onClick={context.retry}>
+              重新读取
+            </button>
+          )}
+          {artifact.status !== "unavailable" ? (
+            <a
+              className="icon-control"
+              href={artifactUrl(
+                context.endpoint,
+                context.runId,
+                artifact.artifactId,
+                "content",
+                true,
+              )}
+              download={artifact.name}
+              aria-label={`下载 ${artifact.name}`}
+              title="下载"
+            >
+              <Download size={15} />
+            </a>
+          ) : null}
+        </span>
+      </figcaption>
+      <div ref={frame} className="artifact-model-frame">
+        {ready && visible ? (
+          <Suspense
+            fallback={
+              <div className="artifact-stage-message" role="status">
+                正在加载 3D 查看器…
+              </div>
+            }
+          >
+            <ModelPreview
+              src={artifactUrl(
+                context.endpoint,
+                context.runId,
+                artifact.artifactId,
+              )}
+              name={artifact.name}
+            />
+          </Suspense>
+        ) : ready ? (
+          <Thumbnail
+            artifact={artifact}
+            src={artifactUrl(
+              context.endpoint,
+              context.runId,
+              artifact.artifactId,
+              "thumbnail",
+            )}
+          />
+        ) : (
+          <div className="artifact-stage-message">
+            <Box size={30} strokeWidth={1} />
+            <span>
+              {artifact.status === "unsupported"
+                ? "此模型暂不支持在线预览，可下载查看。"
+                : "模型文件暂不可用，请重新读取。"}
+            </span>
+          </div>
+        )}
+      </div>
+    </figure>
+  );
+}
+
 /** Playable media sits directly in the run output; no dialog round-trip. */
 function InlineMedia({
   artifact,
@@ -265,12 +382,62 @@ export function WorkflowArtifactGallery({
   const media = shown.filter(
     (artifact) => artifact.kind === "audio" || artifact.kind === "video",
   );
-  const cards = shown.filter((artifact) => !media.includes(artifact));
+  const models = shown.filter((artifact) => artifact.kind === "model");
+  const cards = shown.filter(
+    (artifact) => !media.includes(artifact) && artifact.kind !== "model",
+  );
+  const fileCards = cards.length ? (
+    <div className="artifact-grid">
+      {cards.map((artifact) => (
+        <button
+          key={artifact.artifactId}
+          type="button"
+          className="artifact-card"
+          onClick={() => context.open(artifact, cards)}
+          aria-label={`预览 ${artifact.name}`}
+        >
+          <div className="artifact-card-image">
+            <Thumbnail
+              key={artifact.thumbnailId ?? artifact.id}
+              artifact={artifact}
+              src={artifactUrl(
+                context.endpoint,
+                context.runId,
+                artifact.artifactId,
+                "thumbnail",
+              )}
+            />
+            <span className="artifact-kind">
+              {artifact.format.toUpperCase()}
+            </span>
+            <span className="artifact-card-expand">
+              <Expand size={16} />
+            </span>
+          </div>
+          <div className="artifact-card-caption">
+            <strong title={artifact.name}>{artifact.name}</strong>
+            <small>{artifactMeta(artifact)}</small>
+          </div>
+        </button>
+      ))}
+    </div>
+  ) : null;
   return (
     <section
       className="workflow-artifacts"
       aria-label={summary ? "本次生成的文件" : "本步骤生成的文件"}
     >
+      {models.length ? (
+        <div className="artifact-inline-list">
+          {models.map((artifact) => (
+            <InlineModel
+              key={artifact.artifactId}
+              artifact={artifact}
+              group={models}
+            />
+          ))}
+        </div>
+      ) : null}
       {media.length ? (
         <div className="artifact-inline-list">
           {media.map((artifact) => (
@@ -282,44 +449,14 @@ export function WorkflowArtifactGallery({
           ))}
         </div>
       ) : null}
-      {cards.length ? (
-        <div className="artifact-grid">
-          {cards.map((artifact) => (
-            <button
-              key={artifact.artifactId}
-              type="button"
-              className="artifact-card"
-              onClick={() => context.open(artifact, cards)}
-              aria-label={`预览 ${artifact.name}`}
-            >
-              <div className="artifact-card-image">
-                <Thumbnail
-                  key={artifact.thumbnailId ?? artifact.id}
-                  artifact={artifact}
-                  src={artifactUrl(
-                    context.endpoint,
-                    context.runId,
-                    artifact.artifactId,
-                    "thumbnail",
-                  )}
-                />
-                <span className="artifact-kind">
-                  {artifact.kind === "model"
-                    ? "3D · GLB"
-                    : artifact.format.toUpperCase()}
-                </span>
-                <span className="artifact-card-expand">
-                  <Expand size={16} />
-                </span>
-              </div>
-              <div className="artifact-card-caption">
-                <strong title={artifact.name}>{artifact.name}</strong>
-                <small>{artifactMeta(artifact)}</small>
-              </div>
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {models.length && cards.length ? (
+        <details className="artifact-reference-files">
+          <summary>参考图片与文件 · {cards.length}</summary>
+          {fileCards}
+        </details>
+      ) : (
+        fileCards
+      )}
       {summary && context.pending && !shown.length ? (
         <p className="artifact-status" role="status">
           <LoaderCircle size={14} className="workflow-spinner" />

@@ -5,6 +5,7 @@ import type { FlowCatalog, FlowRun } from "@aura/protocol/types";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { creatorArtifact } from "./veya-creator-artifacts.ts";
+import { admitVeyaCraft, readVeyaCraftScope, verifyCraftForeground, type VeyaCraftScope } from "@aura/orchestration";
 import { retainedPropWork, type PropRecovery } from "./veya-creator-recovery.ts";
 import { retainedWorldDesign, type WorldDesignRecovery } from "./veya-creator-world-design-recovery.ts";
 import { inheritedDesignAssets, retainedCommonAssets } from "./veya-creator-asset-reuse.ts";
@@ -21,12 +22,12 @@ type Operation = "create_world" | "create_prop" | "update_layout" | "update_envi
 type TargetGrant = { worldId: string; baseRevision: number; baseHash?: string; allowedEntityIds: string[]; allowSpawnChange: boolean };
 type ArtifactTarget = Pick<TargetGrant, "allowedEntityIds" | "allowSpawnChange">;
 type PreviousArtifact = { artifactId: string; candidateHash: string; kind: "world" | "prop" | "patch" };
-type CreationInput = { operation: Operation; text: string; targetWorldId?: string; target?: TargetGrant;
+type CreationInput = { operation: Operation; text: string; craft?: VeyaCraftScope; targetWorldId?: string; target?: TargetGrant;
   references?: string[]; previousArtifactId?: string; artifactTarget?: ArtifactTarget; previousRequestId?: string; reuseAssetsFromRequestId?: string; reuseProductionFromRequestId?: string };
 const operations = ["create_world", "create_prop", "update_layout", "update_environment"];
 function creationInput(body: Record<string, unknown>): CreationInput {
   if (Object.keys(body).some(key => !["requestId", "kind", "operation", "text", "targetWorldId", "target", "references",
-      "previousArtifactId", "artifactTarget", "previousRequestId", "reuseAssetsFromRequestId", "reuseProductionFromRequestId"].includes(key))) throw new Error("invalid_request");
+      "previousArtifactId", "artifactTarget", "previousRequestId", "reuseAssetsFromRequestId", "reuseProductionFromRequestId", "craft"].includes(key))) throw new Error("invalid_request");
   const operation = body.operation ?? (body.kind === "prop" ? "create_prop" : body.kind === "world" ? "create_world" : undefined);
   if (typeof operation !== "string" || !operations.includes(operation) || typeof body.text !== "string" ||
       body.text.trim().length < 2 || body.text.length > 4000 ||
@@ -77,7 +78,9 @@ function creationInput(body: Record<string, unknown>): CreationInput {
     // Native world.read must attest its artifact lineage before any production.
     if (body.previousArtifactId !== undefined && (!target.baseHash || target.baseRevision < 1)) throw new Error("invalid_request");
   }
-  return { operation: operation as Operation, text: body.text,
+  const craft = body.craft === undefined ? undefined : readVeyaCraftScope(body.craft);
+  if (craft && (operation !== "create_prop" || ["targetWorldId", "target", "references", "previousArtifactId", "artifactTarget", "previousRequestId", "reuseAssetsFromRequestId", "reuseProductionFromRequestId"].some(k => body[k] !== undefined))) throw new Error("invalid_request");
+  return { operation: operation as Operation, text: body.text, ...(craft ? { craft } : {}),
     ...(typeof body.reuseProductionFromRequestId === "string" ? { reuseProductionFromRequestId: body.reuseProductionFromRequestId } : {}),
     ...(typeof body.reuseAssetsFromRequestId === "string" ? { reuseAssetsFromRequestId: body.reuseAssetsFromRequestId } : {}),
     ...(typeof body.previousRequestId === "string" ? { previousRequestId: body.previousRequestId } : {}),
@@ -88,6 +91,10 @@ function creationInput(body: Record<string, unknown>): CreationInput {
     ...(typeof body.previousArtifactId === "string" ? { previousArtifactId: body.previousArtifactId } : {}) };
 }
 type Binding = {
+  craftAuthorization?: VeyaCraftScope;
+  craftOriginalAuthorization?: VeyaCraftScope;
+  craftAuthorizationDigest?: string;
+  foregroundSessionPath?: string;
   playerId: string;
   homeWorldId: string;
   kind: Kind;
@@ -109,7 +116,7 @@ type Binding = {
   runId?: string;
 };
 type BindingFile = { version: 1; bindings: Record<string, Binding> };
-type Client = { playerId: string; homeWorldId: string; sessionPath: string; creationSessionId: string; token: string };
+type Client = { playerId: string; homeWorldId: string; sessionPath: string; foregroundSessionPath?: string; creationSessionId: string; token: string };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const stableId = /^[A-Za-z0-9_-]{1,96}$/u;
@@ -198,7 +205,7 @@ export class VeyaCreatorService {
     return result;
   }
 
-  async register(playerId: string, homeWorldId: string, sessionPath: string): Promise<string> {
+  async register(playerId: string, homeWorldId: string, sessionPath: string, foregroundSessionPath?: string): Promise<string> {
     if (!stableId.test(playerId) || !stableId.test(homeWorldId) || !isAbsolute(sessionPath))
       throw new Error("invalid_client");
     const path = resolve(sessionPath);
@@ -219,8 +226,9 @@ export class VeyaCreatorService {
     if ([...this.clients.values(), ...Object.values(this.state.bindings)].some(owner =>
       owner.creationSessionId === descriptor.creation_session_id &&
       (owner.playerId !== playerId || owner.homeWorldId !== homeWorldId))) throw new Error("worker_already_bound");
+    if (foregroundSessionPath !== undefined) await verifyCraftForeground(foregroundSessionPath);
     const token = randomBytes(32).toString("hex");
-    this.clients.set(sha(token), { playerId, homeWorldId, sessionPath: path, creationSessionId: descriptor.creation_session_id, token });
+    this.clients.set(sha(token), { playerId, homeWorldId, sessionPath: path, ...(foregroundSessionPath ? { foregroundSessionPath: resolve(foregroundSessionPath) } : {}), creationSessionId: descriptor.creation_session_id, token });
     return token;
   }
 
@@ -284,7 +292,10 @@ export class VeyaCreatorService {
     const kind = input.operation === "create_prop" ? "prop" : "world";
     const textHash = sha(input.text), requestHash = sha(JSON.stringify(input));
     return this.serial(async () => {
-      if (!await this.wishAvailable()) throw new Error("wish_flow_unavailable");
+      if (input.craft) {
+        const catalog = await this.flow.request<FlowCatalog>("catalog");
+        if (!catalog.flows.some(f => f.id === "veya/veya-gameplay-craft" && f.available && f.service)) throw new Error("craft_flow_unavailable");
+      } else if (!await this.wishAvailable()) throw new Error("wish_flow_unavailable");
       const previous = this.state.bindings[requestId];
       if (previous && (previous.playerId !== client.playerId || previous.homeWorldId !== client.homeWorldId ||
           previous.kind !== kind || previous.textHash !== textHash ||
@@ -293,6 +304,16 @@ export class VeyaCreatorService {
           previous.sessionPath !== client.sessionPath || previous.creationSessionId !== client.creationSessionId))
         throw new Error("request_id_conflict");
       if (!previous) {
+        let craftAuthorizationDigest: string | undefined;
+        if (input.craft) {
+          if (!client.foregroundSessionPath) throw new Error("craft_foreground_unavailable");
+          craftAuthorizationDigest = await admitVeyaCraft(client.foregroundSessionPath, input.craft);
+          // An order owns one durable Run. A lost local receipt must never start
+          // a second paid generation under a new request UUID.
+          for (const other of Object.values(this.state.bindings)) if (other.playerId === client.playerId &&
+              other.craftAuthorization?.worldId === input.craft.worldId && other.craftAuthorization.orderId === input.craft.orderId)
+            throw new Error("craft_order_already_bound");
+        }
         if ((await readCreatorLeases(this.projectRoot)).leases[client.creationSessionId]) throw new Error("worker_busy");
         for (const [id, other] of Object.entries(this.state.bindings)) {
           if (id === requestId || other.creationSessionId !== client.creationSessionId) continue;
@@ -389,7 +410,7 @@ export class VeyaCreatorService {
         }
         await this.commit({ version: 1, bindings: { ...this.state.bindings,
           [requestId]: { playerId: client.playerId, homeWorldId: client.homeWorldId,
-            kind, textHash, requestHash, input, ...(previousArtifact ? { previousArtifact } : {}),
+            kind, textHash, requestHash, input, ...(input.craft ? { craftAuthorization: input.craft, craftAuthorizationDigest, foregroundSessionPath: client.foregroundSessionPath } : {}), ...(previousArtifact ? { previousArtifact } : {}),
             ...(recovery ? { recovery, recoveryBudgetCreationId } : {}),
             ...(worldDesignRecovery ? { worldDesignRecovery, recoveryBudgetCreationId } : {}),
             ...(worldProductionRecoveryRef ? { worldProductionRecoveryRef, recoveryBudgetCreationId } : {}),
@@ -400,8 +421,8 @@ export class VeyaCreatorService {
         } }); // Worker binding exists before the Run can execute.
       }
       const run = await this.flow.request<FlowRun>("start", {
-        requestId, flowId: "veya/veya-wish", serviceOnly: true, mode: "codex",
-        input: { ...input, kind, homeWorldId: client.homeWorldId },
+        requestId, flowId: input.craft ? "veya/veya-gameplay-craft" : "veya/veya-wish", serviceOnly: true, useConfiguredModel: true, mode: "codex",
+        input: input.craft ?? { ...input, kind, homeWorldId: client.homeWorldId },
       });
       if (previous?.runId && previous.runId !== run.id) throw new Error("run_identity_conflict");
       await this.commit({ version: 1, bindings: { ...this.state.bindings,
@@ -417,7 +438,7 @@ export class VeyaCreatorService {
     const lease = binding.creationSessionId ? (await readCreatorLeases(this.projectRoot)).leases[binding.creationSessionId] : undefined;
     if (lease?.rootRunId === run.id) throw new Error("artifact_not_ready");
     if (run.status !== "completed") throw new Error("artifact_not_ready");
-    return creatorArtifact(binding.sessionPath, run.output, binding.creationSessionId);
+    return creatorArtifact(binding.sessionPath, binding.craftAuthorization && object(run.output)?.status === "ready_to_assemble" ? { ...object(run.output), status: "ready" } : run.output, binding.creationSessionId);
   }
 
   async answer(client: Client, requestId: string, commandId: string, checkpointRunId: string, stepKey: string, answer: unknown) {
@@ -448,11 +469,22 @@ export class VeyaCreatorService {
     return binding?.playerId === client.playerId && binding.homeWorldId === client.homeWorldId
       ? binding : undefined;
   }
+  async reconcileCraft(client: Client, requestId: string, scope: VeyaCraftScope) {
+    return this.serial(async () => {
+      const binding=this.owned(client,requestId),original=binding?.craftOriginalAuthorization ?? binding?.craftAuthorization;
+      if(!binding||!original||!client.foregroundSessionPath||original.worldId!==scope.worldId||original.orderId!==scope.orderId)throw new Error("craft_reconcile_refused");
+      const digest=await admitVeyaCraft(client.foregroundSessionPath,scope);
+      if(digest!==binding.craftAuthorizationDigest)throw new Error("craft_reconcile_refused");
+      const next={...binding,craftOriginalAuthorization:original,craftAuthorization:scope,foregroundSessionPath:client.foregroundSessionPath};
+      await this.commit({version:1,bindings:{...this.state.bindings,[requestId]:next}});
+      return next;
+    });
+  }
 
   list(client: Client) {
     return Object.entries(this.state.bindings)
       .filter(([, binding]) => binding.playerId === client.playerId && binding.homeWorldId === client.homeWorldId)
-      .map(([requestId, binding]) => ({ requestId, runId: binding.runId, kind: binding.kind, operation: binding.input?.operation ?? (binding.kind === "prop" ? "create_prop" : "create_world") }));
+      .map(([requestId, binding]) => ({ requestId, runId: binding.runId, kind: binding.kind, ...(binding.craftAuthorization ? { craft: binding.craftAuthorization } : {}), operation: binding.input?.operation ?? (binding.kind === "prop" ? "create_prop" : "create_world") }));
   }
 
   async project(binding: Binding) {
@@ -474,7 +506,7 @@ export class VeyaCreatorService {
       : undefined;
     let artifact: Awaited<ReturnType<typeof creatorArtifact>> | undefined;
     if (run.status === "completed") {
-      try { artifact = await creatorArtifact(binding.sessionPath, run.output, binding.creationSessionId); } catch { /* No unverified delivery projection. */ }
+      try { artifact = await this.artifact(binding); } catch { /* No unverified delivery projection. */ }
     }
     const verified = artifact !== undefined;
     return {
@@ -482,6 +514,8 @@ export class VeyaCreatorService {
       phase: run.status === "waiting_input" ? "clarification" :
         run.status === "completed" ? (verified ? "preparing_delivery" : "needs_attention") : "production",
       deliveryStatus: verified ? "pending_delivery" : "not_ready",
+      ...(binding.craftAuthorization ? { craft: binding.craftAuthorization, craftStatus: object(run.output)?.status,
+        craftPlan: object(run.output)?.plan, craftReason: object(run.output)?.reasonCode } : {}),
       ...(checkpoint ? { checkpoint } : {}),
       ...(artifact ? artifact.metadata : {}),
     };
@@ -499,7 +533,8 @@ export function createVeyaCreatorApp(service: VeyaCreatorService) {
     try {
       if (!body || typeof body.playerId !== "string" || typeof body.homeWorldId !== "string" ||
           typeof body.workerSessionPath !== "string") throw new Error("invalid_client");
-      const token = await service.register(body.playerId, body.homeWorldId, body.workerSessionPath);
+      if (body.foregroundSessionPath !== undefined && typeof body.foregroundSessionPath !== "string") throw new Error("invalid_client");
+      const token = await service.register(body.playerId, body.homeWorldId, body.workerSessionPath, body.foregroundSessionPath as string | undefined);
       return context.json({ token }, 201);
     } catch { return context.json({ error: "invalid_client" }, 400); }
   });
@@ -572,7 +607,11 @@ export function createVeyaCreatorApp(service: VeyaCreatorService) {
       if (!body || typeof body.commandId !== "string" || !uuid.test(body.commandId))
         return context.json({ error: "invalid_command" }, 400);
       try {
-        await service.flow.request(command, { id: binding.runId, requestId: body.commandId });
+        if(command==="resume"&&binding.craftAuthorization){
+          await service.reconcileCraft(context.get("creatorClient"),context.req.param("requestId"),readVeyaCraftScope(body.craft));
+        }
+        const run=await service.flow.request<FlowRun>("get",{id:binding.runId});
+        if(run.status!=="completed")await service.flow.request(command, { id: binding.runId, requestId: body.commandId });
         return context.json({ accepted: true });
       } catch { return context.json({ error: "creation_unavailable" }, 503); }
     });
