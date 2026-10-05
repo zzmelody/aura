@@ -16,3 +16,4 @@ apps/desktop/dist-host/
 *.keystore
 *.jks
 .DS_Store
+.aura-site-test-*/
