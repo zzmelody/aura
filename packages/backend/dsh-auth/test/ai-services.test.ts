@@ -30,6 +30,18 @@ const settings = {
   },
 };
 
+test("DeepSeek Flash thinking reserves 64K for reasoning plus final output",async t=>{
+  const root=await mkdtemp(join(tmpdir(),"aura-ds-output-"));
+  const auth=await CodexSubscriptionAuth.create({credentialPath:join(root,".aura","dsh",".credentials.yaml")});
+  t.after(async()=>{await auth.close();await rm(root,{recursive:true,force:true});});
+  const high=await saveModelSettings(root,auth.ctx.credentials,{...settings,model:"deepseek-v4.1-flash-anthropic",reasoningEffort:"high",key:"fixture-only-key"});
+  assert.equal(selectedAgentConfig(high).maxTokens,65536);
+  assert.equal(customProfiles(high)[high.selectedRoute!]!.models![0]!.maxTokens,65536);
+  const off=await saveModelSettings(root,auth.ctx.credentials,{...settings,model:"deepseek-v4.1-flash-anthropic",reasoningEffort:"off"});
+  assert.equal(selectedAgentConfig(off).maxTokens,undefined);
+  assert.equal(customProfiles(off)[off.selectedRoute!]!.models![0]!.maxTokens,undefined);
+});
+
 test("custom configuration pins endpoint and credentials without persisting keys in public settings", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "aura-ai-settings-"));
   const auth = await CodexSubscriptionAuth.create({

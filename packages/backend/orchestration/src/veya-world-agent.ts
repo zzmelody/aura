@@ -150,7 +150,6 @@ interface SessionDescriptor {
   toolsProtocol?: "veya-agent-tools/1";
   exchangeRoot?: string;
   previewRoot?: string;
-  generationRoot?: string;
   toolInput?: JsonValue;
   toolOutputScope?: Record<string, JsonValue>;
 }
@@ -199,10 +198,6 @@ function descriptor(value: unknown): SessionDescriptor {
   return {
     baseUrl: url.origin,
     token: source.token,
-    ...(typeof source.generation_root === "string" &&
-    isAbsolute(source.generation_root)
-      ? { generationRoot: source.generation_root }
-      : {}),
     ...(typeof source.exchange_root === "string" &&
     isAbsolute(source.exchange_root)
       ? { exchangeRoot: source.exchange_root }
@@ -387,7 +382,12 @@ export class VeyaWorldAgentCapability implements AuraCapabilityClient {
 
   /** Trusted producer configuration; not an Agent filesystem operation. */
   async generatedOutputDirectory(runId?: string) {
-    return (await this.session(runId)).generationRoot;
+    const session = await this.session(runId);
+    if (!session.exchangeRoot)
+      throw new ActionFailure("model_source_exchange_unavailable: Veya must provide its managed source exchange before model generation.");
+    // Immutable provider source bytes, never Cooker outputs or a foreground
+    // project path. Import stages the GLB into the bound world's package.
+    return join(session.exchangeRoot, "source", "tripo");
   }
 
   private async invokeOnce(

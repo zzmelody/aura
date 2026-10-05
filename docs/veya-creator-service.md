@@ -1,5 +1,21 @@
 # Veya Creator 本机服务
 
+2026-10-05 后续真实续接已经通过原生模块组合和实际几何测量；可信底座的资源准入/导航清单、原生只读测量入口及 queued 回执等待均已修正。tabletop 物品携带范围复用原生 ItemLocation 所有权和 authored-resource 测量。实际未持有装备拒绝通过，拾取测试暴露隔离角色 ambient_wait 覆盖显式导航，Veya 只在 agent_control scratch 关闭自动决策；已编译并仅更新自有开发 stage。关键 mainline 失败后提前清理/返回，后续装备、视觉、保存检查仍未通过，不再为失败候选额外启动视觉模型。当前完整交付未通过，详见 Veya 实测记录。
+
+2026-10-05 用户恢复额度后的续接：游戏开发配置与隔离测试均已保存 Lumina `deepseek-v4.1-flash-anthropic` / high。真实 DSH 文本与持久图片附件调用成功；DS 思考模式显式采用64K输出预算，第十三轮已真实登记斧子模块，但 native author 组合拒绝，尚无完整交付。Veya 插件修正 canonical prepared 资源引用提示与类型化拾取/装备的同实例语义，设计纠正只返回可变的交互/测试字段，宿主保留全部锁定需求。详见 `F:/creative/docs/creation-flow-axe-verification-2026-10-05.md`，不能把旧 blocked Run、接口契约或模型登记称为成品。
+
+Prop 恢复数据原先内联进 bindings.json，第十五次提交前实际索引230280字节，再增加一份证明触发256KiB上限。现在与世界设计恢复一样保存为独立不可变哈希 grant；身份校验绑定请求、玩家、home、worker、原文和来源 Run，读取时恢复精确值，原有单份证明/索引限额、篡改拒绝、旧字节备份与原子替换均保留。实际正常提交后索引13538字节，历史和来源数据未删除。8项存储契约、Orchestration/Runtime typecheck通过；这只证明请求受理恢复，完整制作仍在继续。
+
+2026-10-05 真实斧子重试被供应商 budget_exceeded 拒绝，完整生成/验收/交付尚未通过。Agent 错误适配器只保留固定 model_budget_exceeded 和安全中文恢复提示；failed/needs_attention 根 Run 或其步骤的固定标记投影相同产品原因，费用/响应/凭据不进入游戏。错误3项、历史投影2项及 Runtime typecheck通过。StorageFailure 保留 cause，仅可公开固定 OS 错误码；真实一次SDK预读存储失败的底层原因仍未确认，不能将诊断增强称为修复存储故障。
+
+2026-10-05 实际斧子 Flow 定位模型入口失败：当前 Veya descriptor 只有 `exchange_root`，Aura 原先仍读取已移除的 `generation_root`，导致生成服务在调用供应商前立即失败。模型源文件目录现由绑定 Run 的 `exchange_root/source/tripo` 派生，仅写不可变供应商源文件；Cooker 继续负责导入到对应世界包的 `source/` 与 `generated/`。不接收模型/请求选择的输出路径，不回退前台世界；缺受管 exchange 明确拒绝。World Agent、能力及绑定 17 项定向契约和 Orchestration typecheck 通过；此修复没有实际付费 Tripo 生成证据。
+
+worker 池注册成功时返回 `{token,capacity}`，capacity 为验证后的实际池大小；新 Veya 前台只在 capacity=3 时开放并发制作，旧客户端仍可注册单 worker 并忽略新增字段。
+
+2026-10-05 同时三个愿望：`POST /clients` 可在既有 workerSessionPath 外提供可选 workerSessionPaths（最多两条额外的绝对 descriptor 路径），验证三个不同 worker 身份及所属 player/home，不向客户端返回端点或 worker 凭据。新任务在原有 serial admission 中分配空闲 worker，各 worker 仍互斥，lease 未清理和 waiting_input/needs_attention 不得复用。持久 binding 保存所选 session；同一 requestId 重试、恢复/复用和旧成果编辑固定到来源 worker。没有拆除单 worker 的验收保护，也没有并发写入同一 WorldHost。并发/Creator/历史 4 项、复用/设计恢复/材料 25 项和 Runtime typecheck 通过，无真实模型请求；当前打包服务未更新。
+
+2026-10-05 历史删除：新增认证后的 `POST /tasks/:requestId/delete-record`，请求含 UUID `commandId`。服务同时校验 player/home 所属和真实 Run 已 completed/failed/cancelled/interrupted，活跃任务返回 `409 task_active`；原子写入 binding 的 `historyDeleted:true`，重复删除幂等。`GET /tasks` 和重启后历史过滤该标记，所属直接任务投影保留标记供原生恢复；不删除 Flow、交付资源、所有权、配方收据或来源引用。定向历史接口测试和 Runtime typecheck 通过，无实际玩家记录删除或模型调用，运行中的打包服务未更新。
+
 2026-10-05 完成状态与交付状态纠正：Run completed 仅说明 Flow 执行结束，输出 status=blocked 投影为 runStatus=failed 和固定 production_failed，仍为 deliveryStatus=not_ready；原始 Run 历史不修改。这样游戏能终止旧制作并重新发送。输出未被阻断但成果校验失败才使用 delivery_unverified。任务投影不返回原始规格诊断，lease 清理分支同样保留安全原因。新增两种 completed 投影断言随历史契约通过，Runtime typecheck 通过。
 
 2026-10-05 游戏历史投影：所属客户端的 `/tasks` 列表和 `/tasks/:requestId` 状态提供原始愿望 `text`。状态另提供固定 `failureReason`：空字符串、`worker_unavailable`、`worker_upgrade_required`、`model_unauthorized`、`production_failed`、`cancelled`、`interrupted` 或 `delivery_unverified`。原始 Run 错误、工作进程诊断、模型 payload 和路径不返回；lease 清理投影也保留任务原文和安全原因。`veya-creator-history.test.ts` 一项通过，检查标题恢复、取消/中断/失败分类及原始错误不泄漏；无真实模型或生成请求。Veya 原生/UI 编译与实际布局由用户接手。
@@ -142,6 +158,12 @@ worker descriptor 要求 `protocol:veya-world-http/1`、`role:creator-worker`、
 `previousRequestId` 是一个窄恢复入口，只接受同玩家、个人广场和 worker session 的 `create_prop`。原任务必须已经 failed，或 completed 且领域结果 blocked；操作和原始文本固定，不允许附带其他目标、参考或 previousArtifactId。它创建关联的新根 Run，保留旧 Run 的版本身份和历史，不对失败历史做原地改写。
 
 宿主遍历原 Run 的有界子树，核对父子关系，取得已经通过输出 schema 的 CreationBrief、PropSpec、effectPlan 和 ready 资产结果；同时逐个核对供应商 task ID、实际费用和共享付费账本。缺少完整产物、未知费用、未知提交结果或仍运行的 Cooker 操作均拒绝。恢复 JSON 不接受客户端输入。
+
+2026-10-05 同一入口也接受 schemaVersion=3 的完整资源结果。纯目录复用仅在所有绑定 source=catalog、费用 not_incurred/0、费用记录为空，且同任务没有任何供应商账本阶段时准入；账本未创建只限这一情况。保留终态树、原规格与绑定哈希证明，并禁新增付费工作，不把生成模型伪装成免费目录资源。真实斧子终态已提取恢复证明，后续制作仍须重新核对现场资源并完成验收。
+
+已准备资源通过 assetWorldId 保留所属世界包：只由原生 draft-create 的输入/输出与对应 draft-read 的世界身份匹配提取。续接先在该世界核资源，再复制含生成资源的包；不能重新复制空模板后把同名相对引用视为旧产物。真实斧子续接已通过准备缓存、未重复配方或 Cooker，交互和最终交付仍在执行。
+
+DS v4.1/high 的真实模块作者曾以32768 outputTokens结束，turn/end=max-tokens，不是HTTP错误或本地超时。已知 DS Flash 思考模型的 profile 容量与新Run请求预算同步为65536，保留既定强度与600秒Agent边界；off、其他自定义模型和Codex不注入该参数。结束原因映射固定 model_output_limit，避免只显示笼统执行失败；配置/错误契约通过，64K实际生成与交付仍须真实结果证明。
 
 通过检查后，受信 context 增加 `{schemaVersion:1,sourceRequestId,sourceRunId,noNewPaidWork:true,brief,propSpec,assets,generationScope,repairRound,plan}`。其中 plan 是原 effectPlan，repairRound 保留原有 0–3 修复轮次，assets 保留原有费用和供应商证明。付费宿主继续使用原创作预算身份；即使 monetary unlimited，新付费阶段或 key 仍被禁止。已知任务可以查询，已经完成的资产可以重新导入、处理和验证。恢复不把原来发生的费用清零，也不把这些费用计为新 Run 的新增扣费。
 

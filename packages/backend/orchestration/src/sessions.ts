@@ -48,6 +48,13 @@ const plainText = (content?: readonly ContentBlock[]) =>
     .join("\n");
 
 export function agentFailure(message?: string): FlowError {
+  if (message === "model_output_limit")
+    return new FlowError("model_output_limit: 模型达到输出上限，尚未完成制作结果；请调整模型输出预算后再试。");
+  if (/\bbudget_exceeded\b|Budget has been exceeded/iu.test(message ?? ""))
+    return new FlowError(
+      "model_budget_exceeded: 模型服务额度已用尽，请调整服务额度后再继续制作。",
+      402,
+    );
   // DSH can include raw token-service response bytes in the error cause. Never
   // forward those bytes to Flow storage or the client; give a recovery action.
   if (/OAuth refresh failed for openai-codex|OpenAI Codex token refresh/i.test(message ?? ""))
@@ -204,6 +211,8 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
                   agentFailure(
                     event.data.reason.kind === "error"
                       ? event.data.reason.error.message
+                      : event.data.reason.kind === "max-tokens"
+                        ? "model_output_limit"
                       : undefined,
                   ),
                 );

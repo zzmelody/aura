@@ -7,7 +7,7 @@ import { reusedVerificationRuns } from "./veya-creator-reuse-verification.ts";
 
 export type PropRecovery = { schemaVersion: 1; sourceRequestId: string; sourceRunId: string; noNewPaidWork: true;
   brief: JsonValue; propSpec: JsonValue; assets: JsonValue; preparation?: JsonValue; preparedOperation?: JsonValue; retainedProp?: JsonValue; preparationDefects?: JsonValue[];
-  generationScope: string; repairRound: number; plan: JsonValue };
+  generationScope: string; repairRound: number; plan: JsonValue; assetWorldId?: string };
 const object = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 const hash = /^[a-f0-9]{64}$/u;
@@ -16,9 +16,9 @@ const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(va
 const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical) : object(value)
   ? Object.fromEntries(Object.keys(object(value)!).sort().map(key => [key, canonical(object(value)![key])])) : value;
 const stableDigest = (value: unknown) => digest(canonical(value));
-const resourcePath = (value: unknown) => typeof value === "string" && /^res:\/\/assets\/[A-Za-z0-9_./-]+$/u.test(value) &&
+const resourcePath = (value: unknown) => typeof value === "string" && /^(?:res:\/\/content\/(?:shared|worlds\/[A-Za-z0-9_-]+)|user:\/\/[A-Za-z0-9_.\/-]+)\/generated\/(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.(?:scn|res)$/u.test(value) &&
   !value.slice(6).split("/").some(part => !part || part === "." || part === "..");
-const recipePath = (value: unknown) => typeof value === "string" && /^content\/scripts\/cooker\/[A-Za-z0-9_./-]+\.luau$/u.test(value) &&
+const recipePath = (value: unknown) => typeof value === "string" && /^content\/cooker\/creation\/[A-Za-z0-9_]+\.luau$/u.test(value) &&
   !value.split("/").some(part => !part || part === "." || part === "..");
 
 /** Extract validated durable outputs, never caller-supplied recovery JSON. */
@@ -222,7 +222,10 @@ export async function retainedPropWork(root: FlowRun, sourceRequestId: string, b
       }
       for (const value of submitted.inputs) {
         const item = object(value);
-        if (!resourcePath(item?.source) || typeof item?.destination !== "string" || !resourcePath("res://" + item.destination)) refuse();
+        if (!resourcePath(item?.source) || typeof item?.destination !== "string") refuse();
+        const source = item!.source as string;
+        const expectedDestination = source.startsWith("res://") ? source.slice(6) : "__WORLD__" + source.slice(source.indexOf("/generated/"));
+        if (item!.destination !== expectedDestination) refuse();
         assetInputs.push({ source: item!.source as string, destination: item!.destination as string });
       }
       for (const value of authored.recipes) {
@@ -294,9 +297,12 @@ export async function retainedPropWork(root: FlowRun, sourceRequestId: string, b
         object(trustedPrior.preparedOperation)?.specHash === digest(prop)) preparedOperation = trustedPrior.preparedOperation;
   }
   const costs = object(assets?.costs);
-  if (assets?.schemaVersion !== 2 || !Array.isArray(assets.bindings) || !assets.bindings.length ||
-      costs?.status !== "incurred" || typeof costs.credits !== "number" || !Number.isFinite(costs.credits) ||
-      !Array.isArray(costs.records) || !costs.records.length || !Array.isArray(assets.retainedArtifacts) || assets.retainedArtifacts.length) refuse();
+  const catalogOnly = costs?.status === "not_incurred" && costs.credits === 0 &&
+    Array.isArray(costs.records) && costs.records.length === 0 && Array.isArray(assets?.bindings) &&
+    assets.bindings.every(value => object(value)?.source === "catalog");
+  if (![2,3].includes(Number(assets?.schemaVersion)) || !Array.isArray(assets?.bindings) || !assets.bindings.length ||
+      (!catalogOnly && (costs?.status !== "incurred" || typeof costs.credits !== "number" || !Number.isFinite(costs.credits) ||
+      !Array.isArray(costs.records) || !costs.records.length)) || !Array.isArray(assets.retainedArtifacts) || assets.retainedArtifacts.length) refuse();
   const bindings = assets!.bindings as unknown[];
   if (!preparation && bindings.some(value => object(value)?.collisionAssetId || object(value)?.navigationAssetId)) refuse();
   for (const value of bindings) {
@@ -305,7 +311,13 @@ export async function retainedPropWork(root: FlowRun, sourceRequestId: string, b
         typeof item.version !== "string" || !hash.test(item.version) ||
         (item.source === "generated" && (typeof item.artifactId !== "string" || !hash.test(item.artifactId)))) refuse();
   }
-  const bytes = await readFile(join(projectRoot, ".aura", "world-agent-paid.json"));
+  // A catalog-only task has no supplier ledger until its first paid operation.
+  // Existing ledger entries still need reconciliation; never hide paid work
+  // behind a model's zero-cost declaration.
+  const bytes = await readFile(join(projectRoot, ".aura", "world-agent-paid.json")).catch(error => {
+    if (catalogOnly && error?.code === "ENOENT") return Buffer.from('{"schemaVersion":1,"requests":{}}');
+    throw error;
+  });
   if (bytes.length > 2 * 1024 * 1024) refuse();
   const ledger = object(JSON.parse(bytes.toString("utf8"))), requests = object(ledger?.requests);
   if (ledger?.schemaVersion !== 1 || !requests) refuse();
@@ -317,6 +329,7 @@ export async function retainedPropWork(root: FlowRun, sourceRequestId: string, b
       const stage = object(value);
       if (typeof stage?.taskId !== "string" || stage.actualUnknown === true) refuse();
       if (request!.creationId === budgetCreationId) {
+        if (catalogOnly) refuse();
         if (stage.status !== "completed" || typeof stage.actual !== "number" || !Number.isFinite(stage.actual) || stage.actual < 0) refuse();
         known.set(stage.taskId as string, stage.actual as number);
       }
@@ -364,6 +377,23 @@ export async function retainedPropWork(root: FlowRun, sourceRequestId: string, b
     ...(preparedOperation ? { preparedOperation } : {}),
     ...(retainedProp ? { retainedProp } : {}),
     generationScope: input!.generationScope as string, repairRound: input!.repairRound as number, plan: plan as JsonValue };
+  // Prepared references are relative to their owning package. A later template
+  // copy has the same shared inputs but none of the completed generated files.
+  // Retain only the world attested by native draft creation/read, never a client
+  // supplied path or the current world's coincidentally matching asset name.
+  if (preparation || preparedOperation || retainedProp) {
+    if (trustedPrior?.assetWorldId) recovery.assetWorldId = trustedPrior.assetWorldId;
+    else {
+      const draftStep = specialist?.steps.find(step => step.kind === "action" && step.id === "draft" &&
+        step.actionId === "veya/draft-create" && step.status === "completed");
+      const draft = draftStep?.kind === "action" ? object(draftStep.output) : undefined;
+      const worldId = object(draftStep?.kind === "action" ? draftStep.input : undefined)?.worldId;
+      const read = specialist?.steps.find(step => step.kind === "action" && step.id === "draft-budget-0" &&
+        step.actionId === "veya/draft-read" && step.status === "completed" && object(step.input)?.draftId === draft?.draft_id);
+      if (typeof worldId === "string" && /^[a-f0-9]{32}$/u.test(worldId) && draft?.world_id === worldId &&
+          read?.kind === "action" && object(read.output)?.world_id === worldId) recovery.assetWorldId = worldId;
+    }
+  }
   try {
     const preparationDefects = await preparationReconciliation(projectRoot, recovery, runs);
     if (preparationDefects) recovery.preparationDefects = preparationDefects;

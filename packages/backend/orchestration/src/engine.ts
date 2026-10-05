@@ -113,9 +113,9 @@ export class FlowEngine {
       }));
       this.scheduler.notify();
       return run;
-    } catch {
+    } catch (error) {
       this.storageFailures.add(id);
-      throw new StorageFailure();
+      throw new StorageFailure(error);
     }
   }
   async initialize() {

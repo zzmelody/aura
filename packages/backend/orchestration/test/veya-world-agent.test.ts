@@ -10,6 +10,19 @@ import {
 
 const token = "a".repeat(64);
 
+test("model generation uses the bound worker source exchange without a legacy generation root",async()=>{
+ const exchange=resolve(tmpdir(),"worker-exchange");
+ await fixture(async sessionPath=>{
+  const client=new VeyaWorldAgentCapability("missing-foreground.json");
+  client.setRunSessionResolver(async runId=>{assert.equal(runId,"creator-child");return sessionPath;});
+  assert.equal(await client.generatedOutputDirectory("creator-child"),join(exchange,"source","tripo"));
+ },{protocol:"veya-world-http/1",base_url:"http://127.0.0.1:49152",token,role:"creator-worker",exchange_root:exchange});
+ await fixture(async sessionPath=>{
+  const client=new VeyaWorldAgentCapability(sessionPath);
+  await assert.rejects(client.generatedOutputDirectory(),/model_source_exchange_unavailable/);
+ });
+});
+
 async function fixture(
   run: (sessionPath: string) => Promise<void>,
   descriptor: Record<string, unknown> = {

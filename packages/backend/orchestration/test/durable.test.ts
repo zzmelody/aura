@@ -13,13 +13,22 @@ import { DEFAULT_TOP_LEVEL_RUN_CONCURRENCY } from "../src/scheduler.ts";
 import { runSchema } from "../src/schema.ts";
 import { recoverStep } from "../src/recovery.ts";
 import { validateFlowSource } from "../src/flow-diagnostics.ts";
-import { savedSchema, validateSaved } from "../src/durable.ts";
+import { savedSchema, validateSaved, StorageFailure } from "../src/durable.ts";
 import { agentConfig, agentDefaults } from "../src/agent-config.ts";
 import {
   agentOptionsSchema,
   agentRequestSchema,
   FlowError,
 } from "../src/schema.ts";
+
+test("storage failure preserves its cause but exposes only safe OS codes", () => {
+  const cause = Object.assign(new Error("private record and credential path"), { code: "EPERM" });
+  const error = new StorageFailure(cause);
+  assert.equal(error.cause, cause);
+  assert.match(error.message, /EPERM/u);
+  assert.doesNotMatch(error.message, /private|credential/u);
+  assert.doesNotMatch(new StorageFailure({ code: "secret-value" }).message, /secret-value/u);
+});
 
 test("Codex defaults to GPT-6.1 Sol xhigh and retains explicit overrides", () => {
   const previous = process.env.AURA_CODEX_MODEL;

@@ -91,6 +91,7 @@ function creationInput(body: Record<string, unknown>): CreationInput {
     ...(typeof body.previousArtifactId === "string" ? { previousArtifactId: body.previousArtifactId } : {}) };
 }
 type Binding = {
+  historyDeleted?: true;
   craftAuthorization?: VeyaCraftScope;
   craftOriginalAuthorization?: VeyaCraftScope;
   craftAuthorizationDigest?: string;
@@ -116,7 +117,7 @@ type Binding = {
   runId?: string;
 };
 type BindingFile = { version: 1; bindings: Record<string, Binding> };
-type Client = { playerId: string; homeWorldId: string; sessionPath: string; foregroundSessionPath?: string; creationSessionId: string; token: string };
+type Client = { playerId: string; homeWorldId: string; sessionPath: string; foregroundSessionPath?: string; creationSessionId: string; token: string; workers?: Client[] };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const stableId = /^[A-Za-z0-9_-]{1,96}$/u;
@@ -161,6 +162,7 @@ export class VeyaCreatorService {
         if (!uuid.test(key) || !stableId.test(item.playerId) || !stableId.test(item.homeWorldId) ||
             !["prop", "world"].includes(item.kind) || !/^[a-f0-9]{64}$/u.test(item.textHash) ||
             !isAbsolute(item.sessionPath) || (item.runId && !uuid.test(item.runId)) ||
+            (item.historyDeleted !== undefined && item.historyDeleted !== true) ||
             (item.requestHash !== undefined && (!/^[a-f0-9]{64}$/u.test(item.requestHash) || !item.input ||
               sha(JSON.stringify(creationInput(item.input as unknown as Record<string, unknown>))) !== item.requestHash)))
           throw new Error("invalid creator binding");
@@ -205,14 +207,31 @@ export class VeyaCreatorService {
     return result;
   }
 
-  async register(playerId: string, homeWorldId: string, sessionPath: string, foregroundSessionPath?: string): Promise<string> {
+  async register(playerId: string, homeWorldId: string, sessionPath: string, foregroundSessionPath?: string,
+    workerSessionPaths: string[] = []): Promise<string> {
+    if (!Array.isArray(workerSessionPaths) || workerSessionPaths.length > 2 ||
+        workerSessionPaths.some(path => typeof path !== "string" || !isAbsolute(path))) throw new Error("invalid_client");
+    const paths = [sessionPath, ...workerSessionPaths];
+    if (new Set(paths.map(path => resolve(path))).size !== paths.length) throw new Error("invalid_client");
+    const workers: Client[] = [];
+    for (const path of paths) workers.push(await this.workerClient(playerId, homeWorldId, path, foregroundSessionPath));
+    if (new Set(workers.map(worker => worker.creationSessionId)).size !== workers.length) throw new Error("invalid_client");
+    const client = workers[0]!;
+    // Copies avoid a recursive client/pool. Tokens and descriptors stay private.
+    if (workers.length > 1) client.workers = workers.map(worker => ({ ...worker }));
+    this.clients.set(sha(client.token), client);
+    return client.token;
+  }
+
+  private async workerClient(playerId: string, homeWorldId: string, sessionPath: string, foregroundSessionPath?: string): Promise<Client> {
     if (!stableId.test(playerId) || !stableId.test(homeWorldId) || !isAbsolute(sessionPath))
       throw new Error("invalid_client");
     const path = resolve(sessionPath);
     const ownedByOther = (owner: { playerId: string; homeWorldId: string; sessionPath: string }) =>
       owner.sessionPath === path &&
       (owner.playerId !== playerId || owner.homeWorldId !== homeWorldId);
-    if ([...this.clients.values(), ...Object.values(this.state.bindings)].some(ownedByOther))
+    const clients = [...this.clients.values()].flatMap(client => client.workers ?? [client]);
+    if ([...clients, ...Object.values(this.state.bindings)].some(ownedByOther))
       throw new Error("worker_already_bound");
     const bytes = await readFile(path);
     if (bytes.length > 8192) throw new Error("invalid_worker");
@@ -223,13 +242,12 @@ export class VeyaCreatorService {
         !/^http:\/\/127\.0\.0\.1:\d+\/?$/u.test(descriptor.base_url) ||
         typeof descriptor.token !== "string" || !/^[a-f0-9]{64}$/u.test(descriptor.token))
       throw new Error("invalid_worker");
-    if ([...this.clients.values(), ...Object.values(this.state.bindings)].some(owner =>
+    if ([...clients, ...Object.values(this.state.bindings)].some(owner =>
       owner.creationSessionId === descriptor.creation_session_id &&
       (owner.playerId !== playerId || owner.homeWorldId !== homeWorldId))) throw new Error("worker_already_bound");
     if (foregroundSessionPath !== undefined) await verifyCraftForeground(foregroundSessionPath);
     const token = randomBytes(32).toString("hex");
-    this.clients.set(sha(token), { playerId, homeWorldId, sessionPath: path, ...(foregroundSessionPath ? { foregroundSessionPath: resolve(foregroundSessionPath) } : {}), creationSessionId: descriptor.creation_session_id, token });
-    return token;
+    return { playerId, homeWorldId, sessionPath: path, ...(foregroundSessionPath ? { foregroundSessionPath: resolve(foregroundSessionPath) } : {}), creationSessionId: descriptor.creation_session_id, token };
   }
 
   client(authorization: string | undefined): Client | undefined {
@@ -292,6 +310,38 @@ export class VeyaCreatorService {
     const kind = input.operation === "create_prop" ? "prop" : "world";
     const textHash = sha(input.text), requestHash = sha(JSON.stringify(input));
     return this.serial(async () => {
+      const owner = client, pool = owner.workers ?? [owner];
+      const existing = this.state.bindings[requestId];
+      const sourceId = input.previousRequestId ?? input.reuseAssetsFromRequestId ?? input.reuseProductionFromRequestId;
+      let pinned = existing ?? (sourceId ? this.owned(owner, sourceId) : undefined);
+      if (!pinned && input.previousArtifactId) {
+        for (const binding of Object.values(this.state.bindings)) {
+          if (binding.playerId !== owner.playerId || binding.homeWorldId !== owner.homeWorldId || !binding.runId) continue;
+          try { if ((await this.artifact(binding)).metadata.artifactId === input.previousArtifactId) { pinned = binding; break; } }
+          catch { /* Unverified artifacts cannot pin or grant a worker. */ }
+        }
+        if (!pinned) throw new Error("previous_artifact_unavailable");
+      }
+      if (pinned) {
+        const worker = pool.find(candidate => candidate.sessionPath === pinned.sessionPath && candidate.creationSessionId === pinned.creationSessionId);
+        // An artifact pinned to another worker is reported like a missing one.
+        if (!worker) throw new Error(existing ? "request_id_conflict" : sourceId ? "previous_request_unavailable" : "previous_artifact_unavailable");
+        client = worker;
+      } else if (pool.length > 1) {
+        const leases = await readCreatorLeases(this.projectRoot);
+        let available: Client | undefined;
+        for (const worker of pool) {
+          if (leases.leases[worker.creationSessionId]) continue;
+          let busy = false;
+          for (const binding of Object.values(this.state.bindings)) if (binding.creationSessionId === worker.creationSessionId) {
+            if (!binding.runId || !["completed", "failed", "cancelled", "interrupted"].includes(
+                (await this.flow.request<FlowRun>("get", { id: binding.runId })).status)) { busy = true; break; }
+          }
+          if (!busy) { available = worker; break; }
+        }
+        if (!available) throw new Error("worker_busy");
+        client = available;
+      }
       if (input.craft) {
         const catalog = await this.flow.request<FlowCatalog>("catalog");
         if (!catalog.flows.some(f => f.id === "veya/veya-gameplay-craft" && f.available && f.service)) throw new Error("craft_flow_unavailable");
@@ -483,17 +533,35 @@ export class VeyaCreatorService {
 
   list(client: Client) {
     return Object.entries(this.state.bindings)
-      .filter(([, binding]) => binding.playerId === client.playerId && binding.homeWorldId === client.homeWorldId)
+      .filter(([, binding]) => !binding.historyDeleted && binding.playerId === client.playerId && binding.homeWorldId === client.homeWorldId)
       .map(([requestId, binding]) => ({ requestId, runId: binding.runId, kind: binding.kind, text: binding.input?.text ?? "", ...(binding.craftAuthorization ? { craft: binding.craftAuthorization } : {}), operation: binding.input?.operation ?? (binding.kind === "prop" ? "create_prop" : "create_world") }));
+  }
+
+  async deleteRecord(client: Client, requestId: string) {
+    return this.serial(async () => {
+      const binding = this.owned(client, requestId);
+      if (!binding) throw new Error("not_found");
+      if (binding.historyDeleted) return;
+      if (!binding.runId) throw new Error("task_active");
+      const run = await this.flow.request<FlowRun>("get", { id: binding.runId });
+      if (!["completed", "failed", "cancelled", "interrupted"].includes(run.status)) throw new Error("task_active");
+      // Remove the player-facing record only. Ownership, recovery references,
+      // craft receipts, Flow audit and delivered resources retain their identity.
+      await this.commit({ version: 1, bindings: { ...this.state.bindings,
+        [requestId]: { ...binding, historyDeleted: true } } });
+    });
   }
 
   async project(binding: Binding) {
     const text = binding.input?.text ?? "";
-    if (!binding.runId) return { text, runStatus: "queued", deliveryStatus: "not_ready" };
+    const history = binding.historyDeleted ? { historyDeleted: true } : {};
+    if (!binding.runId) return { ...history, text, runStatus: "queued", deliveryStatus: "not_ready" };
     const run = await this.flow.request<FlowRun>("get", { id: binding.runId });
     // Only fixed product reason codes cross into the game. Provider payloads,
     // worker diagnostics, credentials and paths stay in backend diagnostics.
-    const failureReason = run.status === "completed" && object(run.output)?.status === "blocked" ? "production_failed" : run.status === "failed"
+    const budgetExceeded = ["failed", "needs_attention"].includes(run.status) &&
+      (run.error?.startsWith("model_budget_exceeded:") || run.steps.some(step => step.error?.startsWith("model_budget_exceeded:")));
+    const failureReason = budgetExceeded ? "model_budget_exceeded" : run.status === "completed" && object(run.output)?.status === "blocked" ? "production_failed" : run.status === "failed"
       ? run.error === "creator_worker_capabilities_unavailable" || run.error === "creator_worker_binding_unavailable"
         ? "worker_unavailable"
         : run.error?.startsWith("creator_worker_upgrade_required:") ? "worker_upgrade_required"
@@ -505,7 +573,7 @@ export class VeyaCreatorService {
     const lease = binding.creationSessionId ? (await readCreatorLeases(this.projectRoot)).leases[binding.creationSessionId] : undefined;
     if (lease?.rootRunId === run.id && (lease.cancelling || lease.state === "needs_attention" ||
         ["completed", "failed", "cancelled", "interrupted"].includes(run.status)))
-      return { text, failureReason, runId: run.id, runStatus, phase: "needs_attention", deliveryStatus: "not_ready", cleanup: "needs_attention" };
+      return { ...history, text, failureReason, runId: run.id, runStatus, phase: "needs_attention", deliveryStatus: "not_ready", cleanup: "needs_attention" };
     let current = run;
     for (let depth = 0; depth < 8; ++depth) {
       const child = current.steps.find((step) => step.kind === "flow" && step.status === "waiting_input" && step.childRunId);
@@ -522,7 +590,7 @@ export class VeyaCreatorService {
     }
     const verified = artifact !== undefined;
     return {
-      text, failureReason: failureReason || (run.status === "completed" && !verified ? "delivery_unverified" : ""),
+      ...history, text, failureReason: failureReason || (run.status === "completed" && !verified ? "delivery_unverified" : ""),
       runId: run.id, runStatus,
       phase: run.status === "needs_attention" ? "needs_attention" : run.status === "waiting_input" ? "clarification" :
         run.status === "completed" ? (verified ? "preparing_delivery" : "needs_attention") : "production",
@@ -547,8 +615,12 @@ export function createVeyaCreatorApp(service: VeyaCreatorService) {
       if (!body || typeof body.playerId !== "string" || typeof body.homeWorldId !== "string" ||
           typeof body.workerSessionPath !== "string") throw new Error("invalid_client");
       if (body.foregroundSessionPath !== undefined && typeof body.foregroundSessionPath !== "string") throw new Error("invalid_client");
-      const token = await service.register(body.playerId, body.homeWorldId, body.workerSessionPath, body.foregroundSessionPath as string | undefined);
-      return context.json({ token }, 201);
+      if (body.workerSessionPaths !== undefined && (!Array.isArray(body.workerSessionPaths) ||
+          body.workerSessionPaths.some(path => typeof path !== "string"))) throw new Error("invalid_client");
+      const token = await service.register(body.playerId, body.homeWorldId, body.workerSessionPath, body.foregroundSessionPath as string | undefined,
+        body.workerSessionPaths as string[] | undefined);
+      const client = service.client(`Bearer ${token}`)!;
+      return context.json({ token, capacity: client.workers?.length ?? 1 }, 201);
     } catch { return context.json({ error: "invalid_client" }, 400); }
   });
   app.use("/*", async (context, next) => {
@@ -579,6 +651,18 @@ export function createVeyaCreatorApp(service: VeyaCreatorService) {
     if (!binding) return context.json({ error: "not_found" }, 404);
     try { return context.json(await service.project(binding)); }
     catch { return context.json({ error: "creation_unavailable" }, 503); }
+  });
+  app.post("/tasks/:requestId/delete-record", async (context) => {
+    const client = context.get("creatorClient"), requestId = context.req.param("requestId");
+    if (!service.owned(client, requestId)) return context.json({ error: "not_found" }, 404);
+    const body = await boundedObject(context.req.raw);
+    if (!body || typeof body.commandId !== "string" || !uuid.test(body.commandId))
+      return context.json({ error: "invalid_command" }, 400);
+    try { await service.deleteRecord(client, requestId); return context.json({ accepted: true }); }
+    catch (error) {
+      if (error instanceof Error && error.message === "task_active") return context.json({ error: "task_active" }, 409);
+      return context.json({ error: "creation_unavailable" }, 503);
+    }
   });
   app.post("/tasks/:requestId/answer", async (context) => {
     const binding = service.owned(context.get("creatorClient") as Client, context.req.param("requestId"));

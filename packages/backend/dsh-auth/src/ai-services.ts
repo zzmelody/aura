@@ -268,6 +268,13 @@ export async function writeAiServices(
 const reasoningLevels = Object.fromEntries(
   efforts.filter((e) => e !== "off").map((e) => [e, e]),
 );
+/** DeepSeek Flash thinking defaults to 64K, including reasoning and final
+ * output. The adapter's generic 32K fallback can end before a source module
+ * is returned. Keep other providers and non-thinking modes unchanged. */
+function thinkingOutputBudget(model: string, effort: string): number | undefined {
+  return effort !== "off" && ["deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4.1-flash-anthropic"].includes(model)
+    ? 65_536 : undefined;
+}
 /** The chosen model first, then every other listed model, without duplicates. */
 function catalogIds(selected: string, listed: readonly string[] = []) {
   return [...new Set([selected, ...listed])];
@@ -297,6 +304,7 @@ export function luminaProfile(document: AiServiceDocument): PiAiProviderProfile 
     defaultContextWindow: 200_000,
     models: catalogIds(settings.model, settings.models).map((id) => ({
       id,
+      ...(thinkingOutputBudget(id, settings.reasoningEffort) ? {maxTokens: thinkingOutputBudget(id, settings.reasoningEffort)} : {}),
       input: imageCapable(id) ? ["text", "image"] : ["text"],
       reasoningEfforts: reasoningLevels,
     })),
@@ -319,6 +327,7 @@ export function customProfiles(
               apiKeyEnv: credential,
               models: catalogIds(settings.model, catalog).map((model) => ({
                 id: model,
+                ...(thinkingOutputBudget(model, settings.reasoningEffort) ? {maxTokens: thinkingOutputBudget(model, settings.reasoningEffort)} : {}),
                 contextWindow: custom.contextWindow,
                 input: custom.images ? ["text", "image"] : ["text"],
                 reasoningEfforts:
@@ -344,6 +353,8 @@ export function selectedAgentConfig(
           : document.selectedRoute!,
     model: document.model.model,
     reasoningEffort: document.model.reasoningEffort,
+    ...(document.model.mode !== "codex" && thinkingOutputBudget(document.model.model, document.model.reasoningEffort)
+      ? {maxTokens: thinkingOutputBudget(document.model.model, document.model.reasoningEffort)} : {}),
     timeoutMs: 180_000,
   };
 }

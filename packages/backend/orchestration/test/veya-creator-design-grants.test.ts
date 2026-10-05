@@ -28,6 +28,33 @@ async function cleanup(root: string) {
   await rm(root, { recursive: true, force: true });
 }
 
+test("prop recovery history keeps a bounded index, exact bytes and owner-bound immutable grants", async () => {
+  const f = await setup();
+  try {
+    const identity = Object.values(f.original.bindings)[0] as any, sourceId = randomUUID(), sourceRunId = randomUUID();
+    const source = {playerId:identity.playerId,homeWorldId:identity.homeWorldId,creationSessionId:identity.creationSessionId,
+      sessionPath:identity.sessionPath,textHash:sha("make an axe"),kind:"prop",input:{operation:"create_prop",text:"make an axe"},runId:sourceRunId};
+    const next = {version:1,bindings:{[sourceId]:source}} as any;
+    for(let i=0;i<8;i++) next.bindings[randomUUID()] = {...source,runId:randomUUID(),input:{...source.input,previousRequestId:sourceId},
+      recovery:{schemaVersion:1,noNewPaidWork:true,sourceRequestId:sourceId,sourceRunId,brief:{operation:"create_prop"},
+        propSpec:{id:"axe"},assets:{metadata:"x".repeat(40000)},plan:{},generationScope:"original",repairRound:0,assetWorldId:"a".repeat(32)}};
+    assert.ok(Buffer.byteLength(JSON.stringify(next))>256*1024);
+    await commitCreatorBindingDocument(f.root,next);
+    const bytes=await readFile(f.index), stored=JSON.parse(bytes.toString("utf8"));
+    assert.ok(bytes.length<16*1024);
+    assert.equal(Object.values(stored.bindings).filter((b:any)=>b.propRecoveryRef).length,8);
+    assert.deepEqual(await readCreatorBindingDocument(f.root,bytes),next);
+    await commitCreatorBindingDocument(f.root,await readCreatorBindingDocument(f.root,bytes));
+    assert.deepEqual(await readFile(f.index),bytes);
+    const key=Object.keys(stored.bindings).find(k=>stored.bindings[k].propRecoveryRef)!;
+    const changed=structuredClone(stored); changed.bindings[key].playerId="another-player";
+    await assert.rejects(readCreatorBindingDocument(f.root,Buffer.from(JSON.stringify(changed))),/creator_design_grant_invalid/);
+    const ref=stored.bindings[key].propRecoveryRef, path=join(f.directory,"grants",ref.grantId+".json");
+    await writeFile(path,"{}");
+    await assert.rejects(readCreatorBindingDocument(f.root,bytes),/creator_design_grant_invalid/);
+  } finally { await cleanup(f.root); }
+});
+
 test("the five actual legacy design grants migrate without changing bytes or raising the index limit", async () => {
   const f = await setup();
   try {

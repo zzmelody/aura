@@ -16,8 +16,14 @@ export class ReplayMismatch extends FlowError {
   }
 }
 export class StorageFailure extends Error {
-  constructor() {
-    super("Flow 状态提交失败；保留执行记录，恢复前请检查存储。");
+  constructor(cause?: unknown) {
+    // Expose only bounded OS error vocabulary, never paths, record values or
+    // arbitrary backend messages (which may contain private workflow input).
+    const code = cause && typeof cause === "object" && "code" in cause
+      ? String(cause.code) : "";
+    const detail = /^(?:EACCES|EPERM|ENOSPC|EIO|ENOENT|EBUSY|EMFILE|ENFILE|EROFS)$/u.test(code)
+      ? `（${code}）` : "";
+    super(`Flow 状态提交失败${detail}；保留执行记录，恢复前请检查存储。`, { cause });
   }
 }
 export const stable = (value: unknown): string => {

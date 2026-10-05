@@ -10,6 +10,7 @@ import { startAuraRuntime } from "../../src/index.ts";
 import { retainedPropWork } from "../../src/veya-creator-recovery.ts";
 import { retainedWorldDesign } from "../../src/veya-creator-world-design-recovery.ts";
 import { importPreparationReconciliation } from "../../src/veya-creator-reconciliation.ts";
+import { readCreatorBindingDocument } from "@aura/orchestration";
 
 type Data = Record<string, any>; // Test JSON; production boundaries still validate schemas.
 async function main(): Promise<void> {
@@ -171,7 +172,7 @@ if (command === "serve") {
     } else if (command === "cancel" || command === "resume") {
       console.log(JSON.stringify(await json(url + "/" + command, { commandId: required("--command-id") }, auth.token)));
     } else if (command === "recovery" || command === "reconcile-preparation") {
-      const document = await read(join(root, ".aura", "veya-creator", "bindings.json"));
+      const document = await readCreatorBindingDocument(root, await readFile(join(root, ".aura", "veya-creator", "bindings.json")));
       const id = flags.get("--source-request") ?? request.requestId, binding = document.bindings[id];
       if (!binding?.runId) throw new Error("Unknown source binding");
       if (binding.input?.operation === "create_world") {

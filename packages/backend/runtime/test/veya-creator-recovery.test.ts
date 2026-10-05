@@ -7,6 +7,7 @@ import test from "node:test";
 import type { FlowRun } from "@aura/protocol/types";
 import { VeyaCreatorService, createVeyaCreatorApp } from "../src/veya-creator-routes.ts";
 import { retainedPropWork } from "../src/veya-creator-recovery.ts";
+import { readCreatorBindingDocument } from "@aura/orchestration";
 
 // Prior tests cover final artifacts, not an unexported paid asset held by a
 // failed child Run. Reusing that work must preserve provenance and charges.
@@ -51,6 +52,15 @@ test("failed prop recovery requires owned durable typed results and known paid w
       stages: { model: { status: "completed", taskId: "provider-task", actual: 90, actualUnknown: false } } } } };
     const ledgerPath = join(root, ".aura", "world-agent-paid.json");
     await writeFile(ledgerPath, JSON.stringify(ledger));
+    const chargedAssets = structuredClone(assets);
+    Object.assign(assets,{schemaVersion:3,bindings:[{requirementId:"model",assetId:"shared:model/axe/axe.scn",version:"c".repeat(64),source:"catalog"}],costs:{status:"not_incurred",credits:0,records:[]}});
+    await assert.rejects(retainedPropWork(source,sourceRequest,sourceRequest,root,async id=>runs.get(id)!),"catalog claims cannot hide an existing supplier stage");
+    await writeFile(ledgerPath,JSON.stringify({schemaVersion:1,requests:{}}));
+    assert.deepEqual((await retainedPropWork(source,sourceRequest,sourceRequest,root,async id=>runs.get(id)!)).assets,assets);
+    assets.bindings[0].source="generated";
+    await assert.rejects(retainedPropWork(source,sourceRequest,sourceRequest,root,async id=>runs.get(id)!),"zero-cost generated work still needs provenance");
+    Object.assign(assets,chargedAssets);
+    await writeFile(ledgerPath, JSON.stringify(ledger));
     const recoveryId = randomUUID(), request = { ...initial, requestId: recoveryId, previousRequestId: sourceRequest };
     assert.equal((await post({ ...request, text: "different work" })).status, 409);
     assert.equal((await post({ ...request, previousArtifactId: "f".repeat(64) })).status, 400);
@@ -60,7 +70,10 @@ test("failed prop recovery requires owned durable typed results and known paid w
     ledger.requests.paid.stages.model.actualUnknown = false;
     await writeFile(ledgerPath, JSON.stringify(ledger));
     assert.equal((await post(request)).status, 202);
-    const stored = JSON.parse(await readFile(join(service.directory, "bindings.json"), "utf8"));
+    // Prop recovery is stored as a hash grant; decode it the way the service does.
+    const raw = await readFile(join(service.directory, "bindings.json"));
+    assert.ok(JSON.parse(raw.toString("utf8")).bindings[recoveryId].propRecoveryRef, "recovery data is not inlined");
+    const stored = await readCreatorBindingDocument(root, raw) as any;
     assert.equal(stored.bindings[recoveryId].recoveryBudgetCreationId, sourceRequest);
     assert.deepEqual(stored.bindings[recoveryId].recovery, { schemaVersion: 1, sourceRequestId: sourceRequest, sourceRunId: source.id, noNewPaidWork: true,
       brief, propSpec: prop, assets, generationScope: "e".repeat(64), repairRound: 2, plan: { effects: [], acceptance: [] } });
@@ -90,7 +103,7 @@ test("failed prop recovery requires owned durable typed results and known paid w
     producer.input = { ...(producer.input as object), previousAssets: normalizedAssets, previousPreparation: preparation,
       assetPolicy: "reuse-only", defects: [geometryDefect] };
     const sourceCatalog = { id: "preparation-source-catalog", kind: "action", actionId: "veya/asset-list", status: "completed",
-      output: { asset: { path: "res://assets/raw.scn", content_hash: "c".repeat(64) } } };
+      output: { asset: { path: "res://content/shared/generated/model/raw/scene.scn", content_hash: "c".repeat(64) } } };
     producer.steps.push(sourceCatalog as never);
     source.steps.push({ kind: "action", actionId: "veya/creator-context", status: "completed", output: { recovery: geometryPrior } } as never);
     const correctedBody = { ...preparationBody, pipelineHash: "1".repeat(64) }, correctedReceipt = { ...correctedBody, receiptHash: stableHash(correctedBody) };
@@ -176,7 +189,7 @@ test("failed prop recovery requires owned durable typed results and known paid w
     const successfulCook = make("veya/veya-prop-prepare", "failed", { spec: prop, assets });
     const submitted = { pipelineSource: "return {}", sources: [] as Record<string, string>[], inputs: [] as Record<string, string>[], timeoutSeconds: 300 };
     successfulCook.steps.push(
-      { id: "catalog", kind: "action", status: "completed", output: { asset: { path: "res://assets/source.scn", content_hash: "c".repeat(64), type: "model" } } } as never,
+      { id: "catalog", kind: "action", status: "completed", output: { asset: { path: "res://content/shared/generated/model/source/scene.scn", content_hash: "c".repeat(64), type: "model" } } } as never,
       { id: "recipe", kind: "agent", status: "completed", output: JSON.stringify({ recipes: [{ requirementId: "model", visual: "visual", collision: "collision" }] }) } as never,
       { id: "cook", kind: "action", status: "completed", input: submitted, output: { status: "queued", operation_id: "cook_known", request_id: "request_known" } } as never,
       { id: "wait", kind: "action", status: "completed", input: { operationId: "cook_known" }, output: {
@@ -184,6 +197,11 @@ test("failed prop recovery requires owned durable typed results and known paid w
         assets: [{ id: "prepared", source_asset_id: "prepared_source", content_hash: "4".repeat(64), type: "model" }] } } as never);
     link(producer, successfulCook); runs.set(successfulCook.id, successfulCook);
     const recoveredCook = await retainedPropWork(source, sourceRequest, sourceRequest, root, async id => runs.get(id)!, stored.bindings[recoveryId].recovery);
+    const preparedWorld = "9".repeat(32);
+    specialist.steps.push({id:"draft",kind:"action",actionId:"veya/draft-create",status:"completed",input:{worldId:preparedWorld},output:{world_id:preparedWorld,draft_id:"prepared-draft"}} as never,
+      {id:"draft-budget-0",kind:"action",actionId:"veya/draft-read",status:"completed",input:{draftId:"prepared-draft"},output:{world_id:preparedWorld}} as never);
+    assert.equal((await retainedPropWork(source,sourceRequest,sourceRequest,root,async id=>runs.get(id)!,stored.bindings[recoveryId].recovery)).assetWorldId,preparedWorld);
+    specialist.steps.pop();specialist.steps.pop();
     assert.equal((recoveredCook.preparedOperation as Record<string, unknown>).operationId, "cook_known");
     assert.deepEqual((recoveredCook.preparedOperation as Record<string, unknown>).submission, submitted,
       "a failed final JSON return preserves native success and its exact submitted source instead of recooking");
