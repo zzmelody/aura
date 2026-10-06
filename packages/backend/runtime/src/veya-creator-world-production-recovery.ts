@@ -5,7 +5,6 @@ import { cookerSubmissionFingerprint, productionDigest, validateProductionGrant,
   type ProductionGrant, type AssetReuseGrant, type MaterialsGrant } from "@aura/orchestration";
 import { retainedWorldDesign, type WorldDesignRecovery } from "./veya-creator-world-design-recovery.ts";
 import { retainedCommonAssets } from "./veya-creator-asset-reuse.ts";
-import { recoverUnstartedFinalRound } from "./veya-creator-unstarted-round.ts";
 import { completedAtmosphereCache } from "./veya-creator-atmosphere-cache.ts";
 
 const object = (v: unknown): Record<string, any> | undefined => v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, any> : undefined;
@@ -15,7 +14,7 @@ const same = (a: unknown, b: unknown) => JSON.stringify(canonical(a)) === JSON.s
 const hash = /^[a-f0-9]{64}$/u;
 const reads = new Set(["veya/creator-context", "veya/system-context", "veya/world-list", "veya/world-status", "veya/world-read",
   "veya/asset-list", "veya/cooker-capabilities", "veya/draft-read", "veya/creation-module-read", "veya/runtime-observe",
-  "veya/action-query", "veya/runtime-inspect", "veya/character-inspect", "veya/operation-status", "veya/cooker-status"]);
+  "veya/runtime-inspect", "veya/character-inspect", "veya/operation-status", "veya/cooker-status"]);
 const productionFlows = new Set(["veya/veya-wish", "veya/veya-world-agent", "veya/veya-world-plan", "veya/veya-world-gameplay-design",
   "veya/veya-world-build", "veya/veya-world-assets", "veya/veya-asset-batch", "veya/veya-procedural-asset", "veya/veya-prop-agent", "veya/veya-prop-prepare",
   "veya/veya-scene-layout", "veya/veya-environment-lighting", "veya/veya-world-behavior", "veya/veya-world-effects", "veya/veya-world-lookdev",
@@ -138,14 +137,13 @@ export async function retainedWorldProduction(root: FlowRun, sourceRequestId: st
   const worlds = runs.filter(r => r.flow.id === "veya/veya-world-agent" && r.parent?.runId === root.id);
   if (worlds.length !== 1) refuse();
   const world = worlds[0]!, wi = object(world.input)!, wo = object(world.output);
-  const pending = recoverUnstartedFinalRound(root, world, runs, trusted.production);
-  const resume = pending?.resume ?? object(wo?.resume);
+  const resume = object(wo?.resume);
   if (preCheckpointFailure && (wo?.status !== "needs_attention" || !pendingQuestions(wo.questions) ||
       !same(wi.brief, trusted.production!.recovery.brief) || resume?.round !== trusted.production!.recovery.nextRound)) refuse();
   if (!resume || (!preCheckpointFailure && (!same(ro?.result, wo) || !same(ro?.brief, wi.brief))) || wi.outputMode !== "artifact" || wi.prior ||
       !same(wi.continuation ?? [], []) || !same(resume.plan?.requirements, wi.brief) ||
       !Number.isInteger(resume.round) || resume.round < 0 || resume.round >= Math.min(3, maxRepairRounds) ||
-      !hash.test(resume.generationScope) || (!pending && !same(resume.gameplay?.spec, resume.build?.gameplaySpec)) ||
+      !hash.test(resume.generationScope) || !same(resume.gameplay?.spec, resume.build?.gameplaySpec) ||
       resume.gameplay?.status !== "ready" || productionDigest(resume.gameplay.spec) !== resume.gameplay.specHash ||
       resume.draft?.world_id !== resume.worldId || !hash.test(resume.draft?.content_hash)) refuse();
   const contexts = [root, world].map(r => r.steps.filter(s => s.kind === "action" && s.actionId === "veya/creator-context"));
@@ -206,7 +204,7 @@ export async function retainedWorldProduction(root: FlowRun, sourceRequestId: st
     }
   }
   const builds = runs.filter(r => r.flow.id === "veya/veya-world-build" && r.parent?.runId === world.id);
-  const last = pending?.completedBuild ?? builds.at(-1);
+  const last = builds.at(-1);
   if (!last || !same(last.output, resume.build) || object(last.input)?.repairRound !== resume.round ||
       object(last.input)?.draftId !== resume.draft.draft_id || !same(object(last.input)?.plan, { ...resume.plan, targetWorldId: resume.worldId,
         returnHome: { schemaVersion: 1, binding: "personal_home", entityId: "return_home", arrival: "home_return" } }) ||
@@ -309,7 +307,7 @@ export async function retainedWorldProduction(root: FlowRun, sourceRequestId: st
       !materials?.proof.assets.some(a => a.assetId === id && a.contentHash === version)) refuse();
   const grant: ProductionGrant = { version: 1, identity, recovery: { schemaVersion: 1, sourceRequestId, sourceRunId: root.id,
     brief: wi.brief, continuation: [], resume: resume as JsonValue, resumeHash: productionDigest(resume), noNewPaidWork: true, nextRound: resume.round + 1 },
-    proof: { world: worldProof, draft: currentDraft as JsonValue, ...(pending ? { pendingRound: pending.boundary } : {}), assets: [...assets].map(([assetId, contentHash]) => ({ assetId, contentHash })),
+    proof: { world: worldProof, draft: currentDraft as JsonValue, assets: [...assets].map(([assetId, contentHash]) => ({ assetId, contentHash })),
       modules: [...modules].map(([moduleId, contentHash]) => ({ moduleId, contentHash })),
       completedOperations: [...new Map(completedOperations.map(op => [(op.operation ?? "veya.cooker.submit") + op.fingerprint, op])).values()] } };
   return validateProductionGrant(grant);

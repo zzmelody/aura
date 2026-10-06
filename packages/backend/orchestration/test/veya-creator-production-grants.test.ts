@@ -61,31 +61,6 @@ test("production context admits a bound worker once, child context follows its d
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("worker binding refuses two successors of the same host-proven unstarted round", async () => {
-  const root = await mkdtemp(join(tmpdir(), "aura-production-claim-binding-"));
-  try {
-    const sourceId = randomUUID(), sourceRunId = randomUUID(), requestId = randomUUID(), runId = randomUUID();
-    const sessionPath = join(root, "worker.json"), home = "a".repeat(32), worldId = "b".repeat(32);
-    const identity = { playerId: "player", homeWorldId: home, creationSessionId: "c".repeat(32), textHash: createHash("sha256").update("courtyard").digest("hex") };
-    const draft = { draft_id: "d".repeat(32), world_id: worldId, base_revision: 1, draft_revision: 2, content_hash: "e".repeat(64) };
-    const build = { gameplaySpec: {} }, resume = { worldId, draft, round: 2, build };
-    const grant: ProductionGrant = { version: 1, identity, recovery: { schemaVersion: 1, sourceRequestId: sourceId, sourceRunId,
-      brief: { operation: "create_world" }, continuation: [], resume, resumeHash: productionDigest(resume), nextRound: 3, noNewPaidWork: true },
-      proof: { world: { worldId, ownerId: "f".repeat(32), revision: 1, contentHash: "0".repeat(64) }, draft, assets: [], modules: [], completedOperations: [],
-        pendingRound: { schemaVersion: 1, round: 3, worldRunId: randomUUID(), completedBuildRunId: randomUUID(), blockedBuildRunId: randomUUID(), environmentRunId: randomUUID(),
-          finalResumeHash: "1".repeat(64), completedOutputHash: productionDigest(build), blockedInputHash: "2".repeat(64), resolvedSpecHash: productionDigest(build.gameplaySpec) } } };
-    const ref = await writeProductionGrant(root, grant), source = { ...identity, runId: sourceRunId, sessionPath, input: { operation: "create_world", text: "courtyard" } };
-    const record = { ...source, runId, worldProductionRecoveryRef: ref, recoveryBudgetCreationId: sourceId, input: { ...source.input, previousRequestId: sourceId } };
-    const index = { version: 1, bindings: { [sourceId]: source, [requestId]: record } };
-    const path = join(root, ".aura/veya-creator/bindings.json"); await writeFile(path, JSON.stringify(index));
-    const run = { id: runId, requestId, flow: { id: "veya/veya-wish" }, steps: [] } as unknown as FlowRun;
-    const binding = new VeyaCreatorBindings(root);
-    assert.ok(await binding.binding(runId, () => run, false));
-    index.bindings[randomUUID()] = { ...record, runId: randomUUID() }; await writeFile(path, JSON.stringify(index));
-    await assert.rejects(binding.binding(runId, () => run, false), /creator_production_recovery_unavailable/);
-  } finally { await rm(root, { recursive: true, force: true }); }
-});
-
 test("ordinary recovery boundary claims survive restart, reject duplicates and preserve historical reads", async () => {
   const root = await mkdtemp(join(tmpdir(), "aura-production-ordinary-claims-"));
   try {

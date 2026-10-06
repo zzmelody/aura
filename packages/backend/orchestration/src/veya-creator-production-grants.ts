@@ -14,9 +14,6 @@ export type ProductionGrant = { version: 1;
     draft: JsonValue;
     assets: { assetId: string; contentHash: string }[];
     modules: { moduleId: string; contentHash: string }[];
-    pendingRound?: { schemaVersion: 1; round: 3; worldRunId: string; completedBuildRunId: string;
-      blockedBuildRunId: string; environmentRunId: string; finalResumeHash: string;
-      completedOutputHash: string; blockedInputHash: string; resolvedSpecHash: string };
     completedOperations: { operation?: "veya.cooker.submit" | "veya.atmosphere.build"; operationId: string; fingerprint: string }[] } };
 const object = (v: unknown): Record<string, any> | undefined => v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, any> : undefined;
 const sha = /^[a-f0-9]{64}$/u;
@@ -55,17 +52,6 @@ export function validateProductionGrant(value: unknown): ProductionGrant {
         typeof op.operationId !== "string" || !/^[A-Za-z0-9_-]{1,96}$/u.test(op.operationId) || !sha.test(op.fingerprint)) ||
       Buffer.byteLength(JSON.stringify(r)) > 240 * 1024 || Buffer.byteLength(JSON.stringify(v)) > 256 * 1024)
     throw new Error("production_grant_invalid");
-  if (proof.pendingRound !== undefined) {
-    const p = object(proof.pendingRound), fields = ["schemaVersion", "round", "worldRunId", "completedBuildRunId", "blockedBuildRunId",
-      "environmentRunId", "finalResumeHash", "completedOutputHash", "blockedInputHash", "resolvedSpecHash"];
-    if (!p || Object.keys(p).length !== fields.length || fields.some(k => !Object.hasOwn(p, k)) ||
-        p.schemaVersion !== 1 || p.round !== 3 || resume.round !== 2 || r.nextRound !== 3 ||
-        ["worldRunId", "completedBuildRunId", "blockedBuildRunId", "environmentRunId"].some(k => !/^[a-f0-9-]{36}$/iu.test(p[k])) ||
-        new Set([p.worldRunId, p.completedBuildRunId, p.blockedBuildRunId, p.environmentRunId, r.sourceRunId]).size !== 5 ||
-        ["finalResumeHash", "completedOutputHash", "blockedInputHash", "resolvedSpecHash"].some(k => !sha.test(p[k])) ||
-        p.completedOutputHash !== productionDigest(resume.build) || p.resolvedSpecHash !== productionDigest(resume.build?.gameplaySpec))
-      throw new Error("production_grant_invalid");
-  }
   return value as ProductionGrant;
 }
 
@@ -84,7 +70,7 @@ export async function validatePendingProductionClaims(root: string, bindings: Re
   for (const [requestId, grant] of grants) {
     const binding = bindings[requestId];
     if (binding.productionRecoveryClaimVersion === 1) {
-      if (grant.proof.pendingRound || binding.productionRecoveryClaim !== productionRecoveryBoundary(grant))
+      if (binding.productionRecoveryClaim !== productionRecoveryBoundary(grant))
         throw new Error("production_recovery_claim_invalid");
       validateProductionBinding(grant, binding, bindings[grant.recovery.sourceRequestId]);
       // Historical unmarked bindings remain readable but still occupy their
@@ -93,12 +79,6 @@ export async function validatePendingProductionClaims(root: string, bindings: Re
           productionRecoveryBoundary(other) === binding.productionRecoveryClaim))
         throw new Error("production_round_already_claimed");
     }
-    if (!grant.proof.pendingRound) continue;
-    const sourceId = grant.recovery.sourceRequestId;
-    validateProductionBinding(grant, bindings[requestId], bindings[sourceId]);
-    const successors = Object.entries(bindings).filter(([, b]) => b.input?.previousRequestId === sourceId);
-    if (successors.length !== 1 || successors[0]![0] !== requestId)
-      throw new Error("production_round_already_claimed");
   }
 }
 /** Host-only immutable metadata. No caller path or source JSON is accepted. */

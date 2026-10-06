@@ -151,7 +151,7 @@ export class VeyaCreatorBindings {
       try {
         const productionGrant = await readProductionGrant(this.projectRoot, record.worldProductionRecoveryRef);
         validateProductionBinding(productionGrant, record, document.bindings?.[record.input?.previousRequestId ?? ""]);
-        if (productionGrant.proof.pendingRound || record.productionRecoveryClaimVersion !== undefined || record.productionRecoveryClaim !== undefined)
+        if (record.productionRecoveryClaimVersion !== undefined || record.productionRecoveryClaim !== undefined)
           await validatePendingProductionClaims(this.projectRoot, document.bindings!);
         record = { ...record, productionGrant };
       } catch { throw new ActionFailure("creator_production_recovery_unavailable"); }

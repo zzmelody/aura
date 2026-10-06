@@ -194,7 +194,7 @@ export class VeyaCreatorService {
           binding.productionRecoveryClaim !== old.productionRecoveryClaim)) throw new Error("production_recovery_claim_invalid");
       if (!old && binding.worldProductionRecoveryRef) {
         const grant = await readProductionGrant(this.projectRoot, binding.worldProductionRecoveryRef);
-        if (!grant.proof.pendingRound && binding.productionRecoveryClaimVersion !== 1) throw new Error("production_recovery_claim_invalid");
+        if (binding.productionRecoveryClaimVersion !== 1) throw new Error("production_recovery_claim_invalid");
       }
     }
     await validatePendingProductionClaims(this.projectRoot, next.bindings);
@@ -415,7 +415,7 @@ export class VeyaCreatorService {
             if (source.worldProductionRecoveryRef || hasWorldProductionResume(sourceRun)) {
               const grant = await this.productionRecovery(input.previousRequestId);
               worldProductionRecoveryRef = await writeProductionGrant(this.projectRoot, grant);
-              if (!grant.proof.pendingRound) productionRecoveryClaim = productionRecoveryBoundary(grant);
+              productionRecoveryClaim = productionRecoveryBoundary(grant);
             } else {
             worldDesignRecovery = await retainedWorldDesign(sourceRun, input.previousRequestId,
               id => this.flow.request<FlowRun>("get", { id }), source.worldDesignRecovery);

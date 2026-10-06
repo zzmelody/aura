@@ -184,7 +184,7 @@ test("native atmosphere cache admission preserves actual round two, immutable re
   const producer = f.make("veya-environment-lighting", saved.input, env, f.build);
   producer.steps = saved.steps;
   const bytes = JSON.stringify(f.resume), grant = await f.admit();
-  assert.equal(grant.recovery.nextRound, 3); assert.equal(grant.proof.pendingRound, undefined);
+  assert.equal(grant.recovery.nextRound, 3);
   assert.equal(grant.recovery.noNewPaidWork, true); assert.equal(JSON.stringify(grant.recovery.resume), bytes);
   const submit = producer.steps.find(s => s.kind === "action" && s.actionId === "veya/atmosphere-build")!;
   assert.equal(submit.kind, "action"); if (submit.kind !== "action") throw new Error("fixture_action_missing");
