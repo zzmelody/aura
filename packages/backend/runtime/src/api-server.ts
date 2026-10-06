@@ -3,8 +3,9 @@ import { validateMessages, validateChatModelSelection } from "@aura/protocol";
 import type { ChatEvent } from "@aura/protocol/types";
 import type { TripoPort } from "@aura/tripo";
 import { Hono } from "hono";
-import { randomUUID } from "node:crypto";
-import { readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { randomBytes, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { join } from "node:path";
 import { bodyLimit } from "hono/body-limit";
 import { stream } from "hono/streaming";
@@ -31,6 +32,7 @@ import { isLoopbackRuntimeHost } from "./runtime-config.ts";
 import {createVeyaAvatarApp,VeyaAvatarService} from "./veya-avatar-routes.ts";
 import {createVeyaNpcApp,VeyaNpcService} from "./veya-npc-routes.ts";
 import { createAiServicesApp } from "./ai-services-routes.ts";
+import { createServiceApp, ServiceRuns } from "./service-routes.ts";
 import type { AiServicesPort } from "./ai-services.ts";
 
 interface ApiServerOptions {
@@ -42,6 +44,27 @@ interface ApiServerOptions {
   flows?: OrchestrationHost;
   pluginSettings?: AuraPluginSettingsPort;
   pluginSettingsAccessible?: boolean;
+}
+
+/** Atomically publishes a 0600 loopback descriptor that local clients read. */
+async function publishDescriptor(path: string, value: object) {
+  await mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify(value), { mode: 0o600, flag: "wx" });
+    await rename(temporary, path);
+  } catch (error) {
+    await unlink(temporary).catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Removes a descriptor only while it still carries this process's token. */
+async function removeDescriptor(path: string, token: string) {
+  try {
+    const current = JSON.parse(await readFile(path, "utf8")) as { token?: string };
+    if (current.token === token) await unlink(path);
+  } catch { /* A newer runtime may already own this path. */ }
 }
 
 interface ApiLifecycle {
@@ -145,11 +168,13 @@ export function createApiApp({
   pluginSettings,
   pluginSettingsAccessible = true,
   creator,
+  services,
   lifecycle = { shuttingDown: false, admittedRequests: 0 },
 }: Omit<ApiServerOptions, "config" | "tripo"> & {
   tripo?: TripoPort;
   lifecycle?: ApiLifecycle;
   creator?: VeyaCreatorService;
+  services?: ServiceRuns;
 }) {
   const app = new Hono();
   app.use("*", localOriginPolicy);
@@ -165,6 +190,7 @@ export function createApiApp({
   app.route("/auth/codex", createCodexAuthApp(codexAuth));
   if (tripo) app.route("/tripo", createTripoApp(tripo));
   if (flows) app.route("/flows", createFlowApp(flows));
+  if (services) app.route("/services", createServiceApp(services));
   if (creator) app.route("/veya/creator/v1", createVeyaCreatorApp(creator));
   if (aiServices) app.route("/ai/services", createAiServicesApp(aiServices, pluginSettingsAccessible, creator?.bootstrapToken));
   if(creator&&flows)app.route("/veya/avatar/v1",createVeyaAvatarApp(new VeyaAvatarService(creator.projectRoot,flows,creator.bootstrapToken)));
@@ -241,19 +267,30 @@ export async function startApiServer({
   const creator = flows && isLoopbackRuntimeHost(config.host)
     ? new VeyaCreatorService(config.root, flows) : undefined;
   if (creator) await creator.initialize();
+  // Local service clients get one per-process token through .aura/service.json.
+  const services = flows && isLoopbackRuntimeHost(config.host)
+    ? new ServiceRuns(flows, randomBytes(32).toString("hex")) : undefined;
   const app = createApiApp({
     aiServices,
     codexAuth,
     tripo,
     flows,
     creator,
+    services,
     pluginSettings,
     pluginSettingsAccessible,
     lifecycle,
   });
   const { server, port } = await startHonoServer(app, config.host, config.port);
   const sessionPath = creator ? join(creator.directory, "session.json") : undefined;
+  const servicePath = services ? join(config.root, ".aura", "service.json") : undefined;
   try {
+    if (services && servicePath)
+      await publishDescriptor(servicePath, {
+        protocol: "aura-service/1",
+        base_url: `${formatHttpUrl(config.host, port)}/services/`,
+        token: services.token,
+      });
     if (creator && sessionPath) {
       const temporary = `${sessionPath}.${randomUUID()}.tmp`;
       try {
@@ -271,6 +308,7 @@ export async function startApiServer({
       if (lifecycle.shuttingDown) return;
       lifecycle.shuttingDown = true;
       await closeHonoServer(server);
+      if (services && servicePath) await removeDescriptor(servicePath, services.token);
       if (creator && sessionPath) {
         try {
           const current = JSON.parse(await readFile(sessionPath, "utf8")) as { token?: string };
