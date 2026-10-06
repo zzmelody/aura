@@ -145,6 +145,10 @@ test("cancel and resume forward the command id to the root Run", async () => {
     assert.deepEqual(calls.filter((c) => c.method === operation).at(-1)?.params, { id: root.id, requestId: commandId });
   }
   assert.equal((await send(`/runs/${root.id}/cancel`, {})).status, 400);
+  const commandId = randomUUID();
+  assert.equal((await send(`/runs/${root.id}/resume`, { commandId, input: { orderId: "o1" } })).status, 200);
+  assert.deepEqual(calls.filter((c) => c.method === "services/resume").at(-1)?.params,
+    { id: root.id, requestId: commandId, input: { orderId: "o1" } });
 });
 
 test("failure codes never leak free text", () => {

@@ -162,6 +162,37 @@ export default defineCapability({ title: "media", open(host) { return {
     await host.close();
   }));
 
+test("the serving provider admits and projects its plugin's service Flows only", () =>
+  fixture(async (dir) => {
+    const providers = join(dir, "capabilities");
+    await mkdir(join(providers, "creator"), { recursive: true });
+    await writeFile(join(providers, "creator", "creator.capability.js"), `
+import { defineCapability } from ${JSON.stringify(capabilityApi)};
+export default defineCapability({ title: "creator", open() { return {
+  serves: ["wish"],
+  admit(request) {
+    if (request.input.text === "busy") throw new Error("worker_busy");
+    return { ...request.input, admittedFor: request.requestId };
+  },
+  view(run) { return { stage: run.status }; },
+  invoke() { return null; },
+}; } });
+`);
+    const host = new PluginCapabilities({ dataRoot: join(dir, "data") });
+    await host.replace([root(providers, "veya")]);
+    const signal = new AbortController().signal;
+    assert.deepEqual(await host.admit("veya/wish", "r1", { text: "lamp" }, signal), { text: "lamp", admittedFor: "r1" });
+    await assert.rejects(host.admit("veya/wish", "r2", { text: "busy" }, signal), /^Error: worker_busy$/u);
+    // A provider without a resume hook refuses resume input.
+    await assert.rejects(host.resume(run("z", "veya", { flow: { ...run("z", "veya").flow, id: "veya/wish" } }), { a: 1 }, signal),
+      /resume_input_unsupported/u);
+    // Flows nobody serves start with their input unchanged and have no projection.
+    assert.deepEqual(await host.admit("veya/other", "r3", { a: 1 }, signal), { a: 1 });
+    assert.deepEqual(await host.view(run("x", "veya", { flow: { ...run("x", "veya").flow, id: "veya/wish" } })), { stage: "completed" });
+    assert.equal(await host.view(run("y", "veya")), undefined);
+    await host.close();
+  }));
+
 test("Action capability narrowing forwards step and idempotency identity", async () => {
   const seen: unknown[] = [];
   const granted = actionCapabilities({ id: "veya/world-list", capabilities: ["veya/world-agent"] },

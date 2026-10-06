@@ -197,6 +197,13 @@ export class PluginCapabilities implements AuraCapabilityClient {
     return jsonValue(admitted, `${flowId} 准入入参`);
   }
 
+  /** Lets the serving provider re-admit `input` before a service Run resumes. */
+  async resume(run: FlowRun, input: JsonValue, signal: AbortSignal): Promise<void> {
+    const provider = this.#server(run.flow.id);
+    if (!provider?.resume) throw new Error("resume_input_unsupported");
+    await provider.resume(structuredClone(run), structuredClone(input), signal);
+  }
+
   /** Projects a root service Run through its serving provider. Failures are logged, never thrown. */
   async view(run: FlowRun): Promise<JsonValue | undefined> {
     const provider = this.#server(run.flow.id);

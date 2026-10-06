@@ -109,6 +109,13 @@ export class ServiceRuns {
   }
 
   async command(runId: string, operation: "cancel" | "resume", source: unknown): Promise<ServiceRunView> {
+    if (operation === "resume" && isRecord(source) && "input" in source) {
+      // Resume with input lets the serving provider re-admit data, such as a refreshed scope.
+      const body = exact<{ commandId: string; input: JsonValue }>(source, { commandId: isUuid, input: json });
+      await this.#root(runId);
+      await this.#flows.request("services/resume", { id: runId, requestId: body.commandId, input: body.input });
+      return this.get(runId);
+    }
     const body = exact<{ commandId: string }>(source, { commandId: isUuid });
     await this.#root(runId);
     await this.#flows.request(operation, { id: runId, requestId: body.commandId });

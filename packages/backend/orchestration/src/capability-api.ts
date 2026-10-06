@@ -77,6 +77,12 @@ export interface CapabilityProvider {
   admit?(request: ServiceAdmission): Promise<JsonValue> | JsonValue;
   /** Bounded plugin-specific projection of one root service Run, returned to clients as `view`. */
   view?(run: FlowRun): Promise<JsonValue> | JsonValue;
+  /**
+   * Re-admits client data before a paused service Run resumes, e.g. a refreshed
+   * scope. Refuse with a lowercase snake_case code. Without this hook a resume
+   * carrying `input` is refused.
+   */
+  resume?(run: FlowRun, input: JsonValue, signal: AbortSignal): Promise<void> | void;
   invoke(
     operation: string,
     input: JsonValue,

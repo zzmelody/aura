@@ -693,6 +693,16 @@ export async function apply(ctx: Context) {
         case "services/view":
           data = (await auraCapabilities.view(engine.get(id))) ?? null;
           break;
+        case "services/resume": {
+          const request = z.object({ id: z.uuid(), requestId: z.uuid(), input: z.json().optional() }).strict().parse(params);
+          if (request.input !== undefined)
+            await auraCapabilities.resume(engine.get(request.id), request.input, AbortSignal.timeout(60_000)).catch((error: unknown) => {
+              const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(String((error as Error)?.message ?? ""))?.[0];
+              throw new FlowError(code ?? "resume_refused", 422);
+            });
+          data = await engine.command(request.id, "resume", { requestId: request.requestId });
+          break;
+        }
         case "wait":
           data = await engine.wait(id);
           break;
