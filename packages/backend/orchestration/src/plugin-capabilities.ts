@@ -12,6 +12,8 @@ import {
   type CapabilityProvider,
 } from "./capability-api.ts";
 import { jsonValue } from "./schema.ts";
+import type { GeneratedArtifacts } from "./generated-artifacts.ts";
+import { inspectArtifact } from "./artifact-media.ts";
 import type { CapabilityRoot } from "./types.ts";
 
 const SETTLE_TIMEOUT_MS = 30_000;
@@ -23,6 +25,12 @@ interface OpenPlugin {
 
 type Log = (level: "info" | "warn" | "error", message: string, data?: JsonValue) => void;
 
+/** Host media ports shared with built-in producers. Optional so tests can omit them. */
+export interface CapabilityMedia {
+  artifacts: Pick<GeneratedArtifacts, "put" | "read">;
+  saveImage(input: { data: Uint8Array; mediaType: "image/png" | "image/jpeg" | "image/webp"; name: string }): Promise<unknown>;
+}
+
 /**
  * Owns plugin-contributed capability providers. Providers open once per plugin
  * version and are not hot reloaded; a code change needs an Aura restart.
@@ -31,6 +39,7 @@ export class PluginCapabilities implements AuraCapabilityClient {
   readonly #builtins: AuraCapabilityClient | undefined;
   readonly #dataRoot: string;
   readonly #log: Log;
+  readonly #media: CapabilityMedia | undefined;
   readonly #plugins = new Map<string, OpenPlugin>();
   #runs: (id: string) => FlowRun | undefined = () => undefined;
   #allRuns: () => Iterable<FlowRun> = () => [];
@@ -40,10 +49,12 @@ export class PluginCapabilities implements AuraCapabilityClient {
     builtins?: AuraCapabilityClient;
     dataRoot: string;
     log?: Log;
+    media?: CapabilityMedia;
   }) {
     this.#builtins = options.builtins;
     this.#dataRoot = options.dataRoot;
     this.#log = options.log ?? (() => undefined);
+    this.#media = options.media;
   }
 
   /** Connects the Run store once the engine exists. */
@@ -121,9 +132,29 @@ export class PluginCapabilities implements AuraCapabilityClient {
           throw new Error(`Aura host capability is unavailable: ${capability}`);
         return this.#builtins.invoke(capability, operation, input, signal);
       },
+      artifacts: Object.freeze({
+        put: (bytes: Uint8Array, signal: AbortSignal) => this.#requireMedia().artifacts.put(bytes, signal),
+        read: (artifactId: string, signal: AbortSignal, limitBytes?: number) =>
+          this.#requireMedia().artifacts.read(artifactId, signal, limitBytes),
+      }),
+      attachments: Object.freeze({
+        image: async (bytes: Uint8Array, name: string) => {
+          const media = await inspectArtifact(Buffer.from(bytes));
+          if (media.kind !== "image") throw new Error("Attachment must be a PNG, JPEG or WebP image.");
+          const saved = await this.#requireMedia().saveImage({
+            data: bytes, mediaType: media.mimeType as "image/png" | "image/jpeg" | "image/webp", name,
+          });
+          return jsonValue(saved, "图片附件");
+        },
+      }),
       log: (level: "info" | "warn" | "error", message: string, data?: JsonValue) =>
         this.#log(level, `[${pluginId}] ${message}`, data),
     });
+  }
+
+  #requireMedia(): CapabilityMedia {
+    if (!this.#media) throw new Error("Aura artifact storage is unavailable in this host.");
+    return this.#media;
   }
 
   async invoke(

@@ -406,6 +406,10 @@ export async function apply(ctx: Context) {
       ? new AuraCapabilityRouter(capabilityRoutes)
       : undefined,
     dataRoot: resolve(process.env.AURA_FLOW_CWD ?? process.cwd(), ".aura", "plugins"),
+    media: {
+      artifacts,
+      saveImage: (input) => ctx.attachments.saveImage(input),
+    },
     log: (level, message, data) =>
       process.stderr.write(`${JSON.stringify({ level, message, data })}\n`),
   });

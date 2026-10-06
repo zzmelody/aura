@@ -128,6 +128,40 @@ test("a provider module without defineCapability fails the whole plugin and leav
     await assert.rejects(async () => host.invoke("broken/a-good", "op", {}, new AbortController().signal), /unavailable/u);
   }));
 
+test("providers store and read verified artifacts and admit image attachments", () =>
+  fixture(async (dir) => {
+    const providers = join(dir, "capabilities");
+    await mkdir(join(providers, "media"), { recursive: true });
+    await writeFile(join(providers, "media", "media.capability.js"), `
+import { defineCapability } from ${JSON.stringify(capabilityApi)};
+export default defineCapability({ title: "media", open(host) { return {
+  async invoke(operation, input, call) {
+    if (operation === "put") return (await host.artifacts.put(Buffer.from(input.base64, "base64"), call.signal)).artifactId;
+    if (operation === "read") { const r = await host.artifacts.read(input.id, call.signal); return { bytes: r.bytes.length, format: r.artifact.format }; }
+    if (operation === "attach") { const r = await host.artifacts.read(input.id, call.signal); return host.attachments.image(r.bytes, "x.png"); }
+    throw new Error(operation);
+  } }; } });
+`);
+    const { GeneratedArtifacts } = await import("../src/generated-artifacts.ts");
+    const sharp = (await import("sharp")).default;
+    const png = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#c00" } }).png().toBuffer();
+    const saved: unknown[] = [];
+    const host = new PluginCapabilities({
+      dataRoot: join(dir, "data"),
+      media: { artifacts: new GeneratedArtifacts(join(dir, "store")), async saveImage(input) { saved.push(input.mediaType); return { attachmentId: "a1" }; } },
+    });
+    await host.replace([root(providers, "example.media")]);
+    const signal = new AbortController().signal;
+    const id = await host.invoke("example.media/media", "put", { base64: png.toString("base64") }, signal) as string;
+    assert.match(id, /^[a-f0-9]{64}$/u);
+    assert.deepEqual(await host.invoke("example.media/media", "read", { id }, signal), { bytes: png.length, format: "png" });
+    assert.deepEqual(await host.invoke("example.media/media", "attach", { id }, signal), { attachmentId: "a1" });
+    assert.deepEqual(saved, ["image/png"]);
+    await assert.rejects(async () => host.invoke("example.media/media", "read", { id: "0".repeat(64) }, signal), /artifact_missing/u);
+    await assert.rejects(async () => host.invoke("example.media/media", "put", { base64: Buffer.from("not media").toString("base64") }, signal), /artifact_format_unsupported/u);
+    await host.close();
+  }));
+
 test("Action capability narrowing forwards step and idempotency identity", async () => {
   const seen: unknown[] = [];
   const granted = actionCapabilities({ id: "veya/world-list", capabilities: ["veya/world-agent"] },

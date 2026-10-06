@@ -24,6 +24,35 @@ export class GeneratedArtifacts {
     this.root = root;
   }
 
+  /** Store verified media bytes under their sha256. The format comes from content, never a name. */
+  async put(bytes: Uint8Array, signal: AbortSignal) {
+    signal.throwIfAborted();
+    const buffer = Buffer.from(bytes);
+    if (buffer.length < 1 || buffer.length > MAX_MODEL_BYTES)
+      throw new ActionFailure("artifact_size_limit: Artifacts must be 1 byte to 200 MiB.");
+    let media;
+    try { media = await inspectArtifact(buffer); }
+    catch { throw new ActionFailure("artifact_format_unsupported: Expected PNG, JPEG, WebP, GLB, WAV or MP4."); }
+    const artifactId = artifactHash(buffer);
+    await publishBytes(this.root, `${artifactId}.${media.format}`, buffer, signal);
+    return { artifactId, ...media };
+  }
+
+  /** Read one stored artifact back by ID, verifying its hash. */
+  async read(artifactId: string, signal: AbortSignal, limit = MAX_MODEL_BYTES) {
+    if (!/^[a-f0-9]{64}$/u.test(artifactId))
+      throw new ActionFailure("invalid_artifact_id: Expected a 64-character artifact ID.");
+    for (const format of ["glb", "png", "jpeg", "webp", "wav", "mp4"]) {
+      let bytes: Buffer;
+      try { bytes = await readBoundedFile(join(this.root, `${artifactId}.${format}`), limit, signal, this.root); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; throw error; }
+      if (artifactHash(bytes) !== artifactId)
+        throw new ActionFailure("artifact_hash_mismatch: Artifact bytes changed.");
+      return { bytes, artifact: { artifactId, ...(await inspectArtifact(bytes)) } };
+    }
+    throw new ActionFailure("artifact_missing: Artifact does not exist.");
+  }
+
   /** Admit a user image into the same content-addressed store as generated media. */
   async registerImage(bytes: Uint8Array, signal: AbortSignal) {
     signal.throwIfAborted();

@@ -10,6 +10,15 @@ export interface CapabilityCall {
   readonly idempotencyKey?: string;
 }
 
+export interface CapabilityArtifact {
+  readonly artifactId: string;
+  readonly format: string;
+  readonly mimeType: string;
+  readonly bytes: number;
+  readonly width?: number;
+  readonly height?: number;
+}
+
 /** Host services handed to a provider once, when Aura activates its plugin. */
 export interface CapabilityHost {
   readonly pluginId: string;
@@ -21,6 +30,17 @@ export interface CapabilityHost {
   readonly runs: {
     get(id: string): FlowRun | undefined;
     list(filter?: { flowId?: string; status?: readonly string[] }): FlowRun[];
+  };
+  /** Aura's content-addressed artifact store, shared with built-in producers such as Tripo. */
+  readonly artifacts: {
+    /** Stores bytes and returns their sha256 ID. Accepts PNG, JPEG, WebP, GLB, WAV and MP4. */
+    put(bytes: Uint8Array, signal: AbortSignal): Promise<CapabilityArtifact>;
+    /** Reads an artifact by ID and verifies its hash. Throws when missing or changed. */
+    read(artifactId: string, signal: AbortSignal, limitBytes?: number): Promise<{ bytes: Buffer; artifact: CapabilityArtifact }>;
+  };
+  /** Admits a raster into the session attachment store so a Flow Agent can see it. */
+  readonly attachments: {
+    image(bytes: Uint8Array, name: string): Promise<JsonValue>;
   };
   /** Calls a built-in host capability. Plugin-contributed capabilities are not reachable. */
   invoke(
