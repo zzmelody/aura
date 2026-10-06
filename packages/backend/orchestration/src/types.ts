@@ -21,6 +21,7 @@ export interface HostOptions {
   actionRoot?: string;
   flowRoots?: ContributionRoot[];
   actionRoots?: ContributionRoot[];
+  capabilityRoots?: CapabilityRoot[];
   plugins?: AuraPluginStatus[];
   worldAgentSessionPath?: string;
   tripoCredentialPath?: string;
@@ -36,9 +37,15 @@ export interface ContributionRoot {
   capabilities?: string[];
 }
 
+/** A plugin's capability provider directory and its opaque plugins.json settings. */
+export interface CapabilityRoot extends ContributionRoot {
+  settings?: import("@aura/protocol/types").JsonValue;
+}
+
 export interface ContributionConfiguration {
   flowRoots: ContributionRoot[];
   actionRoots: ContributionRoot[];
+  capabilityRoots: CapabilityRoot[];
   plugins: AuraPluginStatus[];
 }
 
@@ -88,6 +95,8 @@ export interface EngineOptions {
   refreshFlows(): Promise<void>;
   presets(): Promise<FlowCatalog["presets"]>;
   plugins?: AuraPluginStatus[];
+  /** Called once per root Run after it reaches a terminal status. */
+  onRootSettled?(run: FlowRun): Promise<void>;
   actions?: {
     registry: Pick<ActionRegistry, "snapshot" | "catalog">;
     runtime: Pick<ActionRuntime, "execute">;

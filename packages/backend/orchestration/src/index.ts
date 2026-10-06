@@ -189,6 +189,7 @@ export class OrchestrationHost {
           AURA_FLOW_ROOTS: JSON.stringify(flowRoots),
           AURA_ACTION_ROOTS: JSON.stringify(actionRoots),
           AURA_PLUGIN_STATUSES: JSON.stringify(this.options.plugins ?? []),
+          AURA_CAPABILITY_ROOTS: JSON.stringify(this.options.capabilityRoots ?? []),
           ...(this.options.worldAgentSessionPath
             ? {
                 AURA_VEYA_WORLD_AGENT_SESSION_PATH:
@@ -337,6 +338,7 @@ export class OrchestrationHost {
     const next = {
       flowRoots: [{ root: flowRoot }, ...configuration.flowRoots],
       actionRoots: [{ root: actionRoot }, ...configuration.actionRoots],
+      capabilityRoots: configuration.capabilityRoots,
       plugins: configuration.plugins,
     };
     await this.request("plugins/configure", next, AbortSignal.timeout(60_000));
@@ -348,6 +350,7 @@ export class OrchestrationHost {
       ...root,
       ...(root.plugin ? { plugin: { ...root.plugin } } : {}),
     }));
+    this.options.capabilityRoots = structuredClone(configuration.capabilityRoots);
     this.options.plugins = configuration.plugins.map((plugin) => ({
       ...plugin,
     }));

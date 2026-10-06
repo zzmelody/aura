@@ -1,7 +1,7 @@
 /** Composition root shared by Aura's server and desktop application outputs. */
 import { CodexSubscriptionAuth, readAiServices } from "@aura/dsh-auth";
 import { AiServices } from "./ai-services.ts";
-import { AuraPluginManager } from "@aura/extensions";
+import { AuraPluginManager, type AuraPluginResolution, type PluginContributionRoot } from "@aura/extensions";
 import { OrchestrationHost } from "@aura/orchestration";
 import { createTripoService } from "@aura/tripo";
 import { startApiServer } from "./api-server.ts";
@@ -29,6 +29,21 @@ function throwCleanupFailures(results: PromiseSettledResult<void>[]): void {
     .map((result) => result.reason);
   if (failures.length)
     throw new AggregateError(failures, "Aura runtime cleanup failed.");
+}
+
+/** Projects resolved plugin roots into the orchestration host's contribution shape. */
+function contributions(resolution: AuraPluginResolution) {
+  const root = ({ path, pluginRoot, namespace, plugin, capabilities }: PluginContributionRoot) =>
+    ({ root: path, pluginRoot, namespace, plugin, capabilities });
+  return {
+    flowRoots: resolution.flowRoots.map(root),
+    actionRoots: resolution.actionRoots.map(root),
+    capabilityRoots: resolution.capabilityRoots.map((item) => ({
+      ...root(item),
+      ...(item.settings === undefined ? {} : { settings: item.settings }),
+    })),
+    plugins: resolution.plugins,
+  };
 }
 
 /** Creates one isolated Aura backend runtime and all services it owns. */
@@ -73,51 +88,13 @@ export async function startAuraRuntime(
       dshHome: config.dshHome,
       modelURL: demoModel.url,
       codexModel: config.codexModel,
-      flowRoots: plugins.flowRoots.map(
-        ({ path, pluginRoot, namespace, plugin, capabilities }) => ({
-          root: path,
-          pluginRoot,
-          namespace,
-          plugin,
-          capabilities,
-        }),
-      ),
-      actionRoots: plugins.actionRoots.map(
-        ({ path, pluginRoot, namespace, plugin, capabilities }) => ({
-          root: path,
-          pluginRoot,
-          namespace,
-          plugin,
-          capabilities,
-        }),
-      ),
-      plugins: plugins.plugins,
+      ...contributions(plugins),
       worldAgentSessionPath: config.worldAgentSessionPath,
       tripoCredentialPath: config.tripoCredentialPath,
       tripoRegion: config.tripoRegion,
     });
     pluginManager.setActivator((resolution) =>
-      flows!.configureContributions({
-        flowRoots: resolution.flowRoots.map(
-          ({ path, pluginRoot, namespace, plugin, capabilities }) => ({
-            root: path,
-            pluginRoot,
-            namespace,
-            plugin,
-            capabilities,
-          }),
-        ),
-        actionRoots: resolution.actionRoots.map(
-          ({ path, pluginRoot, namespace, plugin, capabilities }) => ({
-            root: path,
-            pluginRoot,
-            namespace,
-            plugin,
-            capabilities,
-          }),
-        ),
-        plugins: resolution.plugins,
-      }),
+      flows!.configureContributions(contributions(resolution)),
     );
     api = await startApiServer({
       config,

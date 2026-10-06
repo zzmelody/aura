@@ -106,6 +106,75 @@ function request(flowId = "parent", value = 2) {
   };
 }
 
+test("child Runs record their root, report lands on the root, and the root settles once", async () => {
+  const grandchild = loaded("grandchild", (ctx, input) => ctx.sequence({ id: "main" }, async (scope) => {
+    await scope.report({ stage: "deep" });
+    return input as { value: number };
+  }));
+  const child = loaded("child", (ctx, input) => ctx.sequence({ id: "main" }, async (scope) => {
+    const out = await scope.flow({ id: "inner", flow: "grandchild", input });
+    return out.output as { value: number };
+  }));
+  const parent = loaded("parent", (ctx, input) => ctx.sequence({ id: "main" }, async (scope) => {
+    await scope.report({ stage: "start" });
+    const out = await scope.flow({ id: "outer", flow: "child", input });
+    return out.output as { value: number };
+  }));
+  const settled: string[] = [];
+  const records = table();
+  const registry = new Map([parent, child, grandchild].map((flow) => [flow.id, flow]));
+  const engine = new FlowEngine({
+    domain: { table: () => records },
+    registry: { get: (id) => registry.get(id)!, catalog: () => [] },
+    refreshFlows: async () => {},
+    presets: async () => [],
+    sessions: { execute: async () => "unused", history: async (step) => ({ sessionId: step.sessionId, preset: step.preset, hasMore: false, entries: [] }) },
+    onRootSettled: async (run) => { settled.push(`${run.id}:${run.status}`); },
+  });
+  await engine.initialize();
+  const root = await engine.start(request());
+  const done = await engine.wait(root.id);
+  assert.equal(done.status, "completed");
+  await until(() => engine.get(root.id).settledAt !== undefined);
+  const all = [...records.entries()].map(([, run]) => run);
+  assert.equal(all.length, 3);
+  for (const run of all.filter((item) => item.parent)) assert.equal(run.rootRunId, root.id);
+  assert.equal(engine.get(root.id).rootRunId, undefined);
+  assert.deepEqual(engine.get(root.id).report, { stage: "deep" });
+  assert.ok(engine.get(root.id).settledAt);
+  assert.deepEqual(settled, [`${root.id}:completed`]);
+  await engine.close();
+
+  // A restarted engine replays nothing for an already settled root, but does for an unsettled one.
+  await records.update(root.id, (run) => ({ ...run, settledAt: undefined }));
+  const again: string[] = [];
+  const restarted = new FlowEngine({
+    domain: { table: () => records },
+    registry: { get: (id) => registry.get(id)!, catalog: () => [] },
+    refreshFlows: async () => {},
+    presets: async () => [],
+    sessions: { execute: async () => "unused", history: async (step) => ({ sessionId: step.sessionId, preset: step.preset, hasMore: false, entries: [] }) },
+    onRootSettled: async (run) => { again.push(run.id); },
+  });
+  await restarted.initialize();
+  await until(() => again.length === 1);
+  assert.deepEqual(again, [root.id]);
+  await restarted.close();
+});
+
+test("report rejects values over 4 KiB", async () => {
+  const flow = loaded("parent", (ctx) => ctx.sequence({ id: "main" }, async (scope) => {
+    await scope.report({ blob: "x".repeat(5_000) });
+    return { value: 1 };
+  }));
+  const { engine } = await setup([flow]);
+  const run = await engine.start(request());
+  const done = await engine.wait(run.id);
+  assert.equal(done.status, "failed");
+  assert.match(done.error ?? "", /4096/u);
+  await engine.close();
+});
+
 test("configured creator admission and nested Flows keep the original provider after settings change", async () => {
   let selected = { provider: "aura-custom-" + "a".repeat(32), model: "model-one", reasoningEffort: "off", timeoutMs: 1000 };
   const first = { ...selected };

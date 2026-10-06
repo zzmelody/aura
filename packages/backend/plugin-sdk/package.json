@@ -1,6 +1,6 @@
 {
   "name": "@aura/plugin-sdk",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "aura": {
@@ -10,6 +10,7 @@
   "exports": {
     "./action": "./src/action.ts",
     "./flow": "./src/flow.ts",
+    "./capability": "./src/capability.ts",
     "./package.json": "./package.json"
   },
   "scripts": {

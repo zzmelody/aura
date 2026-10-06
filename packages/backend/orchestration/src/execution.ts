@@ -45,6 +45,7 @@ import { agentConfig } from "./agent-config.ts";
 interface ExecutionOptions {
   get(): FlowRun;
   update(change: (run: FlowRun) => FlowRun): Promise<FlowRun>;
+  report(value: unknown): Promise<void>;
   flow: LoadedFlow;
   actions: ReadonlyMap<string, LoadedAction>;
   ports: Pick<EngineOptions, "sessions" | "presets" | "actions">;
@@ -693,6 +694,7 @@ export class FlowExecution {
           flow: this.flow,
           memo: this.memo,
           checkpoint: this.checkpoint,
+          report: (value) => this.options.report(value),
         },
         (context) => this.options.flow.run(context, this.options.get().input),
       );

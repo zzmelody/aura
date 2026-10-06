@@ -296,6 +296,9 @@ export const runSchema = z.object({
       stepKey: z.string().min(1),
     })
     .optional(),
+  rootRunId: z.uuid().optional(),
+  report: z.json().optional(),
+  settledAt: z.number().optional(),
   ancestry: z.array(contributionIdSchema).max(8).optional(),
 });
 

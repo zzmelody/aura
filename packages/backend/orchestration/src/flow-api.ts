@@ -107,6 +107,8 @@ export interface FlowScope extends FlowContext {
     prompt: string;
     schema: S;
   }): Promise<z.output<S>>;
+  /** Stores a small (≤4 KiB) last-wins progress value on the root Run. Not a step. */
+  report(value: JsonValue): Promise<void>;
 }
 
 export interface FlowDefinition<

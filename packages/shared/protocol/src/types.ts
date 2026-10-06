@@ -133,6 +133,8 @@ export interface AuraPluginConfigurationEntry {
   path: string;
   enabled: boolean;
   trust: "local";
+  /** Opaque plugin-owned JSON passed to its capability providers. */
+  settings?: JsonValue;
 }
 
 export interface AuraPluginConfiguration {
@@ -318,6 +320,12 @@ export interface FlowRun {
   }[];
   /** Present only for an engine-managed nested Flow Run. */
   parent?: FlowParentReference;
+  /** Top-level Run of this tree; absent on the root itself. */
+  rootRunId?: string;
+  /** Last small progress value the Flow reported, at most 4 KiB. */
+  report?: JsonValue;
+  /** When the owning plugin's providers were told this root Run ended. */
+  settledAt?: number;
   /** Canonical Flow ids above this Run, used for cycle and depth checks. */
   ancestry?: string[];
 }

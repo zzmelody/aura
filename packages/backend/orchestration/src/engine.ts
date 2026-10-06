@@ -100,6 +100,39 @@ export class FlowEngine {
       (id) => this.execute(id),
     );
   }
+  private settling = new Set<string>();
+  private settlements: Promise<unknown> = Promise.resolve();
+  /** Notifies the owner once per terminal root Run, including after a restart. */
+  private settleLater(run: FlowRun) {
+    if (
+      !this.options.onRootSettled ||
+      run.parent ||
+      run.settledAt !== undefined ||
+      !terminal(run.status) ||
+      this.settling.has(run.id)
+    )
+      return;
+    this.settling.add(run.id);
+    this.settlements = this.settlements.then(async () => {
+      try {
+        await this.options.onRootSettled!(run);
+        await this.runs.update(run.id, (current) => ({
+          ...current,
+          settledAt: Date.now(),
+        }));
+      } catch {
+        // The provider manager logs its own failures; storage failures retry on restart.
+      } finally {
+        this.settling.delete(run.id);
+      }
+    });
+  }
+  /** Stores a small last-wins progress value on the Run tree's root. */
+  private async report(id: string, value: unknown) {
+    const report = jsonValue(value, "Flow 进度", 4 * 1_024);
+    const run = this.get(id);
+    await this.update(run.rootRunId ?? run.id, (current) => ({ ...current, report }));
+  }
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     const task = this.operations.then(work);
     this.operations = task.catch(() => undefined);
@@ -112,6 +145,7 @@ export class FlowEngine {
         updatedAt: Date.now(),
       }));
       this.scheduler.notify();
+      this.settleLater(run);
       return run;
     } catch (error) {
       this.storageFailures.add(id);
@@ -138,6 +172,7 @@ export class FlowEngine {
         error: "父 Flow 已结束，子 Flow 已取消。",
       }));
     }
+    for (const [, run] of this.runs.entries()) this.settleLater(run);
     this.initialized = true;
     this.scheduler.kick();
   }
@@ -373,6 +408,7 @@ export class FlowEngine {
           ({ id, sourceHash, plugin }) => ({ id, sourceHash, plugin }),
         ),
         parent: { runId: parentRunId, stepKey: step.stepKey! },
+        rootRunId: parent.rootRunId ?? parent.id,
         ancestry: [...(parent.ancestry ?? []), parent.flow.id],
       };
       await this.runs.put(run.id, run);
@@ -527,6 +563,7 @@ export class FlowEngine {
       },
       get: () => this.get(id),
       update: (change) => this.update(id, change),
+      report: (value) => this.report(id, value),
     });
     this.running.set(id, execution);
     try {
@@ -865,5 +902,6 @@ export class FlowEngine {
     }
     await Promise.allSettled([...this.scheduler.running.values()]);
     await Promise.allSettled([...this.nestedTasks.values()]);
+    await this.settlements;
   }
 }

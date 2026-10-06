@@ -15,6 +15,7 @@ import type {
   AuraPluginIdentity,
   AuraPluginSettingsState,
   AuraPluginStatus,
+  JsonValue,
 } from "@aura/protocol/types";
 import { satisfies, valid, validRange } from "semver";
 import { z } from "zod";
@@ -27,6 +28,10 @@ const configEntrySchema = z
     path: z.string().trim().min(1).max(4_096),
     enabled: z.boolean(),
     trust: z.literal("local"),
+    settings: z
+      .json()
+      .refine((value) => JSON.stringify(value).length <= 64 * 1_024)
+      .optional(),
   })
   .strict();
 
@@ -71,9 +76,12 @@ const manifestSchema = z
       .object({
         actions: z.string().trim().min(1).optional(),
         flows: z.string().trim().min(1).optional(),
+        capabilities: z.string().trim().min(1).optional(),
       })
       .strict()
-      .refine((value) => Boolean(value.actions || value.flows)),
+      .refine((value) =>
+        Boolean(value.actions || value.flows || value.capabilities),
+      ),
     capabilities: z.array(z.string().trim().min(1)).default([]),
   })
   .strict();
@@ -86,9 +94,15 @@ export interface PluginContributionRoot {
   capabilities: string[];
 }
 
+/** A plugin's provider directory plus the opaque settings handed to its providers. */
+export interface PluginCapabilityRoot extends PluginContributionRoot {
+  settings?: JsonValue;
+}
+
 export interface AuraPluginResolution {
   actionRoots: PluginContributionRoot[];
   flowRoots: PluginContributionRoot[];
+  capabilityRoots: PluginCapabilityRoot[];
   plugins: AuraPluginStatus[];
 }
 
@@ -116,9 +130,16 @@ function inside(root: string, path: string): boolean {
   );
 }
 
+type ContributionKind = "action" | "flow" | "capability";
+const kindLabels: Record<ContributionKind, string> = {
+  action: "Action",
+  flow: "Flow",
+  capability: "Capability",
+};
+
 async function contributionEntries(
   directory: string,
-  kind: "action" | "flow",
+  kind: ContributionKind,
 ): Promise<string[]> {
   const result: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -135,14 +156,14 @@ async function contributionEntries(
 async function validateContributionRoot(
   pluginRoot: string,
   configuredPath: string,
-  kind: "action" | "flow",
+  kind: ContributionKind,
 ): Promise<string> {
   let root: string;
   try {
     root = await realpath(resolve(pluginRoot, configuredPath));
   } catch {
     throw new AuraPluginConfigurationError(
-      `${kind === "action" ? "Action" : "Flow"} 贡献目录不存在。`,
+      `${kindLabels[kind]} 贡献目录不存在。`,
     );
   }
   if (root === pluginRoot || !inside(pluginRoot, root))
@@ -178,6 +199,7 @@ async function validatePlugin(
   capabilities: string[];
   actionRoot?: string;
   flowRoot?: string;
+  capabilityRoot?: string;
 }> {
   let root: string;
   try {
@@ -217,6 +239,7 @@ async function validatePlugin(
     throw new AuraPluginConfigurationError(
       `插件不支持 Plugin SDK ${options.pluginSdkVersion}。`,
     );
+  // Declared capabilities are built-ins only; a plugin's own providers are implicit.
   const supported = new Set(options.supportedCapabilities ?? []);
   const unsupported = manifest.capabilities.filter(
     (item) => !supported.has(item),
@@ -234,6 +257,8 @@ async function validatePlugin(
       pluginRequire.resolve("@aura/plugin-sdk/action");
     if (manifest.contributes.flows)
       pluginRequire.resolve("@aura/plugin-sdk/flow");
+    if (manifest.contributes.capabilities)
+      pluginRequire.resolve("@aura/plugin-sdk/capability");
   } catch {
     throw new AuraPluginConfigurationError(
       "插件依赖 @aura/plugin-sdk 未安装或不可解析。",
@@ -258,10 +283,22 @@ async function validatePlugin(
     name: manifest.name,
     version: manifest.version,
   };
+  const capabilityRoot = manifest.contributes.capabilities
+    ? await validateContributionRoot(
+        root,
+        manifest.contributes.capabilities,
+        "capability",
+      )
+    : undefined;
+  // A plugin may always call its own providers; they are granted by ID.
+  const own = capabilityRoot
+    ? (await readdir(capabilityRoot)).map((local) => `${manifest.id}/${local}`)
+    : [];
   return {
     identity,
     pluginRoot: root,
-    capabilities: [...manifest.capabilities],
+    capabilities: [...manifest.capabilities, ...own.sort()],
+    ...(capabilityRoot ? { capabilityRoot } : {}),
     ...(manifest.contributes.actions
       ? {
           actionRoot: await validateContributionRoot(
@@ -351,6 +388,7 @@ async function resolveAuraPluginConfiguration(
   const result: AuraPluginResolution = {
     actionRoots: [],
     flowRoots: [],
+    capabilityRoots: [],
     plugins: [],
   };
 
@@ -381,6 +419,11 @@ async function resolveAuraPluginConfiguration(
       });
       if (plugin.actionRoot) result.actionRoots.push(root(plugin.actionRoot));
       if (plugin.flowRoot) result.flowRoots.push(root(plugin.flowRoot));
+      if (plugin.capabilityRoot)
+        result.capabilityRoots.push({
+          ...root(plugin.capabilityRoot),
+          ...(entry.settings === undefined ? {} : { settings: entry.settings }),
+        });
       result.plugins.push({
         ...plugin.identity,
         enabled: true,
@@ -488,13 +531,22 @@ export class AuraPluginManager {
       throw new AuraPluginConfigurationError(
         "插件目录设置不符合 Aura 配置规则。",
       );
+    // The settings UI edits paths only; keep each path's plugin-owned settings.
+    const stored = await readAuraPluginConfiguration(this.#options.configPath);
+    const settingsByPath = new Map(
+      stored.plugins.map((entry) => [entry.path, entry.settings]),
+    );
     const configuration: AuraPluginConfiguration = {
       version: 1,
-      plugins: parsed.data.plugins.map((entry) => ({
-        path: entry.path,
-        enabled: entry.enabled,
-        trust: "local",
-      })),
+      plugins: parsed.data.plugins.map((entry) => {
+        const settings = settingsByPath.get(entry.path);
+        return {
+          path: entry.path,
+          enabled: entry.enabled,
+          trust: "local",
+          ...(settings === undefined ? {} : { settings }),
+        };
+      }),
     };
     const resolution = await resolveAuraPluginConfiguration(
       configuration,

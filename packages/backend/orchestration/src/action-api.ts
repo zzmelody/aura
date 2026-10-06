@@ -44,6 +44,13 @@ export class ActionFailure extends HarnessError {
   }
 }
 
+/** Host-supplied identity of the Action call that reached a capability. */
+export interface AuraCapabilityContext {
+  readonly runId?: string;
+  readonly stepId?: string;
+  readonly idempotencyKey?: string;
+}
+
 /** Host-owned, manifest-gated capabilities available to trusted Actions. */
 export interface AuraCapabilityClient {
   invoke(
@@ -51,7 +58,7 @@ export interface AuraCapabilityClient {
     operation: string,
     input: JsonValue,
     signal: AbortSignal,
-    context?: { readonly runId?: string },
+    context?: AuraCapabilityContext,
   ): Promise<JsonValue>;
 }
 

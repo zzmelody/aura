@@ -17,6 +17,10 @@
       "types": "./types/action.d.ts",
       "default": "./src/action-api.ts"
     },
+    "./capability": {
+      "types": "./types/capability.d.ts",
+      "default": "./src/capability-api.ts"
+    },
     "./local-ai": "./src/local-ai/api.ts",
     "./short-video": "./src/short-video.ts",
     "./video-production": "./src/video-production.ts",

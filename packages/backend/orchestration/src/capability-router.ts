@@ -1,5 +1,8 @@
 import type { JsonValue } from "@aura/protocol/types";
-import type { AuraCapabilityClient } from "./action-api.ts";
+import type {
+  AuraCapabilityClient,
+  AuraCapabilityContext,
+} from "./action-api.ts";
 
 /** Dispatches a manifest-gated capability ID to exactly one host-owned port. */
 export class AuraCapabilityRouter implements AuraCapabilityClient {
@@ -14,7 +17,7 @@ export class AuraCapabilityRouter implements AuraCapabilityClient {
     operation: string,
     input: JsonValue,
     signal: AbortSignal,
-    context?: { readonly runId?: string },
+    context?: AuraCapabilityContext,
   ): Promise<JsonValue> {
     const client = this.#routes.get(capability);
     if (!client)

@@ -25,6 +25,7 @@ export interface ScopeOperations {
     path: string[],
     request: Parameters<FlowScope["checkpoint"]>[0],
   ): Promise<unknown>;
+  report(value: unknown): Promise<void>;
 }
 
 /** Lazy tracked calls prevent a forgotten await from starting an external effect. */
@@ -140,6 +141,12 @@ class Scope {
             this.fail("V1 不允许在 parallel 分支中等待 checkpoint。");
           return this.ops.checkpoint(this.path, request);
         }),
+      // Not a durable step: last-wins progress, so replay may safely repeat it.
+      report: async (value: unknown) => {
+        if (this.closed) this.fail("作用域已经退出。");
+        this.ops.boundary();
+        await this.ops.report(value);
+      },
     };
     return api as FlowScope;
   }

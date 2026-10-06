@@ -17,9 +17,15 @@ const internalPrefix = "aura_direct_";
 export function actionCapabilities(
   action: Pick<LoadedAction, "id" | "capabilities">,
   host: AuraCapabilityClient | undefined,
-  runId?: string,
+  binding?: string | Pick<ActionBinding, "runId" | "stepId" | "idempotencyKey">,
 ): AuraCapabilityClient | undefined {
   if (!host) return undefined;
+  const call = typeof binding === "string" ? { runId: binding } : binding ?? {};
+  const context = Object.freeze({
+    ...(call.runId ? { runId: call.runId } : {}),
+    ...(call.stepId ? { stepId: call.stepId } : {}),
+    ...(call.idempotencyKey ? { idempotencyKey: call.idempotencyKey } : {}),
+  });
   const allowed = new Set(action.capabilities);
   return Object.freeze({
     invoke(
@@ -32,7 +38,7 @@ export function actionCapabilities(
         throw new Error(
           `Aura host capability was not declared by ${action.id}: ${capability}`,
         );
-      return host.invoke(capability, operation, input, signal, { runId });
+      return host.invoke(capability, operation, input, signal, context);
     },
   });
 }
@@ -106,13 +112,13 @@ export class ActionRuntime {
                 action.id === "video-project" || action.id === "video-compose"
                   ? this.videoProduction
                   : undefined,
-              aura: actionCapabilities(action, this.aura, binding.runId),
+              aura: actionCapabilities(action, this.aura, binding),
               gptImage: action.id === "image-generate" ? this.gptImage : undefined,
               bindCall: artifactCallBinding(
                 this.artifacts,
                 binding,
                 this.localAI,
-                actionCapabilities(action, this.aura, binding.runId),
+                actionCapabilities(action, this.aura, binding),
                 action.id === "image-generate" ? this.gptImage : undefined,
               ),
             }),
@@ -149,13 +155,13 @@ export class ActionRuntime {
           action.id === "video-project" || action.id === "video-compose"
             ? this.videoProduction
             : undefined,
-        aura: actionCapabilities(action, this.aura, binding.runId),
+        aura: actionCapabilities(action, this.aura, binding),
         gptImage: action.id === "image-generate" ? this.gptImage : undefined,
         bindCall: artifactCallBinding(
           this.artifacts,
           binding,
           this.localAI,
-          actionCapabilities(action, this.aura, binding.runId),
+          actionCapabilities(action, this.aura, binding),
           action.id === "image-generate" ? this.gptImage : undefined,
         ),
       }),

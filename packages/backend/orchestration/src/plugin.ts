@@ -14,7 +14,7 @@ import { dshSessions } from "./sessions.ts";
 import type { FlowMode, FlowRun } from "@aura/protocol/types";
 
 const chatModeSchema = z.enum(["demo", "codex", "lumina", "custom"]);
-import type { ContributionRoot, FlowDomain, Table } from "./types.ts";
+import type { CapabilityRoot, ContributionRoot, FlowDomain, Table } from "./types.ts";
 import type { ActionRun, AuraPluginStatus } from "@aura/protocol/types";
 import { ActionRegistry } from "./action-registry.ts";
 import { ActionRuntime } from "./actions.ts";
@@ -27,6 +27,7 @@ import { VeyaCreatorLifecycle } from "./veya-creator-lifecycle.ts";
 import {VeyaAvatarCapability} from "./veya-avatar-bindings.ts";
 import {VeyaNpcCapability} from "./veya-npc-bindings.ts";
 import { AuraCapabilityRouter } from "./capability-router.ts";
+import { PluginCapabilities } from "./plugin-capabilities.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
 import { VEYA_CLOUD_IMAGE_CAPABILITY, VeyaCloudImageCapability } from "./veya-cloud-image.ts";
 import { VEYA_MATERIAL_MAKER_CAPABILITY, VeyaMaterialMakerCapability, resolveMaterialMakerExecutable, veyaProjectRootsFromPlugins } from "./veya-material-maker.ts";
@@ -88,10 +89,21 @@ const pluginStatusSchema = z
     error: z.string().optional(),
   })
   .strict();
+const capabilityRootSchema = z
+  .object({
+    root: z.string().trim().min(1).max(4_096),
+    pluginRoot: z.string().min(1).max(4096),
+    namespace: z.string().trim().min(1).max(64),
+    plugin: pluginIdentitySchema,
+    capabilities: z.array(z.string().trim().min(1)).max(32).optional(),
+    settings: z.json().optional(),
+  })
+  .strict();
 const contributionConfigurationSchema = z
   .object({
     flowRoots: z.array(contributionRootSchema).max(65),
     actionRoots: z.array(contributionRootSchema).max(65),
+    capabilityRoots: z.array(capabilityRootSchema).max(64).default([]),
     plugins: z.array(pluginStatusSchema).max(64),
   })
   .strict();
@@ -260,6 +272,12 @@ function contributionRoots(
   });
 }
 
+function capabilityRootsFromEnv(): CapabilityRoot[] {
+  const value = process.env.AURA_CAPABILITY_ROOTS;
+  if (!value) return [];
+  return z.array(capabilityRootSchema).max(64).parse(JSON.parse(value) as unknown) as CapabilityRoot[];
+}
+
 function pluginStatuses(): AuraPluginStatus[] {
   const value = process.env.AURA_PLUGIN_STATUSES;
   if (!value) return [];
@@ -382,9 +400,17 @@ export async function apply(ctx: Context) {
       resolveMaterialMakerExecutable(veyaProjectRootsFromPlugins(actionRoots.map((root) => root.pluginRoot))),
       creatorBindings.projectRoot),
   ] as const);
-  const auraCapabilities = capabilityRoutes.length
-    ? new AuraCapabilityRouter(capabilityRoutes)
-    : undefined;
+  // Built-in routes plus plugin-contributed providers (`<plugin-id>/<local-id>`).
+  const auraCapabilities = new PluginCapabilities({
+    builtins: capabilityRoutes.length
+      ? new AuraCapabilityRouter(capabilityRoutes)
+      : undefined,
+    dataRoot: resolve(process.env.AURA_FLOW_CWD ?? process.cwd(), ".aura", "plugins"),
+    log: (level, message, data) =>
+      process.stderr.write(`${JSON.stringify({ level, message, data })}\n`),
+  });
+  await auraCapabilities.replace(capabilityRootsFromEnv());
+  ctx.effect(() => () => auraCapabilities.close(), "aura-plugin-capabilities.lifecycle");
   const artifactIndex = new WorkflowArtifactIndex(
     artifacts,
     process.env.AURA_FLOW_CWD ?? process.cwd(),
@@ -474,6 +500,7 @@ export async function apply(ctx: Context) {
       cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
     },
     plugins: pluginStatuses(),
+    onRootSettled: (run) => auraCapabilities.runSettled(run),
     presets: async () =>
       (await ctx.agentPresets.list()).map(
         ({ id, name, description, broken }) => ({
@@ -485,6 +512,10 @@ export async function apply(ctx: Context) {
       ),
   });
   creatorGet = (id) => engine.get(id);
+  auraCapabilities.attachRuns(
+    (id) => engine.runs.get(id),
+    function* () { for (const [, run] of engine.runs.entries()) yield run; },
+  );
   veya.setRunSessionResolver((runId, operation, input) => creatorBindings.resolve(runId, (id) => engine.get(id), operation, input));
   videoLibrary.attach(engine);
   contentLibrary.attach(engine);
@@ -494,17 +525,21 @@ export async function apply(ctx: Context) {
   artifactIndex.attach((id) => engine.get(id), historicalArtifactReader(ctx));
 
   let activePlugins = pluginStatuses();
+  let activeCapabilityRoots = capabilityRootsFromEnv();
   const applyConfiguration = async (
     source: z.infer<typeof contributionConfigurationSchema>,
   ) => {
     const previous = {
       flowRoots: discoveries.descriptors(),
       actionRoots: actionDiscoveries.descriptors(),
+      capabilityRoots: activeCapabilityRoots,
       plugins: activePlugins,
     };
     const changedPlugins = changedPluginIds(previous, source);
     try {
       await extendHmrRoots(ctx, [...source.flowRoots, ...source.actionRoots]);
+      await auraCapabilities.replace(source.capabilityRoots as CapabilityRoot[]);
+      activeCapabilityRoots = source.capabilityRoots as CapabilityRoot[];
       await discoveries.replace(source.flowRoots);
       await actionDiscoveries.replace(source.actionRoots);
       await ctx.loader.await();
@@ -518,6 +553,8 @@ export async function apply(ctx: Context) {
       engine.setPlugins(activePlugins, changedPlugins);
     } catch (error) {
       try {
+        await auraCapabilities.replace(previous.capabilityRoots);
+        activeCapabilityRoots = previous.capabilityRoots;
         await discoveries.replace(previous.flowRoots);
         await actionDiscoveries.replace(previous.actionRoots);
         await ctx.loader.await();
