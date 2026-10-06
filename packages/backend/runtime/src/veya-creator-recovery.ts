@@ -314,7 +314,7 @@ export async function retainedPropWork(root: FlowRun, sourceRequestId: string, b
   // A catalog-only task has no supplier ledger until its first paid operation.
   // Existing ledger entries still need reconciliation; never hide paid work
   // behind a model's zero-cost declaration.
-  const bytes = await readFile(join(projectRoot, ".aura", "world-agent-paid.json")).catch(error => {
+  const bytes = await readFile(join(projectRoot, ".aura", "tripo", "paid.json")).catch(error => {
     if (catalogOnly && error?.code === "ENOENT") return Buffer.from('{"schemaVersion":1,"requests":{}}');
     throw error;
   });
@@ -328,7 +328,7 @@ export async function retainedPropWork(root: FlowRun, sourceRequestId: string, b
     for (const value of Object.values(stages!)) {
       const stage = object(value);
       if (typeof stage?.taskId !== "string" || stage.actualUnknown === true) refuse();
-      if (request!.creationId === budgetCreationId) {
+      if (request!.scope === budgetCreationId) {
         if (catalogOnly) refuse();
         if (stage.status !== "completed" || typeof stage.actual !== "number" || !Number.isFinite(stage.actual) || stage.actual < 0) refuse();
         known.set(stage.taskId as string, stage.actual as number);

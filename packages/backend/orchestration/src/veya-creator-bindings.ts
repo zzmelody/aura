@@ -260,6 +260,13 @@ export class VeyaCreatorCapability implements AuraCapabilityClient {
   async invoke(capability: string, operation: string, input: JsonValue, signal: AbortSignal,
     context?: { readonly runId?: string }): Promise<JsonValue> {
     signal.throwIfAborted();
+    if (capability === VEYA_CREATOR_CAPABILITY && operation === "paidScope") {
+      // Paid-work grouping for Tripo: one scope per creation; recovered work may not pay again.
+      const bound = context?.runId ? await this.bindings.binding(context.runId, this.get, false) : undefined;
+      if (!bound) return { scope: null };
+      return { scope: { id: bound.record.recoveryBudgetCreationId ?? bound.run.requestId,
+        ...(bound.record.recovery || bound.record.productionGrant || bound.record.materialsGrant ? { noNewPaidWork: true } : {}) } };
+    }
     if (capability !== VEYA_CREATOR_CAPABILITY || operation !== "context" ||
         !input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some(k => k !== "proceduralRefs") || !context?.runId)
       throw new ActionFailure("creator_context_unavailable");

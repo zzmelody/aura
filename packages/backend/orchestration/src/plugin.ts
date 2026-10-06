@@ -29,7 +29,7 @@ import {VeyaNpcCapability} from "./veya-npc-bindings.ts";
 import { AuraCapabilityRouter } from "./capability-router.ts";
 import { PluginCapabilities } from "./plugin-capabilities.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
-import { VEYA_CLOUD_IMAGE_CAPABILITY, VeyaCloudImageCapability } from "./veya-cloud-image.ts";
+import { tripoLedgerDirectory } from "./tripo-budget.ts";
 import { GeneratedArtifacts } from "./generated-artifacts.ts";
 import { WorkflowArtifactIndex } from "./workflow-artifacts.ts";
 import { historicalArtifactReader } from "./artifact-history.ts";
@@ -353,12 +353,6 @@ export async function apply(ctx: Context) {
   });
   const creatorBindings = new VeyaCreatorBindings(process.env.AURA_FLOW_CWD ?? process.cwd());
   let creatorGet: (id: string) => FlowRun = () => { throw new Error("Creator engine is not ready."); };
-  const budgetContext = async (runId?: string) => {
-    const binding = runId ? await creatorBindings.binding(runId, id => creatorGet(id)) : undefined;
-    return binding ? { projectRoot: creatorBindings.projectRoot,
-      creationId: binding.record.recoveryBudgetCreationId ?? binding.run.requestId,
-      ...(binding.record.recovery || binding.record.productionGrant || binding.record.materialsGrant ? { paidWorkForbidden: true } : {}) } : undefined;
-  };
   const veya = new VeyaWorldAgentCapability(worldAgentSessionPath ?? "", fetch, {
         artifacts,
         attachments: ctx.attachments,
@@ -377,20 +371,15 @@ export async function apply(ctx: Context) {
       apiKey: process.env.TRIPO_API_KEY,
       resolveOptions: async () => ({ credentialPath: tripoCredentialPath, region: (await readAiServices(process.env.AURA_FLOW_CWD ?? process.cwd(), codexModel, region)).tripoRegion, apiKey: process.env.TRIPO_API_KEY }),
     });
+    const ledgerDirectory = tripoLedgerDirectory(process.env.AURA_FLOW_CWD ?? process.cwd());
     capabilityRoutes.push([
       TRIPO_GAME_ASSET_CAPABILITY,
-      new TripoGameAssetCapability(
+      new TripoGameAssetCapability({
         tripo,
+        ledgerDirectory,
         artifacts,
-        (runId) => veya.generatedOutputDirectory(runId),
-        ctx.attachments,
-        true,
-        budgetContext,
-      ),
-    ] as const);
-    capabilityRoutes.push([
-      VEYA_CLOUD_IMAGE_CAPABILITY,
-      new VeyaCloudImageCapability(tripo, artifacts, ctx.attachments, budgetContext, creatorBindings.projectRoot),
+        attachments: ctx.attachments,
+      }),
     ] as const);
   }
   // Built-in routes plus plugin-contributed providers (`<plugin-id>/<local-id>`).

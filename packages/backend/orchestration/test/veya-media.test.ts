@@ -22,8 +22,6 @@ import {
 } from "../src/veya-world-agent.ts";
 import { imagePromptParts } from "../src/sessions.ts";
 import { agentRequestSchema } from "../src/schema.ts";
-import { TripoGameAssetCapability } from "../src/tripo-game-asset.ts";
-import type { TripoGameAssetResult } from "@aura/tripo";
 
 const signal = new AbortController().signal;
 const png = Buffer.from(
@@ -133,29 +131,6 @@ test("registered models persist across hosts; IDs are immutable and arbitrary pa
     );
   }));
 
-test("successful model production returns a registered model reference without changing legacy result fields", () =>
-  fixture(async (root) => {
-    const modelPath = join(root, "model.glb");
-    await writeFile(modelPath, glb());
-    const service = new TripoGameAssetCapability(
-      {
-        generateGameAsset: async () =>
-          ({ modelPath, creditsConsumed: 42 }) as TripoGameAssetResult,
-      },
-      new GeneratedArtifacts(join(root, "store")),
-    );
-    const result = (await service.invoke(
-      "aura.tripo.game-asset",
-      "generate",
-      { prompt: "fixture", outputDirectory: root },
-      signal,
-    )) as Record<string, any>;
-    assert.equal(result.modelPath, modelPath);
-    assert.equal(result.creditsConsumed, 42);
-    assert.equal(result.modelArtifact.bytes, 24);
-    assert.equal(result.modelArtifact.format, "glb");
-  }));
-
 test("import stages only a known artifact to the descriptor-bound exchange and preserves canonical HTTP arguments", () =>
   fixture(async (root) => {
     const artifacts = new GeneratedArtifacts(join(root, "store"));
@@ -221,48 +196,6 @@ test("import stages only a known artifact to the descriptor-bound exchange and p
       ),
     );
     assert.equal(calls, 1);
-  }));
-
-test("Veya binds the default output root, explicit user output wins, and registration failure preserves paid output", () =>
-  fixture(async (root) => {
-    const paths: string[] = [],
-      modelPath = join(root, "bad.glb");
-    await writeFile(modelPath, "invalid model fixture");
-    const service = new TripoGameAssetCapability(
-      {
-        generateGameAsset: async (input) => {
-          paths.push(input.outputDirectory);
-          assert.equal("useVeyaOutputDirectory" in input, false);
-          return { modelPath, creditsConsumed: 42 } as TripoGameAssetResult;
-        },
-      },
-      new GeneratedArtifacts(join(root, "store")),
-      async () => join(root, "veya-writable"),
-    );
-    const first = (await service.invoke(
-      "aura.tripo.game-asset",
-      "generate",
-      {
-        prompt: "fixture",
-        outputDirectory: root,
-        useVeyaOutputDirectory: true,
-      },
-      signal,
-    )) as any;
-    assert.equal(first.modelPath, modelPath);
-    assert.equal(first.creditsConsumed, 42);
-    assert.equal(
-      first.artifactRegistration.code,
-      "artifact_registration_failed",
-    );
-    assert.equal(first.modelArtifact, undefined);
-    await service.invoke(
-      "aura.tripo.game-asset",
-      "generate",
-      { prompt: "fixture", outputDirectory: root },
-      signal,
-    );
-    assert.deepEqual(paths, [join(root, "veya-writable"), root]);
   }));
 
 test("preview retries its frame barrier, verifies bytes, ignores arbitrary response paths and admits a durable attachment", () =>

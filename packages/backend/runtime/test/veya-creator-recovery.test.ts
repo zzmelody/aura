@@ -47,10 +47,10 @@ test("failed prop recovery requires owned durable typed results and known paid w
       authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(value) });
     const initial = { requestId: sourceRequest, operation: "create_prop", text: "original plaque" };
     assert.equal((await post(initial)).status, 202);
-    await mkdir(join(root, ".aura"), { recursive: true });
-    const ledger = { schemaVersion: 1, requests: { paid: { creationId: sourceRequest,
+    await mkdir(join(root, ".aura", "tripo"), { recursive: true });
+    const ledger = { schemaVersion: 1, requests: { paid: { scope: sourceRequest,
       stages: { model: { status: "completed", taskId: "provider-task", actual: 90, actualUnknown: false } } } } };
-    const ledgerPath = join(root, ".aura", "world-agent-paid.json");
+    const ledgerPath = join(root, ".aura", "tripo", "paid.json");
     await writeFile(ledgerPath, JSON.stringify(ledger));
     const chargedAssets = structuredClone(assets);
     Object.assign(assets,{schemaVersion:3,bindings:[{requirementId:"model",assetId:"shared:model/axe/axe.scn",version:"c".repeat(64),source:"catalog"}],costs:{status:"not_incurred",credits:0,records:[]}});

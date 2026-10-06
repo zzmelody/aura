@@ -16,10 +16,10 @@ const key = "a".repeat(64);
 test("nested paid image progress is creation/work scoped and exposes no diagnostics or task IDs", async () => {
   const directory = await mkdtemp(join(tmpdir(), "creator-progress-"));
   try {
-    await mkdir(join(directory, ".aura"));
-    await writeFile(join(directory, ".aura/world-agent-paid.json"), JSON.stringify({ schemaVersion: 1, requests: {
-      [`creation:${key}`]: { creationId: "creation", stages: { front: { status: "completed", taskId: "secret-provider-id" }, left: { status: "submitted" } } },
-      [`other:${key}`]: { creationId: "other", stages: { front: { status: "completed" }, left: { status: "completed" } } },
+    await mkdir(join(directory, ".aura", "tripo"), { recursive: true });
+    await writeFile(join(directory, ".aura/tripo/paid.json"), JSON.stringify({ schemaVersion: 1, requests: {
+      [`creation:${key}`]: { scope: "creation", stages: { front: { status: "completed", taskId: "secret-provider-id" }, left: { status: "submitted" } } },
+      [`other:${key}`]: { scope: "other", stages: { front: { status: "completed" }, left: { status: "completed" } } },
     } }));
     const root = run("root", "veya/veya-wish", [child("prop", "veya/veya-prop-agent")]);
     const prop = run("prop", "veya/veya-prop-agent", [child("model", "veya/veya-model-generator")], "root");
@@ -29,8 +29,8 @@ test("nested paid image progress is creation/work scoped and exposes no diagnost
     assert.equal(progress.elapsedSeconds, 6); assert.equal(progress.totalSeconds, 8);
     assert.ok(!JSON.stringify(progress).includes("secret-provider-id"));
     assert.ok(!JSON.stringify(progress).includes(directory));
-    const ledger = { schemaVersion: 1, requests: { [`creation:${key}`]: { creationId: "creation", stages: { model: { status: "submitted" } } } } };
-    await writeFile(join(directory, ".aura/world-agent-paid.json"), JSON.stringify(ledger));
+    const ledger = { schemaVersion: 1, requests: { [`creation:${key}`]: { scope: "creation", stages: { model: { status: "submitted" } } } } };
+    await writeFile(join(directory, ".aura/tripo/paid.json"), JSON.stringify(ledger));
     assert.equal((await creatorProgress(root, async id => id === "prop" ? prop : model, directory)).stage, "model");
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

@@ -72,14 +72,14 @@ export async function creatorProgress(root: FlowRun, getRun: (id: string) => Pro
     completedStages: ordered.filter(item => completed.has(item)), ...(repairRound ? { repairRound } : {}) };
   if (current.flow?.id !== "veya/veya-model-generator" || !step || !active(step)) return result;
   try {
-    const path = join(projectRoot, ".aura", "world-agent-paid.json");
+    const path = join(projectRoot, ".aura", "tripo", "paid.json");
     if ((await stat(path)).size > 4 * 1024 * 1024) return result;
     const ledger = object(JSON.parse(await readFile(path, "utf8")));
     const requests = object(ledger?.requests);
     const key = object(step.kind === "action" ? step.input : undefined)?.generationKey;
     if (ledger?.schemaVersion !== 1 || !requests || typeof key !== "string" || !/^[a-f0-9]{64}$/u.test(key)) return result;
     const request = object(requests[`${creationId}:${key}`]);
-    if (request?.creationId !== creationId) return result;
+    if (request?.scope !== creationId) return result;
     const stages = object(request.stages);
     const views = ["front", "left", "back", "right"];
     const ready = views.filter(view => object(stages?.[view])?.status === "completed").length;

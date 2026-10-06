@@ -59,7 +59,6 @@ export async function startAuraRuntime(
     supportedCapabilities: [
       "aura.veya.world-agent",
       "aura.veya.creator",
-      "aura.veya.cloud-image",
       "aura.tripo.game-asset",
       "aura.flow.invoke",
     ],
