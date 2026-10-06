@@ -26,6 +26,8 @@ export interface ServiceRunView {
   output?: JsonValue;
   error?: { code: string };
   checkpoint?: ServiceCheckpoint;
+  /** Bounded projection from the plugin provider that serves this Flow. */
+  view?: JsonValue;
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -84,10 +86,9 @@ export class ServiceRuns {
 
   async start(source: unknown): Promise<ServiceRunView> {
     const body = exact<{ requestId: string; flowId: string; input: JsonValue }>(source, { requestId: isUuid, flowId: text(130), input: json });
-    const run = await this.#flows.request<FlowRun>("start", {
+    const run = await this.#flows.request<FlowRun>("services/start", {
       requestId: body.requestId, flowId: body.flowId, input: body.input,
-      serviceOnly: true, useConfiguredModel: true, mode: "codex",
-    });
+    }, AbortSignal.timeout(90_000));
     return this.#view(run);
   }
 
@@ -141,12 +142,14 @@ export class ServiceRuns {
   async #view(run: FlowRun): Promise<ServiceRunView> {
     const code = failureCode(run);
     const checkpoint = await this.#checkpoint(run);
+    const view = await this.#flows.request<JsonValue | null>("services/view", { id: run.id }).catch(() => null);
     return {
       runId: run.id, requestId: run.requestId, flowId: run.flow.id, status: run.status,
       ...(run.report === undefined ? {} : { report: run.report }),
       ...(run.status === "completed" && run.output !== undefined ? { output: run.output } : {}),
       ...(code ? { error: { code } } : {}),
       ...(checkpoint ? { checkpoint } : {}),
+      ...(view === null || view === undefined ? {} : { view }),
     };
   }
 }
@@ -184,7 +187,12 @@ export function createServiceApp(service: ServiceRuns) {
     const status = (error as { status?: unknown }).status;
     if (status === 404) return context.json({ code: "run_not_found" }, 404);
     if (status === 409) return context.json({ code: "conflict" }, 409);
-    if (status === 400 || status === 422) return context.json({ code: "invalid_request" }, 400);
+    // A plugin admission refusal arrives as 422 whose message is already a bounded snake_case code.
+    if (status === 422) {
+      const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(error.message)?.[0];
+      return context.json({ code: code ?? "invalid_request" }, 422);
+    }
+    if (status === 400) return context.json({ code: "invalid_request" }, 400);
     if (status === 503) return context.json({ code: "unavailable" }, 503);
     return context.json({ code: "internal" }, 500);
   });

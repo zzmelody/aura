@@ -56,7 +56,27 @@ export interface CapabilityHost {
   ): void;
 }
 
+/** One request to start a plugin service Flow, before Aura creates its Run. */
+export interface ServiceAdmission {
+  /** Canonical Flow ID, `<plugin-id>/<local-id>`. */
+  readonly flowId: string;
+  /** Client idempotency key; the same requestId always maps to the same Run. */
+  readonly requestId: string;
+  readonly input: JsonValue;
+  readonly signal: AbortSignal;
+}
+
 export interface CapabilityProvider {
+  /** Local IDs of this plugin's service Flows whose requests this provider admits and projects. */
+  readonly serves?: readonly string[];
+  /**
+   * Validates a service request and returns the Flow input to start with. Must
+   * be idempotent by requestId. Throw an Error whose message is a lowercase
+   * snake_case code (e.g. "worker_busy") to refuse; clients see only that code.
+   */
+  admit?(request: ServiceAdmission): Promise<JsonValue> | JsonValue;
+  /** Bounded plugin-specific projection of one root service Run, returned to clients as `view`. */
+  view?(run: FlowRun): Promise<JsonValue> | JsonValue;
   invoke(
     operation: string,
     input: JsonValue,

@@ -6,4 +6,5 @@ export {
   type CapabilityDefinition,
   type CapabilityHost,
   type CapabilityProvider,
+  type ServiceAdmission,
 } from "@aura/orchestration/capability";

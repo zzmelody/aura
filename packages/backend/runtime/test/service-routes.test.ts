@@ -26,11 +26,17 @@ function fixture() {
           { id: "veya/veya-wish", title: "", description: "", available: true, service: true },
           { id: "veya/internal", title: "", description: "", available: true, service: false },
         ], actions: [], plugins: [], presets: [] } as T;
-      if (method === "start") {
+      if (method === "services/start") {
+        if (p.flowId === "veya/veya-wish" && (p.input as Record<string, unknown>)?.text === "refuse")
+          throw Object.assign(new Error("worker_busy"), { status: 422 });
+        if (p.flowId === "veya/veya-wish" && (p.input as Record<string, unknown>)?.text === "leak")
+          throw Object.assign(new Error("C:\\secret path"), { status: 422 });
         const created = run(randomUUID(), String(p.flowId), { requestId: String(p.requestId), status: "queued" });
         runs.set(created.id, created);
         return created as T;
       }
+      if (method === "services/view")
+        return (runs.get(String(p.id))?.status === "completed" ? { delivery: "pending" } : null) as T;
       if (method === "get") {
         const found = runs.get(String(p.id));
         if (!found) throw Object.assign(new Error("Flow 运行不存在。"), { status: 404 });
@@ -64,11 +70,21 @@ test("start forwards a service-only, configured-model request and returns a path
   assert.equal(view.flowId, "veya/veya-wish");
   assert.equal(view.requestId, requestId);
   assert.equal(view.status, "queued");
-  assert.deepEqual(calls.find((c) => c.method === "start")?.params, {
-    requestId, flowId: "veya/veya-wish", input: { text: "lamp" }, serviceOnly: true, useConfiguredModel: true, mode: "codex",
+  assert.deepEqual(calls.find((c) => c.method === "services/start")?.params, {
+    requestId, flowId: "veya/veya-wish", input: { text: "lamp" },
   });
   assert.equal((await send("/runs", { requestId: "nope", flowId: "veya/veya-wish", input: {} })).status, 400);
   assert.equal((await send("/runs", { requestId, flowId: "veya/veya-wish", input: {}, extra: 1 })).status, 400);
+});
+
+test("admission refusals surface only a bounded code", async () => {
+  const { send } = fixture();
+  const refused = await send("/runs", { requestId: randomUUID(), flowId: "veya/veya-wish", input: { text: "refuse" } });
+  assert.equal(refused.status, 422);
+  assert.deepEqual(await refused.json(), { code: "worker_busy" });
+  const leaked = await send("/runs", { requestId: randomUUID(), flowId: "veya/veya-wish", input: { text: "leak" } });
+  assert.equal(leaked.status, 422);
+  assert.deepEqual(await leaked.json(), { code: "invalid_request" });
 });
 
 test("only root Runs of published service Flows are visible", async () => {
@@ -113,7 +129,10 @@ test("the view exposes report, output, sanitized failure code and the deepest wa
 
   const done = run(randomUUID(), "veya/veya-wish", { status: "completed", output: { artifactId: hash } });
   runs.set(done.id, done);
-  assert.deepEqual((await (await send(`/runs/${done.id}`)).json() as Record<string, unknown>).output, { artifactId: hash });
+  const doneView = await (await send(`/runs/${done.id}`)).json() as Record<string, unknown>;
+  assert.deepEqual(doneView.output, { artifactId: hash });
+  assert.deepEqual(doneView.view, { delivery: "pending" });
+  assert.equal(view.view, undefined);
 });
 
 test("cancel and resume forward the command id to the root Run", async () => {

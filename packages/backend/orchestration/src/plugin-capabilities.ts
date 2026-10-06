@@ -182,6 +182,33 @@ export class PluginCapabilities implements AuraCapabilityClient {
     return jsonValue(output, `${capability} 输出`);
   }
 
+  /** The provider that declared `serves` for this canonical Flow ID, if any. */
+  #server(flowId: string): CapabilityProvider | undefined {
+    const [pluginId, local] = flowId.split("/");
+    const open = pluginId && local ? this.#plugins.get(pluginId) : undefined;
+    return open && [...open.providers.values()].find((provider) => provider.serves?.includes(local!));
+  }
+
+  /** Runs the serving provider's admission; Flows without one start with their input unchanged. */
+  async admit(flowId: string, requestId: string, input: JsonValue, signal: AbortSignal): Promise<JsonValue> {
+    const provider = this.#server(flowId);
+    if (!provider?.admit) return input;
+    const admitted = await provider.admit(Object.freeze({ flowId, requestId, input: structuredClone(input), signal }));
+    return jsonValue(admitted, `${flowId} 准入入参`);
+  }
+
+  /** Projects a root service Run through its serving provider. Failures are logged, never thrown. */
+  async view(run: FlowRun): Promise<JsonValue | undefined> {
+    const provider = this.#server(run.flow.id);
+    if (!provider?.view) return undefined;
+    try {
+      return jsonValue(await provider.view(structuredClone(run)), `${run.flow.id} 服务视图`, 64 * 1_024);
+    } catch (error) {
+      this.#log("error", `${run.flow.id} view failed`, { runId: run.id, message: String((error as Error)?.message ?? error) });
+      return undefined;
+    }
+  }
+
   /** Tells every provider of the Run's plugin that the root Run ended. Never throws. */
   async runSettled(run: FlowRun): Promise<void> {
     const pluginId = run.flow.plugin?.id;
