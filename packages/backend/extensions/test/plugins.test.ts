@@ -148,7 +148,7 @@ test("loads an explicitly enabled relative plugin directory", async () =>
 test("loads only plugins whose declared host capabilities are supported", async () =>
   fixture(async (root) => {
     const plugin = await writePlugin(root, "example.capability", [
-      "aura.veya.world-agent",
+      "aura.tripo.game-asset",
     ]);
     const config = join(root, "plugins.json");
     await writeFile(
@@ -165,11 +165,11 @@ test("loads only plugins whose declared host capabilities are supported", async 
 
     const supported = await loadAuraPlugins({
       ...options(config),
-      supportedCapabilities: ["aura.veya.world-agent"],
+      supportedCapabilities: ["aura.tripo.game-asset"],
     });
     assert.equal(supported.plugins[0]?.available, true);
     assert.deepEqual(supported.actionRoots[0]?.capabilities, [
-      "aura.veya.world-agent",
+      "aura.tripo.game-asset",
     ]);
   }));
 

@@ -38,10 +38,6 @@ test("runtime configuration resolves paths and validates network settings", () =
   );
   assert.equal(config.tripoRegion, "global");
   assert.equal(config.pluginConfigPath, resolve(root, ".aura", "plugins.json"));
-  assert.match(
-    config.worldAgentSessionPath,
-    /Veya[/\\]world-agent-session\.json$/u,
-  );
   assert.equal(formatHttpUrl(config.host, config.port), "http://[::1]:4321");
   assert.equal(isLoopbackRuntimeHost("::1"), true);
   assert.equal(isLoopbackRuntimeHost("[::1]"), true);

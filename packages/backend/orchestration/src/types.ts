@@ -23,7 +23,6 @@ export interface HostOptions {
   actionRoots?: ContributionRoot[];
   capabilityRoots?: CapabilityRoot[];
   plugins?: AuraPluginStatus[];
-  worldAgentSessionPath?: string;
   tripoCredentialPath?: string;
   tripoRegion?: "global" | "china";
 }

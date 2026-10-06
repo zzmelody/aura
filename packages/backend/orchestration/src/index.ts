@@ -30,16 +30,6 @@ import {
 import { FlowError, jsonValue } from "./schema.ts";
 export { FlowError } from "./schema.ts";
 import type { ChatStreamEvent, ChatTurn } from "./types.ts";
-export { readCreatorLeases } from "./veya-creator-lifecycle.ts";
-export {readAvatarBindings,writeAvatarBindings,avatarDecisionFlow,type AvatarBinding,type AvatarJournal} from "./veya-avatar-bindings.ts";
-export {readNpcBindings,writeNpcBindings,npcCreationFlow,type NpcBinding,type NpcJournal} from "./veya-npc-bindings.ts";
-export { readCreatorBindingDocument, commitCreatorBindingDocument } from "./veya-creator-design-grants.ts";
-export { readProductionGrant, writeProductionGrant, validateProductionGrant, validateProductionBinding, validatePendingProductionClaims, verifyProductionWorker,
-  productionDigest, productionRecoveryBoundary, cookerSubmissionFingerprint, type ProductionGrant, type ProductionGrantRef, type WorldProductionRecovery } from "./veya-creator-production-grants.ts";
-export { expectedAtmosphereSources, environmentShaderPins, matchesEnvironmentShader, type AtmosphereSources } from "./veya-atmosphere-provenance.ts";
-export { readAssetReuseGrant, verifyAssetReuseCatalog, validateInheritedAssetReuseBinding, type AssetReuseGrant, type AssetReuseItem } from "./veya-creator-asset-reuse.ts";
-export { readMaterialsGrant, writeMaterialsGrant, validateMaterialsGrant, validateMaterialsBinding, verifyMaterialsWorker,
-  materialIdentity, materialSubmissionFingerprint, type MaterialsGrant, type ProductionMaterials } from "./veya-creator-materials.ts";
 import type {
   ContributionConfiguration,
   FlowRpcResult,
@@ -190,12 +180,6 @@ export class OrchestrationHost {
           AURA_ACTION_ROOTS: JSON.stringify(actionRoots),
           AURA_PLUGIN_STATUSES: JSON.stringify(this.options.plugins ?? []),
           AURA_CAPABILITY_ROOTS: JSON.stringify(this.options.capabilityRoots ?? []),
-          ...(this.options.worldAgentSessionPath
-            ? {
-                AURA_VEYA_WORLD_AGENT_SESSION_PATH:
-                  this.options.worldAgentSessionPath,
-              }
-            : {}),
           ...(this.options.tripoCredentialPath
             ? {
                 AURA_TRIPO_CREDENTIAL_PATH: this.options.tripoCredentialPath,
@@ -617,4 +601,3 @@ export function createFlowApp(
   });
   return app;
 }
-export { readVeyaCraftScope, craftToolScope, assertCraftToolScope, verifyCraftForeground, admitVeyaCraft, type VeyaCraftScope } from "./veya-gameplay-craft.ts";

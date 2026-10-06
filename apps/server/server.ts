@@ -5,7 +5,7 @@ const runtime = await startAuraRuntime();
 console.log(
   `Aura runtime: ${runtime.url} (DSH demo + DSH Codex subscription + Tripo 3D)`,
 );
-// Machine-readable readiness for launchers such as the Veya game.
+// Machine-readable readiness for launchers such as a game client.
 console.log(`AURA_READY ${runtime.url}`);
 
 let closing = false;

@@ -18,14 +18,6 @@ import type { CapabilityRoot, ContributionRoot, FlowDomain, Table } from "./type
 import type { ActionRun, AuraPluginStatus } from "@aura/protocol/types";
 import { ActionRegistry } from "./action-registry.ts";
 import { ActionRuntime } from "./actions.ts";
-import {
-  VEYA_WORLD_AGENT_CAPABILITY,
-  VeyaWorldAgentCapability,
-} from "./veya-world-agent.ts";
-import { VeyaCreatorBindings, VeyaCreatorCapability, VEYA_CREATOR_CAPABILITY } from "./veya-creator-bindings.ts";
-import { VeyaCreatorLifecycle } from "./veya-creator-lifecycle.ts";
-import {VeyaAvatarCapability} from "./veya-avatar-bindings.ts";
-import {VeyaNpcCapability} from "./veya-npc-bindings.ts";
 import { AuraCapabilityRouter } from "./capability-router.ts";
 import { PluginCapabilities } from "./plugin-capabilities.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
@@ -335,8 +327,7 @@ export async function apply(ctx: Context) {
   );
   // This owner survives individual Action Loader/HMR fibers.
   ctx.effect(() => () => localAI.close(), "aura-local-ai.lifecycle");
-  const worldAgentSessionPath = process.env.AURA_VEYA_WORLD_AGENT_SESSION_PATH;
-  const capabilityRoutes = [];
+  const capabilityRoutes: [string, import("./action-api.ts").AuraCapabilityClient][] = [];
   // GPT images use the signed-in Codex subscription, the same login as chat.
   const codexModel = process.env.AURA_CODEX_MODEL || "gpt-6.1-sol";
   const codexTokens = codexTokenSource(ctx, codexModel);
@@ -351,15 +342,6 @@ export async function apply(ctx: Context) {
       "outputs",
     ),
   });
-  const creatorBindings = new VeyaCreatorBindings(process.env.AURA_FLOW_CWD ?? process.cwd());
-  let creatorGet: (id: string) => FlowRun = () => { throw new Error("Creator engine is not ready."); };
-  const veya = new VeyaWorldAgentCapability(worldAgentSessionPath ?? "", fetch, {
-        artifacts,
-        attachments: ctx.attachments,
-      });
-  const creatorLifecycle = new VeyaCreatorLifecycle(creatorBindings, id => creatorGet(id), veya);
-  capabilityRoutes.push([VEYA_WORLD_AGENT_CAPABILITY, new VeyaNpcCapability(creatorBindings.projectRoot,id=>creatorGet(id),new VeyaAvatarCapability(creatorBindings.projectRoot,id=>creatorGet(id),creatorLifecycle))] as const);
-  capabilityRoutes.push([VEYA_CREATOR_CAPABILITY, new VeyaCreatorCapability(creatorBindings, id => creatorGet(id), creatorLifecycle)] as const);
   const tripoCredentialPath = process.env.AURA_TRIPO_CREDENTIAL_PATH;
   if (tripoCredentialPath) {
     const region = process.env.AURA_TRIPO_REGION;
@@ -497,12 +479,10 @@ export async function apply(ctx: Context) {
         }),
       ),
   });
-  creatorGet = (id) => engine.get(id);
   auraCapabilities.attachRuns(
     (id) => engine.runs.get(id),
     function* () { for (const [, run] of engine.runs.entries()) yield run; },
   );
-  veya.setRunSessionResolver((runId, operation, input) => creatorBindings.resolve(runId, (id) => engine.get(id), operation, input));
   videoLibrary.attach(engine);
   contentLibrary.attach(engine);
   topicLibrary.attach(engine);
@@ -633,7 +613,7 @@ export async function apply(ctx: Context) {
       let data;
       switch (method) {
         case "ai-services/busy":
-          // Match Veya's terminal task states; a crashed Run must not lock settings forever.
+          // Match terminal task states; a crashed Run must not lock settings forever.
           data = [...engine.runs.entries()].some(([, run]) => !["completed", "failed", "cancelled", "interrupted"].includes(run.status));
           break;
         case "initialize":
@@ -690,6 +670,14 @@ export async function apply(ctx: Context) {
           if (existing && existing.flow.id !== request.flowId) throw new FlowError("同一请求 ID 不能用于不同 Flow。", 409);
           break;
         }
+        case "services/find": {
+          // Clients address service Runs by their own idempotency key, never by internal Run IDs.
+          const requestId = z.uuid().parse(params.requestId);
+          const found = [...engine.runs.entries()].find(([, run]) => run.requestId === requestId && !run.parent)?.[1];
+          if (!found) throw new FlowError("Flow 运行不存在。", 404);
+          data = found;
+          break;
+        }
         case "services/view":
           data = (await auraCapabilities.view(engine.get(id))) ?? null;
           break;
@@ -711,21 +699,12 @@ export async function apply(ctx: Context) {
         case "resume":
         case "answer":
         case "resolve": {
-          const { id: _id, stepKey: key, ...body } = params;
-          let cleanupError: unknown;
-          if (method === "cancel") {
-            try { await creatorLifecycle.markCancelling(id); } catch (error) { cleanupError = error; }
-          }
-          data = await engine.command(
+          const { id: _id, stepKey: key, ...body } = params;          data = await engine.command(
             id,
             method,
             body,
             typeof key === "string" ? key : undefined,
           );
-          if (method === "cancel") {
-            if (cleanupError) throw cleanupError;
-            await creatorLifecycle.cleanup(id);
-          }
           break;
         }
         case "chat/models": {

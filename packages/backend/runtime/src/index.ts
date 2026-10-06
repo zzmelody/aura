@@ -57,8 +57,6 @@ export async function startAuraRuntime(
     auraVersion: "0.1.0",
     pluginSdkVersion,
     supportedCapabilities: [
-      "aura.veya.world-agent",
-      "aura.veya.creator",
       "aura.tripo.game-asset",
       "aura.flow.invoke",
     ],
@@ -87,7 +85,6 @@ export async function startAuraRuntime(
       modelURL: demoModel.url,
       codexModel: config.codexModel,
       ...contributions(plugins),
-      worldAgentSessionPath: config.worldAgentSessionPath,
       tripoCredentialPath: config.tripoCredentialPath,
       tripoRegion: config.tripoRegion,
     });

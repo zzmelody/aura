@@ -27,10 +27,7 @@ import type {
 import { createPluginSettingsApp } from "./plugin-settings-routes.ts";
 import { createTripoApp } from "./tripo-routes.ts";
 import { isRecord } from "./validation.ts";
-import { createVeyaCreatorApp, VeyaCreatorService } from "./veya-creator-routes.ts";
 import { isLoopbackRuntimeHost } from "./runtime-config.ts";
-import {createVeyaAvatarApp,VeyaAvatarService} from "./veya-avatar-routes.ts";
-import {createVeyaNpcApp,VeyaNpcService} from "./veya-npc-routes.ts";
 import { createAiServicesApp } from "./ai-services-routes.ts";
 import { createServiceApp, ServiceRuns } from "./service-routes.ts";
 import type { AiServicesPort } from "./ai-services.ts";
@@ -167,14 +164,11 @@ export function createApiApp({
   flows,
   pluginSettings,
   pluginSettingsAccessible = true,
-  creator,
   services,
   lifecycle = { shuttingDown: false, admittedRequests: 0 },
 }: Omit<ApiServerOptions, "config" | "tripo"> & {
   tripo?: TripoPort;
-  lifecycle?: ApiLifecycle;
-  creator?: VeyaCreatorService;
-  services?: ServiceRuns;
+  lifecycle?: ApiLifecycle;  services?: ServiceRuns;
 }) {
   const app = new Hono();
   app.use("*", localOriginPolicy);
@@ -191,10 +185,7 @@ export function createApiApp({
   if (tripo) app.route("/tripo", createTripoApp(tripo));
   if (flows) app.route("/flows", createFlowApp(flows));
   if (services) app.route("/services", createServiceApp(services));
-  if (creator) app.route("/veya/creator/v1", createVeyaCreatorApp(creator));
-  if (aiServices) app.route("/ai/services", createAiServicesApp(aiServices, pluginSettingsAccessible, creator?.bootstrapToken));
-  if(creator&&flows)app.route("/veya/avatar/v1",createVeyaAvatarApp(new VeyaAvatarService(creator.projectRoot,flows,creator.bootstrapToken)));
-  if(creator&&flows)app.route("/veya/npc/v1",createVeyaNpcApp(new VeyaNpcService(creator.projectRoot,flows,creator.bootstrapToken)));
+  if (aiServices) app.route("/ai/services", createAiServicesApp(aiServices, pluginSettingsAccessible, services?.token));
   if (pluginSettings)
     app.route(
       "/plugins/config",
@@ -264,9 +255,6 @@ export async function startApiServer({
     shuttingDown: false,
     admittedRequests: 0,
   };
-  const creator = flows && isLoopbackRuntimeHost(config.host)
-    ? new VeyaCreatorService(config.root, flows) : undefined;
-  if (creator) await creator.initialize();
   // Local service clients get one per-process token through .aura/service.json.
   const services = flows && isLoopbackRuntimeHost(config.host)
     ? new ServiceRuns(flows, randomBytes(32).toString("hex")) : undefined;
@@ -275,14 +263,12 @@ export async function startApiServer({
     codexAuth,
     tripo,
     flows,
-    creator,
     services,
     pluginSettings,
     pluginSettingsAccessible,
     lifecycle,
   });
   const { server, port } = await startHonoServer(app, config.host, config.port);
-  const sessionPath = creator ? join(creator.directory, "session.json") : undefined;
   const servicePath = services ? join(config.root, ".aura", "service.json") : undefined;
   try {
     if (services && servicePath)
@@ -291,15 +277,6 @@ export async function startApiServer({
         base_url: `${formatHttpUrl(config.host, port)}/services/`,
         token: services.token,
       });
-    if (creator && sessionPath) {
-      const temporary = `${sessionPath}.${randomUUID()}.tmp`;
-      try {
-        await writeFile(temporary, JSON.stringify({ protocol: "aura-veya-creator/1",
-          base_url: `${formatHttpUrl(config.host, port)}/veya/creator/v1/`,
-          token: creator.bootstrapToken }), { mode: 0o600, flag: "wx" });
-        await rename(temporary, sessionPath);
-      } catch (error) { await unlink(temporary).catch(() => undefined); throw error; }
-    }
   } catch (error) { await closeHonoServer(server); throw error; }
 
   return {
@@ -309,12 +286,6 @@ export async function startApiServer({
       lifecycle.shuttingDown = true;
       await closeHonoServer(server);
       if (services && servicePath) await removeDescriptor(servicePath, services.token);
-      if (creator && sessionPath) {
-        try {
-          const current = JSON.parse(await readFile(sessionPath, "utf8")) as { token?: string };
-          if (current.token === creator.bootstrapToken) await unlink(sessionPath);
-        } catch { /* A newer session may already own this path. */ }
-      }
     },
   };
 }
