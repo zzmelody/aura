@@ -12,13 +12,12 @@ Aura 使用自己的代码、命名空间和发布流程，以固定版本的官
 Codex：客户端 → Aura runtime → DSH SDK profile → dsh-llm-pi-ai → openai-codex
 登录：客户端 → Aura runtime → DSH authorization → dsh-llm-pi-ai OAuth flow
 3D：客户端 → Aura runtime → @aura/tripo → Tripo v3 API
-材质：客户端 → Aura runtime → aura.veya.material-maker → Material Maker 1.7 CLI
 图片：客户端 → Aura runtime → image-generate Action → Codex 订阅 image_generation（优先）或本机 Qwen-Image
 ```
 
 `@aura/dsh-auth` 是 Aura 对 DSH authorization/credentials seam 的后端适配层。包名描述稳定职责，不绑定当前供应商；其中 `CodexSubscriptionAuth` 组合 DSH 的 `dsh-credentials-local`、`dsh-authorization`、`dsh-llm` 和 `dsh-llm-pi-ai` 服务。它只把 notice、设备码、手动回调提示和最终状态投影到客户端；浏览器回调监听使用与 OpenAI redirect URI 一致的 `localhost`。OAuth grant 由 DSH 写入 `.aura/dsh/.credentials.yaml`，不会进入 HTTP 响应、前端存储或日志。
 
-`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、Tripo 路由、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 不是 LLM provider，由 `@aura/tripo` 使用官方 v3 SDK 提交异步 3D 任务；Key 只从后端环境或已忽略的 `.aura/tripo/` 读取。图片生成由 `image-generate` Action 统一：已登录 Codex 时优先经订阅后端（`chatgpt.com/backend-api/codex/responses` 的 `image_generation` 工具）生成，复用对话的同一份 DSH 授权与令牌刷新，消耗 Codex 订阅额度而非按张计费，具体图片模型由 Codex 决定；每次调用只发一个请求，失败或结果未知时不重试也不改用其他引擎。未登录时改用本机 Qwen-Image；`image` 工作流与对话工具 `aura_image` 都经由它。Material Maker 1.7 同样不是 LLM：`aura.veya.material-maker` 在宿主里校验白名单 `.ptex` 并调用官方 CLI 烘 PNG，Cooker 再装配 StandardMaterial3D。可执行文件由 `VEYA_MATERIAL_MAKER` 配置，不进仓库。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](backend-runtime.md)。
+`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、Tripo 路由、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 不是 LLM provider，由 `@aura/tripo` 使用官方 v3 SDK 提交异步 3D 任务；Key 只从后端环境或已忽略的 `.aura/tripo/` 读取。图片生成由 `image-generate` Action 统一：已登录 Codex 时优先经订阅后端（`chatgpt.com/backend-api/codex/responses` 的 `image_generation` 工具）生成，复用对话的同一份 DSH 授权与令牌刷新，消耗 Codex 订阅额度而非按张计费，具体图片模型由 Codex 决定；每次调用只发一个请求，失败或结果未知时不重试也不改用其他引擎。未登录时改用本机 Qwen-Image；`image` 工作流与对话工具 `aura_image` 都经由它。插件可以贡献自己的 capability provider（见 `@aura/plugin-sdk/capability`），领域专用的外部工具由插件自己的 provider 调用，不进 Aura。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](backend-runtime.md)。
 
 ## Monorepo
 

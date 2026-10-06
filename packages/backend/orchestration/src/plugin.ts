@@ -30,7 +30,6 @@ import { AuraCapabilityRouter } from "./capability-router.ts";
 import { PluginCapabilities } from "./plugin-capabilities.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
 import { VEYA_CLOUD_IMAGE_CAPABILITY, VeyaCloudImageCapability } from "./veya-cloud-image.ts";
-import { VEYA_MATERIAL_MAKER_CAPABILITY, VeyaMaterialMakerCapability, resolveMaterialMakerExecutable, veyaProjectRootsFromPlugins } from "./veya-material-maker.ts";
 import { GeneratedArtifacts } from "./generated-artifacts.ts";
 import { WorkflowArtifactIndex } from "./workflow-artifacts.ts";
 import { historicalArtifactReader } from "./artifact-history.ts";
@@ -394,12 +393,6 @@ export async function apply(ctx: Context) {
       new VeyaCloudImageCapability(tripo, artifacts, ctx.attachments, budgetContext, creatorBindings.projectRoot),
     ] as const);
   }
-  capabilityRoutes.push([
-    VEYA_MATERIAL_MAKER_CAPABILITY,
-    new VeyaMaterialMakerCapability(artifacts, ctx.attachments, undefined,
-      resolveMaterialMakerExecutable(veyaProjectRootsFromPlugins(actionRoots.map((root) => root.pluginRoot))),
-      creatorBindings.projectRoot),
-  ] as const);
   // Built-in routes plus plugin-contributed providers (`<plugin-id>/<local-id>`).
   const auraCapabilities = new PluginCapabilities({
     builtins: capabilityRoutes.length
