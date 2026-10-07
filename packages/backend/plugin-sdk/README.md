@@ -9,6 +9,15 @@ or frontend code.
 Plugin dependencies must be installed before Aura starts. Aura discovery is
 read-only and never runs package-manager or lifecycle commands.
 
+## JavaScript authoring standard
+
+Before writing or changing an external plugin Action, Flow, capability provider
+or helper, read [the Airbnb-based JavaScript standard](../../../docs/plugin-javascript-code-style.md).
+Keep native ESM and `// @ts-check`; the SDK's default-export entry contract takes
+precedence over upstream module preferences. Plugins provide their own Prettier
+and ESLint configuration. Format and lint changed files without modifying stable
+IDs, schemas, durable steps or embedded source strings.
+
 ## Capabilities
 
 An Action binds a capability with `auraCapability(ctx, capabilityId)` and

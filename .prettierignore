@@ -1,0 +1,15 @@
+node_modules/
+.git/
+.aura/
+.tools/
+.agents/
+.codex/
+.playwright-cli/
+output/
+**/dist/
+**/dist-host/
+apps/mobile/android/
+apps/mobile/ios/
+pnpm-lock.yaml
+eslint-suppressions.json
+format-baseline.json

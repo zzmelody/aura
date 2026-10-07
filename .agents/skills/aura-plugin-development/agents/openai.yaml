@@ -1,0 +1,4 @@
+interface:
+  display_name: "Aura Plugin Development"
+  short_description: "Create backend-only Aura Action and Flow plugins"
+  default_prompt: "Use $aura-plugin-development to create or extend an Aura backend Action/Flow plugin from this requirement."

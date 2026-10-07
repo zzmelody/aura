@@ -30,19 +30,32 @@
     "typecheck": "pnpm run typecheck:dev && pnpm -r --if-present run typecheck",
     "typecheck:dev": "tsc --noEmit --project tsconfig.dev.json",
     "test": "pnpm -r --if-present run test && tsx --test tests/*.test.ts",
+    "lint": "eslint . --max-warnings 0",
+    "lint:strict": "node scripts/lint-strict.ts",
+    "lint:fix": "eslint . --fix --max-warnings 0",
+    "lint:prune": "eslint . --prune-suppressions --max-warnings 0",
+    "format": "prettier . --write",
+    "format:check": "node scripts/check-format.ts",
+    "format:check:strict": "prettier . --check",
     "check:workspaces": "tsx scripts/check-workspaces.ts",
-    "check": "pnpm run check:workspaces && pnpm run typecheck && pnpm run test",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run check:workspaces && pnpm run typecheck && pnpm run test",
     "test:runtime": "tsx scripts/smoke-runtime.ts"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@hono/node-server": "2.1.1",
     "@types/node": "24.10.1",
+    "eslint": "10.12.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
     "hono": "4.13.7",
+    "jiti": "2.7.0",
     "prettier": "3.9.6",
     "sharp": "0.35.4",
     "three": "0.172.0",
     "tsx": "4.23.13",
     "typescript": "~5.9.3",
+    "typescript-eslint": "8.71.1",
     "vite": "8.2.2"
   }
 }

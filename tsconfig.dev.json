@@ -4,6 +4,10 @@
     "types": ["node", "vite/client"]
   },
   "include": [
+    "eslint.config.ts",
+    "scripts/check-format.ts",
+    "scripts/lint-strict.ts",
+    "tests/code-style.test.ts",
     "scripts/build-desktop-preload.ts",
     "scripts/dev-renderer.ts",
     "scripts/vite-live-reload.ts",

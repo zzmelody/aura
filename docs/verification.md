@@ -1,5 +1,14 @@
 # 验证记录
 
+## 代码规范接入（2026-10-08）
+
+- 采用 Google TypeScript Style Guide 的 Aura 适配版，补充 React 官方 Hook 规则；根 `AGENTS.md`、`docs/code-style.md`、EditorConfig、Prettier、ESLint 与 VS Code 设置相互对应。
+- Aura 插件开发 skill 的完整 4 个文件纳入 `.agents/skills/aura-plugin-development/`，包含调用配置、插件契约与 JavaScript 规范；通过 skill 校验，所有本地引用均包含在目录内，根 `AGENTS.md` 和 README 提供仓库入口。
+- `pnpm run format:check`、`pnpm run lint`、全部 workspace 类型检查通过；新增工具脚本纳入根严格类型检查。格式基线只允许内容未变的历史文件，Lint 使用按文件/规则计数的官方历史清单；新增工具与回归测试不在豁免清单中。
+- 仓库级 24 项测试通过，其中 4 项验证新违规、Hook 调用/依赖、旧格式文件修改后的检查，以及 Git 换行兼容；runtime 的 42 项测试通过。
+- 递归测试在 `packages/backend/orchestration/test/plugin-live.test.ts` 遇到一次编排连接中断（503），该用例单独复查通过。其余编排测试 174 项通过、6 项跳过；本轮没有修改编排实现。
+- `pnpm run check` 的格式与 Lint 阶段通过，但原有 `apps/server/launch.mjs` 被 workspace 源码约束拒绝，因此不将全量检查标为通过。本轮保留该分发启动入口，未放宽 `.mjs` 约束。
+
 ## Desktop Site 端口冲突修复（2026-09-18）
 
 - 新增端口/进程回归：直接脚本参数适配、本机地址与监听进程归属、自定义脚本冲突时拒绝启动、通配监听占用识别、ANSI/分段输出的实际地址同步、拒绝其他进程宣告地址、启动中停止与并发启动、预检查后被抢占、真实 Vite 显式端口冲突后自动改用空闲端口。Vite 退出后原占用服务仍可访问。

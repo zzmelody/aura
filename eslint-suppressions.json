@@ -1,0 +1,721 @@
+{
+  "packages/backend/content-research/src/budget.ts": {
+    "one-var": {
+      "count": 6
+    }
+  },
+  "packages/backend/content-research/src/index.ts": {
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 12
+    }
+  },
+  "packages/backend/content-research/src/network.ts": {
+    "no-useless-escape": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/content-research/src/normalize.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    },
+    "one-var": {
+      "count": 5
+    }
+  },
+  "packages/backend/content-research/src/public-discovery.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/backend/content-research/src/storage.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/content-research/test/live.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/content-research/test/research.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 3
+    }
+  },
+  "packages/backend/dsh-auth/src/ai-services.ts": {
+    "new-cap": {
+      "count": 1
+    },
+    "no-control-regex": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 7
+    }
+  },
+  "packages/backend/dsh-auth/src/codex-token.ts": {
+    "new-cap": {
+      "count": 1
+    }
+  },
+  "packages/backend/dsh-auth/src/index.ts": {
+    "new-cap": {
+      "count": 1
+    }
+  },
+  "packages/backend/dsh-auth/test/authorization.test.ts": {
+    "new-cap": {
+      "count": 1
+    }
+  },
+  "packages/backend/extensions/src/index.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/action/pi/pi.action.js": {
+    "@typescript-eslint/ban-ts-comment": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/action-api.ts": {
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 5
+    },
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/actions.ts": {
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 10
+    },
+    "new-cap": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/artifact-bindings.ts": {
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/artifact-history.ts": {
+    "new-cap": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/artifact-http.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/chat-models.ts": {
+    "new-cap": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/chat-tools.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/chat.ts": {
+    "new-cap": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/content-analytics.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/content-library.ts": {
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    },
+    "one-var": {
+      "count": 22
+    }
+  },
+  "packages/backend/orchestration/src/content-media.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    },
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "no-control-regex": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 13
+    }
+  },
+  "packages/backend/orchestration/src/content-production.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    },
+    "one-var": {
+      "count": 3
+    }
+  },
+  "packages/backend/orchestration/src/demo.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/gpt-image.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/plugin.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "no-case-declarations": {
+      "count": 2
+    }
+  },
+  "packages/backend/orchestration/src/registry.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "packages/backend/orchestration/src/sessions.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "new-cap": {
+      "count": 5
+    },
+    "no-unexpected-multiline": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/topic-library.ts": {
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    },
+    "one-var": {
+      "count": 10
+    }
+  },
+  "packages/backend/orchestration/src/topic-production.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 2
+    }
+  },
+  "packages/backend/orchestration/src/tripo-budget.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/types.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    },
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 8
+    }
+  },
+  "packages/backend/orchestration/src/video-compose.ts": {
+    "one-var": {
+      "count": 3
+    }
+  },
+  "packages/backend/orchestration/src/video-library.ts": {
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 7
+    }
+  },
+  "packages/backend/orchestration/src/video-media.ts": {
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/video-production.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/wav.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/src/workflow-artifacts.ts": {
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/action-capabilities.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/chat-models.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "new-cap": {
+      "count": 2
+    }
+  },
+  "packages/backend/orchestration/test/chat-tools.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 8
+    }
+  },
+  "packages/backend/orchestration/test/content-analytics.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    },
+    "one-var": {
+      "count": 2
+    }
+  },
+  "packages/backend/orchestration/test/content-browser.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/content-export.ts": {
+    "one-var": {
+      "count": 2
+    }
+  },
+  "packages/backend/orchestration/test/content-fixture.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    },
+    "one-var": {
+      "count": 5
+    }
+  },
+  "packages/backend/orchestration/test/content-live.test.ts": {
+    "one-var": {
+      "count": 2
+    }
+  },
+  "packages/backend/orchestration/test/content-production.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    },
+    "one-var": {
+      "count": 2
+    }
+  },
+  "packages/backend/orchestration/test/contribution-hash.test.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/custom-provider.test.ts": {
+    "one-var": {
+      "count": 2
+    }
+  },
+  "packages/backend/orchestration/test/discovery.test.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/durable.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 5
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/gpt-image.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/local-ai.test.ts": {
+    "one-var": {
+      "count": 2
+    }
+  },
+  "packages/backend/orchestration/test/plugin-capabilities.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/session-errors.test.ts": {
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/topic-browser.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/topic-fixture.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    },
+    "one-var": {
+      "count": 4
+    }
+  },
+  "packages/backend/orchestration/test/topic-research.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 4
+    }
+  },
+  "packages/backend/orchestration/test/tripo-budget.test.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/video-browser.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/backend/orchestration/test/video-fixture.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-explicit-any": {
+      "count": 9
+    },
+    "one-var": {
+      "count": 2
+    }
+  },
+  "packages/backend/orchestration/test/video-production.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    },
+    "one-var": {
+      "count": 3
+    }
+  },
+  "packages/backend/orchestration/test/workflow-artifacts.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 2
+    }
+  },
+  "packages/backend/runtime/src/ai-services-routes.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/runtime/src/ai-services.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/runtime/src/index.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    }
+  },
+  "packages/backend/runtime/src/model-probe.ts": {
+    "new-cap": {
+      "count": 2
+    }
+  },
+  "packages/backend/runtime/src/runtime-config.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    }
+  },
+  "packages/backend/runtime/test/ai-services.test.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/backend/runtime/test/api-server.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/backend/runtime/test/service-routes.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/backend/tripo/src/game-asset.ts": {
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "packages/backend/tripo/src/index.ts": {
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/backend/tripo/test/tripo.test.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/frontend/ui/src/theme.ts": {
+    "no-useless-escape": {
+      "count": 14
+    }
+  },
+  "packages/frontend/ui/src/web.tsx": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/App.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/CodexLoginButton.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/SessionDialog.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/contentAnalytics.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/flowDraft.ts": {
+    "no-useless-escape": {
+      "count": 6
+    }
+  },
+  "packages/frontend/workbench/src/flowGraph.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/screens/Chat.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/screens/ContentEditors.tsx": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    },
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/screens/ContentProjects.tsx": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 2
+    }
+  },
+  "packages/frontend/workbench/src/screens/FlowGraphView.tsx": {
+    "one-var": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/screens/FlowStudio.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "packages/frontend/workbench/src/screens/ModelServiceSettings.tsx": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/screens/PluginDirectorySettings.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/screens/Settings.tsx": {
+    "@typescript-eslint/array-type": {
+      "count": 2
+    }
+  },
+  "packages/frontend/workbench/src/screens/TopicDetail.tsx": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/screens/TopicLibrary.tsx": {
+    "one-var": {
+      "count": 2
+    }
+  },
+  "packages/frontend/workbench/src/screens/VideoProjects.tsx": {
+    "one-var": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/screens/WorkflowModelPreview.tsx": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/screens/Workflows.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "packages/frontend/workbench/src/useCodexAuth.ts": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/src/useWorkspace.ts": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/test/chat-models.test.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/frontend/workbench/test/video-result.test.ts": {
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/shared/protocol/src/content-analytics.ts": {
+    "@typescript-eslint/no-empty-object-type": {
+      "count": 1
+    }
+  },
+  "packages/shared/protocol/src/content.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 3
+    },
+    "no-control-regex": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 3
+    }
+  },
+  "packages/shared/protocol/src/index.ts": {
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "packages/shared/protocol/src/models.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    }
+  },
+  "packages/shared/protocol/src/research.ts": {
+    "@typescript-eslint/consistent-type-imports": {
+      "count": 1
+    },
+    "one-var": {
+      "count": 1
+    }
+  },
+  "packages/shared/protocol/src/types.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 4
+    }
+  },
+  "packages/shared/protocol/src/video.ts": {
+    "@typescript-eslint/array-type": {
+      "count": 1
+    },
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "scripts/ci/requirements-ci-core.ts": {
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "scripts/ci/requirements-ci.ts": {
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "tests/desktop-preload.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  }
+}

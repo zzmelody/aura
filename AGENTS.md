@@ -1,6 +1,16 @@
 # Aura workspace rules
 
 Read `docs/architecture.md` before changing package placement or dependencies.
+Follow the Google TypeScript Style Guide, with Aura's explicit adaptations and React rules in `docs/code-style.md`.
+
+## Coding conventions and checks
+
+- Use [Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html) as the language/design baseline. `docs/code-style.md` documents local overrides; existing workspace and runtime rules below take precedence.
+- Let Prettier own formatting: two spaces, double quotes, semicolons, trailing commas and an 80-column target. Aura deliberately retains double quotes and existing file naming instead of Google's single quotes and filenames.
+- Prefer `const`, named library exports, `import type`, specific types and `unknown` with validation. Do not add explicit `any`, unused imports or mutable exported bindings. Framework entrypoints and compatibility declarations follow the exceptions in the coding guide.
+- Follow React's Rules of Hooks and declare complete effect/callback dependencies. Clean up subscriptions and cancellable work.
+- Run `pnpm run format:check` and `pnpm run lint` for source changes. Format touched files with `pnpm exec prettier --write <files>`; run `pnpm run lint:prune` after fixing historical lint findings.
+- Legacy baselines only record pre-existing debt. Never regenerate or expand them to hide new violations; document any narrowly scoped rule suppression and its reason.
 
 ## Application and package placement
 
@@ -12,6 +22,14 @@ Read `docs/architecture.md` before changing package placement or dependencies.
 - `packages/shared/*` owns deterministic, runtime-neutral types, validation, storage formats and workflow logic. Shared packages may depend only on other shared packages and must not depend on React, browser DOM, Capacitor, Electron, Node services or secret-bearing code.
 - Every package under `packages/*` declares `aura.kind: library` and its directory layer as `aura.layer`. No workspace may import or depend on an application.
 - Use package names and explicit `exports` between workspaces. Do not use cross-package relative imports or private source subpaths.
+
+## External plugin JavaScript style
+
+- Use the repository-owned [Aura plugin development skill](.agents/skills/aura-plugin-development/SKILL.md) for Aura plugin and plugin-host work. Keep its `agents/` metadata and `references/` resources versioned with the skill.
+- Before creating or changing external plugin Actions, Flows, capability providers or helpers, read [the Airbnb-based plugin JavaScript standard](docs/plugin-javascript-code-style.md) and the plugin's own `AGENTS.md`.
+- Keep plugin runtime entries as native ESM JavaScript with `// @ts-check`. Apply Airbnb rules and the documented SDK exceptions. Use Prettier for formatting and ESLint for quality checks; do not compress statements or control-flow blocks into one line.
+- Format and lint the files changed for the task. Preserve canonical contribution IDs, schemas, durable step IDs and embedded source strings. Keep formatting-only changes separate from behavior changes.
+- This section applies to external plugin packages. Aura host code and built-in contributions retain the existing TypeScript rules and repository tool configuration.
 
 ## Dependency and credential rules
 

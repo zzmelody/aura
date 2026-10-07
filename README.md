@@ -64,6 +64,8 @@ npm install --prefix .tools/pnpm pnpm@10.17.1
 
 ## 构建与验证
 
+项目采用 Google TypeScript Style Guide 的 Aura 适配版，具体来源、适配项与检查命令见 [代码规范](docs/code-style.md)。新增或修改的文件使用 Prettier 统一格式，ESLint 检查 TypeScript 与 React Hook；`pnpm run check` 同时执行这些检查、工作区边界检查、类型检查和测试。历史格式与 Lint 问题分别记录在根基线文件中，按规范逐步清理。
+
 ```powershell
 .\scripts\aura.ps1 run check
 .\scripts\aura.ps1 run build
@@ -102,5 +104,7 @@ tests/         仓库级工作区规则测试
 ```
 
 放置和依赖规则见 [AGENTS.md](AGENTS.md)。简要规则是：可运行入口只放 `apps/*`，可复用库才放 `packages/*`；frontend 只依赖 frontend/shared，backend 只依赖 backend/shared，shared 只依赖 shared；任何 workspace 都不能导入应用；跨 workspace 只使用显式导出和 `workspace:*`。
+
+仓库内置 [Aura 插件开发 skill](.agents/skills/aura-plugin-development/SKILL.md)，包含插件契约、JavaScript 编码规范和调用配置，随 Git 一起维护。开发 Aura 插件或插件宿主时按该 skill 执行；在 Codex 中可使用 `$aura-plugin-development` 调用。
 
 更多信息见 [架构](docs/architecture.md)、[后端 Runtime 技术方案](docs/backend-runtime.md)、[模型接入](docs/model-providers.md)、[主题规范](docs/design-system.md) 和 [验证记录](docs/verification.md)。
