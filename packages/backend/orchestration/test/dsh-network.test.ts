@@ -15,12 +15,16 @@ test("DSH routes network requests through the runtime proxy", async () => {
         socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
         pending = "";
       } else {
-        socket.end("HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\nthrough-proxy");
+        socket.end(
+          "HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\nthrough-proxy",
+        );
       }
     });
   });
   const port = await new Promise<number>((resolve, reject) => {
-    server.listen(0, "127.0.0.1", () => resolve((server.address() as {port: number}).port));
+    server.listen(0, "127.0.0.1", () =>
+      resolve((server.address() as { port: number }).port),
+    );
     server.once("error", reject);
   });
   let installed: EnvHttpProxyAgent | undefined;
@@ -30,7 +34,9 @@ test("DSH routes network requests through the runtime proxy", async () => {
       HTTPS_PROXY: `http://127.0.0.1:${port}`,
       NO_PROXY: "127.0.0.1,localhost,[::1]",
     },
-    (agent) => { installed = agent; },
+    (agent) => {
+      installed = agent;
+    },
   );
   try {
     assert.equal(result, true);
@@ -47,5 +53,10 @@ test("DSH routes network requests through the runtime proxy", async () => {
 });
 
 test("DSH leaves direct networking alone when no proxy is configured", () => {
-  assert.equal(configureDshNetwork({}, () => { throw new Error("unexpected"); }), false);
+  assert.equal(
+    configureDshNetwork({}, () => {
+      throw new Error("unexpected");
+    }),
+    false,
+  );
 });

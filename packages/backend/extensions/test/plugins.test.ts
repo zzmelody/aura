@@ -91,7 +91,12 @@ const options = (configPath: string) => ({
 test("missing configuration keeps built-in contributions available", async () =>
   fixture(async (root) => {
     const result = await loadAuraPlugins(options(join(root, "missing.json")));
-    assert.deepEqual(result, { actionRoots: [], flowRoots: [], capabilityRoots: [], plugins: [] });
+    assert.deepEqual(result, {
+      actionRoots: [],
+      flowRoots: [],
+      capabilityRoots: [],
+      plugins: [],
+    });
   }));
 
 test("contributed capability providers are granted by ID and receive plugin settings", async () =>
@@ -101,26 +106,55 @@ test("contributed capability providers are granted by ID and receive plugin sett
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     manifest.contributes.capabilities = "./capabilities";
     await writeFile(manifestPath, JSON.stringify(manifest));
-    await mkdir(join(plugin, "capabilities", "world-agent"), { recursive: true });
-    await writeFile(join(plugin, "capabilities", "world-agent", "world-agent.capability.js"), "export default {};\n");
+    await mkdir(join(plugin, "capabilities", "world-agent"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(plugin, "capabilities", "world-agent", "world-agent.capability.js"),
+      "export default {};\n",
+    );
     const config = join(root, "plugins.json");
-    await writeFile(config, JSON.stringify({ version: 1, plugins: [
-      { path: plugin, enabled: true, trust: "local", settings: { session: "s" } },
-    ] }));
+    await writeFile(
+      config,
+      JSON.stringify({
+        version: 1,
+        plugins: [
+          {
+            path: plugin,
+            enabled: true,
+            trust: "local",
+            settings: { session: "s" },
+          },
+        ],
+      }),
+    );
     const result = await loadAuraPlugins(options(config));
     assert.equal(result.plugins[0]?.available, true, result.plugins[0]?.error);
-    assert.deepEqual(result.actionRoots[0]?.capabilities, ["example.providers/world-agent"]);
-    assert.equal(result.capabilityRoots[0]?.path, await realpath(join(plugin, "capabilities")));
+    assert.deepEqual(result.actionRoots[0]?.capabilities, [
+      "example.providers/world-agent",
+    ]);
+    assert.equal(
+      result.capabilityRoots[0]?.path,
+      await realpath(join(plugin, "capabilities")),
+    );
     assert.deepEqual(result.capabilityRoots[0]?.settings, { session: "s" });
 
     // The settings UI edits paths only; plugin-owned settings survive a save.
     const manager = await AuraPluginManager.create(options(config));
     manager.setActivator(async () => undefined);
-    await manager.updateSettings({ plugins: [{ path: plugin, enabled: true }] });
-    assert.deepEqual((await readAuraPluginConfiguration(config)).plugins[0]?.settings, { session: "s" });
+    await manager.updateSettings({
+      plugins: [{ path: plugin, enabled: true }],
+    });
+    assert.deepEqual(
+      (await readAuraPluginConfiguration(config)).plugins[0]?.settings,
+      { session: "s" },
+    );
 
     await writeFile(join(plugin, "capabilities", "stray.js"), "");
-    assert.match((await loadAuraPlugins(options(config))).plugins[0]?.error ?? "", /贡献根目录只能包含直接贡献目录/u);
+    assert.match(
+      (await loadAuraPlugins(options(config))).plugins[0]?.error ?? "",
+      /贡献根目录只能包含直接贡献目录/u,
+    );
   }));
 
 test("loads an explicitly enabled relative plugin directory", async () =>

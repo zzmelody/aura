@@ -1,10 +1,12 @@
 # @aura/orchestration
 
+`src/` 根模块拥有执行引擎、恢复、注册和 DSH 集成；业务模块按 `content/`、`video/`、`topics/` 归拢，产物登记、历史绑定和 HTTP 交付在 `artifacts/`，模型进程适配在 `local-ai/`。各领域的 library、production 与 routes 分开，公共 package 子路径名称保持稳定。完整职责见 [模块边界](../../../docs/development/module-boundaries.md)。
+
 Aura 的 durable workflow script 引擎。脚本负责控制流；Graph 是只读静态投影。恢复从 `run()` 入口重放，完成的关键调用返回存档结果。运行时不保存 JS 栈、闭包、Promise 或任意局部变量。
 
 ## 编写 Flow
 
-Flow 入口为 `flow/<flow-id>/<flow-id>.flow.js`，每个一级目录只允许一个同名入口；本地辅助模块可以嵌套。使用公开 `@aura/orchestration/flow` 导出获得 checkJs/编辑器类型推导。
+内置 Flow 支持 `flow/<flow-id>/<flow-id>.flow.ts`，兼容原有 `.flow.js`；每个一级目录只允许一个同名入口，本地辅助模块可以嵌套。新增内置入口使用 TypeScript。外部插件仍按公共 SDK 契约加载 ESM JavaScript。使用公开 `@aura/orchestration/flow` 导出获得类型推导。
 
 ```js
 import { defineFlow, z } from "@aura/orchestration/flow";
@@ -122,8 +124,8 @@ export default defineFlow({
 
 | 参数              | 范围与默认行为                                                                                                                                                                        |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`           | 当前模式 provider 下的模型 ID，1–200 字符。Codex 默认 `AURA_CODEX_MODEL` 或 `gpt-6.1-sol`；Demo 默认 `deepseek-v4-flash`                                                            |
-| `reasoningEffort` | DSH 对所选模型支持的准确档位；Codex 默认 `xhigh`（Extra high），Demo profile 仅支持 `off`。不做静默降档或别名转换                                                                                  |
+| `model`           | 当前模式 provider 下的模型 ID，1–200 字符。Codex 默认 `AURA_CODEX_MODEL` 或 `gpt-6.1-sol`；Demo 默认 `deepseek-v4-flash`                                                              |
+| `reasoningEffort` | DSH 对所选模型支持的准确档位；Codex 默认 `xhigh`（Extra high），Demo profile 仅支持 `off`。不做静默降档或别名转换                                                                     |
 | `temperature`     | 0–2；不设置时交给供应商默认。透传到 DSH，请求是否接受该参数由具体模型决定                                                                                                             |
 | `maxTokens`       | 1–1,000,000 的整数，具体模型还可能有更低限制。Demo 默认 4096。**当前锁定版本的 Codex 适配器不转发此字段，因此 Codex 模式显式设置会报 `AGENT_OPTION_UNSUPPORTED`，不承诺伪造的硬上限** |
 | `timeoutMs`       | 1,000–600,000 的整数；默认 180,000。限制每次 Agent attempt 的总时长，不是整个 Run 或单次模型请求的时长                                                                                |

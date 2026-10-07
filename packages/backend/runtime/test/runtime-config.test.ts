@@ -45,7 +45,10 @@ test("runtime configuration resolves paths and validates network settings", () =
   assert.equal(isLoopbackRuntimeHost("0.0.0.0"), false);
   assert.equal(resolveRuntimeConfig({ root, port: 0 }).port, 0);
   assert.throws(() => resolveRuntimeConfig({ port: -1 }), /port is invalid/);
-  assert.throws(() => resolveRuntimeConfig({ port: 65_536 }), /port is invalid/);
+  assert.throws(
+    () => resolveRuntimeConfig({ port: 65_536 }),
+    /port is invalid/,
+  );
   const previous = process.env.AURA_ROOT;
   try {
     process.env.AURA_ROOT = resolve("fixture-env-root");

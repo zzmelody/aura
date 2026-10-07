@@ -10,7 +10,28 @@ import {
   readCodexImageStream,
   type GptImageClient,
 } from "../src/gpt-image.ts";
-import { GeneratedArtifacts } from "../src/generated-artifacts.ts";
+import { GeneratedArtifacts } from "../src/artifacts/generated.ts";
+
+test("Codex image parsing ignores malformed event shapes and accepts a later image", async () => {
+  const events = [
+    null,
+    1,
+    [],
+    { type: "response.output_item.done", item: null },
+    {
+      type: "response.output_item.done",
+      item: {
+        type: "image_generation_call",
+        result: Buffer.from("image").toString("base64"),
+      },
+    },
+  ];
+  const response = new Response(
+    events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+  );
+  const image = await readCodexImageStream(response);
+  assert.equal(Buffer.from(image.bytes).toString(), "image");
+});
 
 type Execute = (
   ctx: Record<string, unknown>,
@@ -19,9 +40,11 @@ type Execute = (
 
 async function action(): Promise<Execute> {
   let execute: Execute | undefined;
-  await (imageAction as unknown as {
-    apply(ctx: unknown, config: unknown): Promise<void>;
-  }).apply(
+  await (
+    imageAction as unknown as {
+      apply(ctx: unknown, config: unknown): Promise<void>;
+    }
+  ).apply(
     {
       auraActionRegistry: {
         async register(
@@ -39,16 +62,18 @@ async function action(): Promise<Execute> {
           },
         ) {
           execute = (ctx, input) =>
-            registration
-              .tool("image_generate", ctx)
-              .execute(input, {
-                callId: "call",
-                signal: new AbortController().signal,
-              }) as Promise<Record<string, unknown>>;
+            registration.tool("image_generate", ctx).execute(input, {
+              callId: "call",
+              signal: new AbortController().signal,
+            }) as Promise<Record<string, unknown>>;
         },
       },
     },
-    { actionId: "image-generate", directory: ".", entry: "image-generate.action.js" },
+    {
+      actionId: "image-generate",
+      directory: ".",
+      entry: "image-generate.action.js",
+    },
   );
   assert(execute);
   return execute;
@@ -102,7 +127,11 @@ test("image action prefers GPT via Codex and falls back to the local model when 
   );
   assert.equal(fallback.engine, "local");
   assert.match(String(fallback.fallbackReason), /未登录 Codex/u);
-  assert.deepEqual(localCalls[0], { prompt: "海边灯塔", width: 864, height: 1152 });
+  assert.deepEqual(localCalls[0], {
+    prompt: "海边灯塔",
+    width: 864,
+    height: 1152,
+  });
 
   const forcedLocal = await execute(
     { gptImage: gpt(true, gptCalls), localAI: local(localCalls) },
@@ -145,10 +174,13 @@ test("a failed GPT request never silently falls back to another engine", async (
 });
 
 const sse = (...events: object[]) =>
-  new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""), {
-    status: 200,
-    headers: { "content-type": "text/event-stream" },
-  });
+  new Response(
+    events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
+    {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    },
+  );
 
 test("Codex stream parsing returns the finished image or a clear failure", async () => {
   const image = await readCodexImageStream(
@@ -168,7 +200,12 @@ test("Codex stream parsing returns the finished image or a clear failure", async
   assert.equal(Buffer.from(image.bytes).toString(), "png-bytes");
   assert.equal(image.revisedPrompt, "refined");
   await assert.rejects(
-    readCodexImageStream(sse({ type: "response.failed", response: { error: { message: "policy" } } })),
+    readCodexImageStream(
+      sse({
+        type: "response.failed",
+        response: { error: { message: "policy" } },
+      }),
+    ),
     /图片生成失败：policy/u,
   );
   await assert.rejects(
@@ -185,13 +222,16 @@ test("GPT image service sends one Codex request with the size, saves a previewab
     })
       .png()
       .toBuffer();
-    const bodies: Record<string, any>[] = [];
+    const bodies: Array<Record<string, unknown>> = [];
     const service = new GptImageService({
       request: async (body) => {
         bodies.push(body);
         return sse({
           type: "response.output_item.done",
-          item: { type: "image_generation_call", result: png.toString("base64") },
+          item: {
+            type: "image_generation_call",
+            result: png.toString("base64"),
+          },
         });
       },
       signedIn: async () => true,
@@ -221,7 +261,10 @@ test("GPT image service sends one Codex request with the size, saves a previewab
       outputRoot: root,
     });
     await assert.rejects(
-      expired.generate({ prompt: "x", aspect: "square" }, AbortSignal.timeout(1000)),
+      expired.generate(
+        { prompt: "x", aspect: "square" },
+        AbortSignal.timeout(1000),
+      ),
       /登录已失效/u,
     );
     const limited = new GptImageService({
@@ -231,7 +274,10 @@ test("GPT image service sends one Codex request with the size, saves a previewab
       outputRoot: root,
     });
     await assert.rejects(
-      limited.generate({ prompt: "x", aspect: "square" }, AbortSignal.timeout(1000)),
+      limited.generate(
+        { prompt: "x", aspect: "square" },
+        AbortSignal.timeout(1000),
+      ),
       /额度已达上限/u,
     );
     let sent = 0;
@@ -245,7 +291,10 @@ test("GPT image service sends one Codex request with the size, saves a previewab
       outputRoot: root,
     });
     await assert.rejects(
-      lost.generate({ prompt: "x", aspect: "square" }, AbortSignal.timeout(1000)),
+      lost.generate(
+        { prompt: "x", aspect: "square" },
+        AbortSignal.timeout(1000),
+      ),
       /无法连接 Codex/u,
     );
     assert.equal(sent, 1);

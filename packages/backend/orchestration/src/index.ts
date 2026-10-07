@@ -2,13 +2,13 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { artifactResponse, type ArtifactFile } from "./artifact-http.ts";
-import { GeneratedArtifacts } from "./generated-artifacts.ts";
-import { videoRoutes } from "./video-routes.ts";
-import { contentRoutes } from "./content-routes.ts";
-import { topicRoutes } from "./topic-routes.ts";
-import { contentAnalyticsRoutes } from "./content-analytics-routes.ts";
-import { storeContentBytes } from "./content-media.ts";
+import { artifactResponse, type ArtifactFile } from "./artifacts/http.ts";
+import { GeneratedArtifacts } from "./artifacts/generated.ts";
+import { videoRoutes } from "./video/routes.ts";
+import { contentRoutes } from "./content/routes.ts";
+import { topicRoutes } from "./topics/routes.ts";
+import { contentAnalyticsRoutes } from "./content/analytics-routes.ts";
+import { storeContentBytes } from "./content/media.ts";
 import { ActionFailure } from "./action-api.ts";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
 import type {
@@ -120,21 +120,53 @@ export class OrchestrationHost {
     );
   }
 
-  async uploadContentAsset(bytes: Uint8Array, name: string, mime: string, signal: AbortSignal) {
-    if (bytes.length > (mime === "video/mp4" ? 200 : 32) * 1024 * 1024) throw new FlowError("素材超过上传大小限制。", 413);
-    const asset = await storeContentBytes(new GeneratedArtifacts(join(this.options.dshHome, "aura-generated-assets")), bytes, name, signal);
-    if (asset.mimeType !== mime || !["image", "video"].includes(asset.kind)) throw new FlowError("素材内容与声明格式不匹配。", 415);
+  async uploadContentAsset(
+    bytes: Uint8Array,
+    name: string,
+    mime: string,
+    signal: AbortSignal,
+  ) {
+    if (bytes.length > (mime === "video/mp4" ? 200 : 32) * 1024 * 1024)
+      throw new FlowError("素材超过上传大小限制。", 413);
+    const asset = await storeContentBytes(
+      new GeneratedArtifacts(
+        join(this.options.dshHome, "aura-generated-assets"),
+      ),
+      bytes,
+      name,
+      signal,
+    );
+    if (asset.mimeType !== mime || !["image", "video"].includes(asset.kind))
+      throw new FlowError("素材内容与声明格式不匹配。", 415);
     return { ...asset, uploaded: true };
   }
 
   async contentAssetContent(id: string, assetId: string, request: Request) {
-    const descriptor = await this.request<ArtifactFile>("content-projects/asset", { id, assetId }, request.signal);
-    return artifactResponse(join(this.options.dshHome, "aura-generated-assets"), descriptor, request, false);
+    const descriptor = await this.request<ArtifactFile>(
+      "content-projects/asset",
+      { id, assetId },
+      request.signal,
+    );
+    return artifactResponse(
+      join(this.options.dshHome, "aura-generated-assets"),
+      descriptor,
+      request,
+      false,
+    );
   }
 
   async topicAssetContent(id: string, assetId: string, request: Request) {
-    const descriptor = await this.request<ArtifactFile>("topic-library/asset", { id, assetId }, request.signal);
-    return artifactResponse(join(this.options.dshHome, "aura-generated-assets"), descriptor, request, false);
+    const descriptor = await this.request<ArtifactFile>(
+      "topic-library/asset",
+      { id, assetId },
+      request.signal,
+    );
+    return artifactResponse(
+      join(this.options.dshHome, "aura-generated-assets"),
+      descriptor,
+      request,
+      false,
+    );
   }
 
   async open() {
@@ -179,14 +211,16 @@ export class OrchestrationHost {
           AURA_FLOW_ROOTS: JSON.stringify(flowRoots),
           AURA_ACTION_ROOTS: JSON.stringify(actionRoots),
           AURA_PLUGIN_STATUSES: JSON.stringify(this.options.plugins ?? []),
-          AURA_CAPABILITY_ROOTS: JSON.stringify(this.options.capabilityRoots ?? []),
+          AURA_CAPABILITY_ROOTS: JSON.stringify(
+            this.options.capabilityRoots ?? [],
+          ),
           ...(this.options.tripoCredentialPath
             ? {
                 AURA_TRIPO_CREDENTIAL_PATH: this.options.tripoCredentialPath,
                 AURA_TRIPO_REGION: this.options.tripoRegion ?? "global",
               }
             : {}),
-        AURA_CODEX_MODEL: codexModel || "gpt-6.1-sol",
+          AURA_CODEX_MODEL: codexModel || "gpt-6.1-sol",
           AURA_DEMO_KEY: "demo-only-not-a-real-key",
           AURA_DEMO_BASE_URL: modelURL,
           NO_PROXY: "127.0.0.1,localhost",
@@ -334,7 +368,9 @@ export class OrchestrationHost {
       ...root,
       ...(root.plugin ? { plugin: { ...root.plugin } } : {}),
     }));
-    this.options.capabilityRoots = structuredClone(configuration.capabilityRoots);
+    this.options.capabilityRoots = structuredClone(
+      configuration.capabilityRoots,
+    );
     this.options.plugins = configuration.plugins.map((plugin) => ({
       ...plugin,
     }));
@@ -403,7 +439,13 @@ export function createFlowApp(
     Partial<
       Pick<
         OrchestrationHost,
-        "artifactContent" | "uploadImage" | "imageAssetContent" | "videoAssetContent" | "uploadContentAsset" | "contentAssetContent" | "topicAssetContent"
+        | "artifactContent"
+        | "uploadImage"
+        | "imageAssetContent"
+        | "videoAssetContent"
+        | "uploadContentAsset"
+        | "contentAssetContent"
+        | "topicAssetContent"
       >
     >,
 ) {
@@ -416,23 +458,25 @@ export function createFlowApp(
   app.use("*", (context, next) =>
     bodyLimit({
       maxSize:
-        context.req.method === "POST" && /(?:^|\/)content-projects\/[^/]+\/assets$/.test(context.req.path)
+        context.req.method === "POST" &&
+        /(?:^|\/)content-projects\/[^/]+\/assets$/.test(context.req.path)
           ? 200 * 1024 * 1024
           : /(?:^|\/)content-projects(?:\/|$)/.test(context.req.path)
             ? 2 * 1024 * 1024
             : context.req.method === "POST" &&
-        (context.req.path === "/assets/images" ||
-          /^\/video-projects\/[^/]+\/images$/.test(context.req.path))
-          ? 32 * 1024 * 1024
-          : context.req.path.startsWith("/video-projects")
-            ? 2 * 1024 * 1024
-            : 256 * 1_024,
+                (context.req.path === "/assets/images" ||
+                  /^\/video-projects\/[^/]+\/images$/.test(context.req.path))
+              ? 32 * 1024 * 1024
+              : context.req.path.startsWith("/video-projects")
+                ? 2 * 1024 * 1024
+                : 256 * 1_024,
       onError: (context) => context.json({ message: "Flow 请求过大。" }, 413),
     })(context, next),
   );
 
   app.get("/assets/images/:id", async (context) => {
-    if (!host.imageAssetContent) throw new FlowError("图片资产服务不可用。", 503);
+    if (!host.imageAssetContent)
+      throw new FlowError("图片资产服务不可用。", 503);
     return host.imageAssetContent(context.req.param("id"), context.req.raw);
   });
 

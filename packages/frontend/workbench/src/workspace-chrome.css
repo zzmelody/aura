@@ -641,7 +641,9 @@
   opacity: 0;
   pointer-events: none;
   color: var(--muted);
-  transition: opacity 110ms ease, color 110ms ease;
+  transition:
+    opacity 110ms ease,
+    color 110ms ease;
 }
 .session-row:is(:hover, :focus-within, .menu-open) .session-archive {
   opacity: 1;

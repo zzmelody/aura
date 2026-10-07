@@ -40,9 +40,7 @@ async function request(
         },
   );
   const result = (await response.json().catch(() => null)) as
-    | ModelServicesState
-    | { message?: string }
-    | null;
+    ModelServicesState | { message?: string } | null;
   if (!response.ok)
     throw new Error(
       (result && "message" in result && result.message) ||
@@ -57,7 +55,12 @@ export const readModelServices = (endpoint: string, signal?: AbortSignal) =>
 
 export const saveLumina = (
   endpoint: string,
-  update: { model?: string; reasoningEffort?: string; key?: string; clearKey?: boolean },
+  update: {
+    model?: string;
+    reasoningEffort?: string;
+    key?: string;
+    clearKey?: boolean;
+  },
   current: ModelServicesState["lumina"],
 ) =>
   request(endpoint, "/lumina", {
@@ -70,7 +73,10 @@ export const saveLumina = (
 export const checkLumina = (endpoint: string) =>
   request(endpoint, "/check/lumina", {});
 
-export const saveCustomService = (endpoint: string, draft: CustomServiceDraft) =>
+export const saveCustomService = (
+  endpoint: string,
+  draft: CustomServiceDraft,
+) =>
   request(endpoint, "/model", {
     mode: "custom",
     model: draft.model,

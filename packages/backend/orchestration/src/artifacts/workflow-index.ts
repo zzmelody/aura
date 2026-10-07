@@ -5,13 +5,10 @@ import type {
   WorkflowArtifact,
   WorkflowArtifacts,
 } from "@aura/protocol/types";
-import {
-  GeneratedArtifacts,
-  publishBytes,
-  readBoundedFile,
-} from "./generated-artifacts.ts";
-import { artifactHash, validArtifactId } from "./artifact-media.ts";
-import { FlowError } from "./schema.ts";
+import type { GeneratedArtifacts } from "./generated.ts";
+import { publishBytes, readBoundedFile } from "./generated.ts";
+import { artifactHash, validArtifactId } from "./media.ts";
+import { FlowError } from "../schema.ts";
 
 export interface ArtifactOwner {
   runId: string;

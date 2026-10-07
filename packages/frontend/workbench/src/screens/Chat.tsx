@@ -39,6 +39,8 @@ import { ComposerAddMenu } from "./ComposerAddMenu";
 import { WorkflowRichText } from "./WorkflowValue";
 import "./chat.css";
 
+const emptyMessages: Message[] = [];
+
 type Attachment = {
   key: string;
   preview: string;
@@ -107,26 +109,26 @@ function MessageView({
         </div>
       ) : null}
       {message.text || !user ? (
-      <div
-        className={`message-body${message.status === "error" ? " error" : ""}`}
-      >
-        {message.text ? (
-          // Replies render as Markdown; user turns stay literal text.
-          user || message.status === "error" ? (
-            message.text
-          ) : (
-            <WorkflowRichText text={message.text} />
-          )
-        ) : message.status === "streaming" ? (
-          <span className="thinking">
-            <span className="aura-spinner" />
-            正在准备回复…
-          </span>
-        ) : null}
-        {message.status === "stopped" ? (
-          <span className="message-stopped">回复已停止</span>
-        ) : null}
-      </div>
+        <div
+          className={`message-body${message.status === "error" ? " error" : ""}`}
+        >
+          {message.text ? (
+            // Replies render as Markdown; user turns stay literal text.
+            user || message.status === "error" ? (
+              message.text
+            ) : (
+              <WorkflowRichText text={message.text} />
+            )
+          ) : message.status === "streaming" ? (
+            <span className="thinking">
+              <span className="aura-spinner" />
+              正在准备回复…
+            </span>
+          ) : null}
+          {message.status === "stopped" ? (
+            <span className="message-stopped">回复已停止</span>
+          ) : null}
+        </div>
       ) : null}
       {!user && message.status !== "streaming" ? (
         <div className="message-actions">
@@ -195,7 +197,7 @@ export function ChatScreen({
   const formId = useId();
   const draft = workspace.draft;
   const session = workspace.active;
-  const messages = session?.messages ?? [];
+  const messages = session?.messages ?? emptyMessages;
   const canInvoke = !flowMode;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerQuery, setPickerQuery] = useState("");
@@ -235,9 +237,13 @@ export function ChatScreen({
         // Clipboard images are usually all named "image.png"; keep them apart.
         file.name && file.name !== "image.png"
           ? file
-          : new File([file], `粘贴的图片-${Date.now()}-${index + 1}.${(chatImageType(file) ?? "image/png").split("/")[1]}`, {
-              type: chatImageType(file) ?? file.type,
-            }),
+          : new File(
+              [file],
+              `粘贴的图片-${Date.now()}-${index + 1}.${(chatImageType(file) ?? "image/png").split("/")[1]}`,
+              {
+                type: chatImageType(file) ?? file.type,
+              },
+            ),
       );
   }
   function paste(event: React.ClipboardEvent) {
@@ -246,7 +252,9 @@ export function ChatScreen({
     event.preventDefault();
     if (flowMode) return;
     if (!canAttach) {
-      setAttachError("本地演示模式不能附带图片，请在下方切换到 DSH 演示或 Codex 订阅。");
+      setAttachError(
+        "本地演示模式不能附带图片，请在下方切换到 DSH 演示或 Codex 订阅。",
+      );
       return;
     }
     attach(files);
@@ -272,7 +280,9 @@ export function ChatScreen({
       uploadChatImage(endpoint, file)
         .then((image) =>
           setAttachments((current) =>
-            current.map((item) => (item.key === key ? { ...item, image } : item)),
+            current.map((item) =>
+              item.key === key ? { ...item, image } : item,
+            ),
           ),
         )
         .catch((cause: unknown) =>
@@ -374,7 +384,10 @@ export function ChatScreen({
     void workspace.send(draft, false, context, ready);
     clearAttachments();
   }
-  async function runSelected(value: Parameters<typeof workspace.startChatWorkflow>[1], mode: FlowMode) {
+  async function runSelected(
+    value: Parameters<typeof workspace.startChatWorkflow>[1],
+    mode: FlowMode,
+  ) {
     if (!selected) return;
     nearBottom.current = true;
     const accepted = await workspace.startChatWorkflow(selected, value, mode);
@@ -393,7 +406,9 @@ export function ChatScreen({
           {session?.title ?? (flowMode ? "一起构建工作流" : "新的对话")}
         </strong>
         <span className="badge">
-          <span className={`session-status${workspace.busy ? " running" : ""}`} />
+          <span
+            className={`session-status${workspace.busy ? " running" : ""}`}
+          />
           {workspace.busy ? "生成中" : providerName}
         </span>
       </div>
@@ -553,7 +568,9 @@ export function ChatScreen({
                 </button>
                 <button
                   className="text-control"
-                  onClick={() => workspace.workflows.discardPending(session!.id)}
+                  onClick={() =>
+                    workspace.workflows.discardPending(session!.id)
+                  }
                 >
                   放弃
                 </button>
@@ -576,7 +593,11 @@ export function ChatScreen({
               onTextChange={setFormText}
               endpoint={workspace.workflows.endpoint}
               initialMode={defaultMode}
-              locked={submitting || Boolean(pendingRun) || workspace.workflows.hasOpenRun(session?.id)}
+              locked={
+                submitting ||
+                Boolean(pendingRun) ||
+                workspace.workflows.hasOpenRun(session?.id)
+              }
               submitting={submitting}
               unavailable={!selected.available}
               error={runError}

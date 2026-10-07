@@ -1,14 +1,16 @@
 # @aura/workbench
 
+领域页面、API 与样式位于 `src/features/content`、`video`、`topics`。`src/screens` 保留通用对话、工作流与设置，工作区和宿主适配留在根模块。目录职责见 [模块边界](../../../docs/development/module-boundaries.md)。
+
 浏览器、Electron 与 Capacitor 共用的 Aura React Web 工作台，包含界面、导航、交互状态、Web Storage 和 HTTP transport。应用只提供 React DOM 运行时及少量宿主能力；本包只依赖 frontend/shared 库，不读取后端凭据，也不启动 DSH。
 
 移动端入口位于 `apps/mobile`，桌面端入口位于 `apps/desktop`。两端复用同一个 `App` 导出，平台启动、窗口和发布配置留在各自应用中。
 
 ## 紧凑工作台
 
-默认打开 Flow 工作台，左侧常驻会话导航，中央为流程图/代码/运行视图，右侧为可收起的生成助手。会话侧栏支持搜索、进行中筛选和后台生成状态；900px 以下改为抽屉，1180px 以下编辑区与助手单栏切换。
+会话侧栏支持搜索、进行中筛选和后台生成状态，小屏使用抽屉导航。
 
-Flow 使用 224px 纵向目录与弹性内容区，目录支持名称/ID/描述搜索、可运行筛选和独立滚动；本地草稿固定在目录底部。默认选择首个可用 Flow，点击目录即可浏览该 Flow 的节点图、只读代码与运行记录。标题、视图切换和运行入口集中在内容区顶部；导入/导出/复制到草稿等操作放入更多菜单，生成助手默认收起。Flow 区宽度不超过 700px 时，「全部 Flow」切换为整页列表，选择后返回内容。
+工作流首页用卡片展示用途与可用状态，支持搜索和可运行筛选。展开卡片后按需读取源码并预览节点图；编辑入口打开流程图/代码详情，运行入口创建绑定工作流的会话。导入、导出和草稿操作在编辑视图中提供。
 
 目录统一轮询 `/flows/catalog`。选中 Flow 时按需读取 `/flows/:flowId/source`，切换会取消旧请求，版本 hash 变更会更新预览。节点图自动适应画布，节点详情点击后浮出并可关闭。运行页不再重复列出 Flow，运行记录仅显示当前 Flow；参数草稿在已注册 Flow 之间切换时保留。
 
@@ -24,4 +26,4 @@ Flow 代码草稿以 `aura.flow-draft.v1` 自动保存在本机，支持代码�
 
 侧栏的 Site 菜单仅在 Electron 桌面宿主中启用本机项目运行器。选择包含 `package.json` 的前端项目目录后，后端会识别包管理器和 `dev`/`start`/`serve` 脚本；只有确认预览端口属于本次进程且 HTTP 就绪，才在独立窗口打开。支持的直接开发命令会先选择可用端口再启动，并把实际地址同步到页面；自定义命令冲突会报错。运行中锁定目录、脚本和地址，就绪超时仍保留停止按钮；「打开预览」仅在后端验证就绪后启用。共享 DTO 属于 `@aura/protocol/types`，frontend 不包含端口或进程操作。目录、脚本和预览地址保存在 `aura.site.v1`，不会进入会话、HTTP 请求或凭据存储；退出 Aura 会停止该项目进程。浏览器和移动端只显示桌面版提示。
 
-验证命令：`pnpm --filter @aura/workbench typecheck`、`pnpm --filter @aura/workbench test`。浏览器回归范围见 [验证记录](../../../../docs/verification.md)。
+验证命令：`pnpm --filter @aura/workbench typecheck`、`pnpm --filter @aura/workbench test`。当前结果见 [验证记录](../../../docs/verification.md)。

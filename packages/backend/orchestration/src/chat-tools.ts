@@ -23,8 +23,15 @@ export interface ChatToolHost {
     mode: FlowMode;
   }): Promise<FlowRun>;
   get(id: string): FlowRun;
-  createVideo(name: string, script: VideoScript): Promise<{ id: string; revisionId: string }>;
-  startVideo(id: string, revisionId: string, requestId: string): Promise<{ runId: string }>;
+  createVideo(
+    name: string,
+    script: VideoScript,
+  ): Promise<{ id: string; revisionId: string }>;
+  startVideo(
+    id: string,
+    revisionId: string,
+    requestId: string,
+  ): Promise<{ runId: string }>;
   startResearch(input: {
     requestId: string;
     request: ResearchRequest;
@@ -69,12 +76,16 @@ const summary = (run: FlowRun): JsonValue => {
     runId: run.id,
     ...(run.error ? { error: run.error.slice(0, 500) } : {}),
     ...(output
-      ? { output: output.length > 1_500 ? `${output.slice(0, 1_497)}…` : output }
+      ? {
+          output: output.length > 1_500 ? `${output.slice(0, 1_497)}…` : output,
+        }
       : {}),
   };
 };
 
-const compileTool = defineTool as unknown as (options: unknown) => ToolDefinition;
+const compileTool = defineTool as unknown as (
+  options: unknown,
+) => ToolDefinition;
 
 /**
  * The three chat-invocable workflows. Every tool starts at most one durable
@@ -231,12 +242,12 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
     execute: (
       args: {
         name: string;
-        shots: {
+        shots: Array<{
           title: string;
           narration: string;
           visualPrompt: string;
           speaker?: string;
-        }[];
+        }>;
       },
       exec: { callId: string; signal: AbortSignal },
     ) =>

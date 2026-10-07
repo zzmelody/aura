@@ -61,8 +61,20 @@ function allowsOrigin(origin: string, requestHostHeader: string | undefined) {
 const honoCors = cors({
   origin: (origin, context) =>
     allowsOrigin(origin, context.req.header("Host")) ? origin : null,
-  allowHeaders: ["Content-Type", "Idempotency-Key", "Range", "If-Range", "If-None-Match"],
-  exposeHeaders: ["Content-Length", "Content-Range", "Content-Disposition", "ETag", "Accept-Ranges"],
+  allowHeaders: [
+    "Content-Type",
+    "Idempotency-Key",
+    "Range",
+    "If-Range",
+    "If-None-Match",
+  ],
+  exposeHeaders: [
+    "Content-Length",
+    "Content-Range",
+    "Content-Disposition",
+    "ETag",
+    "Accept-Ranges",
+  ],
   allowMethods: ["GET", "HEAD", "POST", "OPTIONS"],
 });
 

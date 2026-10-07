@@ -7,11 +7,11 @@ export function wavDuration(bytes: Buffer): number {
     bytes.readUInt32LE(4) + 8 !== bytes.length
   )
     throw new Error("WAV 文件不完整。");
-  let offset = 12,
-    rate = 0,
-    align = 0,
-    sampleRate = 0,
-    data = 0;
+  let offset = 12;
+  let rate = 0;
+  let align = 0;
+  let sampleRate = 0;
+  let data = 0;
   while (offset + 8 <= bytes.length) {
     const length = bytes.readUInt32LE(offset + 4);
     if (offset + 8 + length > bytes.length) throw new Error("WAV 数据不完整。");

@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { FlowCatalogEntry } from "@aura/protocol/types";
-import { filterFlows, prefillFlowInput, slashQuery } from "../src/flowPicker.ts";
+import {
+  filterFlows,
+  prefillFlowInput,
+  slashQuery,
+} from "../src/flowPicker.ts";
 
 const flow = (id: string, title: string, available = true) =>
   ({ id, title, description: `${title} 说明`, available }) as FlowCatalogEntry;
@@ -20,10 +24,7 @@ test("picker matches title, description or ID and lists runnable flows first", (
     filterFlows(flows, "VIDEO").map((item) => item.id),
     ["short-video"],
   );
-  assert.deepEqual(
-    filterFlows(flows, "说明").length,
-    3,
-  );
+  assert.deepEqual(filterFlows(flows, "说明").length, 3);
 });
 
 test("only a leading slash token opens the inline picker", () => {
@@ -43,7 +44,11 @@ test("typed chat text seeds the first free-text field", () => {
     },
   };
   assert.deepEqual(
-    prefillFlowInput({ voice: "a", narration: "", seconds: 0 }, schema, " 讲一段 "),
+    prefillFlowInput(
+      { voice: "a", narration: "", seconds: 0 },
+      schema,
+      " 讲一段 ",
+    ),
     { voice: "a", narration: "讲一段", seconds: 0 },
   );
   assert.deepEqual(prefillFlowInput({ x: "" }, schema, "   "), { x: "" });

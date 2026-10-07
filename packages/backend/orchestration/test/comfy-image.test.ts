@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import sharp from "sharp";
-import { GeneratedArtifacts } from "../src/generated-artifacts.ts";
+import { GeneratedArtifacts } from "../src/artifacts/generated.ts";
 import { prepareWorkflow, isolateComfyLaunch } from "../src/local-ai/comfy.ts";
 import { createFlowApp } from "../src/index.ts";
 

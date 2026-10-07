@@ -290,8 +290,12 @@ export function chatHistory(messages: Message[]): Message[] {
         ...message,
         role: "assistant",
         status: "complete",
-        text: `[${title} · ${label}]${text ? `
-${text}` : ""}`,
+        text: `[${title} · ${label}]${
+          text
+            ? `
+${text}`
+            : ""
+        }`,
       },
     ];
   });

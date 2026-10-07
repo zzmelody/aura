@@ -1,7 +1,8 @@
+import type { GptImageClient } from "../gpt-image.ts";
 import { TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
-import type { ActionBinding, AuraCapabilityClient } from "./action-api.ts";
-import type { LocalAIClient } from "./local-ai/api.ts";
-import type { WorkflowArtifactIndex } from "./workflow-artifacts.ts";
+import type { ActionBinding, AuraCapabilityClient } from "../action-api.ts";
+import type { LocalAIClient } from "../local-ai/api.ts";
+import type { WorkflowArtifactIndex } from "./workflow-index.ts";
 
 /** Observe host producer results before an Action can reshape/drop them (including Agent tools). */
 export function artifactCallBinding(
@@ -9,7 +10,7 @@ export function artifactCallBinding(
   binding: ActionBinding,
   localAI?: LocalAIClient,
   aura?: AuraCapabilityClient,
-  gptImage?: import("./gpt-image.ts").GptImageClient,
+  gptImage?: GptImageClient,
 ): ActionBinding["bindCall"] {
   if (!index || !binding.runId || !binding.stepId) return undefined;
   return (callId) => {

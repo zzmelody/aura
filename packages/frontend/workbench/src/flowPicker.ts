@@ -38,7 +38,11 @@ export function prefillFlowInput(
   )
     return initial;
   const properties = schema.properties;
-  if (!properties || typeof properties !== "object" || Array.isArray(properties))
+  if (
+    !properties ||
+    typeof properties !== "object" ||
+    Array.isArray(properties)
+  )
     return initial;
   const key = Object.entries(properties).find(
     ([, field]) =>

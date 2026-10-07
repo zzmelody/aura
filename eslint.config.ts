@@ -34,7 +34,18 @@ export default defineConfig(
       "no-var": "error",
       "prefer-const": "error",
       "one-var": ["error", "never"],
-      "new-cap": "error",
+      "new-cap": [
+        "error",
+        {
+          // DSH exports branded ID factories with their public type names.
+          capIsNewExceptions: [
+            "MessageId",
+            "SessionId",
+            "ToolCallId",
+            "ReasoningEffortId",
+          ],
+        },
+      ],
       "guard-for-in": "error",
       "no-new-wrappers": "error",
       "@typescript-eslint/no-array-constructor": "error",

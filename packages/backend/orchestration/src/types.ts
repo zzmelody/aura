@@ -1,4 +1,11 @@
 import type {
+  JsonValue,
+  FlowMode,
+  ChatMessage,
+  ChatWorkflowStart,
+} from "@aura/protocol/types";
+import type { FlowImageReference } from "./flow-api.ts";
+import type {
   FlowCatalog,
   FlowCatalogEntry,
   FlowHistory,
@@ -38,7 +45,7 @@ export interface ContributionRoot {
 
 /** A plugin's capability provider directory and its opaque plugins.json settings. */
 export interface CapabilityRoot extends ContributionRoot {
-  settings?: import("@aura/protocol/types").JsonValue;
+  settings?: JsonValue;
 }
 
 export interface ContributionConfiguration {
@@ -68,8 +75,8 @@ export interface SessionPort {
   execute(
     step: FlowAgentStep & {
       input: string;
-      images?: import("./flow-api.ts").FlowImageReference[];
-      mode: import("@aura/protocol/types").FlowMode;
+      images?: FlowImageReference[];
+      mode: FlowMode;
       timeoutMs: number;
       signal: AbortSignal;
       runId: string;
@@ -84,7 +91,9 @@ export interface SessionPort {
 }
 
 export interface EngineOptions {
-  resolveAgentDefaults?(mode: import("@aura/protocol/types").FlowMode | "configured"): Promise<FlowAgentConfig>;
+  resolveAgentDefaults?(
+    mode: FlowMode | "configured",
+  ): Promise<FlowAgentConfig>;
   domain: FlowDomain;
   sessions: SessionPort;
   registry: {
@@ -105,15 +114,14 @@ export interface EngineOptions {
 
 /** One chat request handled by the long-lived DSH host. */
 export interface ChatTurn {
-  messages: import("@aura/protocol/types").ChatMessage[];
-  mode: import("@aura/protocol/types").FlowMode;
+  messages: ChatMessage[];
+  mode: FlowMode;
   /** Session-local overrides; never inherited by chat workflow tools. */
   model?: string;
   /** Resolved server-side for gateway modes; never accepted from a client. */
-  defaults?: import("@aura/protocol/types").FlowAgentConfig;
+  defaults?: FlowAgentConfig;
   reasoningEffort?: string;
 }
 /** Streamed chat output: reply text or a workflow started by a tool call. */
 export type ChatStreamEvent =
-  | { type: "delta"; text: string }
-  | ({ type: "workflow" } & import("@aura/protocol/types").ChatWorkflowStart);
+  { type: "delta"; text: string } | ({ type: "workflow" } & ChatWorkflowStart);

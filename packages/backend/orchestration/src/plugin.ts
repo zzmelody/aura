@@ -1,20 +1,29 @@
+import type {} from "@deepseek-ai/cordis-plugin-loader";
+import type {} from "@deepseek-ai/dsh-agent-presets";
+import type {} from "@deepseek-ai/dsh-settings";
+import type { AuraCapabilityClient } from "./action-api.ts";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import type { Context } from "@deepseek-ai/cordis";
-import type {} from "@deepseek-ai/cordis-plugin-loader";
+
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
-import type {} from "@deepseek-ai/dsh-agent-presets";
+
 import { ActionDiscovery, FlowDiscovery } from "./discovery.ts";
 import { FlowEngine } from "./engine.ts";
 import { FlowRegistry } from "./registry.ts";
 import { actionRunSchema, FlowError, runSchema } from "./schema.ts";
 import { dshSessions } from "./sessions.ts";
-import type { FlowMode, FlowRun } from "@aura/protocol/types";
+import type { FlowMode } from "@aura/protocol/types";
 
 const chatModeSchema = z.enum(["demo", "codex", "lumina", "custom"]);
-import type { CapabilityRoot, ContributionRoot, FlowDomain, Table } from "./types.ts";
+import type {
+  CapabilityRoot,
+  ContributionRoot,
+  FlowDomain,
+  Table,
+} from "./types.ts";
 import type { ActionRun, AuraPluginStatus } from "@aura/protocol/types";
 import { ActionRegistry } from "./action-registry.ts";
 import { ActionRuntime } from "./actions.ts";
@@ -22,33 +31,54 @@ import { AuraCapabilityRouter } from "./capability-router.ts";
 import { PluginCapabilities } from "./plugin-capabilities.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
 import { tripoLedgerDirectory } from "./tripo-budget.ts";
-import { GeneratedArtifacts } from "./generated-artifacts.ts";
-import { WorkflowArtifactIndex } from "./workflow-artifacts.ts";
-import { historicalArtifactReader } from "./artifact-history.ts";
+import { GeneratedArtifacts } from "./artifacts/generated.ts";
+import { WorkflowArtifactIndex } from "./artifacts/workflow-index.ts";
+import { historicalArtifactReader } from "./artifacts/history.ts";
 import { ActionRuns } from "./action-runs.ts";
 import {
   VideoLibrary,
   videoDomainSpec,
   type VideoDocument,
-} from "./video-library.ts";
-import { videoRequest } from "./video-routes.ts";
-import { contentRequest } from "./content-routes.ts";
+} from "./video/library.ts";
+import { videoRequest } from "./video/routes.ts";
+import { contentRequest } from "./content/routes.ts";
 import { ContentResearch } from "@aura/content-research";
-import { TopicLibrary, topicDomainSpec, type TopicState } from "./topic-library.ts";
-import { topicRequest } from "./topic-routes.ts";
-import { ContentLibrary, contentDomainSpec, type ContentDocument } from "./content-library.ts";
-import { ContentAnalyticsLibrary, contentAnalyticsDomainSpec } from "./content-analytics.ts";
-import { contentAnalyticsRequest } from "./content-analytics-routes.ts";
-import type { ContentExperiment, ContentMetricSnapshot, ContentPublication, ContentReview } from "@aura/protocol/content-analytics";
+import {
+  TopicLibrary,
+  topicDomainSpec,
+  type TopicState,
+} from "./topics/library.ts";
+import { topicRequest } from "./topics/routes.ts";
+import {
+  ContentLibrary,
+  contentDomainSpec,
+  type ContentDocument,
+} from "./content/library.ts";
+import {
+  ContentAnalyticsLibrary,
+  contentAnalyticsDomainSpec,
+} from "./content/analytics.ts";
+import { contentAnalyticsRequest } from "./content/analytics-routes.ts";
+import type {
+  ContentExperiment,
+  ContentMetricSnapshot,
+  ContentPublication,
+  ContentReview,
+} from "@aura/protocol/content-analytics";
 import { LocalAIManager } from "./local-ai/manager.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 import { configureDshNetwork } from "./dsh-network.ts";
 import { chatService } from "./chat.ts";
 import { chatModelCatalog, RejectedChatModels } from "./chat-models.ts";
 import { GptImageService, codexImageRequest } from "./gpt-image.ts";
-import { codexTokenSource, readAiServices, customProfiles, luminaSettings, selectedAgentConfig } from "@aura/dsh-auth";
+import {
+  codexTokenSource,
+  readAiServices,
+  customProfiles,
+  luminaSettings,
+  selectedAgentConfig,
+} from "@aura/dsh-auth";
 import { agentDefaults } from "./agent-config.ts";
-import type {} from "@deepseek-ai/dsh-settings";
 
 const pluginIdentitySchema = z
   .object({
@@ -209,7 +239,11 @@ class ContributionDiscoveries {
 
 async function extendHmrRoots(ctx: Context, roots: ContributionRoot[]) {
   const paths = await Promise.all(
-    roots.map(({ root, pluginRoot }) => realpath(resolve(pluginRoot ?? root)).catch(() => resolve(pluginRoot ?? root))),
+    roots.map(({ root, pluginRoot }) =>
+      realpath(resolve(pluginRoot ?? root)).catch(() =>
+        resolve(pluginRoot ?? root),
+      ),
+    ),
   );
   type DynamicHmr = {
     config: { root: string[] };
@@ -266,7 +300,10 @@ function contributionRoots(
 function capabilityRootsFromEnv(): CapabilityRoot[] {
   const value = process.env.AURA_CAPABILITY_ROOTS;
   if (!value) return [];
-  return z.array(capabilityRootSchema).max(64).parse(JSON.parse(value) as unknown) as CapabilityRoot[];
+  return z
+    .array(capabilityRootSchema)
+    .max(64)
+    .parse(JSON.parse(value) as unknown) as CapabilityRoot[];
 }
 
 function pluginStatuses(): AuraPluginStatus[] {
@@ -327,7 +364,7 @@ export async function apply(ctx: Context) {
   );
   // This owner survives individual Action Loader/HMR fibers.
   ctx.effect(() => () => localAI.close(), "aura-local-ai.lifecycle");
-  const capabilityRoutes: [string, import("./action-api.ts").AuraCapabilityClient][] = [];
+  const capabilityRoutes: Array<[string, AuraCapabilityClient]> = [];
   // GPT images use the signed-in Codex subscription, the same login as chat.
   const codexModel = process.env.AURA_CODEX_MODEL || "gpt-6.1-sol";
   const codexTokens = codexTokenSource(ctx, codexModel);
@@ -351,9 +388,21 @@ export async function apply(ctx: Context) {
       credentialPath: tripoCredentialPath,
       region,
       apiKey: process.env.TRIPO_API_KEY,
-      resolveOptions: async () => ({ credentialPath: tripoCredentialPath, region: (await readAiServices(process.env.AURA_FLOW_CWD ?? process.cwd(), codexModel, region)).tripoRegion, apiKey: process.env.TRIPO_API_KEY }),
+      resolveOptions: async () => ({
+        credentialPath: tripoCredentialPath,
+        region: (
+          await readAiServices(
+            process.env.AURA_FLOW_CWD ?? process.cwd(),
+            codexModel,
+            region,
+          )
+        ).tripoRegion,
+        apiKey: process.env.TRIPO_API_KEY,
+      }),
     });
-    const ledgerDirectory = tripoLedgerDirectory(process.env.AURA_FLOW_CWD ?? process.cwd());
+    const ledgerDirectory = tripoLedgerDirectory(
+      process.env.AURA_FLOW_CWD ?? process.cwd(),
+    );
     capabilityRoutes.push([
       TRIPO_GAME_ASSET_CAPABILITY,
       new TripoGameAssetCapability({
@@ -369,7 +418,11 @@ export async function apply(ctx: Context) {
     builtins: capabilityRoutes.length
       ? new AuraCapabilityRouter(capabilityRoutes)
       : undefined,
-    dataRoot: resolve(process.env.AURA_FLOW_CWD ?? process.cwd(), ".aura", "plugins"),
+    dataRoot: resolve(
+      process.env.AURA_FLOW_CWD ?? process.cwd(),
+      ".aura",
+      "plugins",
+    ),
     media: {
       artifacts,
       saveImage: (input) => ctx.attachments.saveImage(input),
@@ -378,7 +431,10 @@ export async function apply(ctx: Context) {
       process.stderr.write(`${JSON.stringify({ level, message, data })}\n`),
   });
   await auraCapabilities.replace(capabilityRootsFromEnv());
-  ctx.effect(() => () => auraCapabilities.close(), "aura-plugin-capabilities.lifecycle");
+  ctx.effect(
+    () => () => auraCapabilities.close(),
+    "aura-plugin-capabilities.lifecycle",
+  );
   const artifactIndex = new WorkflowArtifactIndex(
     artifacts,
     process.env.AURA_FLOW_CWD ?? process.cwd(),
@@ -391,19 +447,38 @@ export async function apply(ctx: Context) {
     process.env.AURA_FLOW_CWD ?? process.cwd(),
   );
   const contentDomain = await ctx.storageDomain.open(contentDomainSpec);
-  const contentLibrary = new ContentLibrary(contentDomain.table("projects") as unknown as Table<ContentDocument>, artifacts, process.env.AURA_FLOW_CWD ?? process.cwd());
-  const analyticsDomain = await ctx.storageDomain.open(contentAnalyticsDomainSpec);
+  const contentLibrary = new ContentLibrary(
+    contentDomain.table("projects") as unknown as Table<ContentDocument>,
+    artifacts,
+    process.env.AURA_FLOW_CWD ?? process.cwd(),
+  );
+  const analyticsDomain = await ctx.storageDomain.open(
+    contentAnalyticsDomainSpec,
+  );
   const contentAnalytics = new ContentAnalyticsLibrary(
-    analyticsDomain.table("publications") as unknown as Table<ContentPublication>,
-    analyticsDomain.table("snapshots") as unknown as Table<ContentMetricSnapshot>,
+    analyticsDomain.table(
+      "publications",
+    ) as unknown as Table<ContentPublication>,
+    analyticsDomain.table(
+      "snapshots",
+    ) as unknown as Table<ContentMetricSnapshot>,
     analyticsDomain.table("reviews") as unknown as Table<ContentReview>,
     analyticsDomain.table("experiments") as unknown as Table<ContentExperiment>,
     contentLibrary,
   );
-  const research = new ContentResearch(resolve(process.env.DSH_HOME ?? process.env.AURA_FLOW_CWD ?? process.cwd(), "aura-content-research"));
+  const research = new ContentResearch(
+    resolve(
+      process.env.DSH_HOME ?? process.env.AURA_FLOW_CWD ?? process.cwd(),
+      "aura-content-research",
+    ),
+  );
   await research.initialize();
   const topicDomain = await ctx.storageDomain.open(topicDomainSpec);
-  const topicLibrary = new TopicLibrary(topicDomain.table("libraries") as unknown as Table<TopicState>, research, artifacts);
+  const topicLibrary = new TopicLibrary(
+    topicDomain.table("libraries") as unknown as Table<TopicState>,
+    research,
+    artifacts,
+  );
   ctx.effect(() => () => research.close(), "aura-research.lifecycle");
   const actionRuntime = new ActionRuntime(
     // Source bodies and credentials stay in backend storage; the domain stores references.
@@ -439,20 +514,42 @@ export async function apply(ctx: Context) {
   });
   /** Gateway routes are read per request so saved settings apply without a restart. */
   const resolveModeDefaults = async (mode: FlowMode | "configured") => {
-      if (mode === "demo") return agentDefaults(mode);
-      const document = await readAiServices(process.env.AURA_FLOW_CWD ?? process.cwd(), process.env.AURA_CODEX_MODEL);
-      if (mode === "custom" || mode === "configured" && document.model.mode === "custom") {
-        const route = document.selectedRoute ? document.routes[document.selectedRoute] : undefined;
-        if (!route) throw new FlowError("请先配置自定义模型服务。", 422);
-        await ctx.settings.update("llm-pi-ai", { providers: customProfiles(document) });
-        return selectedAgentConfig({ ...document, model: route.settings });
-      }
-      if (mode === "lumina" || mode === "configured" && document.model.mode === "lumina") {
-        await ctx.settings.update("llm-pi-ai", { providers: customProfiles(document) });
-        return selectedAgentConfig({ ...document, model: luminaSettings(document) });
-      }
-      const codex = document.codex ?? (document.model.mode === "codex" ? document.model : undefined);
-      return codex ? selectedAgentConfig({ ...document, model: codex }) : agentDefaults("codex");
+    if (mode === "demo") return agentDefaults(mode);
+    const document = await readAiServices(
+      process.env.AURA_FLOW_CWD ?? process.cwd(),
+      process.env.AURA_CODEX_MODEL,
+    );
+    if (
+      mode === "custom" ||
+      (mode === "configured" && document.model.mode === "custom")
+    ) {
+      const route = document.selectedRoute
+        ? document.routes[document.selectedRoute]
+        : undefined;
+      if (!route) throw new FlowError("请先配置自定义模型服务。", 422);
+      await ctx.settings.update("llm-pi-ai", {
+        providers: customProfiles(document),
+      });
+      return selectedAgentConfig({ ...document, model: route.settings });
+    }
+    if (
+      mode === "lumina" ||
+      (mode === "configured" && document.model.mode === "lumina")
+    ) {
+      await ctx.settings.update("llm-pi-ai", {
+        providers: customProfiles(document),
+      });
+      return selectedAgentConfig({
+        ...document,
+        model: luminaSettings(document),
+      });
+    }
+    const codex =
+      document.codex ??
+      (document.model.mode === "codex" ? document.model : undefined);
+    return codex
+      ? selectedAgentConfig({ ...document, model: codex })
+      : agentDefaults("codex");
   };
   const engine = new FlowEngine({
     resolveAgentDefaults: resolveModeDefaults,
@@ -481,7 +578,9 @@ export async function apply(ctx: Context) {
   });
   auraCapabilities.attachRuns(
     (id) => engine.runs.get(id),
-    function* () { for (const [, run] of engine.runs.entries()) yield run; },
+    function* () {
+      for (const [, run] of engine.runs.entries()) yield run;
+    },
   );
   videoLibrary.attach(engine);
   contentLibrary.attach(engine);
@@ -504,7 +603,9 @@ export async function apply(ctx: Context) {
     const changedPlugins = changedPluginIds(previous, source);
     try {
       await extendHmrRoots(ctx, [...source.flowRoots, ...source.actionRoots]);
-      await auraCapabilities.replace(source.capabilityRoots as CapabilityRoot[]);
+      await auraCapabilities.replace(
+        source.capabilityRoots as CapabilityRoot[],
+      );
       activeCapabilityRoots = source.capabilityRoots as CapabilityRoot[];
       await discoveries.replace(source.flowRoots);
       await actionDiscoveries.replace(source.actionRoots);
@@ -563,26 +664,30 @@ export async function apply(ctx: Context) {
 
   // Chat tools reach only run admission, video project creation and topic
   // research; streamed deltas travel back as notifications keyed by chatId.
-  const chat = chatService(ctx, {
-    start: (input) => engine.start(input),
-    get: (id) => engine.get(id),
-    async createVideo(name, script) {
-      const detail = (await videoRequest(videoLibrary, "create", {
-        name,
-        script,
-      })) as { project: { id: string; revisionId: string } };
-      return { id: detail.project.id, revisionId: detail.project.revisionId };
+  const chat = chatService(
+    ctx,
+    {
+      start: (input) => engine.start(input),
+      get: (id) => engine.get(id),
+      async createVideo(name, script) {
+        const detail = (await videoRequest(videoLibrary, "create", {
+          name,
+          script,
+        })) as { project: { id: string; revisionId: string } };
+        return { id: detail.project.id, revisionId: detail.project.revisionId };
+      },
+      startVideo: (id, revisionId, requestId) =>
+        videoLibrary.start(id, {
+          revisionId,
+          requestId,
+          target: { kind: "project" },
+          mode: "reuse",
+        }),
+      startResearch: (input) =>
+        topicLibrary.start(input) as Promise<{ jobId: string; runId: string }>,
     },
-    startVideo: (id, revisionId, requestId) =>
-      videoLibrary.start(id, {
-        revisionId,
-        requestId,
-        target: { kind: "project" },
-        mode: "reuse",
-      }),
-    startResearch: (input) =>
-      topicLibrary.start(input) as Promise<{ jobId: string; runId: string }>,
-  }, artifacts);
+    artifacts,
+  );
   const chats = new Map<string, AbortController>();
   const rejectedChatModels = new RejectedChatModels();
 
@@ -596,9 +701,33 @@ export async function apply(ctx: Context) {
       if (exiting)
         throw new FlowError("编排服务正在回收空闲资源，请刷新。", 503);
       lastActivity = Date.now();
-      if (method.startsWith("content-projects/")) return { ok: true, data: await contentRequest(contentLibrary, method.slice("content-projects/".length), params) };
-      if (method.startsWith("content-analytics/")) return { ok: true, data: await contentAnalyticsRequest(contentAnalytics, method.slice("content-analytics/".length), params) };
-      if (method.startsWith("topic-library/")) return { ok: true, data: await topicRequest(topicLibrary, method.slice("topic-library/".length), params) };
+      if (method.startsWith("content-projects/"))
+        return {
+          ok: true,
+          data: await contentRequest(
+            contentLibrary,
+            method.slice("content-projects/".length),
+            params,
+          ),
+        };
+      if (method.startsWith("content-analytics/"))
+        return {
+          ok: true,
+          data: await contentAnalyticsRequest(
+            contentAnalytics,
+            method.slice("content-analytics/".length),
+            params,
+          ),
+        };
+      if (method.startsWith("topic-library/"))
+        return {
+          ok: true,
+          data: await topicRequest(
+            topicLibrary,
+            method.slice("topic-library/".length),
+            params,
+          ),
+        };
       if (method.startsWith("video-projects/"))
         return {
           ok: true,
@@ -614,7 +743,12 @@ export async function apply(ctx: Context) {
       switch (method) {
         case "ai-services/busy":
           // Match terminal task states; a crashed Run must not lock settings forever.
-          data = [...engine.runs.entries()].some(([, run]) => !["completed", "failed", "cancelled", "interrupted"].includes(run.status));
+          data = [...engine.runs.entries()].some(
+            ([, run]) =>
+              !["completed", "failed", "cancelled", "interrupted"].includes(
+                run.status,
+              ),
+          );
           break;
         case "initialize":
           await refreshFlows();
@@ -658,24 +792,51 @@ export async function apply(ctx: Context) {
           // Admission belongs to the Flow's plugin and runs on every POST, so a
           // repeated request can refresh client state (for example a replaced
           // session descriptor). An existing Run is returned, never restarted.
-          const request = z.object({ requestId: z.uuid(), flowId: z.string().min(1).max(130), input: z.json() }).strict().parse(params);
-          const existing = [...engine.runs.entries()].find(([, run]) => run.requestId === request.requestId && !run.parent)?.[1];
-          if (existing && existing.flow.id !== request.flowId) throw new FlowError("同一请求 ID 不能用于不同 Flow。", 409);
-          const input = await auraCapabilities.admit(request.flowId, request.requestId, request.input, AbortSignal.timeout(60_000))
+          const request = z
+            .object({
+              requestId: z.uuid(),
+              flowId: z.string().min(1).max(130),
+              input: z.json(),
+            })
+            .strict()
+            .parse(params);
+          const existing = [...engine.runs.entries()].find(
+            ([, run]) => run.requestId === request.requestId && !run.parent,
+          )?.[1];
+          if (existing && existing.flow.id !== request.flowId)
+            throw new FlowError("同一请求 ID 不能用于不同 Flow。", 409);
+          const input = await auraCapabilities
+            .admit(
+              request.flowId,
+              request.requestId,
+              request.input,
+              AbortSignal.timeout(60_000),
+            )
             .catch((error: unknown) => {
               // Only a bounded snake_case code crosses to the client; never free text or paths.
-              const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(String((error as Error)?.message ?? ""))?.[0];
+              const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(
+                String((error as Error)?.message ?? ""),
+              )?.[0];
               throw new FlowError(code ?? "admission_failed", 422);
             });
-          data = existing ?? await engine.start({
-            requestId: request.requestId, flowId: request.flowId, serviceOnly: true, useConfiguredModel: true, mode: "codex", input,
-          });
+          data =
+            existing ??
+            (await engine.start({
+              requestId: request.requestId,
+              flowId: request.flowId,
+              serviceOnly: true,
+              useConfiguredModel: true,
+              mode: "codex",
+              input,
+            }));
           break;
         }
         case "services/find": {
           // Clients address service Runs by their own idempotency key, never by internal Run IDs.
           const requestId = z.uuid().parse(params.requestId);
-          const found = [...engine.runs.entries()].find(([, run]) => run.requestId === requestId && !run.parent)?.[1];
+          const found = [...engine.runs.entries()].find(
+            ([, run]) => run.requestId === requestId && !run.parent,
+          )?.[1];
           if (!found) throw new FlowError("Flow 运行不存在。", 404);
           data = found;
           break;
@@ -684,16 +845,34 @@ export async function apply(ctx: Context) {
           data = (await auraCapabilities.view(engine.get(id))) ?? null;
           break;
         case "services/resume": {
-          const request = z.object({ id: z.uuid(), requestId: z.uuid(), input: z.json().optional() }).strict().parse(params);
+          const request = z
+            .object({
+              id: z.uuid(),
+              requestId: z.uuid(),
+              input: z.json().optional(),
+            })
+            .strict()
+            .parse(params);
           if (request.input !== undefined)
-            await auraCapabilities.resume(engine.get(request.id), request.input, AbortSignal.timeout(60_000)).catch((error: unknown) => {
-              const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(String((error as Error)?.message ?? ""))?.[0];
-              throw new FlowError(code ?? "resume_refused", 422);
-            });
+            await auraCapabilities
+              .resume(
+                engine.get(request.id),
+                request.input,
+                AbortSignal.timeout(60_000),
+              )
+              .catch((error: unknown) => {
+                const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(
+                  String((error as Error)?.message ?? ""),
+                )?.[0];
+                throw new FlowError(code ?? "resume_refused", 422);
+              });
           // Re-admitted input applies to the Run in any state; only a paused Run is resumed.
-          data = engine.get(request.id).status === "paused"
-            ? await engine.command(request.id, "resume", { requestId: request.requestId })
-            : engine.get(request.id);
+          data =
+            engine.get(request.id).status === "paused"
+              ? await engine.command(request.id, "resume", {
+                  requestId: request.requestId,
+                })
+              : engine.get(request.id);
           break;
         }
         case "wait":
@@ -704,7 +883,8 @@ export async function apply(ctx: Context) {
         case "resume":
         case "answer":
         case "resolve": {
-          const { id: _id, stepKey: key, ...body } = params;          data = await engine.command(
+          const { id: _id, stepKey: key, ...body } = params;
+          data = await engine.command(
             id,
             method,
             body,
@@ -748,12 +928,16 @@ export async function apply(ctx: Context) {
             .safeParse(params);
           if (!chatId || chatId.length > 200 || !turn.success)
             throw new FlowError("无效的对话请求。", 400);
-          if (chats.size >= 2) throw new FlowError("对话服务忙，请稍后再试。", 503);
+          if (chats.size >= 2)
+            throw new FlowError("对话服务忙，请稍后再试。", 503);
           const abort = new AbortController();
           chats.set(chatId, abort);
           try {
             data = await chat(
-              { ...turn.data, defaults: await resolveModeDefaults(turn.data.mode) },
+              {
+                ...turn.data,
+                defaults: await resolveModeDefaults(turn.data.mode),
+              },
               (event) => transport.notify("chat/event", { chatId, event }),
               abort.signal,
             );
@@ -783,7 +967,7 @@ export async function apply(ctx: Context) {
         case "action/cancel":
           data = await actionRuns.cancel(id);
           break;
-        case "history":
+        case "history": {
           const beforeSeq = params.beforeSeq;
           if (
             beforeSeq !== undefined &&
@@ -802,6 +986,7 @@ export async function apply(ctx: Context) {
             throw new FlowError("无效的 attempt。");
           data = await engine.history(id, stepId, beforeSeq, attempt);
           break;
+        }
         case "shutdown":
           await engine.close();
           await actionRuns.close();

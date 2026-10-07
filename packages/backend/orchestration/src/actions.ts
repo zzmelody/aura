@@ -1,15 +1,21 @@
+import type {} from "@deepseek-ai/dsh-tools";
+import type { VideoLibrary } from "./video/library.ts";
+import type { ContentLibrary } from "./content/library.ts";
+import type { TopicLibrary } from "./topics/library.ts";
+import type { ContentAnalyticsLibrary } from "./content/analytics.ts";
+import type { GptImageClient } from "./gpt-image.ts";
 import { randomUUID } from "node:crypto";
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { ToolCallId } from "@deepseek-ai/dsh-llm";
-import type {} from "@deepseek-ai/dsh-tools";
+
 import { ACTION_FAILURE_CODE, type ActionBinding } from "./action-api.ts";
 import type { LoadedAction } from "./action-registry.ts";
 import { FlowError, jsonValue } from "./schema.ts";
 import type { LocalAIClient } from "./local-ai/api.ts";
 import type { AuraCapabilityClient } from "./action-api.ts";
-import type { WorkflowArtifactIndex } from "./workflow-artifacts.ts";
-import { artifactCallBinding } from "./artifact-bindings.ts";
+import type { WorkflowArtifactIndex } from "./artifacts/workflow-index.ts";
+import { artifactCallBinding } from "./artifacts/bindings.ts";
 
 const internalPrefix = "aura_direct_";
 
@@ -20,7 +26,8 @@ export function actionCapabilities(
   binding?: string | Pick<ActionBinding, "runId" | "stepId" | "idempotencyKey">,
 ): AuraCapabilityClient | undefined {
   if (!host) return undefined;
-  const call = typeof binding === "string" ? { runId: binding } : binding ?? {};
+  const call =
+    typeof binding === "string" ? { runId: binding } : (binding ?? {});
   const context = Object.freeze({
     ...(call.runId ? { runId: call.runId } : {}),
     ...(call.stepId ? { stepId: call.stepId } : {}),
@@ -50,22 +57,22 @@ export class ActionRuntime {
   private localAI?: LocalAIClient;
   private aura?: AuraCapabilityClient;
   private artifacts?: WorkflowArtifactIndex;
-  private videoProduction?: import("./video-library.ts").VideoLibrary;
-  private contentProduction?: import("./content-library.ts").ContentLibrary;
-  private topicLibrary?: import("./topic-library.ts").TopicLibrary;
-  private contentAnalytics?: import("./content-analytics.ts").ContentAnalyticsLibrary;
-  private gptImage?: import("./gpt-image.ts").GptImageClient;
+  private videoProduction?: VideoLibrary;
+  private contentProduction?: ContentLibrary;
+  private topicLibrary?: TopicLibrary;
+  private contentAnalytics?: ContentAnalyticsLibrary;
+  private gptImage?: GptImageClient;
 
   constructor(
     ctx: Context,
     localAI?: LocalAIClient,
     aura?: AuraCapabilityClient,
     artifacts?: WorkflowArtifactIndex,
-    videoProduction?: import("./video-library.ts").VideoLibrary,
-    contentProduction?: import("./content-library.ts").ContentLibrary,
-    topicLibrary?: import("./topic-library.ts").TopicLibrary,
-    contentAnalytics?: import("./content-analytics.ts").ContentAnalyticsLibrary,
-    gptImage?: import("./gpt-image.ts").GptImageClient,
+    videoProduction?: VideoLibrary,
+    contentProduction?: ContentLibrary,
+    topicLibrary?: TopicLibrary,
+    contentAnalytics?: ContentAnalyticsLibrary,
+    gptImage?: GptImageClient,
   ) {
     this.ctx = ctx;
     this.localAI = localAI;
@@ -105,15 +112,26 @@ export class ActionRuntime {
             action.tool(action.toolName, {
               ...binding,
               localAI: this.localAI,
-              contentProduction: action.id === "content-project" ? this.contentProduction : undefined,
-              topicLibrary: ["topic-library", "topic-collect"].includes(action.id) ? this.topicLibrary : undefined,
-              contentAnalytics: action.id === "content-review" ? this.contentAnalytics : undefined,
+              contentProduction:
+                action.id === "content-project"
+                  ? this.contentProduction
+                  : undefined,
+              topicLibrary: ["topic-library", "topic-collect"].includes(
+                action.id,
+              )
+                ? this.topicLibrary
+                : undefined,
+              contentAnalytics:
+                action.id === "content-review"
+                  ? this.contentAnalytics
+                  : undefined,
               videoProduction:
                 action.id === "video-project" || action.id === "video-compose"
                   ? this.videoProduction
                   : undefined,
               aura: actionCapabilities(action, this.aura, binding),
-              gptImage: action.id === "image-generate" ? this.gptImage : undefined,
+              gptImage:
+                action.id === "image-generate" ? this.gptImage : undefined,
               bindCall: artifactCallBinding(
                 this.artifacts,
                 binding,
@@ -148,9 +166,13 @@ export class ActionRuntime {
       action.tool(name, {
         ...binding,
         localAI: this.localAI,
-        contentProduction: action.id === "content-project" ? this.contentProduction : undefined,
-        topicLibrary: ["topic-library", "topic-collect"].includes(action.id) ? this.topicLibrary : undefined,
-        contentAnalytics: action.id === "content-review" ? this.contentAnalytics : undefined,
+        contentProduction:
+          action.id === "content-project" ? this.contentProduction : undefined,
+        topicLibrary: ["topic-library", "topic-collect"].includes(action.id)
+          ? this.topicLibrary
+          : undefined,
+        contentAnalytics:
+          action.id === "content-review" ? this.contentAnalytics : undefined,
         videoProduction:
           action.id === "video-project" || action.id === "video-compose"
             ? this.videoProduction

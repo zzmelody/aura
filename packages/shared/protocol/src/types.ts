@@ -177,12 +177,12 @@ export interface FlowCatalog {
   flows: FlowCatalogEntry[];
   actions?: FlowCatalogEntry[];
   plugins?: AuraPluginStatus[];
-  presets: {
+  presets: Array<{
     id: string;
     name: string;
     description: string;
     unavailable: boolean;
-  }[];
+  }>;
 }
 /** Entry source of the currently registered revision, for static UI previews. */
 export interface FlowSource {
@@ -312,12 +312,12 @@ export interface FlowRun {
   updatedAt?: number;
   recoveryEvents?: FlowRecoveryEvent[];
   /** Command receipts commit with the state change, never before it. */
-  commands?: {
+  commands?: Array<{
     requestId: string;
     fingerprint: string;
     status: FlowRunPhase;
     at: number;
-  }[];
+  }>;
   /** Present only for an engine-managed nested Flow Run. */
   parent?: FlowParentReference;
   /** Top-level Run of this tree; absent on the root itself. */
@@ -369,11 +369,11 @@ export interface FlowHistory {
   preset: string;
   hasMore: boolean;
   beforeSeq?: number;
-  entries: {
+  entries: Array<{
     seq: number;
     kind: "user" | "assistant" | "tool" | "event";
     text: string;
-  }[];
+  }>;
 }
 
 /** POST /chat body; credentials are configured on the server, never here. */
@@ -381,7 +381,7 @@ export type ChatModelSelection = { model?: string; reasoningEffort?: string };
 export type ChatModelInfo = {
   id: string;
   name: string;
-  reasoningEfforts: { id: string; name: string }[];
+  reasoningEfforts: Array<{ id: string; name: string }>;
   defaultReasoningEffort?: string;
   /** Model vendor label used to group gateway catalogs, e.g. "Anthropic". */
   vendor?: string;

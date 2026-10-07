@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
-import { wavDuration } from "./wav.ts";
+import { wavDuration } from "../wav.ts";
 import type { WorkflowArtifact } from "@aura/protocol/types";
 
 export const artifactHash = (value: string | Uint8Array) =>

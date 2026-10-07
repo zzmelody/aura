@@ -55,9 +55,15 @@ export interface ChatRoute {
 
 /** Streams one chat turn; workflow tool starts arrive as `workflow` events. */
 export interface ChatPort {
-  chatModels(mode: ChatRoute["mode"], signal: AbortSignal): Promise<ChatModelCatalog>;
+  chatModels(
+    mode: ChatRoute["mode"],
+    signal: AbortSignal,
+  ): Promise<ChatModelCatalog>;
   chat(
-    turn: { messages: ChatMessage[]; mode: ChatRoute["mode"] } & ChatModelSelection,
+    turn: {
+      messages: ChatMessage[];
+      mode: ChatRoute["mode"];
+    } & ChatModelSelection,
     emit: (event: ChatEvent) => void,
     signal: AbortSignal,
   ): Promise<{ model: string }>;

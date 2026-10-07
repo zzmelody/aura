@@ -6,7 +6,11 @@ export default defineAction({
   description:
     "使用本机 Qwen-Image-2512 生成 PNG。自动启动并回收 ComfyUI，串行使用 GPU，返回文件路径和可复用的图片资产 ID。",
   parameters: {
-    deferAdmission: { type: "boolean", default: false, description: "由后续持久化步骤登记素材。" },
+    deferAdmission: {
+      type: "boolean",
+      default: false,
+      description: "由后续持久化步骤登记素材。",
+    },
     prompt: {
       type: "string",
       required: true,

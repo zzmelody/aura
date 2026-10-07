@@ -11,17 +11,17 @@ Aura 是独立应用项目，不是 DeepSeek Harness 源码副本。项目采用
 - 右上角「登录 Codex」入口：由 DSH 的授权与凭据服务完成 OpenAI OAuth，登录后对话通过 DSH 的 `openai-codex` provider 使用 ChatGPT Plus/Pro 订阅。
 - Vite 浏览器构建、Electron 桌面窗口、Capacitor Android/iOS 容器和 Android 内测包脚本。
 
-Bedrock 保持空白；当前没有图片生成、日历、云同步或生产用户系统。
+当前未接入 Bedrock、日历、云同步和生产用户系统。
 
 ## 启动
 
-需要 Node.js 24+。项目使用 pnpm 10 和一份根锁文件；Windows 辅助脚本会选择可用的 Node 24，并使用已忽略的 `.tools/pnpm` 本地工具。
+需要 Node.js 24+。项目使用根 `packageManager` 固定的 pnpm 12.5.1 和一份根锁文件；Windows 辅助脚本会选择可用的 Node 24，并使用已忽略的 `.tools/pnpm` 本地工具。
 
 首次安装 pnpm 工具与项目依赖：
 
 ```powershell
 cd F:\aura
-npm install --prefix .tools/pnpm pnpm@10.17.1
+npm install --prefix .tools/pnpm pnpm@12.5.1
 .\scripts\aura.ps1 install
 ```
 
@@ -37,7 +37,7 @@ npm install --prefix .tools/pnpm pnpm@10.17.1
 .\scripts\aura.ps1 run runtime
 ```
 
-服务默认监听 `http://127.0.0.1:4311`。右上角点击「登录 Codex」，浏览器会进入 OpenAI 登录；手机或非本机页面使用设备码登录。桌面浏览器回到本机后会自动刷新状态；若本机回调被代理或浏览器拦截，可把浏览器最后停留的完整地址粘贴回登录窗口继续完成 DSH 授权。成功后 Aura 自动选择 Codex 模式，新对话采用 `gpt-5.6-terra`，可在启动服务前设置 `AURA_CODEX_MODEL` 更改。
+服务默认监听 `http://127.0.0.1:4311`。右上角点击「登录 Codex」，浏览器会进入 OpenAI 登录；手机或非本机页面使用设备码登录。桌面浏览器回到本机后会自动刷新状态；若本机回调被代理或浏览器拦截，可把浏览器最后停留的完整地址粘贴回登录窗口继续完成 DSH 授权。成功后 Aura 自动选择 Codex 模式，新对话采用 `gpt-6.1-sol`，可在启动服务前设置 `AURA_CODEX_MODEL` 更改。
 
 启动桌面应用：
 
@@ -64,7 +64,7 @@ npm install --prefix .tools/pnpm pnpm@10.17.1
 
 ## 构建与验证
 
-项目采用 Google TypeScript Style Guide 的 Aura 适配版，具体来源、适配项与检查命令见 [代码规范](docs/code-style.md)。新增或修改的文件使用 Prettier 统一格式，ESLint 检查 TypeScript 与 React Hook；`pnpm run check` 同时执行这些检查、工作区边界检查、类型检查和测试。历史格式与 Lint 问题分别记录在根基线文件中，按规范逐步清理。
+项目采用 Google TypeScript Style Guide 的 Aura 适配版，具体来源、适配项与检查命令见 [代码规范](docs/code-style.md)。新增或修改的文件使用 Prettier 统一格式，ESLint 检查 TypeScript 与 React Hook；`pnpm run check` 同时执行这些检查、工作区边界检查、类型检查和测试。本轮已清空历史格式与 Lint 基线；严格检查不再依赖历史豁免。
 
 ```powershell
 .\scripts\aura.ps1 run check
@@ -95,6 +95,11 @@ packages/
   backend/
     dsh-auth/  @aura/dsh-auth：DSH 授权与凭据适配
     runtime/   @aura/runtime：TypeScript 后端组合根与服务生命周期
+    orchestration/ @aura/orchestration：Flow、Action、领域业务与产物
+    extensions/ @aura/extensions：插件配置、发现与激活回滚
+    plugin-sdk/ @aura/plugin-sdk：外部插件公共契约
+    content-research/ @aura/content-research：研究来源、缓存与预算
+    tripo/     @aura/tripo：3D 服务、任务与后端凭据
   shared/
     protocol/  @aura/protocol：请求、流事件与脱敏授权状态
     core/      @aura/core：会话、存储恢复与地址校验
@@ -107,4 +112,4 @@ tests/         仓库级工作区规则测试
 
 仓库内置 [Aura 插件开发 skill](.agents/skills/aura-plugin-development/SKILL.md)，包含插件契约、JavaScript 编码规范和调用配置，随 Git 一起维护。开发 Aura 插件或插件宿主时按该 skill 执行；在 Codex 中可使用 `$aura-plugin-development` 调用。
 
-更多信息见 [架构](docs/architecture.md)、[后端 Runtime 技术方案](docs/backend-runtime.md)、[模型接入](docs/model-providers.md)、[主题规范](docs/design-system.md) 和 [验证记录](docs/verification.md)。
+完整入口见 [文档目录](docs/README.md) 与 [模块边界](docs/development/module-boundaries.md)。更多信息见 [架构](docs/architecture.md)、[后端 Runtime 技术方案](docs/development/backend-runtime.md)、[模型接入](docs/features/model-providers.md)、[主题规范](docs/development/design-system.md) 和 [当前验证](docs/verification.md)。

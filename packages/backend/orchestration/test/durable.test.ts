@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
-import type { FlowRun, FlowStep, FlowAgentStep } from "@aura/protocol/types";
+import type { FlowRun, FlowAgentStep } from "@aura/protocol/types";
 import type { FlowScope } from "../src/flow-api.ts";
 import type { EngineOptions, Table } from "../src/types.ts";
 import type { LoadedFlow } from "../src/registry.ts";
@@ -22,12 +22,17 @@ import {
 } from "../src/schema.ts";
 
 test("storage failure preserves its cause but exposes only safe OS codes", () => {
-  const cause = Object.assign(new Error("private record and credential path"), { code: "EPERM" });
+  const cause = Object.assign(new Error("private record and credential path"), {
+    code: "EPERM",
+  });
   const error = new StorageFailure(cause);
   assert.equal(error.cause, cause);
   assert.match(error.message, /EPERM/u);
   assert.doesNotMatch(error.message, /private|credential/u);
-  assert.doesNotMatch(new StorageFailure({ code: "secret-value" }).message, /secret-value/u);
+  assert.doesNotMatch(
+    new StorageFailure({ code: "secret-value" }).message,
+    /secret-value/u,
+  );
 });
 
 test("Codex defaults to GPT-6.1 Sol xhigh and retains explicit overrides", () => {
@@ -251,8 +256,8 @@ test("changed Agent parameters conflict with replay and invalid capabilities fai
       await engine.close();
     }
   }
-  let calls = 0,
-    validations = 0;
+  let calls = 0;
+  let validations = 0;
   const { engine } = await setup(
     async (flow) => {
       try {
@@ -380,35 +385,66 @@ test("persisted length checks retain native bounds but reject explicit condition
   // its check names would instead lose explicit, executable conditions.
   for (const schema of [
     z.string().min(1).max(2),
-    z.array(z.enum(["brass", "stone"])).min(1).max(2),
+    z
+      .array(z.enum(["brass", "stone"]))
+      .min(1)
+      .max(2),
     z.string().length(2),
     z.array(z.string()).length(2),
   ]) {
     const persisted = JSON.parse(JSON.stringify(savedSchema(schema)));
-    const values = ["", "甲", "甲乙", "甲乙丙", "🌙", "🌙🌙", [], ["brass"], ["brass", "stone"], ["brass", "stone", "brass"]];
+    const values = [
+      "",
+      "甲",
+      "甲乙",
+      "甲乙丙",
+      "🌙",
+      "🌙🌙",
+      [],
+      ["brass"],
+      ["brass", "stone"],
+      ["brass", "stone", "brass"],
+    ];
     for (const value of values) {
       if (schema.safeParse(value).success)
         assert.deepEqual(validateSaved(persisted, value), value);
       else assert.throws(() => validateSaved(persisted, value));
     }
   }
-  for (const schema of [z.string().min(1), z.string().max(2), z.array(z.string()).length(2)]) {
+  for (const schema of [
+    z.string().min(1),
+    z.string().max(2),
+    z.array(z.string()).length(2),
+  ]) {
     // The low-level check definition is also exposed to trusted plugin authors.
     schema._zod.def.checks![0]!._zod.def.when = () => false;
     assert.throws(() => savedSchema(schema), /Schema/);
   }
-  assert.throws(() => savedSchema(z.string().refine(() => true, { when: () => true })), /Schema/);
+  assert.throws(
+    () => savedSchema(z.string().refine(() => true, { when: () => true })),
+    /Schema/,
+  );
 });
 
 test("text, single and multiple clarification answers survive JSON persistence and engine restart", async () => {
   // Actual checkpoint persistence/replay, rather than only schema conversion:
   // production Wish could previously fail before creating a waiting_input step.
-  const answerSchema = z.object({
-    "garden_geometry.anchors": z.string().min(1).max(2000),
-    material: z.enum(["brass", "stone"]),
-    details: z.array(z.enum(["enamel", "engraving", "light"])).min(1).max(2),
-  }).strict();
-  const workflow = (flow: FlowScope) => flow.checkpoint({ id: "clarify-1", prompt: "请补充制作信息", schema: answerSchema });
+  const answerSchema = z
+    .object({
+      "garden_geometry.anchors": z.string().min(1).max(2000),
+      material: z.enum(["brass", "stone"]),
+      details: z
+        .array(z.enum(["enamel", "engraving", "light"]))
+        .min(1)
+        .max(2),
+    })
+    .strict();
+  const workflow = (flow: FlowScope) =>
+    flow.checkpoint({
+      id: "clarify-1",
+      prompt: "请补充制作信息",
+      schema: answerSchema,
+    });
   const first = await setup(workflow);
   const run = await first.engine.start(req());
   let second: Awaited<ReturnType<typeof setup>> | undefined;
@@ -419,7 +455,11 @@ test("text, single and multiple clarification answers survive JSON persistence a
     const serialized = table();
     await serialized.put(run.id, JSON.parse(JSON.stringify(waiting)));
     second = await setup(workflow, { table: serialized });
-    const valid = { "garden_geometry.anchors": "桌面锚点已提供", material: "brass", details: ["enamel", "light"] };
+    const valid = {
+      "garden_geometry.anchors": "桌面锚点已提供",
+      material: "brass",
+      details: ["enamel", "light"],
+    };
     for (const answers of [
       { ...valid, "garden_geometry.anchors": "" },
       { ...valid, "garden_geometry.anchors": "字".repeat(2001) },
@@ -429,7 +469,14 @@ test("text, single and multiple clarification answers survive JSON persistence a
       { ...valid, details: ["invented"] },
       { ...valid, unasked: true },
     ]) {
-      await assert.rejects(second.engine.command(run.id, "answer", { requestId: randomUUID(), output: answers }, "main/clarify-1"));
+      await assert.rejects(
+        second.engine.command(
+          run.id,
+          "answer",
+          { requestId: randomUUID(), output: answers },
+          "main/clarify-1",
+        ),
+      );
       assert.equal(second.engine.get(run.id).status, "waiting_input");
     }
     const answer = { requestId: randomUUID(), output: valid };
@@ -572,8 +619,8 @@ async function until(predicate: () => boolean) {
 }
 
 test("memo and completed calls replay once across checkpoint; answer is validated and idempotent", async () => {
-  let computations = 0,
-    calls = 0;
+  let computations = 0;
+  let calls = 0;
   const { engine } = await setup(
     async (flow) => {
       const value = await flow.memo({
@@ -669,7 +716,7 @@ test("pause drains running branch, stops gate waiters, releases capacity and res
 });
 
 test("queue persists overflow and executes FIFO with 32 Run slots; queued pause/cancel dispatch nothing", async () => {
-  let releases: (() => void)[] = [];
+  let releases: Array<() => void> = [];
   const calls: string[] = [];
   const { engine } = await setup(
     async (flow) => (await flow.agent(agent("one"))).output,
@@ -697,9 +744,7 @@ test("queue persists overflow and executes FIFO with 32 Run slots; queued pause/
   await until(() => calls.length === DEFAULT_TOP_LEVEL_RUN_CONCURRENCY + 1);
   assert.deepEqual(
     calls,
-    runs
-      .slice(0, DEFAULT_TOP_LEVEL_RUN_CONCURRENCY + 1)
-      .map((run) => run.id),
+    runs.slice(0, DEFAULT_TOP_LEVEL_RUN_CONCURRENCY + 1).map((run) => run.id),
   );
   releases.forEach((release) => release());
   releases = [];
@@ -875,7 +920,7 @@ test("idempotent retries retain operation key; crash recovery consumes existing 
 });
 
 test("completed durable calls are reused after host restart while queued siblings continue", async () => {
-  let calls: string[] = [];
+  const calls: string[] = [];
   const workflow = async (flow: FlowScope) => {
     const one = await flow.agent(agent("one"));
     const two = await flow.agent(agent("two", 2));
@@ -909,8 +954,8 @@ test("completed durable calls are reused after host restart while queued sibling
 
 test("output-commit failure leaves running attempt, and DSH result is adopted on restart", async () => {
   const records = table();
-  let failCommit = true,
-    calls = 0;
+  let failCommit = true;
+  let calls = 0;
   const flaky: Table<FlowRun> = {
     ...records,
     update: (id, change) =>
@@ -1076,9 +1121,9 @@ test("reconciliation distinguishes known completion, exhausted budget, and any s
 
 test("hash changes and replay request mismatches interrupt without executing changed effects", async () => {
   for (const kind of ["flow", "action", "request", "omitted"] as const) {
-    let prompt = "same",
-      omit = false,
-      calls = 0;
+    let prompt = "same";
+    let omit = false;
+    let calls = 0;
     const workflow = async (flow: FlowScope) => {
       if (!omit)
         await flow.agent({ ...agent("one"), prompt, actions: ["write"] });
@@ -1181,8 +1226,8 @@ test("legacy active records fail closed; legacy completed records remain readabl
 
 test("a pre-dispatch storage failure leaves a queued step and never calls the external service", async () => {
   const records = table();
-  let fail = true,
-    calls = 0;
+  let fail = true;
+  let calls = 0;
   const workflow = async (flow: FlowScope) =>
     (await flow.agent(agent("one"))).output;
   const flaky: Table<FlowRun> = {

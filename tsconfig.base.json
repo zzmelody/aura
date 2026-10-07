@@ -10,10 +10,7 @@
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "types": [],
-    "lib": [
-      "ES2022",
-      "DOM"
-    ],
+    "lib": ["ES2022", "DOM"],
     "erasableSyntaxOnly": true
   }
 }

@@ -1,0 +1,67 @@
+import { valid, validRange } from "semver";
+import { z } from "zod";
+const pluginIdPattern = /^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$/u;
+export const localIdPattern = /^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/u;
+
+const configEntrySchema = z
+  .object({
+    path: z.string().trim().min(1).max(4_096),
+    enabled: z.boolean(),
+    trust: z.literal("local"),
+    settings: z
+      .json()
+      .refine((value) => JSON.stringify(value).length <= 64 * 1_024)
+      .optional(),
+  })
+  .strict();
+
+export const configSchema = z
+  .object({
+    version: z.literal(1),
+    plugins: z.array(configEntrySchema).max(64),
+  })
+  .strict();
+
+export const settingsUpdateSchema = z
+  .object({
+    plugins: z
+      .array(
+        z
+          .object({
+            path: z.string().trim().min(1).max(4_096),
+            enabled: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(64),
+  })
+  .strict();
+
+export const manifestSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    id: z.string().regex(pluginIdPattern),
+    name: z.string().trim().min(1).max(80),
+    version: z.string().refine((value) => Boolean(valid(value))),
+    description: z.string().max(500).optional(),
+    homepage: z.string().optional(),
+    license: z.string().optional(),
+    engines: z
+      .object({
+        aura: z.string().refine((value) => Boolean(validRange(value))),
+        pluginSdk: z.string().refine((value) => Boolean(validRange(value))),
+      })
+      .strict(),
+    contributes: z
+      .object({
+        actions: z.string().trim().min(1).optional(),
+        flows: z.string().trim().min(1).optional(),
+        capabilities: z.string().trim().min(1).optional(),
+      })
+      .strict()
+      .refine((value) =>
+        Boolean(value.actions || value.flows || value.capabilities),
+      ),
+    capabilities: z.array(z.string().trim().min(1)).default([]),
+  })
+  .strict();

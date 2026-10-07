@@ -28,7 +28,8 @@ export default defineAction({
       type: "string",
       enum: ["auto", "gpt", "local"],
       default: "auto",
-      description: "auto 优先 GPT（Codex 订阅），不可用时用本机模型；gpt 只用 GPT；local 只用本机。",
+      description:
+        "auto 优先 GPT（Codex 订阅），不可用时用本机模型；gpt 只用 GPT；local 只用本机。",
     },
     quality: {
       type: "string",
@@ -78,7 +79,9 @@ export default defineAction({
         model: result.model,
         files: result.files,
         imageAssetId: result.imageAssetId,
-        ...(result.revisedPrompt ? { revisedPrompt: result.revisedPrompt } : {}),
+        ...(result.revisedPrompt
+          ? { revisedPrompt: result.revisedPrompt }
+          : {}),
       };
     }
     if (engine === "gpt")

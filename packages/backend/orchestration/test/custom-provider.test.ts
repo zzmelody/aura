@@ -15,9 +15,9 @@ test(
   "real DSH dispatches configured gateways and preserves saved credentials across restart",
   { timeout: 150000 },
   async (t) => {
-    const root = await mkdtemp(join(tmpdir(), "aura-custom-wire-")),
-      flowRoot = join(root, "flows"),
-      folder = join(flowRoot, "custom-check");
+    const root = await mkdtemp(join(tmpdir(), "aura-custom-wire-"));
+    const flowRoot = join(root, "flows");
+    const folder = join(flowRoot, "custom-check");
     await mkdir(folder, { recursive: true });
     await writeFile(
       join(folder, "custom-check.flow.js"),
@@ -72,8 +72,8 @@ export default defineFlow({title:"Custom check",service:true,input:z.object({pau
     await new Promise<void>((resolve) => server.once("listening", resolve));
     const address = server.address();
     assert.ok(address && typeof address !== "string");
-    const baseURL = `http://127.0.0.1:${address.port}/v1`,
-      dshHome = join(root, ".aura", "dsh");
+    const baseURL = `http://127.0.0.1:${address.port}/v1`;
+    const dshHome = join(root, ".aura", "dsh");
     const auth = await CodexSubscriptionAuth.create({
       credentialPath: join(dshHome, ".credentials.yaml"),
     });
@@ -138,8 +138,15 @@ export default defineFlow({title:"Custom check",service:true,input:z.object({pau
       model: "model-two",
       authorization: "Bearer fixture-second-key",
     });
-    const waiting = await host.request<FlowRun>("start", { ...source, requestId: randomUUID(), input: { pause: true } });
-    assert.equal((await host.request<FlowRun>("wait", { id: waiting.id })).status, "waiting_input");
+    const waiting = await host.request<FlowRun>("start", {
+      ...source,
+      requestId: randomUUID(),
+      input: { pause: true },
+    });
+    assert.equal(
+      (await host.request<FlowRun>("wait", { id: waiting.id })).status,
+      "waiting_input",
+    );
     assert.equal(await host.request<boolean>("ai-services/busy", {}), true);
     await host.request("cancel", { id: waiting.id, requestId: randomUUID() });
     assert.equal(await host.request<boolean>("ai-services/busy", {}), false);

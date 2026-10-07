@@ -44,7 +44,9 @@ export function sessionMenuItems(
       ) : (
         <Archive size={15} />
       ),
-      action: onArchive ?? (() => workspace.archiveChat(session.id, !session.archivedAt)),
+      action:
+        onArchive ??
+        (() => workspace.archiveChat(session.id, !session.archivedAt)),
     },
     ...(busy
       ? [

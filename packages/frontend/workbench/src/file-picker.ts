@@ -7,7 +7,10 @@ export type WorkflowFileHostApi = {
 };
 
 export function workflowFilePickerAvailable(): boolean {
-  return platform() === "desktop" && Boolean(globalThis.window?.auraHost?.workflowFiles);
+  return (
+    platform() === "desktop" &&
+    Boolean(globalThis.window?.auraHost?.workflowFiles)
+  );
 }
 
 export async function chooseWorkflowPath(

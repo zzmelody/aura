@@ -291,7 +291,7 @@ function childNodes(node: AstNode) {
 }
 
 function visibleCalls(root: AstNode) {
-  const calls: { call: AstNode; ancestors: AstNode[] }[] = [];
+  const calls: Array<{ call: AstNode; ancestors: AstNode[] }> = [];
   const visit = (node: AstNode, ancestors: AstNode[], rootNode: boolean) => {
     if (
       !rootNode &&

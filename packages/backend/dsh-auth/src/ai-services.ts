@@ -31,6 +31,7 @@ function text(value: unknown, limit: number): string {
     typeof value !== "string" ||
     !value.trim() ||
     value.length > limit ||
+    // eslint-disable-next-line no-control-regex -- Intentionally sanitize or detect ASCII control characters.
     /[\x00-\x1f\x7f]/u.test(value)
   )
     throw new AiConfigurationError("配置字段为空、过长或含无效字符。");
@@ -61,8 +62,8 @@ export function parseModelSettings(
     !["codex", "lumina", "custom"].includes(String(value.mode))
   )
     throw new AiConfigurationError("模型设置无效。");
-  const model = text(value.model, 200),
-    reasoningEffort = text(value.reasoningEffort, 16);
+  const model = text(value.model, 200);
+  const reasoningEffort = text(value.reasoningEffort, 16);
   if (!efforts.includes(reasoningEffort))
     throw new AiConfigurationError("思考强度无效。");
   let custom: AiCustomProvider | undefined;
@@ -193,8 +194,8 @@ export async function readAiServices(
     !["global", "china"].includes(String(raw.tripoRegion))
   )
     throw new AiConfigurationError("AI 服务配置无效。");
-  const model = parseModelSettings(raw.model),
-    routes: AiServiceDocument["routes"] = {};
+  const model = parseModelSettings(raw.model);
+  const routes: AiServiceDocument["routes"] = {};
   for (const [id, value] of Object.entries(raw.routes)) {
     if (
       !/^aura-custom-[a-f0-9]{32}$/u.test(id) ||
@@ -212,7 +213,9 @@ export async function readAiServices(
     routes[id] = {
       settings,
       credential: String(value.credential),
-      ...(value.catalog === undefined ? {} : { catalog: modelList(value.catalog) }),
+      ...(value.catalog === undefined
+        ? {}
+        : { catalog: modelList(value.catalog) }),
     };
   }
   if (
@@ -228,7 +231,8 @@ export async function readAiServices(
     throw new AiConfigurationError("Codex 配置无效。");
   let lumina: AiServiceDocument["lumina"];
   if (raw.lumina !== undefined) {
-    if (!record(raw.lumina)) throw new AiConfigurationError("Lumina 配置无效。");
+    if (!record(raw.lumina))
+      throw new AiConfigurationError("Lumina 配置无效。");
     const { models, ...rest } = raw.lumina;
     const parsed = parseModelSettings(rest);
     if (parsed.mode !== "lumina" || parsed.key || parsed.clearKey !== undefined)
@@ -251,8 +255,8 @@ export async function writeAiServices(
   root: string,
   document: AiServiceDocument,
 ) {
-  const path = aiServicesPath(root),
-    temporary = `${path}.${randomUUID()}.tmp`;
+  const path = aiServicesPath(root);
+  const temporary = `${path}.${randomUUID()}.tmp`;
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   try {
     await writeFile(temporary, JSON.stringify(document), {
@@ -271,9 +275,18 @@ const reasoningLevels = Object.fromEntries(
 /** DeepSeek Flash thinking defaults to 64K, including reasoning and final
  * output. The adapter's generic 32K fallback can end before a source module
  * is returned. Keep other providers and non-thinking modes unchanged. */
-function thinkingOutputBudget(model: string, effort: string): number | undefined {
-  return effort !== "off" && ["deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4.1-flash-anthropic"].includes(model)
-    ? 65_536 : undefined;
+function thinkingOutputBudget(
+  model: string,
+  effort: string,
+): number | undefined {
+  return effort !== "off" &&
+    [
+      "deepseek-flash",
+      "deepseek-v4.1-flash",
+      "deepseek-v4.1-flash-anthropic",
+    ].includes(model)
+    ? 65_536
+    : undefined;
 }
 /** The chosen model first, then every other listed model, without duplicates. */
 function catalogIds(selected: string, listed: readonly string[] = []) {
@@ -294,7 +307,9 @@ export function luminaSettings(document: AiServiceDocument) {
   );
 }
 /** Always registered so a saved key works without rebuilding the DSH profile. */
-export function luminaProfile(document: AiServiceDocument): PiAiProviderProfile {
+export function luminaProfile(
+  document: AiServiceDocument,
+): PiAiProviderProfile {
   const settings = luminaSettings(document);
   return {
     displayName: "Lumina",
@@ -304,7 +319,9 @@ export function luminaProfile(document: AiServiceDocument): PiAiProviderProfile 
     defaultContextWindow: 200_000,
     models: catalogIds(settings.model, settings.models).map((id) => ({
       id,
-      ...(thinkingOutputBudget(id, settings.reasoningEffort) ? {maxTokens: thinkingOutputBudget(id, settings.reasoningEffort)} : {}),
+      ...(thinkingOutputBudget(id, settings.reasoningEffort)
+        ? { maxTokens: thinkingOutputBudget(id, settings.reasoningEffort) }
+        : {}),
       input: imageCapable(id) ? ["text", "image"] : ["text"],
       reasoningEfforts: reasoningLevels,
     })),
@@ -327,7 +344,14 @@ export function customProfiles(
               apiKeyEnv: credential,
               models: catalogIds(settings.model, catalog).map((model) => ({
                 id: model,
-                ...(thinkingOutputBudget(model, settings.reasoningEffort) ? {maxTokens: thinkingOutputBudget(model, settings.reasoningEffort)} : {}),
+                ...(thinkingOutputBudget(model, settings.reasoningEffort)
+                  ? {
+                      maxTokens: thinkingOutputBudget(
+                        model,
+                        settings.reasoningEffort,
+                      ),
+                    }
+                  : {}),
                 contextWindow: custom.contextWindow,
                 input: custom.images ? ["text", "image"] : ["text"],
                 reasoningEfforts:
@@ -353,8 +377,15 @@ export function selectedAgentConfig(
           : document.selectedRoute!,
     model: document.model.model,
     reasoningEffort: document.model.reasoningEffort,
-    ...(document.model.mode !== "codex" && thinkingOutputBudget(document.model.model, document.model.reasoningEffort)
-      ? {maxTokens: thinkingOutputBudget(document.model.model, document.model.reasoningEffort)} : {}),
+    ...(document.model.mode !== "codex" &&
+    thinkingOutputBudget(document.model.model, document.model.reasoningEffort)
+      ? {
+          maxTokens: thinkingOutputBudget(
+            document.model.model,
+            document.model.reasoningEffort,
+          ),
+        }
+      : {}),
     timeoutMs: 180_000,
   };
 }
@@ -362,8 +393,8 @@ export function selectedAgentConfig(
 export async function validateCustomSettings(
   settings: AiModelSettings,
 ): Promise<void> {
-  const id = "aura-custom-" + "0".repeat(32),
-    ctx = new Context();
+  const id = "aura-custom-" + "0".repeat(32);
+  const ctx = new Context();
   try {
     await ctx.plugin(LlmRuntime);
     await ctx.plugin(PiAiAdapter, {
@@ -401,8 +432,8 @@ export async function saveModelSettings(
   codexModel?: string,
   tripoRegion: "global" | "china" = "global",
 ): Promise<AiServiceDocument> {
-  const { key, clearKey, ...settings } = parseModelSettings(source),
-    previous = await readAiServices(root, codexModel, tripoRegion);
+  const { key, clearKey, ...settings } = parseModelSettings(source);
+  const previous = await readAiServices(root, codexModel, tripoRegion);
   if (settings.mode === "codex") {
     const next = { ...previous, model: settings, codex: settings };
     await writeAiServices(root, next);
@@ -428,9 +459,9 @@ export async function saveModelSettings(
     return next;
   }
   await validateCustomSettings(settings);
-  const id = randomUUID().replace(/-/gu, ""),
-    route = `aura-custom-${id}`,
-    ref = `AURA_CUSTOM_${id.toUpperCase()}`;
+  const id = randomUUID().replace(/-/gu, "");
+  const route = `aura-custom-${id}`;
+  const ref = `AURA_CUSTOM_${id.toUpperCase()}`;
   const old = previous.selectedRoute
     ? previous.routes[previous.selectedRoute]
     : undefined;
@@ -450,7 +481,14 @@ export async function saveModelSettings(
       (previous.model.mode === "codex" ? previous.model : undefined),
     model: settings,
     selectedRoute: route,
-    routes: { ...previous.routes, [route]: { settings, credential: ref, ...(sameEndpoint && old?.catalog ? { catalog: old.catalog } : {}) } },
+    routes: {
+      ...previous.routes,
+      [route]: {
+        settings,
+        credential: ref,
+        ...(sameEndpoint && old?.catalog ? { catalog: old.catalog } : {}),
+      },
+    },
   };
   try {
     await writeAiServices(root, next);
@@ -471,8 +509,8 @@ export async function saveDiscoveredCatalog(
   codexModel?: string,
   tripoRegion: "global" | "china" = "global",
 ): Promise<AiServiceDocument> {
-  const previous = await readAiServices(root, codexModel, tripoRegion),
-    list = modelList(models);
+  const previous = await readAiServices(root, codexModel, tripoRegion);
+  const list = modelList(models);
   if (target === "lumina") {
     const next = {
       ...previous,

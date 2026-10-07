@@ -7,6 +7,10 @@ for the orchestration host. Settings updates are serialized, applied to the
 live host before an atomic config write, and rolled back if persistence fails.
 It never installs dependencies or executes plugin code during discovery.
 
+`index.ts` contains public exports only. `schemas.ts` owns manifest/configuration
+validation, `configuration.ts` owns atomic persistence, `discovery.ts` owns
+package/root validation, and `manager.ts` owns serialized activation and rollback.
+Public types and the configuration error live in `types.ts`.
 
 Validated contribution roots include an internal `pluginRoot` (the canonical
 trusted package root). Runtime forwards it to discovery and registry; it never

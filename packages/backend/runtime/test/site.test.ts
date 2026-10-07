@@ -55,7 +55,10 @@ async function fixture(t: TestContext, script: string) {
     join(import.meta.dirname, "../.aura-site-test-"),
   );
   const workspace = JSON.parse(
-    await readFile(new URL("../../../../package.json", import.meta.url), "utf8"),
+    await readFile(
+      new URL("../../../../package.json", import.meta.url),
+      "utf8",
+    ),
   ) as { packageManager: string };
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(
@@ -108,10 +111,13 @@ test("only direct supported scripts get port flags, and npm uses a separator", (
     "--port",
     "3001",
   ]);
-  assert.deepEqual(
-    sitePortFlags("vite --host 0.0.0.0 --port 5173", 5173),
-    ["--host", "127.0.0.1", "--port", "5173", "--strictPort"],
-  );
+  assert.deepEqual(sitePortFlags("vite --host 0.0.0.0 --port 5173", 5173), [
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "5173",
+    "--strictPort",
+  ]);
   assert.deepEqual(
     siteDirectCommand("vite --host 0.0.0.0 --port 5173", [
       "--host",
@@ -365,7 +371,9 @@ test("multiple projects run concurrently with separate status and ports", async 
   const opened: string[] = [];
   const site = new SiteRunner({
     onStatus() {},
-    openPreview: async (url) => { opened.push(url); },
+    openPreview: async (url) => {
+      opened.push(url);
+    },
     readinessTimeoutMs: 30000,
   });
   t.after(() => site.stop());
@@ -375,18 +383,30 @@ test("multiple projects run concurrently with separate status and ports", async 
     site.start({ ...first, url }),
     site.start({ ...second, url }),
   ]);
-  await until(() => opened.length === 2 || site.getStatus(first.id).state === "error" || site.getStatus(second.id).state === "error");
+  await until(
+    () =>
+      opened.length === 2 ||
+      site.getStatus(first.id).state === "error" ||
+      site.getStatus(second.id).state === "error",
+  );
   const firstStatus = site.getStatus(first.id);
   const secondStatus = site.getStatus(second.id);
   // Either project can end the wait; retain both outcomes rather than losing
   // the triggering failure behind the other project's still-starting state.
-  const concurrentStatus = JSON.stringify({ first: firstStatus, second: secondStatus, opened });
+  const concurrentStatus = JSON.stringify({
+    first: firstStatus,
+    second: secondStatus,
+    opened,
+  });
   assert.equal(firstStatus.state, "running", concurrentStatus);
   assert.equal(secondStatus.state, "running", concurrentStatus);
   assert.notEqual(firstStatus.project!.url, secondStatus.project!.url);
   await site.stop(first.id);
   assert.equal(site.getStatus(first.id).state, "stopped");
   assert.equal(site.getStatus(second.id).state, "running");
-  assert.match(await (await fetch(secondStatus.project!.url)).text(), /owned site/);
+  assert.match(
+    await (await fetch(secondStatus.project!.url)).text(),
+    /owned site/,
+  );
   await site.stop(second.id);
 });

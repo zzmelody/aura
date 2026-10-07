@@ -1,4 +1,5 @@
 import React, {
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -76,40 +77,53 @@ export function FlowStudio({
   const menu = useRef<HTMLDetailsElement>(null);
   const gutter = useRef<HTMLDivElement>(null);
   const codeInput = useRef<HTMLTextAreaElement>(null);
+  const codeNavigation = useRef("");
   useEffect(() => {
     if (editorRevision) {
       setLocalDraft(true);
       setView("graph");
     }
   }, [editorRevision]);
-  useEffect(() => {
-    if (initialLine !== undefined && code) openCode(initialLine);
-  }, [initialLine, Boolean(code)]);
   function selectFlow(_id: string) {
     setLocalDraft(true);
     setView("graph");
     setNotice("");
     if (menu.current) menu.current.open = false;
   }
-  function openCode(targetLine = 1) {
-    setView("code");
-    requestAnimationFrame(() => {
-      const editor = codeInput.current;
-      if (!editor) return;
-      const lines = code.split("\n");
-      const safeLine = Math.max(1, Math.min(targetLine, lines.length));
-      const start = lines
-        .slice(0, safeLine - 1)
-        .reduce((offset, value) => offset + value.length + 1, 0);
-      editor.focus();
-      editor.setSelectionRange(
-        start,
-        start + (lines[safeLine - 1]?.length ?? 0),
-      );
-      editor.scrollTop = Math.max(0, (safeLine - 3) * 23);
-      setLine(safeLine);
-    });
-  }
+  const openCode = useCallback(
+    (targetLine = 1) => {
+      setView("code");
+      requestAnimationFrame(() => {
+        const editor = codeInput.current;
+        if (!editor) return;
+        const lines = code.split("\n");
+        const safeLine = Math.max(1, Math.min(targetLine, lines.length));
+        const start = lines
+          .slice(0, safeLine - 1)
+          .reduce((offset, value) => offset + value.length + 1, 0);
+        editor.focus();
+        editor.setSelectionRange(
+          start,
+          start + (lines[safeLine - 1]?.length ?? 0),
+        );
+        editor.scrollTop = Math.max(0, (safeLine - 3) * 23);
+        setLine(safeLine);
+      });
+    },
+    [code],
+  );
+  const hasCode = Boolean(code);
+  useEffect(() => {
+    if (!hasCode) {
+      codeNavigation.current = "";
+      return;
+    }
+    if (initialLine === undefined) return;
+    const request = `${flowId}:${initialLine}`;
+    if (codeNavigation.current === request) return;
+    codeNavigation.current = request;
+    openCode(initialLine);
+  }, [flowId, initialLine, hasCode, openCode]);
   function download() {
     const url = URL.createObjectURL(
       new Blob([code], { type: "text/javascript;charset=utf-8" }),

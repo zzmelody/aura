@@ -3,5 +3,5 @@ param([Parameter(ValueFromRemainingArguments = $true)][string[]]$TaskArgs)
 Set-Location -LiteralPath $auraRoot
 if (!$TaskArgs.Count) { $TaskArgs = @('run', 'dev') }
 $env:AURA_LAUNCHER_PID = [string]$PID
-& $auraNode $auraPnpm @TaskArgs
+& $auraPnpmCommand @auraPnpmArguments @TaskArgs
 exit $LASTEXITCODE

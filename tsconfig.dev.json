@@ -4,6 +4,8 @@
     "types": ["node", "vite/client"]
   },
   "include": [
+    "scripts/build-server-launch.ts",
+    "tests/server-launch.test.ts",
     "eslint.config.ts",
     "scripts/check-format.ts",
     "scripts/lint-strict.ts",

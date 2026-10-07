@@ -47,7 +47,9 @@ export function demoToolCall(
 ): DemoToolCall | undefined {
   if (!isRecord(request) || hasToolResult(request)) return undefined;
   const tools = offered(request);
-  const text = [...history].reverse().find((message) => message.role === "user")?.text;
+  const text = [...history]
+    .reverse()
+    .find((message) => message.role === "user")?.text;
   if (!text) return undefined;
   if (tools.has("aura_tts") && /(配音|朗读|语音合成|读出来|tts)/iu.test(text))
     return { name: "aura_tts", arguments: { text: subject(text) } };
@@ -59,7 +61,11 @@ export function demoToolCall(
       name: "aura_image",
       arguments: {
         prompt: subject(text),
-        aspect: /竖/u.test(text) ? "portrait" : /横/u.test(text) ? "landscape" : "square",
+        aspect: /竖/u.test(text)
+          ? "portrait"
+          : /横/u.test(text)
+            ? "landscape"
+            : "square",
       },
     };
   if (
@@ -109,7 +115,11 @@ export function demoToolReply(request: unknown): string {
         ? content
         : Array.isArray(content)
           ? content
-              .map((part) => (isRecord(part) && typeof part.text === "string" ? part.text : ""))
+              .map((part) =>
+                isRecord(part) && typeof part.text === "string"
+                  ? part.text
+                  : "",
+              )
               .join("")
           : "";
     const parsed = JSON.parse(text) as unknown;

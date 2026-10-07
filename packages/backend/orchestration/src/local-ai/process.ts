@@ -38,14 +38,23 @@ function readWorkerPid(stream: Readable): Promise<number> {
       const newline = buffer.indexOf("\n");
       if (newline < 0) return;
       try {
-        const identity = JSON.parse(buffer.slice(0, newline)) as { pid?: unknown };
-        if (!Number.isSafeInteger(identity.pid) || (identity.pid as number) <= 0)
+        const identity = JSON.parse(buffer.slice(0, newline)) as {
+          pid?: unknown;
+        };
+        if (
+          !Number.isSafeInteger(identity.pid) ||
+          (identity.pid as number) <= 0
+        )
           throw new Error("本地 AI worker 的进程身份无效。");
         cleanup();
         stream.resume(); // Drain later child output without copying it to logs.
         resolve(identity.pid as number);
       } catch (error) {
-        fail(error instanceof Error ? error : new Error("本地 AI worker 的进程身份无效。"));
+        fail(
+          error instanceof Error
+            ? error
+            : new Error("本地 AI worker 的进程身份无效。"),
+        );
       }
     };
     const timer = setTimeout(

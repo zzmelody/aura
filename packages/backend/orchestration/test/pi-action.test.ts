@@ -15,7 +15,26 @@ import {
   parseEventState,
   resolveConfig,
   runPi,
-} from "../action/pi/pi.action.js";
+} from "../action/pi/pi.action.ts";
+
+test("pi ignores non-object protocol frames and malformed message content", () => {
+  const result = parseEventState([
+    null,
+    42,
+    { type: "session", id: "fixture" },
+    {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        stopReason: "stop",
+        content: [null, 42, { type: "text", text: "ok" }],
+      },
+    },
+    { type: "agent_end", messages: [null, 42] },
+  ]);
+  assert.equal(result.finalText, "ok");
+  assert.equal(result.terminalStatus, "completed");
+});
 
 test("pi folds a completed JSONL turn", () => {
   const result = parseEventState([

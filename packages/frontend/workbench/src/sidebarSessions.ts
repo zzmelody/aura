@@ -15,14 +15,18 @@ export type SessionStatus = {
 };
 
 /** Compact row metadata; callers may supply a clock for deterministic rendering. */
-export function sidebarSessionTime(updatedAt: number, now = Date.now()): string {
+export function sidebarSessionTime(
+  updatedAt: number,
+  now = Date.now(),
+): string {
   if (!Number.isFinite(updatedAt) || !Number.isFinite(now)) return "—";
   const seconds = Math.max(0, Math.floor((now - updatedAt) / 1000));
   if (seconds < 60) return "刚刚";
   if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟前`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时前`;
   if (seconds < 30 * 86400) return `${Math.floor(seconds / 86400)}天前`;
-  if (seconds < 365 * 86400) return `${Math.floor(seconds / (30 * 86400))}个月前`;
+  if (seconds < 365 * 86400)
+    return `${Math.floor(seconds / (30 * 86400))}个月前`;
   return `${Math.floor(seconds / (365 * 86400))}年前`;
 }
 

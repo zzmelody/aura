@@ -21,8 +21,8 @@ export function createAiServicesApp(
       return context.json({ message: "AI 配置仅供本机客户端使用。" }, 403);
     const header = context.req.header("authorization");
     if (header !== undefined) {
-      const actual = Buffer.from(header.replace(/^Bearer /u, "")),
-        expected = Buffer.from(token ?? "");
+      const actual = Buffer.from(header.replace(/^Bearer /u, ""));
+      const expected = Buffer.from(token ?? "");
       if (
         !token ||
         actual.length !== expected.length ||
@@ -66,9 +66,13 @@ export function createAiServicesApp(
       ),
     ),
   );
-  app.post("/models", async (context) => context.json(await services.refreshModels(
-    AbortSignal.any([context.req.raw.signal, AbortSignal.timeout(15_000)]),
-  )));
+  app.post("/models", async (context) =>
+    context.json(
+      await services.refreshModels(
+        AbortSignal.any([context.req.raw.signal, AbortSignal.timeout(15_000)]),
+      ),
+    ),
+  );
   app.post("/check/tripo", async (context) =>
     context.json(
       await services.checkTripo(

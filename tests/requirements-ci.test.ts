@@ -27,12 +27,23 @@ test("completion changes only the status and preserves the requirement digest", 
   assert.equal(requirement.visual, true);
   assert.equal(parseRequirement(requirement.path, completed).status, "已完成");
   assert.equal(requirementDigest(completed), requirement.digest);
-  assertGeneratedPaths(["packages/frontend/ui/src/example.ts", requirement.path], requirement, completed);
+  assertGeneratedPaths(
+    ["packages/frontend/ui/src/example.ts", requirement.path],
+    requirement,
+    completed,
+  );
 });
 
 test("invalid paths and missing acceptance criteria are rejected", () => {
-  assert.throws(() => parseRequirement("docs/requirements/nested/REQ-1.md", source));
-  assert.throws(() => parseRequirement("docs/requirements/REQ-1.md", source.replace("## 验收标准", "## Notes")));
+  assert.throws(() =>
+    parseRequirement("docs/requirements/nested/REQ-1.md", source),
+  );
+  assert.throws(() =>
+    parseRequirement(
+      "docs/requirements/REQ-1.md",
+      source.replace("## 验收标准", "## Notes"),
+    ),
+  );
 });
 
 test("generated code cannot change CI controls, credentials or other requirements", () => {
@@ -48,7 +59,21 @@ test("generated code cannot change CI controls, credentials or other requirement
     "docs/requirements/REQ-2.md",
     "ci-evidence/REQ-1/screen.png",
   ]) {
-    assert.throws(() => assertGeneratedPaths([forbidden, requirement.path], requirement, completed), forbidden);
+    assert.throws(
+      () =>
+        assertGeneratedPaths(
+          [forbidden, requirement.path],
+          requirement,
+          completed,
+        ),
+      forbidden,
+    );
   }
-  assert.throws(() => assertGeneratedPaths(["src/example.ts", requirement.path], requirement, completed + "\nextra"));
+  assert.throws(() =>
+    assertGeneratedPaths(
+      ["src/example.ts", requirement.path],
+      requirement,
+      completed + "\nextra",
+    ),
+  );
 });

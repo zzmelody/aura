@@ -5,7 +5,7 @@ import { chatModelCatalog, resolveChatModel } from "../src/chat-models.ts";
 import { agentDefaults } from "../src/agent-config.ts";
 
 function runtime() {
-  const calls: { model: string; reasoningEffort?: string }[] = [];
+  const calls: Array<{ model: string; reasoningEffort?: string }> = [];
   const llm: Parameters<typeof resolveChatModel>[0] = {
     async listModels(provider) {
       return ["gpt-6.1-sol", "limited", "plain"].map((id) => ({
@@ -114,12 +114,22 @@ test("models the subscription refused leave the catalog, the default never does"
   const rejected = new RejectedChatModels();
   rejected.reject("codex", "limited");
   rejected.reject("codex", agentDefaults("codex").model);
-  const catalog = await chatModelCatalog(llm, "codex", AbortSignal.timeout(5000), rejected);
+  const catalog = await chatModelCatalog(
+    llm,
+    "codex",
+    AbortSignal.timeout(5000),
+    rejected,
+  );
   assert.deepEqual(
     catalog.models.map(({ id }) => id),
     ["gpt-6.1-sol", "plain"].filter((id) => id !== "limited"),
   );
-  const demo = await chatModelCatalog(llm, "demo", AbortSignal.timeout(5000), rejected);
+  const demo = await chatModelCatalog(
+    llm,
+    "demo",
+    AbortSignal.timeout(5000),
+    rejected,
+  );
   assert.ok(demo.models.some(({ id }) => id === "limited"));
 });
 
@@ -129,6 +139,9 @@ test("a ChatGPT-account model refusal becomes a clear, forwardable message", asy
     '{"detail":"The \'gpt-5.4-mini\' model is not supported when using Codex with a ChatGPT account."}',
   );
   assert.equal(refused.status, 422);
-  assert.equal(refused.message, "模型 gpt-5.4-mini 不支持 Codex 订阅账号，请换一个模型再试。");
+  assert.equal(
+    refused.message,
+    "模型 gpt-5.4-mini 不支持 Codex 订阅账号，请换一个模型再试。",
+  );
   assert.notEqual(agentFailure("boom").status, 422);
 });

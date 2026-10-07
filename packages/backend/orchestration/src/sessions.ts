@@ -49,7 +49,9 @@ const plainText = (content?: readonly ContentBlock[]) =>
 
 export function agentFailure(message?: string): FlowError {
   if (message === "model_output_limit")
-    return new FlowError("model_output_limit: 模型达到输出上限，尚未完成制作结果；请调整模型输出预算后再试。");
+    return new FlowError(
+      "model_output_limit: 模型达到输出上限，尚未完成制作结果；请调整模型输出预算后再试。",
+    );
   if (/\bbudget_exceeded\b|Budget has been exceeded/iu.test(message ?? ""))
     return new FlowError(
       "model_budget_exceeded: 模型服务额度已用尽，请调整服务额度后再继续制作。",
@@ -57,7 +59,11 @@ export function agentFailure(message?: string): FlowError {
     );
   // DSH can include raw token-service response bytes in the error cause. Never
   // forward those bytes to Flow storage or the client; give a recovery action.
-  if (/OAuth refresh failed for openai-codex|OpenAI Codex token refresh/i.test(message ?? ""))
+  if (
+    /OAuth refresh failed for openai-codex|OpenAI Codex token refresh/i.test(
+      message ?? "",
+    )
+  )
     return new FlowError(
       "Codex 登录续期失败。请检查网络或代理，在右上角重新登录 Codex 后新建运行。",
     );
@@ -88,7 +94,10 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
           {
             provider: config.provider,
             model: config.model,
-            ...(config.reasoningEffort === "off" && config.provider !== "openai-codex" ? {} : { reasoningEffort: ReasoningEffortId(config.reasoningEffort) }),
+            ...(config.reasoningEffort === "off" &&
+            config.provider !== "openai-codex"
+              ? {}
+              : { reasoningEffort: ReasoningEffortId(config.reasoningEffort) }),
             ...(config.maxTokens === undefined
               ? {}
               : { maxTokens: config.maxTokens }),
@@ -163,7 +172,12 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
             return {
               provider: config.provider,
               model: config.model,
-              ...(config.reasoningEffort === "off" && config.provider !== "openai-codex" ? {} : { reasoningEffort: ReasoningEffortId(config.reasoningEffort) }),
+              ...(config.reasoningEffort === "off" &&
+              config.provider !== "openai-codex"
+                ? {}
+                : {
+                    reasoningEffort: ReasoningEffortId(config.reasoningEffort),
+                  }),
               ...(config.maxTokens === undefined
                 ? {}
                 : { maxTokens: config.maxTokens }),
@@ -177,14 +191,17 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
           sessionId,
           provider: config.provider,
           model: config.model,
-          ...(config.reasoningEffort === "off" && config.provider !== "openai-codex" ? {} : { reasoningEffort: config.reasoningEffort }),
+          ...(config.reasoningEffort === "off" &&
+          config.provider !== "openai-codex"
+            ? {}
+            : { reasoningEffort: config.reasoningEffort }),
         });
         if (!savedRequestId)
           throw new FlowError("Agent attempt 缺少持久化 requestId。");
         const requestId = savedRequestId as SessionRequestId;
         let matchedTurn: number | undefined;
         let turn: number | undefined;
-        const disposers: (() => void)[] = [];
+        const disposers: Array<() => void> = [];
         let finish!: { resolve(): void; reject(reason: unknown): void };
         const completed = new Promise<void>((resolve, reject) => {
           finish = { resolve, reject };
@@ -213,7 +230,7 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
                       ? event.data.reason.error.message
                       : event.data.reason.kind === "max-tokens"
                         ? "model_output_limit"
-                      : undefined,
+                        : undefined,
                   ),
                 );
             }
@@ -360,9 +377,11 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
         );
       } else {
         const abort = new AbortController();
-        const stream = controller
-          .follow({ address, maxMessages: 30 }, abort.signal)
-          [Symbol.asyncIterator]();
+        const events = controller.follow(
+          { address, maxMessages: 30 },
+          abort.signal,
+        );
+        const stream = events[Symbol.asyncIterator]();
         try {
           const first = await stream.next();
           if (first.done || first.value.type !== "snapshot")

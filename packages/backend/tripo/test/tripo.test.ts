@@ -39,8 +39,8 @@ test("Tripo remains available but disabled when no backend key exists", async ()
 });
 
 test("saved Tripo key and region apply without restart and checks submit no paid tasks", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "aura-tripo-refresh-")),
-    credentialPath = join(root, "api-key");
+  const root = await mkdtemp(join(tmpdir(), "aura-tripo-refresh-"));
+  const credentialPath = join(root, "api-key");
   t.after(() => rm(root, { recursive: true, force: true }));
   let region: "global" | "china" = "global";
   const calls: Array<{

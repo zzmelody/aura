@@ -38,7 +38,9 @@ export function ComposerAddMenu({
     };
     document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", escape, true);
-    root.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    root.current
+      ?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')
+      ?.focus();
     return () => {
       document.removeEventListener("pointerdown", away);
       document.removeEventListener("keydown", escape, true);
@@ -74,10 +76,15 @@ export function ComposerAddMenu({
             if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
             event.preventDefault();
             const items = Array.from(
-              root.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? [],
+              root.current?.querySelectorAll<HTMLElement>(
+                '[role="menuitem"]:not(:disabled)',
+              ) ?? [],
             );
             const index = items.indexOf(document.activeElement as HTMLElement);
-            items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+            items[
+              (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) %
+                items.length
+            ]?.focus();
           }}
         >
           {canAttach ? (

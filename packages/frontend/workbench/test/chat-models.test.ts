@@ -48,7 +48,7 @@ test("model switching retains supported efforts and resets incompatible ones", (
 
 test("chat transport sends only the supplied conversation configuration", async (t) => {
   const original = globalThis.fetch;
-  const bodies: Record<string, unknown>[] = [];
+  const bodies: Array<Record<string, unknown>> = [];
   globalThis.fetch = async (_url, init) => {
     bodies.push(JSON.parse(String(init?.body)));
     return new Response('{"type":"delta","text":"ok"}\n{"type":"done"}\n');

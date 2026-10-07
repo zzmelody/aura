@@ -57,7 +57,7 @@ Aura 后端优先采用进程已有的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY
 
 支持 Responses 的网关改用 `openai-responses`。`apiKeyEnv` 保存的是 DSH 凭据引用名称，不是密钥；密钥由后端凭据服务解析，不能进入客户端或仓库。目录中已有的 provider 可以继承官方目录，再用 `modelOverrides` 调整个别模型；`models` 会替换整份目录，不应与 `modelOverrides` 同时使用。
 
-本地实现依据是已安装的 [DSH pi-ai 插件说明](../node_modules/@deepseek-ai/dsh-llm-pi-ai/README.md)、[DSH 授权服务说明](../node_modules/@deepseek-ai/dsh-authorization/README.md) 和 [DSH 本地凭据说明](../node_modules/@deepseek-ai/dsh-credentials-local/README.md)。这些是只读安装依赖，不属于 Aura 源码。
+本地实现依据是授权包安装的 `dsh-llm-pi-ai`、`dsh-authorization` 和 `dsh-credentials-local` README，位于 `packages/backend/dsh-auth/node_modules/@deepseek-ai/`。这些是只读安装依赖，不属于 Aura 源码。
 
 ## Lumina 网关
 
@@ -75,4 +75,4 @@ Aura 后端优先采用进程已有的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY
 
 ## 本地剧情模型调研
 
-面向 RTX 3060 及以上、16GB 内存起步的游戏内剧情与任务决策，候选模型、Ollama / llama.cpp 部署路线、DSH 接入缺口及同机游戏验收方案见 [本地剧情决策器](local-story-director.md)。当前本地演示仍是模拟模型，该文档不代表真实本地 provider 已接入。
+面向 RTX 3060 及以上、16GB 内存起步的游戏内剧情与任务决策，候选模型、Ollama / llama.cpp 部署路线、DSH 接入缺口及同机游戏验收方案见 [本地剧情决策器](../proposals/local-story-director.md)。当前本地演示仍是模拟模型，该文档不代表真实本地 provider 已接入。

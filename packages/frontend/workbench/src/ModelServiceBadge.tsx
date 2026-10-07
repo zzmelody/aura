@@ -73,10 +73,7 @@ export function ModelServiceBadge({
         ]}
       />
       <Text
-        style={[
-          styles.text,
-          { color: ready ? colors.text : colors.secondary },
-        ]}
+        style={[styles.text, { color: ready ? colors.text : colors.secondary }]}
       >
         {label}
       </Text>

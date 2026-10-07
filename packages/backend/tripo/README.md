@@ -1,5 +1,7 @@
 # @aura/tripo
 
+`index.ts` 只暴露公共接口。`service.ts` 负责 SDK 调度，`task.ts` 将上游任务投影为公开 DTO，`credentials.ts` 读取后端密钥，`game-asset.ts` 负责固定资产链路。凭据和上游内部响应不进入客户端契约。
+
 Aura 后端的 Tripo v3 适配层。它使用官方 `@vastai/tripo-sdk`，负责 Tripo 鉴权、
 文本/图片生成任务提交和任务状态脱敏；HTTP 路由仍由 `@aura/runtime` 负责。
 

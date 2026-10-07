@@ -52,12 +52,18 @@ test(
       mkdir(join(pluginRoot, "lib"), { recursive: true }),
       mkdir(join(pluginRoot, "node_modules", "@aura"), { recursive: true }),
     ]);
-    await symlink(fileURLToPath(new URL("../../plugin-sdk", import.meta.url)), join(pluginRoot, "node_modules", "@aura", "plugin-sdk"), "junction");
+    await symlink(
+      fileURLToPath(new URL("../../plugin-sdk", import.meta.url)),
+      join(pluginRoot, "node_modules", "@aura", "plugin-sdk"),
+      "junction",
+    );
     const helper = join(pluginRoot, "lib", "helper.js");
     await writeFile(helper, 'export const version = "v1";\n');
     // Real plugin Action identity must survive checkpoint resume. Agent tool refs
     // already included plugin metadata; the direct Action branch used to drop it.
-    await writeFile(join(actionDirectory, "context.action.js"), `
+    await writeFile(
+      join(actionDirectory, "context.action.js"),
+      `
 import { defineAction } from "@aura/plugin-sdk/action";
 import { version } from "../../lib/helper.js";
 export default defineAction({
@@ -66,7 +72,8 @@ export default defineAction({
   output: { schema: { type: "string" }, render: (_, value) => [{ type: "text", text: value }] },
   execute: async () => version,
 });
-`);
+`,
+    );
     await writeFile(
       join(flowDirectory, "story.flow.js"),
       `
@@ -98,8 +105,12 @@ export default defineFlow({
       version: "1.0.0",
     };
     const configuration = {
-      flowRoots: [{ root: contributions, pluginRoot, namespace: plugin.id, plugin }],
-      actionRoots: [{ root: pluginActions, pluginRoot, namespace: plugin.id, plugin }],
+      flowRoots: [
+        { root: contributions, pluginRoot, namespace: plugin.id, plugin },
+      ],
+      actionRoots: [
+        { root: pluginActions, pluginRoot, namespace: plugin.id, plugin },
+      ],
       plugins: [{ ...plugin, enabled: true, available: true }],
     };
     const host = new OrchestrationHost({
@@ -153,8 +164,14 @@ export default defineFlow({
       // A shared dependency can change while an existing Run awaits input.
       // Its captured module environment must remain the old version.
       await writeFile(helper, 'export const version = "v2-hot";\n');
-      await catalogFlow(host, "test.live/story", flow => flow?.available === true &&
-        flow.title.endsWith("v2-hot") && flow.sourceHash !== waiting.flow.sourceHash);
+      await catalogFlow(
+        host,
+        "test.live/story",
+        (flow) =>
+          flow?.available === true &&
+          flow.title.endsWith("v2-hot") &&
+          flow.sourceHash !== waiting.flow.sourceHash,
+      );
 
       await host.configureContributions({
         flowRoots: [],
@@ -164,7 +181,8 @@ export default defineFlow({
       await catalogFlow(host, "test.live/story", (flow) => flow === undefined);
       await host.request("answer", {
         id: pinned.id,
-        stepKey: waiting.steps.find(step => step.kind === "checkpoint")!.stepKey,
+        stepKey: waiting.steps.find((step) => step.kind === "checkpoint")!
+          .stepKey,
         requestId: randomUUID(),
         output: { ok: true },
       });
@@ -211,24 +229,43 @@ export default defineFlow({
       );
       assert.equal(rolledBack.plugins[0]?.id, plugin.id);
       const restartRun = await host.request<FlowRun>("start", {
-        requestId: randomUUID(), flowId: "test.live/story", mode: "demo", input: { checkpoint: true },
+        requestId: randomUUID(),
+        flowId: "test.live/story",
+        mode: "demo",
+        input: { checkpoint: true },
       });
-      const restartWaiting = await host.request<FlowRun>("wait", { id: restartRun.id });
+      const restartWaiting = await host.request<FlowRun>("wait", {
+        id: restartRun.id,
+      });
       assert.equal(restartWaiting.status, "waiting_input");
       await host.close();
       await writeFile(helper, 'export const version = "v3";\n');
-      const restarted = new OrchestrationHost({ root, flowRoot, actionRoot, dshHome: join(root, "dsh"),
-        modelURL: "http://127.0.0.1:1/v1", ...configuration });
+      const restarted = new OrchestrationHost({
+        root,
+        flowRoot,
+        actionRoot,
+        dshHome: join(root, "dsh"),
+        modelURL: "http://127.0.0.1:1/v1",
+        ...configuration,
+      });
       try {
-        await restarted.request<FlowRun>("answer", { id: restartRun.id,
-          stepKey: restartWaiting.steps.find(step => step.kind === "checkpoint")!.stepKey,
-          requestId: randomUUID(), output: { ok: true } });
-        const rejected = await restarted.request<FlowRun>("wait", { id: restartRun.id });
+        await restarted.request<FlowRun>("answer", {
+          id: restartRun.id,
+          stepKey: restartWaiting.steps.find(
+            (step) => step.kind === "checkpoint",
+          )!.stepKey,
+          requestId: randomUUID(),
+          output: { ok: true },
+        });
+        const rejected = await restarted.request<FlowRun>("wait", {
+          id: restartRun.id,
+        });
         assert.equal(rejected.status, "interrupted");
         assert.match(rejected.error ?? "", /revision_mismatch/u);
         assert.equal(rejected.flow.sourceHash, restartWaiting.flow.sourceHash);
-      } finally { await restarted.close(); }
-
+      } finally {
+        await restarted.close();
+      }
     } finally {
       await host.close();
       assert.equal(dirname(resolve(root)), resolve(tmpdir()));

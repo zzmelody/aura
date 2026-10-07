@@ -1,7 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import type { FlowRun } from "@aura/protocol/types";
-import type { ArtifactOwner } from "./workflow-artifacts.ts";
+import type { ArtifactOwner } from "./workflow-index.ts";
 
 /** Reads structured JSON results only, never extracts paths from prose. */
 export function historicalArtifactReader(ctx: Context) {

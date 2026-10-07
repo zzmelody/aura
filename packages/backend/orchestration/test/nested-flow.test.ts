@@ -107,29 +107,47 @@ function request(flowId = "parent", value = 2) {
 }
 
 test("child Runs record their root, report lands on the root, and the root settles once", async () => {
-  const grandchild = loaded("grandchild", (ctx, input) => ctx.sequence({ id: "main" }, async (scope) => {
-    await scope.report({ stage: "deep" });
-    return input as { value: number };
-  }));
-  const child = loaded("child", (ctx, input) => ctx.sequence({ id: "main" }, async (scope) => {
-    const out = await scope.flow({ id: "inner", flow: "grandchild", input });
-    return out.output as { value: number };
-  }));
-  const parent = loaded("parent", (ctx, input) => ctx.sequence({ id: "main" }, async (scope) => {
-    await scope.report({ stage: "start" });
-    const out = await scope.flow({ id: "outer", flow: "child", input });
-    return out.output as { value: number };
-  }));
+  const grandchild = loaded("grandchild", (ctx, input) =>
+    ctx.sequence({ id: "main" }, async (scope) => {
+      await scope.report({ stage: "deep" });
+      return input as { value: number };
+    }),
+  );
+  const child = loaded("child", (ctx, input) =>
+    ctx.sequence({ id: "main" }, async (scope) => {
+      const out = await scope.flow({ id: "inner", flow: "grandchild", input });
+      return out.output as { value: number };
+    }),
+  );
+  const parent = loaded("parent", (ctx, input) =>
+    ctx.sequence({ id: "main" }, async (scope) => {
+      await scope.report({ stage: "start" });
+      const out = await scope.flow({ id: "outer", flow: "child", input });
+      return out.output as { value: number };
+    }),
+  );
   const settled: string[] = [];
   const records = table();
-  const registry = new Map([parent, child, grandchild].map((flow) => [flow.id, flow]));
+  const registry = new Map(
+    [parent, child, grandchild].map((flow) => [flow.id, flow]),
+  );
   const engine = new FlowEngine({
     domain: { table: () => records },
     registry: { get: (id) => registry.get(id)!, catalog: () => [] },
     refreshFlows: async () => {},
     presets: async () => [],
-    sessions: { execute: async () => "unused", history: async (step) => ({ sessionId: step.sessionId, preset: step.preset, hasMore: false, entries: [] }) },
-    onRootSettled: async (run) => { settled.push(`${run.id}:${run.status}`); },
+    sessions: {
+      execute: async () => "unused",
+      history: async (step) => ({
+        sessionId: step.sessionId,
+        preset: step.preset,
+        hasMore: false,
+        entries: [],
+      }),
+    },
+    onRootSettled: async (run) => {
+      settled.push(`${run.id}:${run.status}`);
+    },
   });
   await engine.initialize();
   const root = await engine.start(request());
@@ -138,7 +156,8 @@ test("child Runs record their root, report lands on the root, and the root settl
   await until(() => engine.get(root.id).settledAt !== undefined);
   const all = [...records.entries()].map(([, run]) => run);
   assert.equal(all.length, 3);
-  for (const run of all.filter((item) => item.parent)) assert.equal(run.rootRunId, root.id);
+  for (const run of all.filter((item) => item.parent))
+    assert.equal(run.rootRunId, root.id);
   assert.equal(engine.get(root.id).rootRunId, undefined);
   assert.deepEqual(engine.get(root.id).report, { stage: "deep" });
   assert.ok(engine.get(root.id).settledAt);
@@ -153,8 +172,18 @@ test("child Runs record their root, report lands on the root, and the root settl
     registry: { get: (id) => registry.get(id)!, catalog: () => [] },
     refreshFlows: async () => {},
     presets: async () => [],
-    sessions: { execute: async () => "unused", history: async (step) => ({ sessionId: step.sessionId, preset: step.preset, hasMore: false, entries: [] }) },
-    onRootSettled: async (run) => { again.push(run.id); },
+    sessions: {
+      execute: async () => "unused",
+      history: async (step) => ({
+        sessionId: step.sessionId,
+        preset: step.preset,
+        hasMore: false,
+        entries: [],
+      }),
+    },
+    onRootSettled: async (run) => {
+      again.push(run.id);
+    },
   });
   await restarted.initialize();
   await until(() => again.length === 1);
@@ -163,10 +192,12 @@ test("child Runs record their root, report lands on the root, and the root settl
 });
 
 test("report rejects values over 4 KiB", async () => {
-  const flow = loaded("parent", (ctx) => ctx.sequence({ id: "main" }, async (scope) => {
-    await scope.report({ blob: "x".repeat(5_000) });
-    return { value: 1 };
-  }));
+  const flow = loaded("parent", (ctx) =>
+    ctx.sequence({ id: "main" }, async (scope) => {
+      await scope.report({ blob: "x".repeat(5_000) });
+      return { value: 1 };
+    }),
+  );
   const { engine } = await setup([flow]);
   const run = await engine.start(request());
   const done = await engine.wait(run.id);
@@ -176,19 +207,63 @@ test("report rejects values over 4 KiB", async () => {
 });
 
 test("configured creator admission and nested Flows keep the original provider after settings change", async () => {
-  let selected = { provider: "aura-custom-" + "a".repeat(32), model: "model-one", reasoningEffort: "off", timeoutMs: 1000 };
+  let selected = {
+    provider: "aura-custom-" + "a".repeat(32),
+    model: "model-one",
+    reasoningEffort: "off",
+    timeoutMs: 1000,
+  };
   const first = { ...selected };
-  const child = loaded("child", (ctx, input) => ctx.sequence({ id: "main" }, async scope => {
-    await scope.agent({ id: "call", label: "Call", preset: "test", prompt: "child" }); return input;
-  }));
-  const parent = loaded("parent", (ctx, input) => ctx.sequence({ id: "main" }, async scope => {
-    await scope.memo({ id: "switch", schema: z.boolean(), compute: () => { selected = { ...selected, provider: "aura-custom-" + "b".repeat(32), model: "model-two" }; return true; } });
-    return (await scope.flow({ id: "child", flow: "child", input })).output;
-  }), { service: true });
+  const child = loaded("child", (ctx, input) =>
+    ctx.sequence({ id: "main" }, async (scope) => {
+      await scope.agent({
+        id: "call",
+        label: "Call",
+        preset: "test",
+        prompt: "child",
+      });
+      return input;
+    }),
+  );
+  const parent = loaded(
+    "parent",
+    (ctx, input) =>
+      ctx.sequence({ id: "main" }, async (scope) => {
+        await scope.memo({
+          id: "switch",
+          schema: z.boolean(),
+          compute: () => {
+            selected = {
+              ...selected,
+              provider: "aura-custom-" + "b".repeat(32),
+              model: "model-two",
+            };
+            return true;
+          },
+        });
+        return (await scope.flow({ id: "child", flow: "child", input })).output;
+      }),
+    { service: true },
+  );
   const calls: unknown[] = [];
-  const { engine } = await setup([parent, child], undefined, { execute: async step => { calls.push(step.config); return "ready"; } }, async () => selected);
+  const { engine } = await setup(
+    [parent, child],
+    undefined,
+    {
+      execute: async (step) => {
+        calls.push(step.config);
+        return "ready";
+      },
+    },
+    async () => selected,
+  );
   try {
-    const source = { ...request(), mode: "codex", serviceOnly: true, useConfiguredModel: true };
+    const source = {
+      ...request(),
+      mode: "codex",
+      serviceOnly: true,
+      useConfiguredModel: true,
+    };
     const started = await engine.start(source);
     assert.equal((await engine.wait(started.id)).status, "completed");
     assert.equal(started.mode, "custom");
@@ -196,8 +271,13 @@ test("configured creator admission and nested Flows keep the original provider a
     assert.equal((await engine.start(source)).id, started.id);
     const next = await engine.start({ ...source, requestId: randomUUID() });
     assert.equal(next.agentDefaults?.model, "model-two");
-    await assert.rejects(engine.start({ ...source, requestId: randomUUID(), serviceOnly: false }), /受控服务/);
-  } finally { await engine.close(); }
+    await assert.rejects(
+      engine.start({ ...source, requestId: randomUUID(), serviceOnly: false }),
+      /受控服务/,
+    );
+  } finally {
+    await engine.close();
+  }
 });
 
 test("service-only starts require an explicitly published Flow", async () => {

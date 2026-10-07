@@ -80,7 +80,8 @@ export function createDemoModelApp() {
         messages = flowOutput === undefined ? extractHistory(body) : [];
         if (flowOutput === undefined) {
           toolCall = demoToolCall(body, messages);
-          if (!toolCall && hasToolResult(body)) flowOutput = demoToolReply(body);
+          if (!toolCall && hasToolResult(body))
+            flowOutput = demoToolReply(body);
         }
       } catch (error) {
         console.error("[Aura demo model]", errorMessage(error));

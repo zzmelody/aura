@@ -65,7 +65,11 @@ test("archived running conversations still receive status updates without reimpo
   const state = mergeWorkflowRuns(initialState(), [summary], endpoint);
   state.sessions[0].archivedAt = 200;
   state.sessions[0].title = "Renamed task";
-  const completed = mergeWorkflowRuns(state, [{ ...summary, status: "completed" }], endpoint);
+  const completed = mergeWorkflowRuns(
+    state,
+    [{ ...summary, status: "completed" }],
+    endpoint,
+  );
   assert.equal(completed.sessions.length, 1);
   assert.equal(completed.sessions[0].archivedAt, 200);
   assert.equal(completed.sessions[0].title, "Renamed task");
@@ -152,7 +156,12 @@ test("runs started from an ordinary chat stay inside that chat", () => {
         title: "plain",
         updatedAt: 1,
         messages: [
-          { id: "q", role: "user" as const, text: "hi", status: "complete" as const },
+          {
+            id: "q",
+            role: "user" as const,
+            text: "hi",
+            status: "complete" as const,
+          },
           {
             id: "run-1:output",
             role: "assistant" as const,
@@ -193,7 +202,12 @@ test("chat context summarizes settled runs and drops run inputs", () => {
   const ref = { id: "research", title: "Research", endpoint };
   const history = chatHistory([
     { id: "q", role: "user", text: "hi", status: "complete" },
-    { id: "run-1:input", role: "user", text: "{\"task\":\"x\"}", status: "complete" },
+    {
+      id: "run-1:input",
+      role: "user",
+      text: '{"task":"x"}',
+      status: "complete",
+    },
     {
       id: "run-1:output",
       role: "assistant",

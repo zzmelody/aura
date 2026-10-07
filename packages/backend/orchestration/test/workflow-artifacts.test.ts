@@ -3,7 +3,6 @@ import test from "node:test";
 import {
   mkdtemp,
   mkdir,
-  readFile,
   realpath,
   rm,
   symlink,
@@ -13,12 +12,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
 import type { FlowRun } from "@aura/protocol/types";
-import { GeneratedArtifacts } from "../src/generated-artifacts.ts";
-import { WorkflowArtifactIndex } from "../src/workflow-artifacts.ts";
-import { artifactResponse } from "../src/artifact-http.ts";
-import { artifactCallBinding } from "../src/artifact-bindings.ts";
-import { historicalArtifactReader } from "../src/artifact-history.ts";
-import { selfContainedGlb } from "../src/artifact-media.ts";
+import { GeneratedArtifacts } from "../src/artifacts/generated.ts";
+import { WorkflowArtifactIndex } from "../src/artifacts/workflow-index.ts";
+import { artifactResponse } from "../src/artifacts/http.ts";
+import { artifactCallBinding } from "../src/artifacts/bindings.ts";
+import { historicalArtifactReader } from "../src/artifacts/history.ts";
+import { selfContainedGlb } from "../src/artifacts/media.ts";
 import { createFlowApp } from "../src/index.ts";
 
 function glb(extra: object = {}) {
@@ -229,9 +228,9 @@ test("history migration admits only managed Comfy paths, preserves missing files
   fixture(async (root, index, store) => {
     const directory = join(root, ".aura/local-ai/outputs/job-test/artifacts");
     await mkdir(directory, { recursive: true });
-    const image = join(directory, "image.png"),
-      missing = join(directory, "missing.png"),
-      external = join(root, "private.png");
+    const image = join(directory, "image.png");
+    const missing = join(directory, "missing.png");
+    const external = join(root, "private.png");
     await png(image);
     await png(external);
     const historical = run("run", [
@@ -311,10 +310,10 @@ test("Tripo history validates manifest and admits views, poster and existing GLB
   fixture(async (root, index) => {
     const directory = join(root, "generated");
     await mkdir(directory);
-    const modelPath = join(directory, "model.glb"),
-      previewPath = join(directory, "preview.png"),
-      front = join(directory, "view-front.png"),
-      manifestPath = join(directory, "manifest.json");
+    const modelPath = join(directory, "model.glb");
+    const previewPath = join(directory, "preview.png");
+    const front = join(directory, "view-front.png");
+    const manifestPath = join(directory, "manifest.json");
     await writeFile(modelPath, glb());
     await png(previewPath);
     await png(front);
@@ -506,35 +505,60 @@ test("local TTS WAV outputs become playable audio artifacts", () =>
 
 test("uploaded chat images are served and read back only by verified content ID", async () => {
   const { OrchestrationHost } = await import("../src/index.ts");
-  const { artifactHash } = await import("../src/artifact-media.ts");
-  const root = await realpath(await mkdtemp(join(tmpdir(), "aura-chat-image-")));
+  const { artifactHash } = await import("../src/artifacts/media.ts");
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "aura-chat-image-")),
+  );
   try {
     const dshHome = join(root, "dsh");
-    const store = new GeneratedArtifacts(join(dshHome, "aura-generated-assets"));
+    const store = new GeneratedArtifacts(
+      join(dshHome, "aura-generated-assets"),
+    );
     const bytes = await sharp({
       create: { width: 8, height: 6, channels: 3, background: "#8052EA" },
     })
       .png()
       .toBuffer();
-    const { artifactId } = await store.registerImage(bytes, AbortSignal.timeout(5000));
+    const { artifactId } = await store.registerImage(
+      bytes,
+      AbortSignal.timeout(5000),
+    );
     assert.equal(artifactId, artifactHash(bytes));
     const read = await store.readImage(artifactId, AbortSignal.timeout(5000));
     assert.equal(read.mediaType, "image/png");
     assert.equal(read.bytes.length, bytes.length);
 
-    const host = new OrchestrationHost({ root, dshHome, modelURL: "http://127.0.0.1:1/v1" });
-    const ok = await host.imageAssetContent(artifactId, new Request("http://x/img"));
+    const host = new OrchestrationHost({
+      root,
+      dshHome,
+      modelURL: "http://127.0.0.1:1/v1",
+    });
+    const ok = await host.imageAssetContent(
+      artifactId,
+      new Request("http://x/img"),
+    );
     assert.equal(ok.status, 200);
     assert.equal(ok.headers.get("content-type"), "image/png");
     assert.equal((await ok.arrayBuffer()).byteLength, bytes.length);
-    await assert.rejects(host.imageAssetContent("../etc", new Request("http://x/img")), /图片不存在/u);
-    await assert.rejects(host.imageAssetContent("f".repeat(64), new Request("http://x/img")), /图片不存在/u);
+    await assert.rejects(
+      host.imageAssetContent("../etc", new Request("http://x/img")),
+      /图片不存在/u,
+    );
+    await assert.rejects(
+      host.imageAssetContent("f".repeat(64), new Request("http://x/img")),
+      /图片不存在/u,
+    );
 
     // A file whose bytes no longer match its name is refused on both paths.
     const forged = "e".repeat(64);
     await writeFile(join(store.root, `${forged}.png`), bytes);
-    await assert.rejects(store.readImage(forged, AbortSignal.timeout(5000)), /内容已改变/u);
-    await assert.rejects(host.imageAssetContent(forged, new Request("http://x/img")));
+    await assert.rejects(
+      store.readImage(forged, AbortSignal.timeout(5000)),
+      /内容已改变/u,
+    );
+    await assert.rejects(
+      host.imageAssetContent(forged, new Request("http://x/img")),
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

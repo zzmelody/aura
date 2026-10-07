@@ -27,10 +27,18 @@ const codexAuth: CodexAuthPort = {
 
 const chat: ChatPort = {
   async chatModels(mode) {
-    return { mode, defaultModel: "gpt-test", models: [{
-      id: "gpt-test", name: "Test model", defaultReasoningEffort: "xhigh",
-      reasoningEfforts: [{ id: "xhigh", name: "Extra high" }],
-    }] };
+    return {
+      mode,
+      defaultModel: "gpt-test",
+      models: [
+        {
+          id: "gpt-test",
+          name: "Test model",
+          defaultReasoningEffort: "xhigh",
+          reasoningEfforts: [{ id: "xhigh", name: "Extra high" }],
+        },
+      ],
+    };
   },
   async chat(turn, emit) {
     emit({ type: "delta", text: "hello" });
@@ -47,27 +55,41 @@ const chat: ChatPort = {
 };
 
 test("chat model catalog and request overrides are scoped to chat and bounded", async () => {
-  const turns: Parameters<ChatPort["chat"]>[0][] = [];
-  const app = createApiApp({ codexAuth, chat: {
-    ...chat,
-    async chat(turn, emit) {
-      turns.push(turn);
-      if (turn.model === "unknown") throw new FlowError("对话模型不可用（UNKNOWN_MODEL）", 422);
-      return chat.chat(turn, emit, new AbortController().signal);
+  const turns: Array<Parameters<ChatPort["chat"]>[0]> = [];
+  const app = createApiApp({
+    codexAuth,
+    chat: {
+      ...chat,
+      async chat(turn, emit) {
+        turns.push(turn);
+        if (turn.model === "unknown")
+          throw new FlowError("对话模型不可用（UNKNOWN_MODEL）", 422);
+        return chat.chat(turn, emit, new AbortController().signal);
+      },
     },
-  } });
+  });
   const catalog = await app.request("/chat/models?mode=codex");
   assert.equal(catalog.status, 200);
   assert.equal(catalog.headers.get("cache-control"), "no-store");
-  assert.deepEqual(await catalog.json(), await chat.chatModels("codex", new AbortController().signal));
+  assert.deepEqual(
+    await catalog.json(),
+    await chat.chatModels("codex", new AbortController().signal),
+  );
   assert.equal((await app.request("/chat/models?mode=other")).status, 400);
-  const send = (modelConfig?: unknown) => app.request("/chat/codex", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId: "chat-1", messages: [{ role: "user", text: "hello" }],
-      ...(modelConfig === undefined ? {} : { modelConfig }),
-    }),
+  const send = (modelConfig?: unknown) =>
+    app.request("/chat/codex", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "chat-1",
+        messages: [{ role: "user", text: "hello" }],
+        ...(modelConfig === undefined ? {} : { modelConfig }),
+      }),
+    });
+  const selected = await send({
+    model: "gpt-6.1-sol",
+    reasoningEffort: "high",
   });
-  const selected = await send({ model: "gpt-6.1-sol", reasoningEffort: "high" });
   assert.equal(selected.status, 200);
   await selected.text();
   await (await send()).text();
@@ -75,10 +97,22 @@ test("chat model catalog and request overrides are scoped to chat and bounded", 
   assert.equal(turns[0]!.reasoningEffort, "high");
   assert.equal(turns[1]!.model, codexAuth.modelId);
   assert.equal(turns[1]!.reasoningEffort, undefined);
-  for (const invalid of [null, [], { model: "" }, { model: "x".repeat(201) }, { reasoningEffort: "x".repeat(81) },
-    { provider: "arbitrary" }, { apiKey: "secret" }, { model: "m", baseURL: "https://example.com" }])
+  for (const invalid of [
+    null,
+    [],
+    { model: "" },
+    { model: "x".repeat(201) },
+    { reasoningEffort: "x".repeat(81) },
+    { provider: "arbitrary" },
+    { apiKey: "secret" },
+    { model: "m", baseURL: "https://example.com" },
+  ])
     assert.equal((await send(invalid)).status, 400);
-  assert.equal(turns.length, 2, "invalid configuration never reaches the chat host");
+  assert.equal(
+    turns.length,
+    2,
+    "invalid configuration never reaches the chat host",
+  );
   const unavailable = await send({ model: "unknown" });
   assert.match(await unavailable.text(), /UNKNOWN_MODEL/);
   const noHost = createApiApp({ codexAuth });

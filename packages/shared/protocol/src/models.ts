@@ -41,8 +41,12 @@ export function modelVendor(id: string): string {
 export function isChatModelId(id: string): boolean {
   const normalized = id.trim().toLowerCase();
   return !(
-    /(^|-)(embedding|embed|rerank|tts|whisper|transcribe|moderation)(-|$)/u.test(normalized) ||
-    /(^|-)image(-|$)|^gpt-image|^dall-e|^flux-|^midjourney|seedream|^wan\d/u.test(normalized) ||
+    /(^|-)(embedding|embed|rerank|tts|whisper|transcribe|moderation)(-|$)/u.test(
+      normalized,
+    ) ||
+    /(^|-)image(-|$)|^gpt-image|^dall-e|^flux-|^midjourney|seedream|^wan\d/u.test(
+      normalized,
+    ) ||
     /^sub2api-|^all-proxy|auto-review$/u.test(normalized)
   );
 }
@@ -50,7 +54,7 @@ export function isChatModelId(id: string): boolean {
 /** Stable vendor grouping: known vendors in fixed order, models by ID inside. */
 export function groupModelsByVendor<T extends { id: string; vendor?: string }>(
   models: readonly T[],
-): { vendor: string; models: T[] }[] {
+): Array<{ vendor: string; models: T[] }> {
   const groups = new Map<string, T[]>();
   for (const model of models) {
     const vendor = model.vendor ?? modelVendor(model.id);

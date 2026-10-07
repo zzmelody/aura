@@ -30,16 +30,36 @@ const settings = {
   },
 };
 
-test("DeepSeek Flash thinking reserves 64K for reasoning plus final output",async t=>{
-  const root=await mkdtemp(join(tmpdir(),"aura-ds-output-"));
-  const auth=await CodexSubscriptionAuth.create({credentialPath:join(root,".aura","dsh",".credentials.yaml")});
-  t.after(async()=>{await auth.close();await rm(root,{recursive:true,force:true});});
-  const high=await saveModelSettings(root,auth.ctx.credentials,{...settings,model:"deepseek-v4.1-flash-anthropic",reasoningEffort:"high",key:"fixture-only-key"});
-  assert.equal(selectedAgentConfig(high).maxTokens,65536);
-  assert.equal(customProfiles(high)[high.selectedRoute!]!.models![0]!.maxTokens,65536);
-  const off=await saveModelSettings(root,auth.ctx.credentials,{...settings,model:"deepseek-v4.1-flash-anthropic",reasoningEffort:"off"});
-  assert.equal(selectedAgentConfig(off).maxTokens,undefined);
-  assert.equal(customProfiles(off)[off.selectedRoute!]!.models![0]!.maxTokens,undefined);
+test("DeepSeek Flash thinking reserves 64K for reasoning plus final output", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "aura-ds-output-"));
+  const auth = await CodexSubscriptionAuth.create({
+    credentialPath: join(root, ".aura", "dsh", ".credentials.yaml"),
+  });
+  t.after(async () => {
+    await auth.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const high = await saveModelSettings(root, auth.ctx.credentials, {
+    ...settings,
+    model: "deepseek-v4.1-flash-anthropic",
+    reasoningEffort: "high",
+    key: "fixture-only-key",
+  });
+  assert.equal(selectedAgentConfig(high).maxTokens, 65536);
+  assert.equal(
+    customProfiles(high)[high.selectedRoute!]!.models![0]!.maxTokens,
+    65536,
+  );
+  const off = await saveModelSettings(root, auth.ctx.credentials, {
+    ...settings,
+    model: "deepseek-v4.1-flash-anthropic",
+    reasoningEffort: "off",
+  });
+  assert.equal(selectedAgentConfig(off).maxTokens, undefined);
+  assert.equal(
+    customProfiles(off)[off.selectedRoute!]!.models![0]!.maxTokens,
+    undefined,
+  );
 });
 
 test("custom configuration pins endpoint and credentials without persisting keys in public settings", async (t) => {
@@ -202,16 +222,40 @@ test("Lumina keeps one stable route, stores its key only in DSH credentials, and
     reasoningEffort: "high",
     key: "lumina-private",
   });
-  assert.equal((await auth.ctx.credentials.resolve(ref))?.value, "lumina-private");
+  assert.equal(
+    (await auth.ctx.credentials.resolve(ref))?.value,
+    "lumina-private",
+  );
   assert.equal(selectedAgentConfig(saved).provider, LUMINA_PROVIDER);
-  assert.ok(!(await readFile(join(root, ".aura", "ai-services.json"), "utf8")).includes("lumina-private"));
-  await saveDiscoveredCatalog(root, "lumina", ["claude-sonnet-4-6", "deepseek-v4-flash", "gpt-5.5"]);
+  assert.ok(
+    !(await readFile(join(root, ".aura", "ai-services.json"), "utf8")).includes(
+      "lumina-private",
+    ),
+  );
+  await saveDiscoveredCatalog(root, "lumina", [
+    "claude-sonnet-4-6",
+    "deepseek-v4-flash",
+    "gpt-5.5",
+  ]);
   const profile = customProfiles(await readAiServices(root))[LUMINA_PROVIDER]!;
   assert.equal(profile.baseURL, LUMINA_BASE_URL);
   assert.equal(profile.apiKeyEnv, LUMINA_CREDENTIAL);
-  assert.deepEqual(profile.models?.map(({ id }) => id), ["claude-sonnet-4-6", "deepseek-v4-flash", "gpt-5.5"]);
-  assert.deepEqual(profile.models?.find(({ id }) => id === "deepseek-v4-flash")?.input, ["text"]);
-  assert.throws(() => parseModelSettings({ mode: "lumina", model: "m", reasoningEffort: "high", custom: {} }));
+  assert.deepEqual(
+    profile.models?.map(({ id }) => id),
+    ["claude-sonnet-4-6", "deepseek-v4-flash", "gpt-5.5"],
+  );
+  assert.deepEqual(
+    profile.models?.find(({ id }) => id === "deepseek-v4-flash")?.input,
+    ["text"],
+  );
+  assert.throws(() =>
+    parseModelSettings({
+      mode: "lumina",
+      model: "m",
+      reasoningEffort: "high",
+      custom: {},
+    }),
+  );
   await saveModelSettings(root, auth.ctx.credentials, {
     mode: "lumina",
     model: "gpt-5.5",

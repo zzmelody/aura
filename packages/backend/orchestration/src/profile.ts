@@ -3,7 +3,11 @@ import { realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL, URL } from "node:url";
 import { writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
-import { codexProviderProfile, readAiServices, customProfiles } from "@aura/dsh-auth";
+import {
+  codexProviderProfile,
+  readAiServices,
+  customProfiles,
+} from "@aura/dsh-auth";
 
 const require = createRequire(import.meta.url);
 export const dshBin = join(
@@ -102,7 +106,9 @@ export async function provisionProfile(
   config:
     providers:
       openai-codex: ${JSON.stringify(await codexProviderProfile())}
-${Object.entries(customProfiles(await readAiServices(root))).map(([id, profile]) => `      ${id}: ${JSON.stringify(profile)}`).join("\n")}
+${Object.entries(customProfiles(await readAiServices(root)))
+  .map(([id, profile]) => `      ${id}: ${JSON.stringify(profile)}`)
+  .join("\n")}
 - id: session-persistence-jsonl
   config:
     root: !!js dshHomePath('aura-flow-sessions')

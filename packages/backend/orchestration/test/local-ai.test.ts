@@ -15,7 +15,7 @@ import { serve, type ServerType } from "@hono/node-server";
 import { Hono } from "hono";
 import sharp from "sharp";
 import type { SubprocessRuntime } from "@deepseek-ai/dsh-subprocess";
-import { GeneratedArtifacts } from "../src/generated-artifacts.ts";
+import { GeneratedArtifacts } from "../src/artifacts/generated.ts";
 import { LocalAIManager, type Deployment } from "../src/local-ai/manager.ts";
 import { imageGraph, videoGraph, type Graph } from "../src/local-ai/graphs.ts";
 import { readJSON, saveAudio } from "../src/local-ai/http.ts";
@@ -57,14 +57,14 @@ async function fixture(withAssets = false) {
         env: { QWEN_TTS_API_KEY: "fixture" },
       },
     });
-  let launches = 0,
-    stops = 0,
-    live = 0,
-    lease = false;
-  let failing = false,
-    pending = false,
-    escape = false,
-    unhealthy = false;
+  let launches = 0;
+  let stops = 0;
+  let live = 0;
+  let lease = false;
+  let failing = false;
+  let pending = false;
+  let escape = false;
+  let unhealthy = false;
   let lastGraph: Graph | undefined;
   let stagedImages: string[] = [];
   let lastTTS: unknown;
@@ -102,10 +102,16 @@ async function fixture(withAssets = false) {
       const handlers = new Set<Promise<void>>();
       app.use("*", async (_c, next) => {
         let complete!: () => void;
-        const done = new Promise<void>((resolve) => { complete = resolve; });
+        const done = new Promise<void>((resolve) => {
+          complete = resolve;
+        });
         handlers.add(done);
-        try { await next(); }
-        finally { handlers.delete(done); complete(); }
+        try {
+          await next();
+        } finally {
+          handlers.delete(done);
+          complete();
+        }
       });
       app.get("/system_stats", (c) =>
         c.json(unhealthy ? {} : { system: {}, devices: [] }),
@@ -237,9 +243,15 @@ async function fixture(withAssets = false) {
     get counts() {
       return { launches, stops, live, lease };
     },
-    get stopReturns() { return stopReturns; },
-    set beforePromptWrite(value: (() => Promise<void>) | undefined) { beforePromptWrite = value; },
-    set onStoppedSockets(value: (() => void) | undefined) { onStoppedSockets = value; },
+    get stopReturns() {
+      return stopReturns;
+    },
+    set beforePromptWrite(value: (() => Promise<void>) | undefined) {
+      beforePromptWrite = value;
+    },
+    set onStoppedSockets(value: (() => void) | undefined) {
+      onStoppedSockets = value;
+    },
     get graph() {
       return lastGraph;
     },
@@ -738,21 +750,33 @@ test("ComfyUI cancellation waits for owned in-flight writes before removing its 
   const release = Promise.withResolvers<void>();
   const socketsClosed = Promise.withResolvers<void>();
   const abort = new AbortController();
-  f.beforePromptWrite = async () => { entered.resolve(); await release.promise; };
+  f.beforePromptWrite = async () => {
+    entered.resolve();
+    await release.promise;
+  };
   f.onStoppedSockets = socketsClosed.resolve;
   try {
     const running = f.manager.comfyWorkflow(
-      { service: "qwen-image", workflow: customGraph() }, abort.signal,
+      { service: "qwen-image", workflow: customGraph() },
+      abort.signal,
     );
     const rejected = assert.rejects(running);
     await entered.promise;
     abort.abort(new Error("fixture cancellation during prompt write"));
     await socketsClosed.promise;
-    assert.equal(f.stopReturns, 0, "closing sockets must not claim process quiescence");
+    assert.equal(
+      f.stopReturns,
+      0,
+      "closing sockets must not claim process quiescence",
+    );
     release.resolve();
     await rejected;
     assert.equal(f.stopReturns, 1);
-    assert.deepEqual(await readdir(f.outputs), [], "the cancelled write must finish before job removal");
+    assert.deepEqual(
+      await readdir(f.outputs),
+      [],
+      "the cancelled write must finish before job removal",
+    );
   } finally {
     release.resolve();
     await f.close();

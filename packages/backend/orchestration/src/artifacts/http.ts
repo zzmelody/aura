@@ -3,8 +3,8 @@ import { open, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { WorkflowArtifact } from "@aura/protocol/types";
-import { validArtifactId } from "./artifact-media.ts";
-import { FlowError } from "./schema.ts";
+import { validArtifactId } from "./media.ts";
+import { FlowError } from "../schema.ts";
 
 export interface ArtifactFile {
   artifact: Pick<WorkflowArtifact, "name" | "mimeType"> &
@@ -18,7 +18,8 @@ export function byteRange(
 ): { start: number; end: number } | undefined {
   const match = /^bytes=(\d*)-(\d*)$/.exec(header);
   if (!match || (!match[1] && !match[2])) return;
-  let start: number, end: number;
+  let start: number;
+  let end: number;
   if (!match[1]) {
     const count = Number(match[2]);
     if (!Number.isSafeInteger(count) || count <= 0) return;
@@ -49,7 +50,18 @@ export async function artifactResponse(
   const { artifact, fileId, format } = descriptor;
   if (
     !validArtifactId(fileId) ||
-    !["png", "jpeg", "webp", "glb", "mp4", "wav", "srt", "md", "json", "zip"].includes(format)
+    ![
+      "png",
+      "jpeg",
+      "webp",
+      "glb",
+      "mp4",
+      "wav",
+      "srt",
+      "md",
+      "json",
+      "zip",
+    ].includes(format)
   )
     throw new FlowError("产物不存在。", 404);
   const download = new URL(request.url).searchParams.get("download") === "1";

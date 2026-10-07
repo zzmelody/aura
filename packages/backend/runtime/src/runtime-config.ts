@@ -1,11 +1,8 @@
-import { copyFile, mkdir } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 import type { AuraRuntimeOptions, RuntimeConfig } from "./types.ts";
 
 const defaultRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-const require = createRequire(import.meta.url);
 
 // Port 0 asks the OS for an ephemeral port; the bound port is reported by the listener.
 function resolvePort(value: number): number {
@@ -35,7 +32,9 @@ export function isLoopbackRuntimeHost(host: string): boolean {
 export function resolveRuntimeConfig(
   options: AuraRuntimeOptions = {},
 ): RuntimeConfig {
-  const root = resolve(options.root ?? (process.env.AURA_ROOT?.trim() || defaultRoot));
+  const root = resolve(
+    options.root ?? (process.env.AURA_ROOT?.trim() || defaultRoot),
+  );
   const host = (options.host ?? process.env.HOST ?? "127.0.0.1").trim();
   if (!host) throw new Error("Aura runtime host cannot be empty.");
   const port = resolvePort(options.port ?? Number(process.env.PORT ?? 4311));

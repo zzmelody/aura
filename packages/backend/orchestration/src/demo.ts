@@ -50,7 +50,7 @@ export function flowDemoReply(messages: unknown): string | undefined {
   ) as {
     task: string;
     nodeId: string;
-    inputs: { nodeId: string; sessionId: string; output: string }[];
+    inputs: Array<{ nodeId: string; sessionId: string; output: string }>;
   };
   if (nodeId === "coordinator")
     return `演示模式 · 最终报告\n\n任务：${task}\n\n${inputs.map((node) => `来源 ${node.nodeId}（${node.sessionId}）\n${node.output}`).join("\n\n")}\n\n下一步：确认约束并选择方案，然后在 Codex 模式中生成真实模型报告。\n本报告由本地规则模型生成，不代表真实研究或验证。`;

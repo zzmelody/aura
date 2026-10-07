@@ -25,7 +25,9 @@ export function WorkbenchContextMenu({
     const box = panel.getBoundingClientRect();
     panel.style.left = `${Math.max(8, Math.min(at.x, innerWidth - box.width - 8))}px`;
     panel.style.top = `${Math.max(8, Math.min(at.y, innerHeight - box.height - 8))}px`;
-    panel.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    panel
+      .querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')
+      ?.focus();
     const away = (event: PointerEvent) => {
       if (!panel.contains(event.target as Node)) onClose();
     };
@@ -56,10 +58,13 @@ export function WorkbenchContextMenu({
           onClose();
           return;
         }
-        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key))
+          return;
         event.preventDefault();
         const entries = Array.from(
-          menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? [],
+          menu.current?.querySelectorAll<HTMLElement>(
+            '[role="menuitem"]:not(:disabled)',
+          ) ?? [],
         );
         const index = entries.indexOf(document.activeElement as HTMLElement);
         const next =
@@ -67,14 +72,20 @@ export function WorkbenchContextMenu({
             ? 0
             : event.key === "End"
               ? entries.length - 1
-              : (index + (event.key === "ArrowDown" ? 1 : -1) + entries.length) %
+              : (index +
+                  (event.key === "ArrowDown" ? 1 : -1) +
+                  entries.length) %
                 entries.length;
         entries[next]?.focus();
       }}
     >
       {items.map((item) =>
         "separator" in item ? (
-          <div key={item.id} className="workbench-menu-divider" role="separator" />
+          <div
+            key={item.id}
+            className="workbench-menu-divider"
+            role="separator"
+          />
         ) : (
           <button
             key={item.id}

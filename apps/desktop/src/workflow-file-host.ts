@@ -37,7 +37,7 @@ async function choosePath(
   const result = parent
     ? await dialog.showOpenDialog(parent, options)
     : await dialog.showOpenDialog(options);
-  return result.canceled ? null : result.filePaths[0] ?? null;
+  return result.canceled ? null : (result.filePaths[0] ?? null);
 }
 
 export function installWorkflowFileHost(): void {

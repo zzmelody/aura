@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -190,9 +189,7 @@ export function CodexLoginButton({
                       <Pressable
                         accessibilityRole="button"
                         onPress={() => {
-                          void writeClipboard(
-                            pendingStatus.userCode ?? "",
-                          );
+                          void writeClipboard(pendingStatus.userCode ?? "");
                           setCopied(true);
                         }}
                         style={styles.copy}
@@ -252,9 +249,7 @@ export function CodexLoginButton({
                           "粘贴回调地址或授权码"
                         }
                         placeholderTextColor={colors.muted}
-                        secureTextEntry={
-                          pendingStatus.prompt.kind === "secret"
-                        }
+                        secureTextEntry={pendingStatus.prompt.kind === "secret"}
                         selectionColor={colors.accent}
                         style={[
                           styles.manualInput,

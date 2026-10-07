@@ -20,9 +20,10 @@ export function SessionDialog({
   );
   const rename = request.mode === "rename";
   useEffect(() => {
-    dialog.current?.showModal();
+    const element = dialog.current;
+    element?.showModal();
     if (rename) input.current?.select();
-    return () => dialog.current?.close();
+    return () => element?.close();
   }, [rename]);
   if (!session) return null;
   const title = sidebarSessionTitle(session);

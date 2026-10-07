@@ -98,13 +98,12 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
     return () => abort.abort();
   }, [refresh]);
 
-  const persisted = settings ? editablePluginEntries(settings) : [];
   const dirty = useMemo(
     () =>
       JSON.stringify(
         entries.map(({ path, enabled }) => ({ path, enabled })),
-      ) !== JSON.stringify(persisted),
-    [entries, persisted],
+      ) !== JSON.stringify(settings ? editablePluginEntries(settings) : []),
+    [entries, settings],
   );
 
   async function save() {

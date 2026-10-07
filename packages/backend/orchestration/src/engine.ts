@@ -131,7 +131,10 @@ export class FlowEngine {
   private async report(id: string, value: unknown) {
     const report = jsonValue(value, "Flow 进度", 4 * 1_024);
     const run = this.get(id);
-    await this.update(run.rootRunId ?? run.id, (current) => ({ ...current, report }));
+    await this.update(run.rootRunId ?? run.id, (current) => ({
+      ...current,
+      report,
+    }));
   }
   private serialize<T>(work: () => Promise<T>): Promise<T> {
     const task = this.operations.then(work);
@@ -218,7 +221,8 @@ export class FlowEngine {
     return this.serialize(async () => {
       if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
       const request = parse(startSchema, input);
-      if (request.useConfiguredModel && !request.serviceOnly) throw new FlowError("模型默认选择仅供受控服务使用。", 403);
+      if (request.useConfiguredModel && !request.serviceOnly)
+        throw new FlowError("模型默认选择仅供受控服务使用。", 403);
       let publishedFlow: LoadedFlow | undefined;
       if (request.serviceOnly) {
         await this.options.refreshFlows();
@@ -246,7 +250,15 @@ export class FlowEngine {
       const flow = publishedFlow ?? this.options.registry.get(request.flowId);
       const args = parseJson(flow.inputSchema, request.input, "Flow 入参");
       const defaults = this.options.resolveAgentDefaults
-        ? agentConfig({ ...await this.options.resolveAgentDefaults(request.useConfiguredModel ? "configured" : request.mode), timeoutMs: flow.agentTimeoutMs }, flow.agentDefaults ?? {})
+        ? agentConfig(
+            {
+              ...(await this.options.resolveAgentDefaults(
+                request.useConfiguredModel ? "configured" : request.mode,
+              )),
+              timeoutMs: flow.agentTimeoutMs,
+            },
+            flow.agentDefaults ?? {},
+          )
         : agentDefaults(request.mode, flow.agentDefaults, flow.agentTimeoutMs);
       const actions =
         this.options.actions?.registry.snapshot() ??
@@ -262,7 +274,11 @@ export class FlowEngine {
           plugin: flow.plugin,
         },
         input: args,
-        mode: request.useConfiguredModel ? (defaults.provider === "openai-codex" ? "codex" : "custom") : request.mode,
+        mode: request.useConfiguredModel
+          ? defaults.provider === "openai-codex"
+            ? "codex"
+            : "custom"
+          : request.mode,
         status: "queued",
         createdAt: Date.now(),
         queuedAt: this.queueTime(),
@@ -401,7 +417,10 @@ export class FlowEngine {
         steps: [],
         durableVersion: 1,
         agentDefaults: parent.agentDefaults
-          ? agentConfig({ ...parent.agentDefaults, timeoutMs: flow.agentTimeoutMs }, flow.agentDefaults ?? {})
+          ? agentConfig(
+              { ...parent.agentDefaults, timeoutMs: flow.agentTimeoutMs },
+              flow.agentDefaults ?? {},
+            )
           : agentDefaults(parent.mode, flow.agentDefaults, flow.agentTimeoutMs),
         requestInputHash: step.requestInputHash,
         actionVersions: [...actions.values()].map(
@@ -502,7 +521,13 @@ export class FlowEngine {
       for (const step of run.steps) {
         const refs =
           step.kind === "action" && step.sourceHash
-            ? [{ id: step.actionId, sourceHash: step.sourceHash, plugin: step.plugin }]
+            ? [
+                {
+                  id: step.actionId,
+                  sourceHash: step.sourceHash,
+                  plugin: step.plugin,
+                },
+              ]
             : step.kind === "agent" || step.kind === undefined
               ? (step.actions ?? [])
               : [];

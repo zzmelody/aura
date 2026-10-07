@@ -23,6 +23,7 @@ Aura 的显式适配：
 - Google 偏好具名导出；框架配置、DSH Flow/Action 入口以及共享 React 宿主根 `App.tsx` 允许默认导出，复用库其他模块使用具名导出。
 - Google 对 `any` 允许有理由的例外；Aura 默认将新增显式 `any` 作为错误，兼容第三方接口或测试 mock 时必须用具体规则的行级禁用并解释原因。未使用接口参数可保留 `_` 前缀。
 - Google 的部分 TypeScript 语法无法由 Node.js 24 直接擦除执行；Aura 的 `erasableSyntaxOnly`、workspace 边界、Hono、DSH 与凭据规则优先，不引入另一套构建或运行链路。
+- DSH 的 `MessageId`、`SessionId`、`ToolCallId` 和 `ReasoningEffortId` 是公开的品牌类型工厂，沿用其名称且不使用 `new`。有意检测或清理 ASCII 控制字符的正则，保留带理由的单行 `no-control-regex` 例外。
 
 ## 格式与命名
 
@@ -75,6 +76,6 @@ Lint 历史记录位于根 `eslint-suppressions.json`，使用 [ESLint 官方 bu
 
 如需查看某个文件包含历史问题在内的完整 Lint 结果，运行 `pnpm run lint:strict <文件>`。它使用 ESLint API 返回全部违规，不读取根历史清单。
 
-基线只用于这次接入的历史迁移，不表示历史问题已经解决。新规则与扩大豁免范围需要在改动说明中解释原因；临时 `eslint-disable-next-line` 必须指定具体规则并说明理由，未使用的禁用指令会报错。
+2026-10-08 整理后，两份基线均为空；全仓严格格式和 Lint 检查作为本轮交付门禁。基线机制仅保留工具兼容性，不能重新生成或扩大来隐藏违规。新增规则需要在改动说明中解释原因；临时 `eslint-disable-next-line` 必须指定具体规则并说明理由，未使用的禁用指令会报错。
 
 开发时先执行受影响包的检查。非平凡行为变化补充聚焦测试和相关文档；跨仓库结构或工具规则变化完成 `pnpm run check`。测试关注行为、失败路径、取消和恢复，不只复述实现。

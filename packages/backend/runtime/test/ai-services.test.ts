@@ -10,8 +10,8 @@ import { createAiServicesApp } from "../src/ai-services-routes.ts";
 import { resolveRuntimeConfig } from "../src/runtime-config.ts";
 
 test("AI routes require the native loopback capability and never return submitted credentials", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "aura-ai-routes-")),
-    config = resolveRuntimeConfig({ root });
+  const root = await mkdtemp(join(tmpdir(), "aura-ai-routes-"));
+  const config = resolveRuntimeConfig({ root });
   const auth = await CodexSubscriptionAuth.create({
     credentialPath: config.credentialPath,
   });
@@ -33,7 +33,8 @@ test("AI routes require the native loopback capability and never return submitte
   // Loopback workbench may omit the capability; a wrong one is always refused.
   assert.equal((await app.request("/")).status, 200);
   assert.equal(
-    (await app.request("/", { headers: { authorization: "Bearer wrong" } })).status,
+    (await app.request("/", { headers: { authorization: "Bearer wrong" } }))
+      .status,
     401,
   );
   assert.equal(

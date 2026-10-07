@@ -25,6 +25,7 @@ async function responseError(response: Response, fallback: string) {
 }
 
 export function useCodexAuth(workspace: WorkspaceController) {
+  const { setState } = workspace;
   const endpoint = workspace.state.endpoint || localRuntime;
   const [status, setStatus] = useState<CodexAuthStatus>({
     state: "signed_out",
@@ -43,7 +44,7 @@ export function useCodexAuth(workspace: WorkspaceController) {
         setStatus(next);
         // Signing in upgrades a demo provider; an explicit gateway choice stays.
         if (next.state === "authenticated")
-          workspace.setState((current) =>
+          setState((current) =>
             current.provider === "lumina" || current.provider === "custom"
               ? current
               : { ...current, endpoint, provider: "codex" },
@@ -60,7 +61,7 @@ export function useCodexAuth(workspace: WorkspaceController) {
         setLoading(false);
       }
     },
-    [endpoint, workspace.setState],
+    [endpoint, setState],
   );
 
   useEffect(() => {

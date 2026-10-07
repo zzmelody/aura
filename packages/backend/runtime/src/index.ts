@@ -1,7 +1,11 @@
 /** Composition root shared by Aura's server and desktop application outputs. */
 import { CodexSubscriptionAuth, readAiServices } from "@aura/dsh-auth";
 import { AiServices } from "./ai-services.ts";
-import { AuraPluginManager, type AuraPluginResolution, type PluginContributionRoot } from "@aura/extensions";
+import {
+  AuraPluginManager,
+  type AuraPluginResolution,
+  type PluginContributionRoot,
+} from "@aura/extensions";
 import { OrchestrationHost } from "@aura/orchestration";
 import { createTripoService } from "@aura/tripo";
 import { startApiServer } from "./api-server.ts";
@@ -21,7 +25,9 @@ import type {
 
 export type { AuraRuntimeHandle, AuraRuntimeOptions } from "./types.ts";
 
-function throwCleanupFailures(results: PromiseSettledResult<void>[]): void {
+function throwCleanupFailures(
+  results: Array<PromiseSettledResult<void>>,
+): void {
   const failures = results
     .filter(
       (result): result is PromiseRejectedResult => result.status === "rejected",
@@ -33,8 +39,19 @@ function throwCleanupFailures(results: PromiseSettledResult<void>[]): void {
 
 /** Projects resolved plugin roots into the orchestration host's contribution shape. */
 function contributions(resolution: AuraPluginResolution) {
-  const root = ({ path, pluginRoot, namespace, plugin, capabilities }: PluginContributionRoot) =>
-    ({ root: path, pluginRoot, namespace, plugin, capabilities });
+  const root = ({
+    path,
+    pluginRoot,
+    namespace,
+    plugin,
+    capabilities,
+  }: PluginContributionRoot) => ({
+    root: path,
+    pluginRoot,
+    namespace,
+    plugin,
+    capabilities,
+  });
   return {
     flowRoots: resolution.flowRoots.map(root),
     actionRoots: resolution.actionRoots.map(root),
@@ -56,10 +73,7 @@ export async function startAuraRuntime(
     configPath: config.pluginConfigPath,
     auraVersion: "0.1.0",
     pluginSdkVersion,
-    supportedCapabilities: [
-      "aura.tripo.game-asset",
-      "aura.flow.invoke",
-    ],
+    supportedCapabilities: ["aura.tripo.game-asset", "aura.flow.invoke"],
   });
   const plugins = pluginManager.resolution;
 
@@ -71,7 +85,13 @@ export async function startAuraRuntime(
     credentialPath: config.tripoCredentialPath,
     region: config.tripoRegion,
     apiKey: process.env.TRIPO_API_KEY,
-    resolveOptions: async () => ({ credentialPath: config.tripoCredentialPath, region: (await readAiServices(config.root, config.codexModel, config.tripoRegion)).tripoRegion, apiKey: process.env.TRIPO_API_KEY }),
+    resolveOptions: async () => ({
+      credentialPath: config.tripoCredentialPath,
+      region: (
+        await readAiServices(config.root, config.codexModel, config.tripoRegion)
+      ).tripoRegion,
+      apiKey: process.env.TRIPO_API_KEY,
+    }),
   });
   let demoModel: DemoModelHandle | undefined;
   let api: ApiServerHandle | undefined;
@@ -98,10 +118,12 @@ export async function startAuraRuntime(
       flows,
       pluginSettings: pluginManager,
       pluginSettingsAccessible: isLoopbackRuntimeHost(config.host),
-      aiServices: new AiServices(config, codexAuth, tripo, async () => flows?.opening ? flows.request<boolean>("ai-services/busy", {}) : false),
+      aiServices: new AiServices(config, codexAuth, tripo, async () =>
+        flows?.opening ? flows.request<boolean>("ai-services/busy", {}) : false,
+      ),
     });
   } catch (error) {
-    const cleanups: Promise<void>[] = [codexAuth.close()];
+    const cleanups: Array<Promise<void>> = [codexAuth.close()];
     if (api) cleanups.push(api.close());
     if (flows) cleanups.push(flows.close());
     if (demoModel) cleanups.push(demoModel.close());

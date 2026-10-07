@@ -25,7 +25,10 @@ const runner = new SiteRunner({
   openPreview: (url, project) => openSiteWindow(url, project),
 });
 
-async function openSiteWindow(url: string, project?: SiteProject): Promise<void> {
+async function openSiteWindow(
+  url: string,
+  project?: SiteProject,
+): Promise<void> {
   const id = project?.id ?? url;
   let window = siteWindows.get(id);
   if (!window || window.isDestroyed()) {
@@ -88,7 +91,8 @@ export function installSiteHost(): void {
     return runner.stop(id);
   });
   ipcMain.handle("aura:site:open", (_event, project: unknown) => {
-    if (!project || typeof project !== "object") throw new Error("无效的 Site 项目。");
+    if (!project || typeof project !== "object")
+      throw new Error("无效的 Site 项目。");
     return runner.open(project as SiteProject);
   });
   ipcMain.handle("aura:site:status", (event) => {

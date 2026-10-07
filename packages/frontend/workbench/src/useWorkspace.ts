@@ -2,12 +2,7 @@ import { providerMode } from "@aura/core";
 import { useEffect, useRef, useState } from "react";
 import { initialState, restoreState, STORAGE_KEY } from "@aura/core";
 import { reply, type ReplyChunk } from "./transport";
-import type {
-  ChatImage,
-  Message,
-  Session,
-  Workspace,
-} from "@aura/core/types";
+import type { ChatImage, Message, Session, Workspace } from "@aura/core/types";
 import type {
   FlowCatalogEntry,
   ChatModelSelection,
@@ -33,7 +28,9 @@ export function useWorkspace() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [runningIds, setRunningIds] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [newChatConfig, setNewChatConfig] = useState<NonNullable<Session["modelConfig"]>>({});
+  const [newChatConfig, setNewChatConfig] = useState<
+    NonNullable<Session["modelConfig"]>
+  >({});
   const newChatConfigRef = useRef(newChatConfig);
   const controllers = useRef(new Map<string, AbortController>());
   const activeIdRef = useRef(activeId);
@@ -42,12 +39,11 @@ export function useWorkspace() {
   stateRef.current = state;
   const workflows = useWorkflowSessions(state, setState, ready);
   const workflowRunning = state.sessions
-    .filter(
-      (session) =>
-        session.messages.some(
-          (message) =>
-            message.workflowRunId && isWorkflowActive(message.workflowPhase),
-        ),
+    .filter((session) =>
+      session.messages.some(
+        (message) =>
+          message.workflowRunId && isWorkflowActive(message.workflowPhase),
+      ),
     )
     .map((session) => session.id);
   const allRunningIds = [
@@ -55,6 +51,7 @@ export function useWorkspace() {
   ];
   useEffect(() => {
     let mounted = true;
+    const activeControllers = controllers.current;
     try {
       const raw = globalThis.localStorage.getItem(STORAGE_KEY);
       if (mounted && raw) setState(restoreState(JSON.parse(raw)) as Workspace);
@@ -65,7 +62,7 @@ export function useWorkspace() {
     }
     return () => {
       mounted = false;
-      for (const controller of controllers.current.values()) controller.abort();
+      for (const controller of activeControllers.values()) controller.abort();
     };
   }, []);
   useEffect(() => {
@@ -182,7 +179,9 @@ export function useWorkspace() {
       status: "streaming",
     };
     const previous = current.sessions.find((s) => s.id === sessionId);
-    const modelConfig = previous ? previous.modelConfig : newChatConfigRef.current;
+    const modelConfig = previous
+      ? previous.modelConfig
+      : newChatConfigRef.current;
     const stored = previous?.messages ?? [];
     const history = retryLast
       ? stored.slice(0, -1).slice(-199)
@@ -190,8 +189,7 @@ export function useWorkspace() {
     const next = {
       ...previous,
       id: sessionId,
-      title:
-        previous?.title ?? (text.trim() || "图片对话").slice(0, 28),
+      title: previous?.title ?? (text.trim() || "图片对话").slice(0, 28),
       updatedAt: Date.now(),
       messages: [...history, assistant],
       ...(modelConfig ? { modelConfig } : {}),
@@ -276,7 +274,10 @@ export function useWorkspace() {
         ...current,
         sessions: current.sessions.map((session) =>
           session.id === sessionId && !session.workflow
-            ? { ...session, modelConfig: { ...session.modelConfig, [mode]: selection } }
+            ? {
+                ...session,
+                modelConfig: { ...session.modelConfig, [mode]: selection },
+              }
             : session,
         ),
       }));
@@ -392,8 +393,15 @@ export function useWorkspace() {
       void workflows.cancel(sessionId);
     },
     removeChat: (value: string) => {
-      const removing = stateRef.current.sessions.find(session => session.id === value);
-      if (!allRunningIds.includes(value) && !workflows.hasOpenRun(value) && !removing?.workflow?.pending && !removing?.pendingWorkflow) {
+      const removing = stateRef.current.sessions.find(
+        (session) => session.id === value,
+      );
+      if (
+        !allRunningIds.includes(value) &&
+        !workflows.hasOpenRun(value) &&
+        !removing?.workflow?.pending &&
+        !removing?.pendingWorkflow
+      ) {
         if (value === activeId) {
           activeIdRef.current = null;
           setActiveId(null);

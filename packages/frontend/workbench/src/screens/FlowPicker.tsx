@@ -51,7 +51,9 @@ export function FlowPicker({
             placeholder="搜索工作流…"
             value={query}
             onChange={(event) => onQuery(event.target.value)}
-            onKeyDown={(event) => handlePickerKey(event, flows, active, onActive, onPick, onClose)}
+            onKeyDown={(event) =>
+              handlePickerKey(event, flows, active, onActive, onPick, onClose)
+            }
           />
         </label>
       ) : (

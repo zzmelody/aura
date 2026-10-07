@@ -33,27 +33,35 @@ const sections = [
 ] as const;
 type SectionId = (typeof sections)[number]["id"];
 
-const themes: {
+const themes: Array<{
   id: ThemeMode;
   title: string;
   hint: string;
   icon: typeof Moon;
-}[] = [
+}> = [
   { id: "dark", title: "夜航", hint: "深色", icon: Moon },
   { id: "light", title: "晨雾", hint: "浅色", icon: Sun },
   { id: "system", title: "跟随系统", hint: "自动切换", icon: Monitor },
 ];
 
-const providers: {
+const providers: Array<{
   id: Workspace["provider"];
   title: string;
   hint: string;
-}[] = [
+}> = [
   { id: "offline", title: "本地演示", hint: "无需联网，规则生成回复" },
   { id: "dsh", title: "DSH 演示", hint: "经工作台服务，可调用工作流" },
   { id: "codex", title: "Codex 订阅", hint: "真实模型，需要登录 Codex" },
-  { id: "lumina", title: "Lumina", hint: "Lumina 网关，多家模型供应商，需要 API Key" },
-  { id: "custom", title: "自定义 API", hint: "OpenAI 或 Anthropic 兼容的自建服务" },
+  {
+    id: "lumina",
+    title: "Lumina",
+    hint: "Lumina 网关，多家模型供应商，需要 API Key",
+  },
+  {
+    id: "custom",
+    title: "自定义 API",
+    hint: "OpenAI 或 Anthropic 兼容的自建服务",
+  },
 ];
 
 /** Miniature window drawn from one palette, so the choice previews itself. */
@@ -230,7 +238,10 @@ export function SettingsScreen({
       </nav>
       <div className="settings-scroll" ref={scroller}>
         <div className="settings-content">
-          <section id="settings-appearance" aria-labelledby="settings-appearance-title">
+          <section
+            id="settings-appearance"
+            aria-labelledby="settings-appearance-title"
+          >
             <header className="settings-section-head">
               <h2 id="settings-appearance-title">外观</h2>
               <p>主题和动效只保存在这台设备上。</p>
@@ -265,7 +276,9 @@ export function SettingsScreen({
                       <Icon size={14} />
                       <strong>{title}</strong>
                       <span>{hint}</span>
-                      {selected ? <Check size={14} className="settings-check" /> : null}
+                      {selected ? (
+                        <Check size={14} className="settings-check" />
+                      ) : null}
                     </span>
                   </button>
                 );
@@ -320,7 +333,13 @@ export function SettingsScreen({
                   </div>
                   <div className="settings-swatches">
                     {(
-                      ["background", "surface", "soft", "accent", "primary"] as const
+                      [
+                        "background",
+                        "surface",
+                        "soft",
+                        "accent",
+                        "primary",
+                      ] as const
                     ).map((key) => (
                       <div key={key}>
                         <span style={{ background: colors[key] }} />
@@ -339,7 +358,9 @@ export function SettingsScreen({
           <section id="settings-models" aria-labelledby="settings-models-title">
             <header className="settings-section-head">
               <h2 id="settings-models-title">模型与账号</h2>
-              <p>新对话默认使用的回复方式。工作流的运行模式在运行时单独选择。</p>
+              <p>
+                新对话默认使用的回复方式。工作流的运行模式在运行时单独选择。
+              </p>
             </header>
             <div
               className="settings-group settings-choices"
@@ -390,7 +411,10 @@ export function SettingsScreen({
               >
                 <CodexLoginButton auth={codexAuth} compact={false} />
               </Row>
-              <Row title="默认 Codex 模型" hint="后端默认配置；可在每个会话的输入框下单独覆盖模型与思考强度">
+              <Row
+                title="默认 Codex 模型"
+                hint="后端默认配置；可在每个会话的输入框下单独覆盖模型与思考强度"
+              >
                 <code className="settings-value">{codex.model}</code>
               </Row>
             </div>
@@ -406,18 +430,29 @@ export function SettingsScreen({
             />
           </section>
 
-          <section id="settings-connection" aria-labelledby="settings-connection-title">
+          <section
+            id="settings-connection"
+            aria-labelledby="settings-connection-title"
+          >
             <header className="settings-section-head">
               <h2 id="settings-connection-title">连接</h2>
-              <p>工作台服务负责对话、工作流和工作台数据。手机连接时请填写电脑的局域网 IP。</p>
+              <p>
+                工作台服务负责对话、工作流和工作台数据。手机连接时请填写电脑的局域网
+                IP。
+              </p>
             </header>
             <div className="settings-group">
               <div className="settings-row settings-row-stack">
-                <label className="settings-row-copy" htmlFor="settings-endpoint">
+                <label
+                  className="settings-row-copy"
+                  htmlFor="settings-endpoint"
+                >
                   <strong>工作台服务地址</strong>
                   <span>
                     当前：
-                    <code>{workspace.state.endpoint || "http://127.0.0.1:4311"}</code>
+                    <code>
+                      {workspace.state.endpoint || "http://127.0.0.1:4311"}
+                    </code>
                   </span>
                 </label>
                 <form
@@ -462,7 +497,10 @@ export function SettingsScreen({
                     className="tool-button"
                     disabled={workspace.busy}
                     onClick={() => {
-                      workspace.setState((s) => ({ ...s, provider: "offline" }));
+                      workspace.setState((s) => ({
+                        ...s,
+                        provider: "offline",
+                      }));
                       setConnection({ tone: "info", text: "已切回本地演示。" });
                     }}
                   >
@@ -474,10 +512,16 @@ export function SettingsScreen({
             </div>
           </section>
 
-          <section id="settings-plugins" aria-labelledby="settings-plugins-title">
+          <section
+            id="settings-plugins"
+            aria-labelledby="settings-plugins-title"
+          >
             <header className="settings-section-head">
               <h2 id="settings-plugins-title">插件</h2>
-              <p>显式接入本机的 Action 与 Flow 目录。插件以完整 Node.js 权限运行。</p>
+              <p>
+                显式接入本机的 Action 与 Flow 目录。插件以完整 Node.js
+                权限运行。
+              </p>
             </header>
             <PluginDirectorySettings
               endpoint={workspace.state.endpoint || "http://127.0.0.1:4311"}
@@ -492,7 +536,10 @@ export function SettingsScreen({
               <Row title="Aura" hint="专注于日常，也给灵感留白。">
                 <code className="settings-value">v0.1.0</code>
               </Row>
-              <Row title="本地数据" hint="会话与偏好保存在本机浏览器存储；模型凭据只保存在后端。" />
+              <Row
+                title="本地数据"
+                hint="会话与偏好保存在本机浏览器存储；模型凭据只保存在后端。"
+              />
             </div>
           </section>
         </div>

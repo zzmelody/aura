@@ -1,12 +1,23 @@
-import { CHAT_IMAGE_LIMIT, type ChatMessage, type ChatModelSelection } from "./types.ts";
+import {
+  CHAT_IMAGE_LIMIT,
+  type ChatMessage,
+  type ChatModelSelection,
+} from "./types.ts";
 
 /** Bounded model controls only; endpoint/provider/credentials are server-owned. */
-export function validateChatModelSelection(value: unknown): value is ChatModelSelection {
+export function validateChatModelSelection(
+  value: unknown,
+): value is ChatModelSelection {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.entries(value).every(([key, item]) =>
-    (key === "model" || key === "reasoningEffort") &&
-    typeof item === "string" && item.trim() === item && item.length > 0 &&
-    item.length <= (key === "model" ? 200 : 80) && !/[\u0000-\u001f\u007f]/u.test(item),
+  return Object.entries(value).every(
+    ([key, item]) =>
+      (key === "model" || key === "reasoningEffort") &&
+      typeof item === "string" &&
+      item.trim() === item &&
+      item.length > 0 &&
+      item.length <= (key === "model" ? 200 : 80) &&
+      // eslint-disable-next-line no-control-regex -- Intentionally sanitize or detect ASCII control characters.
+      !/[\u0000-\u001f\u007f]/u.test(item),
   );
 }
 

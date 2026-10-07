@@ -1,4 +1,8 @@
-import { createFlowApp, FlowError, type OrchestrationHost } from "@aura/orchestration";
+import {
+  createFlowApp,
+  FlowError,
+  type OrchestrationHost,
+} from "@aura/orchestration";
 import { validateMessages, validateChatModelSelection } from "@aura/protocol";
 import type { ChatEvent } from "@aura/protocol/types";
 import type { TripoPort } from "@aura/tripo";
@@ -48,7 +52,10 @@ async function publishDescriptor(path: string, value: object) {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${randomUUID()}.tmp`;
   try {
-    await writeFile(temporary, JSON.stringify(value), { mode: 0o600, flag: "wx" });
+    await writeFile(temporary, JSON.stringify(value), {
+      mode: 0o600,
+      flag: "wx",
+    });
     await rename(temporary, path);
   } catch (error) {
     await unlink(temporary).catch(() => undefined);
@@ -59,9 +66,13 @@ async function publishDescriptor(path: string, value: object) {
 /** Removes a descriptor only while it still carries this process's token. */
 async function removeDescriptor(path: string, token: string) {
   try {
-    const current = JSON.parse(await readFile(path, "utf8")) as { token?: string };
+    const current = JSON.parse(await readFile(path, "utf8")) as {
+      token?: string;
+    };
     if (current.token === token) await unlink(path);
-  } catch { /* A newer runtime may already own this path. */ }
+  } catch {
+    /* A newer runtime may already own this path. */
+  }
 }
 
 interface ApiLifecycle {
@@ -95,7 +106,8 @@ function registerChatRoute(
           typeof body.sessionId !== "string" ||
           body.sessionId.length < 1 ||
           body.sessionId.length > 200 ||
-          (body.modelConfig !== undefined && !validateChatModelSelection(body.modelConfig))
+          (body.modelConfig !== undefined &&
+            !validateChatModelSelection(body.modelConfig))
         )
           throw new Error("Invalid chat request.");
 
@@ -131,7 +143,9 @@ function registerChatRoute(
                     type: "done",
                     engine: "deepseek-harness",
                     mode:
-                      target.mode === "codex" ? "codex-subscription" : target.mode,
+                      target.mode === "codex"
+                        ? "codex-subscription"
+                        : target.mode,
                     model,
                   },
             );
@@ -139,9 +153,10 @@ function registerChatRoute(
           } catch (error) {
             emit({
               type: "error",
-              message: error instanceof FlowError && error.status === 422
-                ? error.message
-                : "DSH 请求暂时不可用，请检查服务终端和登录状态后重试。",
+              message:
+                error instanceof FlowError && error.status === 422
+                  ? error.message
+                  : "DSH 请求暂时不可用，请检查服务终端和登录状态后重试。",
             });
             await pendingWrite;
           } finally {
@@ -168,7 +183,8 @@ export function createApiApp({
   lifecycle = { shuttingDown: false, admittedRequests: 0 },
 }: Omit<ApiServerOptions, "config" | "tripo"> & {
   tripo?: TripoPort;
-  lifecycle?: ApiLifecycle;  services?: ServiceRuns;
+  lifecycle?: ApiLifecycle;
+  services?: ServiceRuns;
 }) {
   const app = new Hono();
   app.use("*", localOriginPolicy);
@@ -185,7 +201,15 @@ export function createApiApp({
   if (tripo) app.route("/tripo", createTripoApp(tripo));
   if (flows) app.route("/flows", createFlowApp(flows));
   if (services) app.route("/services", createServiceApp(services));
-  if (aiServices) app.route("/ai/services", createAiServicesApp(aiServices, pluginSettingsAccessible, services?.token));
+  if (aiServices)
+    app.route(
+      "/ai/services",
+      createAiServicesApp(
+        aiServices,
+        pluginSettingsAccessible,
+        services?.token,
+      ),
+    );
   if (pluginSettings)
     app.route(
       "/plugins/config",
@@ -201,9 +225,15 @@ export function createApiApp({
       return context.json({ message: "对话模型目录暂时不可用。" }, 503);
     try {
       context.header("Cache-Control", "no-store");
-      return context.json(await host.chatModels(mode as ChatRoute["mode"], AbortSignal.any([
-        context.req.raw.signal, AbortSignal.timeout(20_000),
-      ])));
+      return context.json(
+        await host.chatModels(
+          mode as ChatRoute["mode"],
+          AbortSignal.any([
+            context.req.raw.signal,
+            AbortSignal.timeout(20_000),
+          ]),
+        ),
+      );
     } catch {
       return context.json({ message: "无法读取 DSH 模型目录，请重试。" }, 503);
     }
@@ -224,8 +254,20 @@ export function createApiApp({
     lifecycle,
   );
   // Gateway routes resolve their provider and default model from saved settings.
-  registerChatRoute(app, "/chat/lumina", () => ({ mode: "lumina" }), chat ?? flows, lifecycle);
-  registerChatRoute(app, "/chat/custom", () => ({ mode: "custom" }), chat ?? flows, lifecycle);
+  registerChatRoute(
+    app,
+    "/chat/lumina",
+    () => ({ mode: "lumina" }),
+    chat ?? flows,
+    lifecycle,
+  );
+  registerChatRoute(
+    app,
+    "/chat/custom",
+    () => ({ mode: "custom" }),
+    chat ?? flows,
+    lifecycle,
+  );
 
   app.notFound((context) => context.body(null, 404));
   app.onError(
@@ -256,8 +298,10 @@ export async function startApiServer({
     admittedRequests: 0,
   };
   // Local service clients get one per-process token through .aura/service.json.
-  const services = flows && isLoopbackRuntimeHost(config.host)
-    ? new ServiceRuns(flows, randomBytes(32).toString("hex")) : undefined;
+  const services =
+    flows && isLoopbackRuntimeHost(config.host)
+      ? new ServiceRuns(flows, randomBytes(32).toString("hex"))
+      : undefined;
   const app = createApiApp({
     aiServices,
     codexAuth,
@@ -269,7 +313,9 @@ export async function startApiServer({
     lifecycle,
   });
   const { server, port } = await startHonoServer(app, config.host, config.port);
-  const servicePath = services ? join(config.root, ".aura", "service.json") : undefined;
+  const servicePath = services
+    ? join(config.root, ".aura", "service.json")
+    : undefined;
   try {
     if (services && servicePath)
       await publishDescriptor(servicePath, {
@@ -277,7 +323,10 @@ export async function startApiServer({
         base_url: `${formatHttpUrl(config.host, port)}/services/`,
         token: services.token,
       });
-  } catch (error) { await closeHonoServer(server); throw error; }
+  } catch (error) {
+    await closeHonoServer(server);
+    throw error;
+  }
 
   return {
     url: formatHttpUrl(config.host, port),
@@ -285,7 +334,8 @@ export async function startApiServer({
       if (lifecycle.shuttingDown) return;
       lifecycle.shuttingDown = true;
       await closeHonoServer(server);
-      if (services && servicePath) await removeDescriptor(servicePath, services.token);
+      if (services && servicePath)
+        await removeDescriptor(servicePath, services.token);
     },
   };
 }

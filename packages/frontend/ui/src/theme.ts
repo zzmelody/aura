@@ -1,4 +1,5 @@
 /** Shared React Web design tokens. */
+/** Shared React Web design tokens. */
 import type { TextStyle } from "./web.tsx";
 
 export const palettes = {
@@ -41,10 +42,10 @@ export const palettes = {
 } as const;
 export type Palette = { [K in keyof typeof palettes.dark]: string };
 export const fonts = {
-  display: '\"Manrope\", \"Noto Sans SC\", system-ui, sans-serif',
-  body: '\"Manrope\", \"Noto Sans SC\", system-ui, sans-serif',
-  medium: '\"Manrope\", \"Noto Sans SC\", system-ui, sans-serif',
-  mono: '\"IBM Plex Mono\", ui-monospace, monospace',
+  display: '"Manrope", "Noto Sans SC", system-ui, sans-serif',
+  body: '"Manrope", "Noto Sans SC", system-ui, sans-serif',
+  medium: '"Manrope", "Noto Sans SC", system-ui, sans-serif',
+  mono: '"IBM Plex Mono", ui-monospace, monospace',
 };
 export const type = {
   hero: {

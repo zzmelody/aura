@@ -95,6 +95,7 @@ export function FlowGraphView({
     setSelectedId(undefined);
   }, [deferredCode]);
   const [size, setSize] = useState({ width: 800, height: 600 });
+  const graphFailed = Boolean(graph.error);
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
@@ -106,7 +107,7 @@ export function FlowGraphView({
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, [Boolean(graph.error)]);
+  }, [graphFailed]);
   const fit = Math.max(
     embedded ? 0.2 : 0.4,
     Math.min(
@@ -184,8 +185,8 @@ export function FlowGraphView({
     }
     const current = drag.current;
     if (!current || current.pointer !== event.pointerId) return;
-    const dx = event.clientX - current.x,
-      dy = event.clientY - current.y;
+    const dx = event.clientX - current.x;
+    const dy = event.clientY - current.y;
     if (!current.moved && Math.hypot(dx, dy) < 4) return;
     current.moved = true;
     suppressClick.current = true;

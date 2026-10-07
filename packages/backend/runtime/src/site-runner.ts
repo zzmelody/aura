@@ -61,7 +61,10 @@ export class SiteRunner {
   private exclusive<T>(id: string, operation: () => Promise<T>): Promise<T> {
     const previous = this.queues.get(id) ?? Promise.resolve();
     const next = previous.then(operation);
-    this.queues.set(id, next.catch(() => undefined));
+    this.queues.set(
+      id,
+      next.catch(() => undefined),
+    );
     return next;
   }
 
@@ -95,7 +98,11 @@ export class SiteRunner {
   }
 
   private async reservePort(preferred: number, id: string): Promise<number> {
-    for (let port = preferred; port <= 65535 && port < preferred + 100; port++) {
+    for (
+      let port = preferred;
+      port <= 65535 && port < preferred + 100;
+      port++
+    ) {
       if (this.reservedPorts.has(port)) continue;
       if (!(await portAvailable(port))) continue;
       this.reservedPorts.set(port, id);
@@ -115,7 +122,8 @@ export class SiteRunner {
       let entry: Entry | undefined;
       let reservedPort: number | undefined;
       try {
-        if (revision !== this.revision(directory)) return this.getStatus(directory);
+        if (revision !== this.revision(directory))
+          return this.getStatus(directory);
         const { project: described, command } = await siteProjectInput(input);
         project = described;
         const id = project.id;
@@ -134,7 +142,8 @@ export class SiteRunner {
         const supported = sitePortFlags(command, preferred, hostname) !== null;
         if (
           !supported &&
-          (this.reservedPorts.has(preferred) || !(await portAvailable(preferred)))
+          (this.reservedPorts.has(preferred) ||
+            !(await portAvailable(preferred)))
         )
           throw new Error(
             `端口 ${preferred} 已被占用。自定义启动脚本无法安全自动改端口，请同时修改脚本监听端口和预览地址，或自行停止占用服务后重试。Aura 不会结束其他服务。`,
@@ -145,7 +154,7 @@ export class SiteRunner {
         reservedPort = port;
         if (!supported) this.reservedPorts.set(port, id);
         const flags = supported
-          ? sitePortFlags(command, port, hostname) ?? []
+          ? (sitePortFlags(command, port, hostname) ?? [])
           : [];
         if (revision !== this.revision(id)) {
           this.reservedPorts.delete(port);
@@ -165,8 +174,12 @@ export class SiteRunner {
         this.entries.set(id, entry);
         child.stdout?.setEncoding("utf8");
         child.stderr?.setEncoding("utf8");
-        child.stdout?.on("data", (chunk) => this.append(id, entry!, String(chunk)));
-        child.stderr?.on("data", (chunk) => this.append(id, entry!, String(chunk)));
+        child.stdout?.on("data", (chunk) =>
+          this.append(id, entry!, String(chunk)),
+        );
+        child.stderr?.on("data", (chunk) =>
+          this.append(id, entry!, String(chunk)),
+        );
         child.once("error", (error) =>
           this.exited(id, entry!, `无法启动项目：${error.message}`, true),
         );
@@ -204,7 +217,8 @@ export class SiteRunner {
         return this.getStatus(id);
       } catch (error) {
         if (entry) this.releasePort(entry);
-        else if (reservedPort !== undefined) this.reservedPorts.delete(reservedPort);
+        else if (reservedPort !== undefined)
+          this.reservedPorts.delete(reservedPort);
         return this.publish(directory, {
           ...this.getStatus(directory),
           state: "error",
@@ -225,7 +239,11 @@ export class SiteRunner {
     }
     const ids = new Set([...this.statuses.keys(), ...this.entries.keys()]);
     for (const siteId of ids) this.bumpRevision(siteId);
-    return Promise.all([...ids].map((siteId) => this.exclusive(siteId, () => this.stopCurrent(siteId))));
+    return Promise.all(
+      [...ids].map((siteId) =>
+        this.exclusive(siteId, () => this.stopCurrent(siteId)),
+      ),
+    );
   }
 
   private async stopCurrent(id: string): Promise<SiteStatus> {
@@ -244,7 +262,8 @@ export class SiteRunner {
         this.publish(id, {
           ...this.getStatus(id),
           state: "error",
-          message: error instanceof Error ? error.message : "停止失败，请重试。",
+          message:
+            error instanceof Error ? error.message : "停止失败，请重试。",
         });
         throw error;
       }
@@ -260,7 +279,12 @@ export class SiteRunner {
     });
   }
 
-  private exited(id: string, entry: Entry, message: string, failed: boolean): void {
+  private exited(
+    id: string,
+    entry: Entry,
+    message: string,
+    failed: boolean,
+  ): void {
     // An exit event sets exitCode before this callback runs. live() would
     // reject the exited child and leave the site stuck in "starting".
     if (this.entries.get(id) !== entry || entry.cancelled) return;
@@ -284,20 +308,35 @@ export class SiteRunner {
       this.publish(id, { ...this.getStatus(id), output: entry.output });
   }
 
-  private async verified(id: string, entry: Entry, url: string): Promise<boolean> {
+  private async verified(
+    id: string,
+    entry: Entry,
+    url: string,
+  ): Promise<boolean> {
     if (!this.live(id, entry)) return false;
     const target = localSiteUrl(url);
     const port = sitePort(target);
-    if (!(await siteOwnsPort(entry.child.pid!, port, target.hostname)) || !this.live(id, entry))
+    if (
+      !(await siteOwnsPort(entry.child.pid!, port, target.hostname)) ||
+      !this.live(id, entry)
+    )
       return false;
     if (!(await siteResponds(url)) || !this.live(id, entry)) return false;
-    return (await siteOwnsPort(entry.child.pid!, port, target.hostname)) && this.live(id, entry);
+    return (
+      (await siteOwnsPort(entry.child.pid!, port, target.hostname)) &&
+      this.live(id, entry)
+    );
   }
 
   private async waitForPreview(id: string, entry: Entry): Promise<void> {
     const deadline = Date.now() + (this.options.readinessTimeoutMs ?? 45000);
     while (this.live(id, entry) && Date.now() < deadline) {
-      const candidates = [...new Set([entry.project.url, ...announcedSiteUrls(entry.output).reverse()])];
+      const candidates = [
+        ...new Set([
+          entry.project.url,
+          ...announcedSiteUrls(entry.output).reverse(),
+        ]),
+      ];
       for (const url of candidates) {
         if (!(await this.verified(id, entry, url))) continue;
         if (!this.live(id, entry)) return;
@@ -311,11 +350,20 @@ export class SiteRunner {
           previewReady: true,
           message: "项目已启动，正在打开预览。",
           portMessage: changed
-            ? [this.getStatus(id).portMessage, `开发服务器实际地址为 ${url}（原地址 ${previous}）。`].filter(Boolean).join(" ")
+            ? [
+                this.getStatus(id).portMessage,
+                `开发服务器实际地址为 ${url}（原地址 ${previous}）。`,
+              ]
+                .filter(Boolean)
+                .join(" ")
             : this.getStatus(id).portMessage,
         });
         await this.options.openPreview(entry.project.url, entry.project);
-        if (this.live(id, entry)) this.publish(id, { ...this.getStatus(id), message: "项目已启动，预览窗口已打开。" });
+        if (this.live(id, entry))
+          this.publish(id, {
+            ...this.getStatus(id),
+            message: "项目已启动，预览窗口已打开。",
+          });
         return;
       }
       await delay(300);
@@ -325,19 +373,26 @@ export class SiteRunner {
         ...this.getStatus(id),
         state: "error",
         previewReady: false,
-        message: "命令仍在运行，但未确认可用且属于本次进程的预览端口。请检查输出、监听地址及端口后停止重试；不会打开其他服务。端口归属检查需要系统进程查询工具。",
+        message:
+          "命令仍在运行，但未确认可用且属于本次进程的预览端口。请检查输出、监听地址及端口后停止重试；不会打开其他服务。端口归属检查需要系统进程查询工具。",
       });
   }
 
   async open(projectOrUrl: SiteProject | string): Promise<void> {
     const entry =
       typeof projectOrUrl === "string"
-        ? [...this.entries.values()].find((candidate) => candidate.project.url === projectOrUrl)
+        ? [...this.entries.values()].find(
+            (candidate) => candidate.project.url === projectOrUrl,
+          )
         : this.entries.get(projectOrUrl.id);
     const project = entry?.project;
-    if (!entry || !project || !this.getStatus(project.id).previewReady ||
+    if (
+      !entry ||
+      !project ||
+      !this.getStatus(project.id).previewReady ||
       (typeof projectOrUrl === "object" && projectOrUrl.url !== project.url) ||
-      !(await this.verified(project.id, entry, project.url)))
+      !(await this.verified(project.id, entry, project.url))
+    )
       throw new Error("预览尚未就绪或端口已不属于本次项目，请停止后重新运行。");
     await this.options.openPreview(project.url, project);
   }

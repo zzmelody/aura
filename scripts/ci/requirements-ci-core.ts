@@ -10,12 +10,14 @@ export type Requirement = {
   digest: string;
 };
 
-const requirementPath = /^docs\/requirements\/([A-Za-z0-9][A-Za-z0-9._-]*)\.md$/;
+const requirementPath =
+  /^docs\/requirements\/([A-Za-z0-9][A-Za-z0-9._-]*)\.md$/;
 const statusLine = /^(status|状态):[ \t]*(待处理|已完成)[ \t]*$/m;
 
 export function parseRequirement(path: string, text: string): Requirement {
   const match = requirementPath.exec(path);
-  if (!match || path.includes("..")) throw new Error(`Invalid requirement path: ${path}`);
+  if (!match || path.includes(".."))
+    throw new Error(`Invalid requirement path: ${path}`);
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text);
   if (!frontmatter) throw new Error(`${path}: YAML frontmatter is required.`);
   const status = statusLine.exec(frontmatter[1]);
@@ -25,7 +27,8 @@ export function parseRequirement(path: string, text: string): Requirement {
   if (!heading) throw new Error(`${path}: a title heading is required.`);
   if (!/^##\s+验收标准\s*$/m.test(text))
     throw new Error(`${path}: a 验收标准 section is required.`);
-  if (text.length > 80_000) throw new Error(`${path}: requirement is too large.`);
+  if (text.length > 80_000)
+    throw new Error(`${path}: requirement is too large.`);
   return {
     path,
     id: match[1],
@@ -44,7 +47,8 @@ export function requirementDigest(text: string): string {
 }
 
 export function completeRequirement(text: string): string {
-  if (!statusLine.test(text)) throw new Error("Requirement has no status field.");
+  if (!statusLine.test(text))
+    throw new Error("Requirement has no status field.");
   return text.replace(statusLine, "$1: 已完成");
 }
 
@@ -65,12 +69,15 @@ export function assertGeneratedPaths(
       !file ||
       file.startsWith("/") ||
       /^[A-Za-z]:/.test(file) ||
+      // eslint-disable-next-line no-control-regex -- Intentionally sanitize or detect ASCII control characters.
       /[\\\x00-\x1f]/.test(file) ||
       parts.includes("..") ||
       parts.includes(".git") ||
       parts.includes(".codex") ||
       parts.includes(".aura") ||
-      parts.some((part) => part === "AGENTS.md" || /^\.env(?:\.|$)/.test(part)) ||
+      parts.some(
+        (part) => part === "AGENTS.md" || /^\.env(?:\.|$)/.test(part),
+      ) ||
       file.startsWith(".github/") ||
       file === ".gitmodules" ||
       file.startsWith("scripts/ci/") ||
@@ -79,6 +86,7 @@ export function assertGeneratedPaths(
       file === "tools/Run-CodexWithGpuLock.ps1" ||
       file.startsWith("ci-evidence/") ||
       (file.startsWith("docs/requirements/") && file !== requirement.path)
-    ) throw new Error(`Generated change touches a protected path: ${file}`);
+    )
+      throw new Error(`Generated change touches a protected path: ${file}`);
   }
 }

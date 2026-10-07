@@ -1,3 +1,8 @@
+import type { VideoLibrary } from "./video/library.ts";
+import type { ContentLibrary } from "./content/library.ts";
+import type { TopicLibrary } from "./topics/library.ts";
+import type { ContentAnalyticsLibrary } from "./content/analytics.ts";
+import type { GptImageClient } from "./gpt-image.ts";
 import type { Context, Plugin } from "@deepseek-ai/cordis";
 import { HarnessError } from "@deepseek-ai/dsh-llm";
 import {
@@ -29,6 +34,7 @@ const MAX_ACTION_FAILURE_MESSAGE = 2_000;
 export class ActionFailure extends HarnessError {
   constructor(message: string, options?: ErrorOptions) {
     const normalized = message
+      // eslint-disable-next-line no-control-regex -- Intentionally sanitize or detect ASCII control characters.
       .replace(/[\u0000-\u001f\u007f]/gu, " ")
       .replace(/\s+/gu, " ")
       .trim();
@@ -92,12 +98,12 @@ export interface ActionContext {
   /** Host-owned external service ports. Credentials never enter Action input. */
   readonly aura?: AuraCapabilityClient;
   /** Host-owned project/version service for built-in production Actions. */
-  readonly videoProduction?: import("./video-library.ts").VideoLibrary;
-  readonly contentProduction?: import("./content-library.ts").ContentLibrary;
-  readonly topicLibrary?: import("./topic-library.ts").TopicLibrary;
-  readonly contentAnalytics?: import("./content-analytics.ts").ContentAnalyticsLibrary;
+  readonly videoProduction?: VideoLibrary;
+  readonly contentProduction?: ContentLibrary;
+  readonly topicLibrary?: TopicLibrary;
+  readonly contentAnalytics?: ContentAnalyticsLibrary;
   /** GPT Image 2.5 via the host's Tripo account; `available` is false when unconfigured. */
-  readonly gptImage?: import("./gpt-image.ts").GptImageClient;
+  readonly gptImage?: GptImageClient;
 }
 
 export type ActionBinding = Omit<

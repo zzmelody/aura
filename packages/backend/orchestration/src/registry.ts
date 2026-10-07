@@ -66,14 +66,17 @@ export class FlowRegistry {
   async register(config: FlowRegistrationConfig, input: FlowDefinition) {
     const id = parse(contributionIdSchema, config.flowId);
     const definition = parse(definitionSchema, input);
-    const sourceHash = await hashContribution(config.directory, config.pluginRoot);
+    const sourceHash = await hashContribution(
+      config.directory,
+      config.pluginRoot,
+    );
     const code = await readFile(config.entry, "utf8");
     validateFlowSource(code, {
       allowRootOperations: Boolean(config.plugin),
     });
     // Conversion happens at registration so unsupported schemas fail before use.
-    const inputSchema = z.toJSONSchema(definition.input) as JsonValue;
-    const outputSchema = z.toJSONSchema(definition.output) as JsonValue;
+    z.toJSONSchema(definition.input);
+    z.toJSONSchema(definition.output);
     this.loaded.set(id, {
       id,
       title: definition.title,

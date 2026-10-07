@@ -36,7 +36,11 @@ export interface CapabilityHost {
     /** Stores bytes and returns their sha256 ID. Accepts PNG, JPEG, WebP, GLB, WAV and MP4. */
     put(bytes: Uint8Array, signal: AbortSignal): Promise<CapabilityArtifact>;
     /** Reads an artifact by ID and verifies its hash. Throws when missing or changed. */
-    read(artifactId: string, signal: AbortSignal, limitBytes?: number): Promise<{ bytes: Buffer; artifact: CapabilityArtifact }>;
+    read(
+      artifactId: string,
+      signal: AbortSignal,
+      limitBytes?: number,
+    ): Promise<{ bytes: Buffer; artifact: CapabilityArtifact }>;
   };
   /** Admits a raster into the session attachment store so a Flow Agent can see it. */
   readonly attachments: {
@@ -82,7 +86,11 @@ export interface CapabilityProvider {
    * scope. Refuse with a lowercase snake_case code. Without this hook a resume
    * carrying `input` is refused.
    */
-  resume?(run: FlowRun, input: JsonValue, signal: AbortSignal): Promise<void> | void;
+  resume?(
+    run: FlowRun,
+    input: JsonValue,
+    signal: AbortSignal,
+  ): Promise<void> | void;
   invoke(
     operation: string,
     input: JsonValue,

@@ -12,7 +12,7 @@ import {
 
 type Feedback = { tone: "ok" | "error" | "info"; text: string } | undefined;
 
-const protocols: { id: AiCustomProvider["api"]; label: string }[] = [
+const protocols: Array<{ id: AiCustomProvider["api"]; label: string }> = [
   { id: "openai-completions", label: "OpenAI Chat Completions" },
   { id: "openai-responses", label: "OpenAI Responses" },
   { id: "anthropic-messages", label: "Anthropic Messages" },
@@ -127,7 +127,11 @@ export function ModelServiceSettings({
               </span>
             </span>
             {loadError ? (
-              <button type="button" className="tool-button" onClick={() => void load()}>
+              <button
+                type="button"
+                className="tool-button"
+                onClick={() => void load()}
+              >
                 <RefreshCw size={14} />
                 重试
               </button>
@@ -140,7 +144,9 @@ export function ModelServiceSettings({
           <div className="settings-row-copy">
             <strong>Lumina</strong>
             <span>
-              <span className={`settings-state ${lumina.hasKey ? "authenticated" : ""}`}>
+              <span
+                className={`settings-state ${lumina.hasKey ? "authenticated" : ""}`}
+              >
                 {lumina.hasKey ? "已配置 Key" : "未配置 Key"}
               </span>
               {` · ${lumina.modelCount} 个对话模型 · `}
@@ -162,7 +168,10 @@ export function ModelServiceSettings({
                   () => saveLumina(endpoint, { key: luminaKey.trim() }, lumina),
                   (next) => {
                     setLuminaKey("");
-                    return { tone: tone(next.checks.lumina), text: next.checks.lumina };
+                    return {
+                      tone: tone(next.checks.lumina),
+                      text: next.checks.lumina,
+                    };
                   },
                 );
               }}
@@ -172,7 +181,11 @@ export function ModelServiceSettings({
                 aria-label="Lumina API Key"
                 value={luminaKey}
                 onChange={(event) => setLuminaKey(event.target.value)}
-                placeholder={lumina.hasKey ? "已保存，输入新 Key 可替换" : "粘贴 Lumina API Key"}
+                placeholder={
+                  lumina.hasKey
+                    ? "已保存，输入新 Key 可替换"
+                    : "粘贴 Lumina API Key"
+                }
                 autoComplete="off"
                 spellCheck={false}
               />
@@ -192,10 +205,14 @@ export function ModelServiceSettings({
               className="tool-button"
               disabled={busy !== "" || !lumina.hasKey}
               onClick={() =>
-                void run("lumina", () => checkLumina(endpoint), (next) => ({
-                  tone: tone(next.checks.lumina),
-                  text: next.checks.lumina,
-                }))
+                void run(
+                  "lumina",
+                  () => checkLumina(endpoint),
+                  (next) => ({
+                    tone: tone(next.checks.lumina),
+                    text: next.checks.lumina,
+                  }),
+                )
               }
             >
               <RefreshCw size={14} />
@@ -207,7 +224,10 @@ export function ModelServiceSettings({
               disabled={!lumina.hasKey}
               onClick={() => {
                 onUse("lumina");
-                setLuminaFeedback({ tone: "ok", text: "新对话将使用 Lumina。" });
+                setLuminaFeedback({
+                  tone: "ok",
+                  text: "新对话将使用 Lumina。",
+                });
               }}
             >
               用于对话
@@ -231,7 +251,10 @@ export function ModelServiceSettings({
             ) : null}
           </div>
           {luminaFeedback ? (
-            <p className={`settings-feedback ${luminaFeedback.tone}`} aria-live="polite">
+            <p
+              className={`settings-feedback ${luminaFeedback.tone}`}
+              aria-live="polite"
+            >
               {luminaFeedback.text}
             </p>
           ) : null}
@@ -264,7 +287,10 @@ export function ModelServiceSettings({
               },
               (next) => {
                 setCustom((draft) => ({ ...draft, key: "" }));
-                return { tone: tone(next.checks.model), text: `已保存。${next.checks.model}` };
+                return {
+                  tone: tone(next.checks.model),
+                  text: `已保存。${next.checks.model}`,
+                };
               },
             );
           }}
@@ -272,11 +298,14 @@ export function ModelServiceSettings({
           <div className="settings-row-copy">
             <strong>自定义 API</strong>
             <span>
-              OpenAI 或 Anthropic 兼容的服务。保存后会同步该服务的模型列表；Key 只保存在后端。
+              OpenAI 或 Anthropic 兼容的服务。保存后会同步该服务的模型列表；Key
+              只保存在后端。
               {customSaved ? (
                 <>
                   {" · "}
-                  <span className={`settings-state ${customSaved.hasKey ? "authenticated" : ""}`}>
+                  <span
+                    className={`settings-state ${customSaved.hasKey ? "authenticated" : ""}`}
+                  >
                     {customSaved.hasKey ? "已配置 Key" : "未配置 Key"}
                   </span>
                 </>
@@ -288,7 +317,9 @@ export function ModelServiceSettings({
               <span>名称</span>
               <input
                 value={custom.name}
-                onChange={(event) => setCustom({ ...custom, name: event.target.value })}
+                onChange={(event) =>
+                  setCustom({ ...custom, name: event.target.value })
+                }
                 placeholder="我的 API"
                 maxLength={80}
               />
@@ -298,7 +329,10 @@ export function ModelServiceSettings({
               <select
                 value={custom.api}
                 onChange={(event) =>
-                  setCustom({ ...custom, api: event.target.value as AiCustomProvider["api"] })
+                  setCustom({
+                    ...custom,
+                    api: event.target.value as AiCustomProvider["api"],
+                  })
                 }
               >
                 {protocols.map(({ id, label }) => (
@@ -312,7 +346,9 @@ export function ModelServiceSettings({
               <span>服务地址</span>
               <input
                 value={custom.baseURL}
-                onChange={(event) => setCustom({ ...custom, baseURL: event.target.value })}
+                onChange={(event) =>
+                  setCustom({ ...custom, baseURL: event.target.value })
+                }
                 placeholder="https://your-gateway.example/v1"
                 inputMode="url"
                 spellCheck={false}
@@ -323,7 +359,9 @@ export function ModelServiceSettings({
               <span>默认模型 ID</span>
               <input
                 value={custom.model}
-                onChange={(event) => setCustom({ ...custom, model: event.target.value })}
+                onChange={(event) =>
+                  setCustom({ ...custom, model: event.target.value })
+                }
                 placeholder="例如 deepseek-v4-flash"
                 spellCheck={false}
                 required
@@ -333,7 +371,9 @@ export function ModelServiceSettings({
               <span>思考强度</span>
               <select
                 value={custom.reasoningEffort}
-                onChange={(event) => setCustom({ ...custom, reasoningEffort: event.target.value })}
+                onChange={(event) =>
+                  setCustom({ ...custom, reasoningEffort: event.target.value })
+                }
               >
                 {efforts.map((effort) => (
                   <option key={effort} value={effort}>
@@ -349,7 +389,9 @@ export function ModelServiceSettings({
                 min={1024}
                 max={4000000}
                 value={custom.contextWindow}
-                onChange={(event) => setCustom({ ...custom, contextWindow: event.target.value })}
+                onChange={(event) =>
+                  setCustom({ ...custom, contextWindow: event.target.value })
+                }
                 required
               />
             </label>
@@ -357,7 +399,9 @@ export function ModelServiceSettings({
               <input
                 type="checkbox"
                 checked={custom.images}
-                onChange={(event) => setCustom({ ...custom, images: event.target.checked })}
+                onChange={(event) =>
+                  setCustom({ ...custom, images: event.target.checked })
+                }
               />
               <span>支持图片输入</span>
             </label>
@@ -366,9 +410,13 @@ export function ModelServiceSettings({
               <input
                 type="password"
                 value={custom.key}
-                onChange={(event) => setCustom({ ...custom, key: event.target.value })}
+                onChange={(event) =>
+                  setCustom({ ...custom, key: event.target.value })
+                }
                 placeholder={
-                  customSaved?.hasKey ? "留空沿用同一地址已保存的 Key" : "粘贴 API Key"
+                  customSaved?.hasKey
+                    ? "留空沿用同一地址已保存的 Key"
+                    : "粘贴 API Key"
                 }
                 autoComplete="off"
                 spellCheck={false}
@@ -376,7 +424,11 @@ export function ModelServiceSettings({
             </label>
           </div>
           <div className="settings-actions">
-            <button type="submit" className="tool-button" disabled={busy !== ""}>
+            <button
+              type="submit"
+              className="tool-button"
+              disabled={busy !== ""}
+            >
               <Save size={14} />
               {busy === "custom" ? "保存中…" : "保存并测试"}
             </button>
@@ -386,14 +438,20 @@ export function ModelServiceSettings({
               disabled={!customSaved?.hasKey}
               onClick={() => {
                 onUse("custom");
-                setCustomFeedback({ tone: "ok", text: "新对话将使用自定义 API。" });
+                setCustomFeedback({
+                  tone: "ok",
+                  text: "新对话将使用自定义 API。",
+                });
               }}
             >
               用于对话
             </button>
           </div>
           {customFeedback ? (
-            <p className={`settings-feedback ${customFeedback.tone}`} aria-live="polite">
+            <p
+              className={`settings-feedback ${customFeedback.tone}`}
+              aria-live="polite"
+            >
               {customFeedback.text}
             </p>
           ) : null}

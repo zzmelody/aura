@@ -5,7 +5,7 @@ import type { SessionRequestId } from "@deepseek-ai/dsh-api-session-controller";
 import { resolveChatModel } from "./chat-models.ts";
 import { chatTools, type ChatToolHost } from "./chat-tools.ts";
 import { agentFailure } from "./sessions.ts";
-import type { GeneratedArtifacts } from "./generated-artifacts.ts";
+import type { GeneratedArtifacts } from "./artifacts/generated.ts";
 import { CHAT_IMAGE_LIMIT } from "@aura/protocol/types";
 
 import type { ChatStreamEvent, ChatTurn } from "./types.ts";
@@ -77,14 +77,19 @@ export function chatService(
     emit: (event: ChatStreamEvent) => void,
     signal: AbortSignal,
   ): Promise<{ model: string }> {
-    const stop = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(120_000),
-    ]);
-    const config = await resolveChatModel(ctx.llm, turn.mode, {
-      ...(turn.model ? { model: turn.model } : {}),
-      ...(turn.reasoningEffort ? { reasoningEffort: turn.reasoningEffort } : {}),
-    }, stop, turn.defaults);
+    const stop = AbortSignal.any([signal, AbortSignal.timeout(120_000)]);
+    const config = await resolveChatModel(
+      ctx.llm,
+      turn.mode,
+      {
+        ...(turn.model ? { model: turn.model } : {}),
+        ...(turn.reasoningEffort
+          ? { reasoningEffort: turn.reasoningEffort }
+          : {}),
+      },
+      stop,
+      turn.defaults,
+    );
     const sessionId = SessionId(randomUUID());
     const preset = (await ctx.agentPresets.resolve("chat-v1")).id;
     const handle = await ctx.agents.create({
@@ -92,7 +97,9 @@ export function chatService(
       agentOptions: { provider: config.provider, model: config.model },
       meta: { agentPreset: preset, cwd: process.env.AURA_FLOW_CWD },
       signal: stop,
-      setup: async (agentCtx) => { await ctx.agentPresets.mount(agentCtx, preset); },
+      setup: async (agentCtx) => {
+        await ctx.agentPresets.mount(agentCtx, preset);
+      },
     });
     const agent = handle.agent;
     const scoped: Array<() => void> = [];
@@ -124,7 +131,9 @@ export function chatService(
       agent.session.append("model/selection", {
         provider: config.provider,
         model: config.model,
-        ...(config.reasoningEffort === undefined ? {} : { reasoningEffort: config.reasoningEffort }),
+        ...(config.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: config.reasoningEffort }),
       });
       const requestId = randomUUID() as SessionRequestId;
       let turnNumber: number | undefined;

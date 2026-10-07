@@ -3,10 +3,25 @@ import assert from "node:assert/strict";
 import { validateMessages, validateChatModelSelection } from "@aura/protocol";
 
 test("chat settings accept bounded opaque DSH IDs but no provider, endpoint or credentials", () => {
-  for (const valid of [{}, { model: "gpt-6.1-sol" }, { reasoningEffort: "xhigh" }, { model: "m", reasoningEffort: "off" }])
+  for (const valid of [
+    {},
+    { model: "gpt-6.1-sol" },
+    { reasoningEffort: "xhigh" },
+    { model: "m", reasoningEffort: "off" },
+  ])
     assert.ok(validateChatModelSelection(valid));
-  for (const invalid of [null, [], { model: " " }, { model: "with\nnewline" }, { reasoningEffort: 4 }, { model: "m".repeat(201) },
-    { reasoningEffort: "e".repeat(81) }, { apiKey: "secret" }, { provider: "p" }, { baseURL: "https://example.com" }])
+  for (const invalid of [
+    null,
+    [],
+    { model: " " },
+    { model: "with\nnewline" },
+    { reasoningEffort: 4 },
+    { model: "m".repeat(201) },
+    { reasoningEffort: "e".repeat(81) },
+    { apiKey: "secret" },
+    { provider: "p" },
+    { baseURL: "https://example.com" },
+  ])
     assert.equal(validateChatModelSelection(invalid), false);
 });
 

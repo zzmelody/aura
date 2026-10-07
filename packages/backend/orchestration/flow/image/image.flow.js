@@ -42,7 +42,9 @@ export default defineFlow({
     engine: z
       .enum(["auto", "gpt", "local"])
       .default("auto")
-      .describe("auto 优先 GPT（Codex 订阅）；gpt 只用 GPT；local 只用本机模型。"),
+      .describe(
+        "auto 优先 GPT（Codex 订阅）；gpt 只用 GPT；local 只用本机模型。",
+      ),
     quality: z
       .enum(["low", "medium", "high"])
       .optional()

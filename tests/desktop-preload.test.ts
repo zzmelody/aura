@@ -7,13 +7,24 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import { buildDesktopPreload } from "../scripts/build-desktop-preload.ts";
 
+interface PreloadHost {
+  platform: "desktop";
+  site: {
+    chooseDirectory(): Promise<unknown>;
+    onStatus(callback: (...args: unknown[]) => void): () => void;
+    start(project: object): Promise<unknown>;
+    stop(directory: string): Promise<unknown>;
+    open(project: object): Promise<unknown>;
+  };
+}
+
 test("built desktop preload runs with sandbox CommonJS and exposes working Site IPC", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "aura-preload-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const output = await buildDesktopPreload(join(directory, "preload.cjs"));
   const events = new EventEmitter();
   const requests: unknown[][] = [];
-  let host: any;
+  let host: PreloadHost | undefined;
   const project = { directory: "/tmp/site" };
   const ipcRenderer = {
     on: events.on.bind(events),
@@ -22,7 +33,11 @@ test("built desktop preload runs with sandbox CommonJS and exposes working Site 
       requests.push(args);
       if (args[0] === "aura:site:choose-directory") return project;
       if (args[0] === "aura:site:status")
-        events.emit("aura:site:status", { sender: "private" }, { state: "idle" });
+        events.emit(
+          "aura:site:status",
+          { sender: "private" },
+          { state: "idle" },
+        );
     },
   };
   // Like a sandboxed preload: no import/Node loader, only Electron's limited require.
@@ -38,13 +53,15 @@ test("built desktop preload runs with sandbox CommonJS and exposes working Site 
         contextBridge: {
           exposeInMainWorld: (key: string, api: unknown) => {
             assert.equal(key, "auraHost");
-            host = api;
+            assert.ok(api !== null && typeof api === "object");
+            host = api as PreloadHost;
           },
         },
         ipcRenderer,
       };
     },
   });
+  assert.ok(host);
   assert.equal(host.platform, "desktop");
   assert.equal(await host.site.chooseDirectory(), project);
   const received: unknown[] = [];

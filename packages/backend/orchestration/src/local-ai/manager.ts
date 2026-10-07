@@ -11,7 +11,7 @@ import {
 import { setTimeout as delay } from "node:timers/promises";
 import type { SubprocessRuntime } from "@deepseek-ai/dsh-subprocess";
 import { z } from "zod";
-import type { GeneratedArtifacts } from "../generated-artifacts.ts";
+import type { GeneratedArtifacts } from "../artifacts/generated.ts";
 import type {
   ImageInput,
   LocalAIClient,

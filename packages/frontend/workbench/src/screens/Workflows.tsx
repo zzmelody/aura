@@ -100,10 +100,14 @@ export function Workflows({
     setEditing(null);
     setExpanded(undefined);
     onDetailChange(false);
-  }, [endpoint]);
+  }, [endpoint, onDetailChange]);
   useEffect(() => {
-    if (editorRevision) edit("");
-  }, [editorRevision]);
+    if (editorRevision) {
+      setEditing("");
+      setInitialLine(undefined);
+      onDetailChange(true);
+    }
+  }, [editorRevision, onDetailChange]);
   const edit = (id: string, line?: number) => {
     setEditing(id);
     setInitialLine(line);

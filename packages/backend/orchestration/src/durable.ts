@@ -19,11 +19,19 @@ export class StorageFailure extends Error {
   constructor(cause?: unknown) {
     // Expose only bounded OS error vocabulary, never paths, record values or
     // arbitrary backend messages (which may contain private workflow input).
-    const code = cause && typeof cause === "object" && "code" in cause
-      ? String(cause.code) : "";
-    const detail = /^(?:EACCES|EPERM|ENOSPC|EIO|ENOENT|EBUSY|EMFILE|ENFILE|EROFS)$/u.test(code)
-      ? `（${code}）` : "";
-    super(`Flow 状态提交失败${detail}；保留执行记录，恢复前请检查存储。`, { cause });
+    const code =
+      cause && typeof cause === "object" && "code" in cause
+        ? String(cause.code)
+        : "";
+    const detail =
+      /^(?:EACCES|EPERM|ENOSPC|EIO|ENOENT|EBUSY|EMFILE|ENFILE|EROFS)$/u.test(
+        code,
+      )
+        ? `（${code}）`
+        : "";
+    super(`Flow 状态提交失败${detail}；保留执行记录，恢复前请检查存储。`, {
+      cause,
+    });
   }
 }
 export const stable = (value: unknown): string => {
@@ -59,10 +67,15 @@ export const retryAt = (step: FlowStep) =>
 // represents these checks; an explicit/custom `when` can change their meaning.
 // Compare native function identity, never just the publicly settable check name.
 const nativeLengthConditions = new Map(
-  z.string().min(0).max(1).length(1)._zod.def.checks!.map((check) => [
-    check._zod.def.check,
-    check._zod.def.when,
-  ]),
+  z
+    .string()
+    .min(0)
+    .max(1)
+    .length(1)
+    ._zod.def.checks!.map((check) => [
+      check._zod.def.check,
+      check._zod.def.when,
+    ]),
 );
 export function savedSchema(schema: z.ZodType): JsonValue {
   try {
@@ -79,7 +92,8 @@ export function savedSchema(schema: z.ZodType): JsonValue {
                 !(
                   (zodSchema._zod.def.type === "string" ||
                     zodSchema._zod.def.type === "array") &&
-                  definition.when === nativeLengthConditions.get(definition.check)
+                  definition.when ===
+                    nativeLengthConditions.get(definition.check)
                 ))
             );
           })

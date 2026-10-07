@@ -21,15 +21,15 @@ $env:NODE_ENV = 'production'
 $env:GRADLE_USER_HOME = "$auraRoot\.tools\gradle"
 Set-Location -LiteralPath "$auraRoot\apps\mobile"
 
-& $auraNode $auraPnpm run build
+& $auraPnpmCommand @auraPnpmArguments run build
 if ($LASTEXITCODE -ne 0) { throw 'Aura mobile Web build failed.' }
 
 if (!$SkipPrebuild) {
     if (!(Test-Path -LiteralPath '.\android')) {
-        & $auraNode $auraPnpm exec cap add android
+        & $auraPnpmCommand @auraPnpmArguments exec cap add android
         if ($LASTEXITCODE -ne 0) { throw 'Capacitor Android project creation failed.' }
     }
-    & $auraNode $auraPnpm exec cap sync android
+    & $auraPnpmCommand @auraPnpmArguments exec cap sync android
     if ($LASTEXITCODE -ne 0) { throw 'Capacitor Android sync failed.' }
 }
 

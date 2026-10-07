@@ -12,8 +12,8 @@ import {
   type CapabilityProvider,
 } from "./capability-api.ts";
 import { jsonValue } from "./schema.ts";
-import type { GeneratedArtifacts } from "./generated-artifacts.ts";
-import { inspectArtifact } from "./artifact-media.ts";
+import type { GeneratedArtifacts } from "./artifacts/generated.ts";
+import { inspectArtifact } from "./artifacts/media.ts";
 import type { CapabilityRoot } from "./types.ts";
 
 const SETTLE_TIMEOUT_MS = 30_000;
@@ -23,12 +23,20 @@ interface OpenPlugin {
   providers: Map<string, CapabilityProvider>;
 }
 
-type Log = (level: "info" | "warn" | "error", message: string, data?: JsonValue) => void;
+type Log = (
+  level: "info" | "warn" | "error",
+  message: string,
+  data?: JsonValue,
+) => void;
 
 /** Host media ports shared with built-in producers. Optional so tests can omit them. */
 export interface CapabilityMedia {
   artifacts: Pick<GeneratedArtifacts, "put" | "read">;
-  saveImage(input: { data: Uint8Array; mediaType: "image/png" | "image/jpeg" | "image/webp"; name: string }): Promise<unknown>;
+  saveImage(input: {
+    data: Uint8Array;
+    mediaType: "image/png" | "image/jpeg" | "image/webp";
+    name: string;
+  }): Promise<unknown>;
 }
 
 /**
@@ -58,7 +66,10 @@ export class PluginCapabilities implements AuraCapabilityClient {
   }
 
   /** Connects the Run store once the engine exists. */
-  attachRuns(get: (id: string) => FlowRun | undefined, all: () => Iterable<FlowRun>) {
+  attachRuns(
+    get: (id: string) => FlowRun | undefined,
+    all: () => Iterable<FlowRun>,
+  ) {
     this.#runs = get;
     this.#allRuns = all;
   }
@@ -73,7 +84,8 @@ export class PluginCapabilities implements AuraCapabilityClient {
   async #replace(roots: readonly CapabilityRoot[]) {
     const wanted = new Map<string, CapabilityRoot>();
     for (const root of roots) {
-      if (!root.plugin) throw new Error("Capability root is missing plugin identity.");
+      if (!root.plugin)
+        throw new Error("Capability root is missing plugin identity.");
       wanted.set(root.plugin.id, root);
     }
     for (const [id, open] of [...this.#plugins]) {
@@ -84,7 +96,10 @@ export class PluginCapabilities implements AuraCapabilityClient {
     }
     for (const [id, root] of wanted) {
       if (this.#plugins.has(id)) continue;
-      this.#plugins.set(id, { key: pluginKey(root), providers: await this.#open(root) });
+      this.#plugins.set(id, {
+        key: pluginKey(root),
+        providers: await this.#open(root),
+      });
     }
   }
 
@@ -96,12 +111,20 @@ export class PluginCapabilities implements AuraCapabilityClient {
     try {
       for (const local of (await readdir(root.root)).sort()) {
         const entry = resolve(root.root, local, `${local}.capability.js`);
-        const module = (await import(pathToFileURL(entry).href)) as { default?: unknown };
+        const module = (await import(pathToFileURL(entry).href)) as {
+          default?: unknown;
+        };
         if (!isCapabilityDefinition(module.default))
-          throw new Error(`${pluginId}/${local} must default-export defineCapability(...).`);
-        const provider = await module.default.open(this.#host(pluginId, dataDir, root.settings));
+          throw new Error(
+            `${pluginId}/${local} must default-export defineCapability(...).`,
+          );
+        const provider = await module.default.open(
+          this.#host(pluginId, dataDir, root.settings),
+        );
         if (!provider || typeof provider.invoke !== "function")
-          throw new Error(`${pluginId}/${local} open() must return a provider with invoke().`);
+          throw new Error(
+            `${pluginId}/${local} open() must return a provider with invoke().`,
+          );
         providers.set(`${pluginId}/${local}`, provider);
       }
     } catch (error) {
@@ -111,9 +134,15 @@ export class PluginCapabilities implements AuraCapabilityClient {
     return providers;
   }
 
-  #host(pluginId: string, dataDir: string, settings: JsonValue | undefined): CapabilityHost {
+  #host(
+    pluginId: string,
+    dataDir: string,
+    settings: JsonValue | undefined,
+  ): CapabilityHost {
     const owned = (run: FlowRun | undefined) =>
-      run && run.flow.plugin?.id === pluginId ? structuredClone(run) : undefined;
+      run && run.flow.plugin?.id === pluginId
+        ? structuredClone(run)
+        : undefined;
     return Object.freeze({
       pluginId,
       dataDir,
@@ -121,39 +150,56 @@ export class PluginCapabilities implements AuraCapabilityClient {
       runs: Object.freeze({
         get: (id: string) => owned(this.#runs(id)),
         list: (filter: { flowId?: string; status?: readonly string[] } = {}) =>
-          [...this.#allRuns()].filter((run) =>
-            run.flow.plugin?.id === pluginId &&
-            (!filter.flowId || run.flow.id === filter.flowId) &&
-            (!filter.status || filter.status.includes(run.status)),
-          ).map((run) => structuredClone(run)),
+          [...this.#allRuns()]
+            .filter(
+              (run) =>
+                run.flow.plugin?.id === pluginId &&
+                (!filter.flowId || run.flow.id === filter.flowId) &&
+                (!filter.status || filter.status.includes(run.status)),
+            )
+            .map((run) => structuredClone(run)),
       }),
-      invoke: (capability: string, operation: string, input: JsonValue, signal: AbortSignal) => {
+      invoke: (
+        capability: string,
+        operation: string,
+        input: JsonValue,
+        signal: AbortSignal,
+      ) => {
         if (!this.#builtins || isPluginCapability(capability))
           throw new Error(`Aura host capability is unavailable: ${capability}`);
         return this.#builtins.invoke(capability, operation, input, signal);
       },
       artifacts: Object.freeze({
-        put: (bytes: Uint8Array, signal: AbortSignal) => this.#requireMedia().artifacts.put(bytes, signal),
+        put: (bytes: Uint8Array, signal: AbortSignal) =>
+          this.#requireMedia().artifacts.put(bytes, signal),
         read: (artifactId: string, signal: AbortSignal, limitBytes?: number) =>
           this.#requireMedia().artifacts.read(artifactId, signal, limitBytes),
       }),
       attachments: Object.freeze({
         image: async (bytes: Uint8Array, name: string) => {
           const media = await inspectArtifact(Buffer.from(bytes));
-          if (media.kind !== "image") throw new Error("Attachment must be a PNG, JPEG or WebP image.");
+          if (media.kind !== "image")
+            throw new Error("Attachment must be a PNG, JPEG or WebP image.");
           const saved = await this.#requireMedia().saveImage({
-            data: bytes, mediaType: media.mimeType as "image/png" | "image/jpeg" | "image/webp", name,
+            data: bytes,
+            mediaType: media.mimeType as
+              "image/png" | "image/jpeg" | "image/webp",
+            name,
           });
           return jsonValue(saved, "图片附件");
         },
       }),
-      log: (level: "info" | "warn" | "error", message: string, data?: JsonValue) =>
-        this.#log(level, `[${pluginId}] ${message}`, data),
+      log: (
+        level: "info" | "warn" | "error",
+        message: string,
+        data?: JsonValue,
+      ) => this.#log(level, `[${pluginId}] ${message}`, data),
     });
   }
 
   #requireMedia(): CapabilityMedia {
-    if (!this.#media) throw new Error("Aura artifact storage is unavailable in this host.");
+    if (!this.#media)
+      throw new Error("Aura artifact storage is unavailable in this host.");
     return this.#media;
   }
 
@@ -167,18 +213,35 @@ export class PluginCapabilities implements AuraCapabilityClient {
     if (!isPluginCapability(capability)) {
       if (!this.#builtins)
         throw new Error(`Aura host capability is unavailable: ${capability}`);
-      return this.#builtins.invoke(capability, operation, input, signal, context);
+      return this.#builtins.invoke(
+        capability,
+        operation,
+        input,
+        signal,
+        context,
+      );
     }
-    const provider = this.#plugins.get(capability.split("/")[0]!)?.providers.get(capability);
-    if (!provider) throw new Error(`Aura host capability is unavailable: ${capability}`);
+    const provider = this.#plugins
+      .get(capability.split("/")[0]!)
+      ?.providers.get(capability);
+    if (!provider)
+      throw new Error(`Aura host capability is unavailable: ${capability}`);
     signal.throwIfAborted();
     const run = context?.runId ? this.#runs(context.runId) : undefined;
-    const output = await provider.invoke(operation, input, Object.freeze({
-      signal,
-      ...(context?.runId ? { runId: context.runId, rootRunId: run?.rootRunId ?? context.runId } : {}),
-      ...(context?.stepId ? { stepId: context.stepId } : {}),
-      ...(context?.idempotencyKey ? { idempotencyKey: context.idempotencyKey } : {}),
-    }));
+    const output = await provider.invoke(
+      operation,
+      input,
+      Object.freeze({
+        signal,
+        ...(context?.runId
+          ? { runId: context.runId, rootRunId: run?.rootRunId ?? context.runId }
+          : {}),
+        ...(context?.stepId ? { stepId: context.stepId } : {}),
+        ...(context?.idempotencyKey
+          ? { idempotencyKey: context.idempotencyKey }
+          : {}),
+      }),
+    );
     return jsonValue(output, `${capability} 输出`);
   }
 
@@ -186,19 +249,40 @@ export class PluginCapabilities implements AuraCapabilityClient {
   #server(flowId: string): CapabilityProvider | undefined {
     const [pluginId, local] = flowId.split("/");
     const open = pluginId && local ? this.#plugins.get(pluginId) : undefined;
-    return open && [...open.providers.values()].find((provider) => provider.serves?.includes(local!));
+    return (
+      open &&
+      [...open.providers.values()].find((provider) =>
+        provider.serves?.includes(local!),
+      )
+    );
   }
 
   /** Runs the serving provider's admission; Flows without one start with their input unchanged. */
-  async admit(flowId: string, requestId: string, input: JsonValue, signal: AbortSignal): Promise<JsonValue> {
+  async admit(
+    flowId: string,
+    requestId: string,
+    input: JsonValue,
+    signal: AbortSignal,
+  ): Promise<JsonValue> {
     const provider = this.#server(flowId);
     if (!provider?.admit) return input;
-    const admitted = await provider.admit(Object.freeze({ flowId, requestId, input: structuredClone(input), signal }));
+    const admitted = await provider.admit(
+      Object.freeze({
+        flowId,
+        requestId,
+        input: structuredClone(input),
+        signal,
+      }),
+    );
     return jsonValue(admitted, `${flowId} 准入入参`);
   }
 
   /** Lets the serving provider re-admit `input` before a service Run resumes. */
-  async resume(run: FlowRun, input: JsonValue, signal: AbortSignal): Promise<void> {
+  async resume(
+    run: FlowRun,
+    input: JsonValue,
+    signal: AbortSignal,
+  ): Promise<void> {
     const provider = this.#server(run.flow.id);
     if (!provider?.resume) throw new Error("resume_input_unsupported");
     await provider.resume(structuredClone(run), structuredClone(input), signal);
@@ -209,9 +293,16 @@ export class PluginCapabilities implements AuraCapabilityClient {
     const provider = this.#server(run.flow.id);
     if (!provider?.view) return undefined;
     try {
-      return jsonValue(await provider.view(structuredClone(run)), `${run.flow.id} 服务视图`, 64 * 1_024);
+      return jsonValue(
+        await provider.view(structuredClone(run)),
+        `${run.flow.id} 服务视图`,
+        64 * 1_024,
+      );
     } catch (error) {
-      this.#log("error", `${run.flow.id} view failed`, { runId: run.id, message: String((error as Error)?.message ?? error) });
+      this.#log("error", `${run.flow.id} view failed`, {
+        runId: run.id,
+        message: String((error as Error)?.message ?? error),
+      });
       return undefined;
     }
   }
@@ -221,22 +312,30 @@ export class PluginCapabilities implements AuraCapabilityClient {
     const pluginId = run.flow.plugin?.id;
     const open = pluginId ? this.#plugins.get(pluginId) : undefined;
     if (!open) return;
-    await Promise.all([...open.providers].map(async ([id, provider]) => {
-      if (!provider.runSettled) return;
-      let timer: NodeJS.Timeout | undefined;
-      try {
-        await Promise.race([
-          Promise.resolve(provider.runSettled(structuredClone(run))),
-          new Promise((_, reject) => {
-            timer = setTimeout(() => reject(new Error("runSettled timed out")), SETTLE_TIMEOUT_MS);
-          }),
-        ]);
-      } catch (error) {
-        this.#log("error", `${id} runSettled failed`, { runId: run.id, message: String((error as Error)?.message ?? error) });
-      } finally {
-        clearTimeout(timer);
-      }
-    }));
+    await Promise.all(
+      [...open.providers].map(async ([id, provider]) => {
+        if (!provider.runSettled) return;
+        let timer: NodeJS.Timeout | undefined;
+        try {
+          await Promise.race([
+            Promise.resolve(provider.runSettled(structuredClone(run))),
+            new Promise((_, reject) => {
+              timer = setTimeout(
+                () => reject(new Error("runSettled timed out")),
+                SETTLE_TIMEOUT_MS,
+              );
+            }),
+          ]);
+        } catch (error) {
+          this.#log("error", `${id} runSettled failed`, {
+            runId: run.id,
+            message: String((error as Error)?.message ?? error),
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+      }),
+    );
   }
 
   async close(): Promise<void> {
@@ -251,7 +350,11 @@ export class PluginCapabilities implements AuraCapabilityClient {
 export const isPluginCapability = (id: string) => id.includes("/");
 
 function pluginKey(root: CapabilityRoot) {
-  return JSON.stringify([resolve(root.root), root.plugin?.version, root.settings ?? null]);
+  return JSON.stringify([
+    resolve(root.root),
+    root.plugin?.version,
+    root.settings ?? null,
+  ]);
 }
 
 async function closeAll(providers: Map<string, CapabilityProvider>, log: Log) {
@@ -259,7 +362,9 @@ async function closeAll(providers: Map<string, CapabilityProvider>, log: Log) {
     try {
       await provider.close?.();
     } catch (error) {
-      log("error", `${id} close failed`, { message: String((error as Error)?.message ?? error) });
+      log("error", `${id} close failed`, {
+        message: String((error as Error)?.message ?? error),
+      });
     }
   }
   providers.clear();

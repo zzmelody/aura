@@ -382,7 +382,9 @@
   .settings-theme-split .settings-theme-preview {
     height: 52px;
   }
-  .settings-row:not(.settings-row-stack):not(.settings-choice):not(.settings-row-button) {
+  .settings-row:not(.settings-row-stack):not(.settings-choice):not(
+      .settings-row-button
+    ) {
     flex-wrap: wrap;
   }
   .settings-endpoint {
@@ -430,7 +432,10 @@
   border-radius: 8px;
   background: var(--input);
   color: var(--text);
-  font: 12px "IBM Plex Mono", ui-monospace, monospace;
+  font:
+    12px "IBM Plex Mono",
+    ui-monospace,
+    monospace;
 }
 .settings-form-grid input:focus-visible,
 .settings-form-grid select:focus-visible {

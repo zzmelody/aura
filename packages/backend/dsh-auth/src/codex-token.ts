@@ -1,5 +1,6 @@
-import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-credentials";
+import type { Context } from "@deepseek-ai/cordis";
+
 import { MessageId, type UserMessage } from "@deepseek-ai/dsh-llm";
 import { recordKeyFor } from "@deepseek-ai/dsh-llm-pi-ai";
 
@@ -40,7 +41,11 @@ export function readCodexGrant(
 ): { access: string; expires: number } | undefined {
   if (!record || typeof record !== "object") return undefined;
   const value = record as { kind?: unknown; payload?: unknown };
-  if (value.kind !== "grant" || !value.payload || typeof value.payload !== "object")
+  if (
+    value.kind !== "grant" ||
+    !value.payload ||
+    typeof value.payload !== "object"
+  )
     return undefined;
   const payload = value.payload as { access?: unknown; expires?: unknown };
   if (typeof payload.access !== "string" || typeof payload.expires !== "number")
@@ -59,7 +64,9 @@ export function codexTokenSource(
   now: () => number = Date.now,
 ): CodexTokenSource {
   const read = async () =>
-    readCodexGrant(await ctx.get("credentials")?.readRecord(recordKeyFor(providerId)));
+    readCodexGrant(
+      await ctx.get("credentials")?.readRecord(recordKeyFor(providerId)),
+    );
   let refreshing: Promise<void> | undefined;
   const refresh = (signal?: AbortSignal) =>
     (refreshing ??= (async () => {

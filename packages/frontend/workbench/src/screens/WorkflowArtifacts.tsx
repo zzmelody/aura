@@ -34,7 +34,11 @@ import {
 } from "../workflowArtifacts";
 import { isWorkflowOpen, workflowApi } from "../workflowSessions";
 
-const ModelPreview = lazy(() => import("./WorkflowModelPreview"));
+const ModelPreview = lazy(() =>
+  import("./WorkflowModelPreview").then((module) => ({
+    default: module.WorkflowModelPreview,
+  })),
+);
 interface ArtifactContextValue {
   artifacts: WorkflowArtifact[];
   endpoint: string;

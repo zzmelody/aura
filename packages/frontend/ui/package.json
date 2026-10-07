@@ -2,7 +2,10 @@
   "name": "@aura/ui",
   "version": "0.1.0",
   "private": true,
-  "aura": { "layer": "frontend", "kind": "library" },
+  "aura": {
+    "layer": "frontend",
+    "kind": "library"
+  },
   "type": "module",
   "exports": {
     "./components": "./src/components.tsx",

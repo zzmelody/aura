@@ -1,5 +1,12 @@
 import React, { memo, useEffect, useState } from "react";
-import { Check, Copy, FileAudio, FileImage, FileVideo, File } from "lucide-react";
+import {
+  Check,
+  Copy,
+  FileAudio,
+  FileImage,
+  FileVideo,
+  File,
+} from "lucide-react";
 import { writeClipboard } from "../clipboard";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -158,9 +165,7 @@ export function WorkflowValue({
       <span className="workflow-value-boolean">{value ? "是" : "否"}</span>
     );
   if (typeof value === "number")
-    return (
-      <span className="workflow-value-number">{value}</span>
-    );
+    return <span className="workflow-value-number">{value}</span>;
   if (depth >= 5)
     return (
       <details className="workflow-data-overflow">

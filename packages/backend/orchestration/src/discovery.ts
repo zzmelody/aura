@@ -31,8 +31,13 @@ async function flowEntries(
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) matches.push(...(await flowEntries(path, kind, typescript)));
-    if (entry.isFile() && (entry.name.endsWith(`.${kind}.js`) || (typescript && entry.name.endsWith(`.${kind}.ts`))))
+    if (entry.isDirectory())
+      matches.push(...(await flowEntries(path, kind, typescript)));
+    if (
+      entry.isFile() &&
+      (entry.name.endsWith(`.${kind}.js`) ||
+        (typescript && entry.name.endsWith(`.${kind}.ts`)))
+    )
       matches.push(path);
   }
   return matches;
@@ -120,7 +125,12 @@ export class CodeDiscovery {
       }
 
       const candidates = await flowEntries(directory, this.kind, !this.plugin);
-      const allowed = [join(directory, `${localId}.${this.kind}.js`), ...(!this.plugin ? [join(directory, `${localId}.${this.kind}.ts`)] : [])];
+      const allowed = [
+        join(directory, `${localId}.${this.kind}.js`),
+        ...(!this.plugin
+          ? [join(directory, `${localId}.${this.kind}.ts`)]
+          : []),
+      ];
       const expected = candidates[0];
       if (candidates.length !== 1 || !allowed.includes(expected)) {
         issues.add(flowId);
@@ -133,11 +143,20 @@ export class CodeDiscovery {
       }
 
       let signature: string;
-      try { signature = await hashFlowDirectory(directory, this.pluginRoot); }
-      catch {
+      try {
+        signature = await hashFlowDirectory(directory, this.pluginRoot);
+      } catch {
         issues.add(flowId);
-        if (this.mounted.has(flowId)) this.registry.reloadProblem(flowId, "Plugin dependency revision could not be validated.");
-        else this.registry.problem(flowId, "Plugin dependency revision could not be validated.");
+        if (this.mounted.has(flowId))
+          this.registry.reloadProblem(
+            flowId,
+            "Plugin dependency revision could not be validated.",
+          );
+        else
+          this.registry.problem(
+            flowId,
+            "Plugin dependency revision could not be validated.",
+          );
         continue;
       }
       const current = this.mounted.get(flowId);

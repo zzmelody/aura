@@ -74,7 +74,10 @@ export function WorkspaceSidebar({
   const [closed, setClosed] = useState(new Set<string>());
   const toast = useToast();
   /** Archive (or restore) and offer a one-click undo in a top toast. */
-  function archiveWithUndo(session: { id: string; archivedAt?: number }, label: string) {
+  function archiveWithUndo(
+    session: { id: string; archivedAt?: number },
+    label: string,
+  ) {
     const archiving = !session.archivedAt;
     workspace.archiveChat(session.id, archiving);
     toast({
@@ -86,7 +89,11 @@ export function WorkspaceSidebar({
     });
   }
   // The "..." button is gone; actions live in a right-click menu per row.
-  const [context, setContext] = useState<{ sessionId: string; x: number; y: number }>();
+  const [context, setContext] = useState<{
+    sessionId: string;
+    x: number;
+    y: number;
+  }>();
   const search = useRef<HTMLInputElement>(null);
   const searchButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -262,14 +269,27 @@ export function WorkspaceSidebar({
                         key={session.id}
                         onContextMenu={(event) => {
                           event.preventDefault();
-                          setContext({ sessionId: session.id, x: event.clientX, y: event.clientY });
+                          setContext({
+                            sessionId: session.id,
+                            x: event.clientX,
+                            y: event.clientY,
+                          });
                         }}
                         onKeyDown={(event) => {
                           // Keyboard users reach the same menu with the context-menu key or Shift+F10.
-                          if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+                          if (
+                            event.key !== "ContextMenu" &&
+                            !(event.shiftKey && event.key === "F10")
+                          )
+                            return;
                           event.preventDefault();
-                          const box = event.currentTarget.getBoundingClientRect();
-                          setContext({ sessionId: session.id, x: box.right - 24, y: box.bottom });
+                          const box =
+                            event.currentTarget.getBoundingClientRect();
+                          setContext({
+                            sessionId: session.id,
+                            x: box.right - 24,
+                            y: box.bottom,
+                          });
                         }}
                       >
                         <button
@@ -294,11 +314,14 @@ export function WorkspaceSidebar({
                           <span className="session-row-meta">
                             <time
                               className="session-row-time"
-                              dateTime={new Date(session.updatedAt).toISOString()}
+                              dateTime={new Date(
+                                session.updatedAt,
+                              ).toISOString()}
                             >
                               {sidebarSessionTime(session.updatedAt, now)}
                             </time>
-                            {status.kind !== "completed" && status.kind !== "idle" ? (
+                            {status.kind !== "completed" &&
+                            status.kind !== "idle" ? (
                               <SessionStatus status={status} />
                             ) : null}
                           </span>

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, LoaderCircle, RotateCcw } from "lucide-react";
 import type { ModelViewerElement } from "@google/model-viewer";
 
-export default function WorkflowModelPreview({
+export function WorkflowModelPreview({
   src,
   name,
 }: {

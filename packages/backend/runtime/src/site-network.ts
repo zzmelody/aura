@@ -12,14 +12,26 @@ const processQueryOptions = {
 };
 
 const tcpStates = new Set([
-  "CLOSED", "CLOSE_WAIT", "CLOSING", "DELETE_TCB", "ESTABLISHED",
-  "FIN_WAIT_1", "FIN_WAIT_2", "LAST_ACK", "LISTENING", "SYN_RECEIVED",
-  "SYN_SENT", "TIME_WAIT",
+  "CLOSED",
+  "CLOSE_WAIT",
+  "CLOSING",
+  "DELETE_TCB",
+  "ESTABLISHED",
+  "FIN_WAIT_1",
+  "FIN_WAIT_2",
+  "LAST_ACK",
+  "LISTENING",
+  "SYN_RECEIVED",
+  "SYN_SENT",
+  "TIME_WAIT",
 ]);
 
 /** netstat -ano -p tcp emits numeric addresses. Reject an incomplete or
  * unfamiliar table rather than interpreting a query failure as an empty port. */
-export function windowsListeningPids(output: string, port: number): number[] | null {
+export function windowsListeningPids(
+  output: string,
+  port: number,
+): number[] | null {
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
   let header = false;
   const owners = new Set<number>();
@@ -39,18 +51,33 @@ export function windowsListeningPids(output: string, port: number): number[] | n
     const line = raw.trim();
     if (!line) continue;
     if (!header && ["Active Connections", "活动连接"].includes(line)) continue;
-    if (!header && (/^Proto\s+Local Address\s+Foreign Address\s+State\s+PID$/u.test(line) ||
-      /^协议\s+本地地址\s+外部地址\s+状态\s+PID$/u.test(line))) {
+    if (
+      !header &&
+      (/^Proto\s+Local Address\s+Foreign Address\s+State\s+PID$/u.test(line) ||
+        /^协议\s+本地地址\s+外部地址\s+状态\s+PID$/u.test(line))
+    ) {
       header = true;
       continue;
     }
     if (!header) return null;
     const columns = line.split(/\s+/u);
-    if (columns.length !== 5 || columns[0] !== "TCP" || !tcpStates.has(columns[3]!) || !/^\d+$/u.test(columns[4]!)) return null;
+    if (
+      columns.length !== 5 ||
+      columns[0] !== "TCP" ||
+      !tcpStates.has(columns[3]!) ||
+      !/^\d+$/u.test(columns[4]!)
+    )
+      return null;
     const local = endpointPort(columns[1]!);
     const foreign = endpointPort(columns[2]!);
     const pid = Number(columns[4]);
-    if (local === null || foreign === null || !Number.isSafeInteger(pid) || pid < 0) return null;
+    if (
+      local === null ||
+      foreign === null ||
+      !Number.isSafeInteger(pid) ||
+      pid < 0
+    )
+      return null;
     if (columns[3] === "LISTENING") {
       if (pid === 0 || local === 0) return null;
       if (local === port) owners.add(pid);
@@ -61,17 +88,30 @@ export function windowsListeningPids(output: string, port: number): number[] | n
 
 async function windowsListeners(port: number): Promise<number[] | null> {
   const systemRoot = process.env.SystemRoot;
-  if (!systemRoot || !/^[A-Za-z]:\\/u.test(systemRoot) || !win32.isAbsolute(systemRoot)) return null;
-  const { stdout } = await exec(win32.join(systemRoot, "System32", "netstat.exe"), ["-ano", "-p", "tcp"],
-    { ...processQueryOptions, encoding: "buffer" });
+  if (
+    !systemRoot ||
+    !/^[A-Za-z]:\\/u.test(systemRoot) ||
+    !win32.isAbsolute(systemRoot)
+  )
+    return null;
+  const { stdout } = await exec(
+    win32.join(systemRoot, "System32", "netstat.exe"),
+    ["-ano", "-p", "tcp"],
+    { ...processQueryOptions, encoding: "buffer" },
+  );
   // Hidden Windows console processes use the system code page. Numeric rows
   // are ASCII; recognize only explicit UTF-8/English or GB18030/Chinese headers.
   // Other locales or undecodable tables remain unavailable rather than guessed.
   for (const encoding of ["utf-8", "gb18030"]) {
     try {
-      const parsed = windowsListeningPids(new TextDecoder(encoding, { fatal: true }).decode(stdout), port);
+      const parsed = windowsListeningPids(
+        new TextDecoder(encoding, { fatal: true }).decode(stdout),
+        port,
+      );
       if (parsed !== null) return parsed;
-    } catch { /* Unsupported/malformed encoding is not an empty port. */ }
+    } catch {
+      /* Unsupported/malformed encoding is not an empty port. */
+    }
   }
   return null;
 }
@@ -282,8 +322,19 @@ export async function siteOwnsPort(
         processQueryOptions,
       );
       const rows: unknown = JSON.parse(stdout);
-      if (!Array.isArray(rows) || rows.some(row => !row || !Number.isSafeInteger(row.pid) || row.pid < 0 ||
-        !Number.isSafeInteger(row.parent) || row.parent < 0) || new Set(rows.map(row => row.pid)).size !== rows.length) return false;
+      if (
+        !Array.isArray(rows) ||
+        rows.some(
+          (row) =>
+            !row ||
+            !Number.isSafeInteger(row.pid) ||
+            row.pid < 0 ||
+            !Number.isSafeInteger(row.parent) ||
+            row.parent < 0,
+        ) ||
+        new Set(rows.map((row) => row.pid)).size !== rows.length
+      )
+        return false;
       return belongsToSite(owners, rows, root);
     }
     const { stdout } = await exec(

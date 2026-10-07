@@ -69,12 +69,13 @@ test("demo model accepts an ordinary Flow agent prompt", async (t) => {
 });
 
 test("demo chat model selects offered workflow tools deterministically", async () => {
-  const { demoToolCall, demoToolReply } = await import(
-    "../src/demo-chat-tools.ts"
-  );
-  const tools = ["aura_tts", "aura_multi_shot_video", "aura_topic_research"].map(
-    (name) => ({ type: "function", function: { name, parameters: {} } }),
-  );
+  const { demoToolCall, demoToolReply } =
+    await import("../src/demo-chat-tools.ts");
+  const tools = [
+    "aura_tts",
+    "aura_multi_shot_video",
+    "aura_topic_research",
+  ].map((name) => ({ type: "function", function: { name, parameters: {} } }));
   const call = (text: string, offered = tools) =>
     demoToolCall({ tools: offered, messages: [] }, [{ role: "user", text }]);
   assert.deepEqual(call("帮我配音：今天下雨了"), {
@@ -88,15 +89,16 @@ test("demo chat model selects offered workflow tools deterministically", async (
   assert.equal(call("今天天气怎么样"), undefined);
   assert.equal(call("帮我配音：你好", []), undefined);
   assert.equal(
-    demoToolCall(
-      { tools, messages: [{ role: "tool", content: "{}" }] },
-      [{ role: "user", text: "帮我配音：你好" }],
-    ),
+    demoToolCall({ tools, messages: [{ role: "tool", content: "{}" }] }, [
+      { role: "user", text: "帮我配音：你好" },
+    ]),
     undefined,
   );
   assert.match(
     demoToolReply({
-      messages: [{ role: "tool", content: '{"status":"rejected","error":"忙"}' }],
+      messages: [
+        { role: "tool", content: '{"status":"rejected","error":"忙"}' },
+      ],
     }),
     /没能启动：忙/u,
   );
@@ -111,9 +113,14 @@ test("demo model streams an OpenAI tool call when a chat workflow is requested",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       messages: [
-        { role: "user", content: `AURA_HISTORY_V1\n${JSON.stringify({ messages })}` },
+        {
+          role: "user",
+          content: `AURA_HISTORY_V1\n${JSON.stringify({ messages })}`,
+        },
       ],
-      tools: [{ type: "function", function: { name: "aura_tts", parameters: {} } }],
+      tools: [
+        { type: "function", function: { name: "aura_tts", parameters: {} } },
+      ],
     }),
   });
   const body = await response.text();
@@ -124,7 +131,9 @@ test("demo model streams an OpenAI tool call when a chat workflow is requested",
 
 test("demo chat model maps picture requests to the image tool with an aspect", async () => {
   const { demoToolCall } = await import("../src/demo-chat-tools.ts");
-  const tools = [{ type: "function", function: { name: "aura_image", parameters: {} } }];
+  const tools = [
+    { type: "function", function: { name: "aura_image", parameters: {} } },
+  ];
   const call = (text: string) =>
     demoToolCall({ tools, messages: [] }, [{ role: "user", text }]);
   assert.deepEqual(call("帮我画一张竖图：雨夜的霓虹街道"), {

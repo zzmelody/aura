@@ -9,10 +9,12 @@ export function configureDshNetwork(
   const httpProxy = env.HTTP_PROXY?.trim() || allProxy;
   const httpsProxy = env.HTTPS_PROXY?.trim() || allProxy || httpProxy;
   if (!httpProxy && !httpsProxy) return false;
-  install(new EnvHttpProxyAgent({
-    httpProxy,
-    httpsProxy,
-    noProxy: env.NO_PROXY || "127.0.0.1,localhost,[::1]",
-  }));
+  install(
+    new EnvHttpProxyAgent({
+      httpProxy,
+      httpsProxy,
+      noProxy: env.NO_PROXY || "127.0.0.1,localhost,[::1]",
+    }),
+  );
   return true;
 }

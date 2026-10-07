@@ -1,0 +1,29 @@
+# Aura 文档
+
+本文是当前实现的文档入口。包内 README 说明该包的职责、公共接口与检查方式；此目录说明跨包架构、用户功能和部署。历史验证和未实现的设计单独保留。
+
+## 开发与架构
+
+- [架构](architecture.md)：应用、三层库、DSH、HTTP 和凭据边界。
+- [模块职责](development/module-boundaries.md)：各 package 的目录、模块与依赖责任。
+- [代码规范](code-style.md)：Google TypeScript 的 Aura 适配及实际检查命令。
+- [后端 Runtime](development/backend-runtime.md)：组合根、服务路由、生命周期与失败策略。
+- [界面设计系统](development/design-system.md)：共享 React DOM 组件与主题。
+- [外部插件 JavaScript](plugin-javascript-code-style.md)：Airbnb 适配与公共 SDK 例外。
+- [插件开发 skill](../.agents/skills/aura-plugin-development/SKILL.md)：随仓库维护的开发流程和参考契约。
+
+## 功能
+
+- [模型与登录](features/model-providers.md)
+- [Tripo 3D](features/tripo.md)
+- [本地媒体 Actions](../packages/backend/orchestration/docs/local-ai-actions.md)
+
+## 运维、设计与验证
+
+- [本机 CI](operations/ci-runner.md)
+- [需求驱动的自动开发](operations/auto-development.md)
+- [剧情决策器部署调研](proposals/local-story-director.md)：尚未实现的选型方案，不是当前能力。
+- [本轮验证](verification.md)
+- [历史验证记录](verification/history.md)：按当时提交与环境记录，不代表当前全仓状态。
+
+新增文档放入对应目录，同时更新此入口。行为和公共接口变化更新所属包的 README 及功能文档；验证记录只记实际执行的结果。

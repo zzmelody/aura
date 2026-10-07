@@ -178,7 +178,8 @@ async function atStage<T>(
     return await execute();
   } catch (error) {
     signal.throwIfAborted();
-    if (error instanceof Error && error.name === "TripoBudgetError") throw error;
+    if (error instanceof Error && error.name === "TripoBudgetError")
+      throw error;
     throw productStageError(stage, error);
   }
 }
@@ -192,7 +193,10 @@ export type TripoGameAssetImageQuality =
 export interface TripoGameAssetRequest {
   prompt: string;
   referenceImagePath?: string;
-  referenceImage?: { bytes: Uint8Array; contentType: "image/png" | "image/jpeg" | "image/webp" };
+  referenceImage?: {
+    bytes: Uint8Array;
+    contentType: "image/png" | "image/jpeg" | "image/webp";
+  };
   outputDirectory: string;
   assetName?: string;
   imageModel?: TripoGameAssetImageModel;
@@ -203,10 +207,21 @@ export interface TripoGameAssetRequest {
 /** Host-owned journal. `prepare` reserves credits before any provider submit. */
 export interface TripoPaidTaskJournal {
   readonly workId: string;
-  prepare(stage: "front" | "left" | "back" | "right" | "model", kind: "image" | "model"): Promise<string | undefined>;
-  submitted(stage: "front" | "left" | "back" | "right" | "model", taskId: string): Promise<void>;
-  completed(stage: "front" | "left" | "back" | "right" | "model", credits: number): Promise<void>;
-  costUnknown?(stage: "front" | "left" | "back" | "right" | "model"): Promise<void>;
+  prepare(
+    stage: "front" | "left" | "back" | "right" | "model",
+    kind: "image" | "model",
+  ): Promise<string | undefined>;
+  submitted(
+    stage: "front" | "left" | "back" | "right" | "model",
+    taskId: string,
+  ): Promise<void>;
+  completed(
+    stage: "front" | "left" | "back" | "right" | "model",
+    credits: number,
+  ): Promise<void>;
+  costUnknown?(
+    stage: "front" | "left" | "back" | "right" | "model",
+  ): Promise<void>;
   result(): Promise<TripoGameAssetResult | undefined>;
   published(result: TripoGameAssetResult): Promise<void>;
 }
@@ -268,7 +283,10 @@ function assertRequest(
     "prompt" | "outputDirectory" | "imageModel" | "imageQuality" | "faceLimit"
   >
 > &
-  Pick<TripoGameAssetRequest, "referenceImagePath" | "referenceImage" | "assetName"> {
+  Pick<
+    TripoGameAssetRequest,
+    "referenceImagePath" | "referenceImage" | "assetName"
+  > {
   const prompt = input.prompt.trim();
   if (!prompt || prompt.length > 4_000)
     throw new Error("Model prompt must contain 1-4000 characters.");
@@ -316,6 +334,7 @@ function assertRequest(
 function safeAssetName(value: string | undefined): string {
   const normalized = (value?.trim() || "generated-model")
     .normalize("NFKC")
+    // eslint-disable-next-line no-control-regex -- Intentionally sanitize or detect ASCII control characters.
     .replace(/[<>:"/\\|?*\u0000-\u001f]/gu, "-")
     .replace(/[. ]+$/gu, "")
     .replace(/\s+/gu, "-")
@@ -485,10 +504,18 @@ export async function generateTripoGameAsset(
   signal.throwIfAborted();
   const previous = await journal?.result();
   if (previous) {
-    for (const path of [previous.modelPath, previous.manifestPath, ...Object.values(previous.imagePaths)]) {
+    for (const path of [
+      previous.modelPath,
+      previous.manifestPath,
+      ...Object.values(previous.imagePaths),
+    ]) {
       const retained = await stat(path).catch(() => undefined);
-      if (!retained?.isFile()) throw new TripoGameAssetError("publish-output", "local-io",
-        "已付费产物的本地文件缺失；不会重新提交生成任务。请恢复产物或人工核对账本。");
+      if (!retained?.isFile())
+        throw new TripoGameAssetError(
+          "publish-output",
+          "local-io",
+          "已付费产物的本地文件缺失；不会重新提交生成任务。请恢复产物或人工核对账本。",
+        );
     }
     return previous;
   }
@@ -498,10 +525,14 @@ export async function generateTripoGameAsset(
     async () => {
       await mkdir(input.outputDirectory, { recursive: true });
       if (!journal) return mkdtemp(join(input.outputDirectory, ".aura-model-"));
-      const path = join(input.outputDirectory, `.aura-model-${journal.workId.slice(0, 32)}`);
+      const path = join(
+        input.outputDirectory,
+        `.aura-model-${journal.workId.slice(0, 32)}`,
+      );
       try {
         const existing = await lstat(path);
-        if (!existing.isDirectory() || existing.isSymbolicLink()) throw new Error("Model workspace is not a private directory.");
+        if (!existing.isDirectory() || existing.isSymbolicLink())
+          throw new Error("Model workspace is not a private directory.");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         await mkdir(path);
@@ -515,10 +546,19 @@ export async function generateTripoGameAsset(
     let reference: string | undefined;
     if (input.referenceImagePath || input.referenceImage) {
       const image = input.referenceImage
-        ? { bytes: input.referenceImage.bytes, type: imageType(input.referenceImage.bytes) }
-        : await atStage("read-reference", signal, () => loadReference(input.referenceImagePath!));
+        ? {
+            bytes: input.referenceImage.bytes,
+            type: imageType(input.referenceImage.bytes),
+          }
+        : await atStage("read-reference", signal, () =>
+            loadReference(input.referenceImagePath!),
+          );
       if (!image.type || image.bytes.byteLength > MAX_REFERENCE_BYTES)
-        throw new TripoGameAssetError("read-reference", "local-io", "参考图格式无效或超过 20 MiB。");
+        throw new TripoGameAssetError(
+          "read-reference",
+          "local-io",
+          "参考图格式无效或超过 20 MiB。",
+        );
       const referenceType = image.type;
       const uploaded = await atStage("upload-reference", signal, () =>
         client.uploadFile(image.bytes, {
@@ -536,18 +576,32 @@ export async function generateTripoGameAsset(
       background: "opaque" as const,
       output_format: "png" as const,
     };
-    const paid = async (stage: "front" | "left" | "back" | "right" | "model", kind: "image" | "model", submit: () => Promise<string>, timeout: number) => {
+    const paid = async (
+      stage: "front" | "left" | "back" | "right" | "model",
+      kind: "image" | "model",
+      submit: () => Promise<string>,
+      timeout: number,
+    ) => {
       let taskId = journal ? await journal.prepare(stage, kind) : undefined;
       if (!taskId) {
         taskId = await submit();
         if (journal) await journal.submitted(stage, taskId);
       }
-      const task = await client.waitForTask(taskId, waitOptions(signal, timeout));
+      const task = await client.waitForTask(
+        taskId,
+        waitOptions(signal, timeout),
+      );
       if (journal) {
         const credits = task.credits_consumed;
-        if (typeof credits !== "number" || !Number.isFinite(credits) || credits < 0) {
+        if (
+          typeof credits !== "number" ||
+          !Number.isFinite(credits) ||
+          credits < 0
+        ) {
           await journal.costUnknown?.(stage);
-          throw new Error("Paid task completed without verifiable credit usage.");
+          throw new Error(
+            "Paid task completed without verifiable credit usage.",
+          );
         }
         await journal.completed(stage, credits);
       }
@@ -557,16 +611,22 @@ export async function generateTripoGameAsset(
       "generate-front",
       signal,
       async () => {
-        return paid("front", "image", () => reference
-          ? client.imageToImage({
-              input: reference,
-              prompt: referencePrompt(input.prompt, "front"),
-              ...commonImage,
-            })
-          : client.textToImage({
-              prompt: referencePrompt(input.prompt, "front"),
-              ...commonImage,
-            }), IMAGE_TASK_TIMEOUT_MS);
+        return paid(
+          "front",
+          "image",
+          () =>
+            reference
+              ? client.imageToImage({
+                  input: reference,
+                  prompt: referencePrompt(input.prompt, "front"),
+                  ...commonImage,
+                })
+              : client.textToImage({
+                  prompt: referencePrompt(input.prompt, "front"),
+                  ...commonImage,
+                }),
+          IMAGE_TASK_TIMEOUT_MS,
+        );
       },
     );
 
@@ -583,11 +643,17 @@ export async function generateTripoGameAsset(
     } as const;
     for (const view of ["left", "back", "right"] as const) {
       tasks[view] = await atStage(generationStages[view], signal, async () => {
-        const { task } = await paid(view, "image", () => client.imageToImage({
-          input: frontTaskId,
-          prompt: referencePrompt(input.prompt, view),
-          ...commonImage,
-        }), IMAGE_TASK_TIMEOUT_MS);
+        const { task } = await paid(
+          view,
+          "image",
+          () =>
+            client.imageToImage({
+              input: frontTaskId,
+              prompt: referencePrompt(input.prompt, view),
+              ...commonImage,
+            }),
+          IMAGE_TASK_TIMEOUT_MS,
+        );
         return task;
       });
     }
@@ -615,7 +681,10 @@ export async function generateTripoGameAsset(
         if (journal) {
           try {
             const retained = await readFile(imagePaths[view]);
-            if (imageType(retained)?.extension !== "png" || retained.byteLength > MAX_IMAGE_BYTES)
+            if (
+              imageType(retained)?.extension !== "png" ||
+              retained.byteLength > MAX_IMAGE_BYTES
+            )
               throw new Error("Retained generated view is invalid.");
             return;
           } catch (error) {
@@ -635,29 +704,38 @@ export async function generateTripoGameAsset(
     }
 
     const modelTask = await atStage("generate-model", signal, async () => {
-      const { task } = await paid("model", "model", () => client.multiviewToModel({
-        inputs: [
-          imageUrls.front,
-          imageUrls.left,
-          imageUrls.back,
-          imageUrls.right,
-        ],
-        model: "P1-20260311",
-        face_limit: input.faceLimit,
-        texture: true,
-        pbr: true,
-        texture_alignment: "original_image",
-        texture_quality: "standard",
-        auto_size: true,
-        export_uv: true,
-      }), MODEL_TASK_TIMEOUT_MS);
+      const { task } = await paid(
+        "model",
+        "model",
+        () =>
+          client.multiviewToModel({
+            inputs: [
+              imageUrls.front,
+              imageUrls.left,
+              imageUrls.back,
+              imageUrls.right,
+            ],
+            model: "P1-20260311",
+            face_limit: input.faceLimit,
+            texture: true,
+            pbr: true,
+            texture_alignment: "original_image",
+            texture_quality: "standard",
+            auto_size: true,
+            export_uv: true,
+          }),
+        MODEL_TASK_TIMEOUT_MS,
+      );
       return task;
     });
     const modelBytes = await atStage("download-model", signal, async () => {
       if (journal) {
         try {
-          const retained = await readFile(join(temporaryDirectory, "model.glb"));
-          if (!isGlb(retained) || retained.byteLength > MAX_MODEL_BYTES) throw new Error("Retained GLB is invalid.");
+          const retained = await readFile(
+            join(temporaryDirectory, "model.glb"),
+          );
+          if (!isGlb(retained) || retained.byteLength > MAX_MODEL_BYTES)
+            throw new Error("Retained GLB is invalid.");
           return retained;
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -675,16 +753,22 @@ export async function generateTripoGameAsset(
     });
     const modelPath = join(temporaryDirectory, "model.glb");
     if (!journal || !(await stat(modelPath).catch(() => undefined)))
-      await atStage("publish-output", signal, () => writeFile(modelPath, modelBytes, { flag: "wx" }));
+      await atStage("publish-output", signal, () =>
+        writeFile(modelPath, modelBytes, { flag: "wx" }),
+      );
 
     let previewPath: string | undefined;
     if (modelTask.output?.rendered_image_url) {
       previewPath = await atStage("download-preview", signal, async () => {
         if (journal) {
           for (const extension of ["png", "jpg", "webp"]) {
-            const retainedPath = join(temporaryDirectory, `preview.${extension}`);
+            const retainedPath = join(
+              temporaryDirectory,
+              `preview.${extension}`,
+            );
             const retained = await readFile(retainedPath).catch((error) => {
-              if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+              if ((error as NodeJS.ErrnoException).code === "ENOENT")
+                return undefined;
               throw error;
             });
             if (retained) {

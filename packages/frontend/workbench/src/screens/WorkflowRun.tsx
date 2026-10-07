@@ -654,8 +654,10 @@ export function WorkflowRunResult({
                 </div>
               ) : null}
               {/* Video cards already show the final-cut slot; skip the generic placeholder. */}
-              {composition || (videoRun && phase !== "completed") ? null : hasWorkflowContent(output) &&
-                !(problem && output === problem) ? (
+              {composition ||
+              (videoRun && phase !== "completed") ? null : hasWorkflowContent(
+                  output,
+                ) && !(problem && output === problem) ? (
                 <RunOutput value={output!} />
               ) : (
                 <div className="workflow-output-placeholder">

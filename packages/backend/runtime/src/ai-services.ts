@@ -78,14 +78,15 @@ export class AiServices implements AiServicesPort {
         ).configured
       : false;
     await this.tripo.refresh();
-    const lumina = luminaSettings(document),
-      luminaKey = await this.auth.ctx.credentials.describe(
-        credentialRef(LUMINA_CREDENTIAL),
-      );
+    const lumina = luminaSettings(document);
+    const luminaKey = await this.auth.ctx.credentials.describe(
+      credentialRef(LUMINA_CREDENTIAL),
+    );
     return {
       model: {
         ...document.model,
-        hasKey: document.model.mode === "lumina" ? luminaKey.configured : hasKey,
+        hasKey:
+          document.model.mode === "lumina" ? luminaKey.configured : hasKey,
         configured:
           document.model.mode === "codex"
             ? auth.state === "authenticated"
@@ -127,7 +128,9 @@ export class AiServices implements AiServicesPort {
       checks: { ...this.checks },
       checkRuns: { ...this.checkRuns },
       catalog: {
-        codex: (await this.auth.ctx.llm.listModels("openai-codex")).map(({ id }) => id).slice(0, 64),
+        codex: (await this.auth.ctx.llm.listModels("openai-codex"))
+          .map(({ id }) => id)
+          .slice(0, 64),
         custom: (route?.catalog ?? []).slice(0, 128),
         customBaseURL: route?.settings.custom?.baseURL ?? "",
         customApi: route?.settings.custom?.api ?? "",
@@ -170,7 +173,9 @@ export class AiServices implements AiServicesPort {
         !object(source) ||
         Object.keys(source).some(
           (key) =>
-            !["model", "reasoningEffort", "key", "clearKey", "select"].includes(key),
+            !["model", "reasoningEffort", "key", "clearKey", "select"].includes(
+              key,
+            ),
         ) ||
         (source.select !== undefined && typeof source.select !== "boolean")
       )
@@ -183,7 +188,9 @@ export class AiServices implements AiServicesPort {
           "Lumina Key 由启动环境提供，请先移除环境变量再修改。",
         );
       if (source.clearKey && (await this.busy()))
-        throw new AiConfigurationError("仍有制作任务，请结束任务后再清除密钥。");
+        throw new AiConfigurationError(
+          "仍有制作任务，请结束任务后再清除密钥。",
+        );
       const { select, ...rest } = source;
       const previous = await readAiServices(
         this.config.root,
@@ -199,9 +206,13 @@ export class AiServices implements AiServicesPort {
       );
       // saveModelSettings selects Lumina; restore the prior selection unless asked.
       if (!select && previous.model.mode !== "lumina")
-        await writeAiServices(this.config.root, { ...saved, model: previous.model });
+        await writeAiServices(this.config.root, {
+          ...saved,
+          model: previous.model,
+        });
       this.checks.lumina = "未检查";
-      if (rest.key !== undefined) await this.discoverLumina(AbortSignal.timeout(15_000));
+      if (rest.key !== undefined)
+        await this.discoverLumina(AbortSignal.timeout(15_000));
       return this.settings();
     });
   }
@@ -223,7 +234,11 @@ export class AiServices implements AiServicesPort {
     try {
       const models = await this.auth.ctx.llm.discoverModels(
         "llm-pi-ai",
-        { baseURL: LUMINA_BASE_URL, api: "openai-completions", apiKey: key.value },
+        {
+          baseURL: LUMINA_BASE_URL,
+          api: "openai-completions",
+          apiKey: key.value,
+        },
         signal,
       );
       const chat = models.map(({ id }) => id).filter(isChatModelId);
@@ -339,7 +354,10 @@ export class AiServices implements AiServicesPort {
           await saveDiscoveredCatalog(
             this.config.root,
             document.selectedRoute!,
-            models.map(({ id }) => id).filter(isChatModelId).slice(0, 500),
+            models
+              .map(({ id }) => id)
+              .filter(isChatModelId)
+              .slice(0, 500),
             this.config.codexModel,
             this.config.tripoRegion,
           );
@@ -353,12 +371,22 @@ export class AiServices implements AiServicesPort {
   }
   async checkModel(signal: AbortSignal) {
     return this.serialize(async () => {
-      const document = await readAiServices(this.config.root, this.config.codexModel);
+      const document = await readAiServices(
+        this.config.root,
+        this.config.codexModel,
+      );
       const started = performance.now();
       try {
-        if (document.model.mode === "codex" && (await this.auth.status()).state !== "authenticated")
+        if (
+          document.model.mode === "codex" &&
+          (await this.auth.status()).state !== "authenticated"
+        )
           throw { status: 401 };
-        const reply = await probeModelConnection(document, this.config.credentialPath, signal);
+        const reply = await probeModelConnection(
+          document,
+          this.config.credentialPath,
+          signal,
+        );
         this.checks.model = `测试成功 · ${document.model.model} · ${Math.round(performance.now() - started)} ms · 回复：${reply}`;
       } catch (error) {
         this.checks.model = `测试失败 · ${document.model.model} · ${modelProbeFailure(error, signal)}`;

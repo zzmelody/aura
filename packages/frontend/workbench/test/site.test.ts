@@ -58,7 +58,8 @@ test("site project storage migrates legacy records and deduplicates directories"
     script: "dev",
     url: "http://127.0.0.1:5173",
   };
-  assert.deepEqual(normalizeSiteProjects([project, { ...project, name: "new-name" }]), [
-    { ...project, id: project.directory, name: "new-name" },
-  ]);
+  assert.deepEqual(
+    normalizeSiteProjects([project, { ...project, name: "new-name" }]),
+    [{ ...project, id: project.directory, name: "new-name" }],
+  );
 });

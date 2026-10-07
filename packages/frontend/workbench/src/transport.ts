@@ -1,10 +1,19 @@
-import type { ChatModelSelection, ChatRequest, ChatWorkflowStart } from "@aura/protocol/types";
+import type {
+  ChatModelSelection,
+  ChatRequest,
+  ChatWorkflowStart,
+} from "@aura/protocol/types";
 import { streamDemo } from "@aura/demo";
 import type { Message } from "@aura/core/types";
 import type { Workspace } from "@aura/core/types";
 import { providerMode } from "@aura/core";
 
-const chatPaths = { demo: "/chat", codex: "/chat/codex", lumina: "/chat/lumina", custom: "/chat/custom" } as const;
+const chatPaths = {
+  demo: "/chat",
+  codex: "/chat/codex",
+  lumina: "/chat/lumina",
+  custom: "/chat/custom",
+} as const;
 
 /** Streamed reply text, or a workflow the chat model started as a tool. */
 export type ReplyChunk = string | ({ type: "workflow" } & ChatWorkflowStart);
@@ -24,22 +33,25 @@ export async function* reply(
     );
     return;
   }
-  const response = await fetch(`${endpoint}${chatPaths[providerMode(provider)]}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId,
-      ...(modelConfig ? { modelConfig } : {}),
-      messages: messages.map(({ role, text, images }) => ({
-        role,
-        text,
-        ...(role === "user" && images?.length
-          ? { images: images.map((image) => image.assetId) }
-          : {}),
-      })),
-    } satisfies ChatRequest),
-    signal,
-  });
+  const response = await fetch(
+    `${endpoint}${chatPaths[providerMode(provider)]}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId,
+        ...(modelConfig ? { modelConfig } : {}),
+        messages: messages.map(({ role, text, images }) => ({
+          role,
+          text,
+          ...(role === "user" && images?.length
+            ? { images: images.map((image) => image.assetId) }
+            : {}),
+        })),
+      } satisfies ChatRequest),
+      signal,
+    },
+  );
   if (!response.ok || !response.body)
     throw new Error(`工作台连接失败（${response.status}）。请检查服务地址。`);
   const reader = response.body.getReader();

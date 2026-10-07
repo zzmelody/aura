@@ -165,8 +165,7 @@ function stripOptions(
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
     const name = names.find(
-      (candidate) =>
-        token === candidate || token.startsWith(`${candidate}=`)
+      (candidate) => token === candidate || token.startsWith(`${candidate}=`),
     );
     if (!name) {
       result.push(token);

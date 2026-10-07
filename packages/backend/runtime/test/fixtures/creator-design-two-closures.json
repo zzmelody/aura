@@ -25,10 +25,7 @@
       ],
       "formatCorrected": true,
       "formatMethod": "unique_closing_brackets",
-      "formatOffsets": [
-        5197,
-        5456
-      ],
+      "formatOffsets": [5197, 5456],
       "formatSourceHash": "12ba28ff7a88929e398ce01d35ae7277831331db5b0e855636ec856f1270f588",
       "formatResultHash": "28356ce37e42687e2b0b8d3f2ee70a0b78dd36861819fe2ff7c0687b37ae86af"
     }

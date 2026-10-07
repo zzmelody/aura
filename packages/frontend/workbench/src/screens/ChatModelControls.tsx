@@ -83,7 +83,9 @@ export function ChatModelControls({
   useEffect(() => {
     if (!open) return;
     root.current
-      ?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')
+      ?.querySelector<HTMLElement>(
+        '[role="menuitemradio"][aria-checked="true"]',
+      )
       ?.focus();
   }, [open]);
 
@@ -92,14 +94,16 @@ export function ChatModelControls({
   const modelId = selection.model ?? catalog?.defaultModel;
   const model = catalog?.models.find(({ id }) => id === modelId);
   const effort = selection.reasoningEffort;
-  const shownEffort =
-    model?.reasoningEfforts.find(({ id }) => id === (effort ?? model.defaultReasoningEffort));
+  const shownEffort = model?.reasoningEfforts.find(
+    ({ id }) => id === (effort ?? model.defaultReasoningEffort),
+  );
   const unsupported = Boolean(
     catalog &&
     (!model ||
       (effort && !model.reasoningEfforts.some(({ id }) => id === effort))),
   );
-  const label = model?.name ?? selection.model ?? (error ? "模型不可用" : "读取模型…");
+  const label =
+    model?.name ?? selection.model ?? (error ? "模型不可用" : "读取模型…");
 
   /** Arrow keys move between menu items; Home/End jump to the ends. */
   function moveFocus(event: React.KeyboardEvent) {
@@ -134,7 +138,11 @@ export function ChatModelControls({
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         aria-label={`模型：${label}${shownEffort ? `，思考强度：${effortName(shownEffort)}` : ""}`}
-        title={unsupported ? "已保存的配置不可用，请重新选择" : "选择模型和思考强度（仅本会话）"}
+        title={
+          unsupported
+            ? "已保存的配置不可用，请重新选择"
+            : "选择模型和思考强度（仅本会话）"
+        }
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
       >
@@ -155,53 +163,69 @@ export function ChatModelControls({
           {catalog ? (
             <>
               <div className="chat-model-menu-heading">模型</div>
-              <div className="chat-model-menu-list" role="group" aria-label="模型">
+              <div
+                className="chat-model-menu-list"
+                role="group"
+                aria-label="模型"
+              >
                 {(catalog.models.some((entry) => entry.vendor)
                   ? groupModelsByVendor(catalog.models)
                   : [{ vendor: "", models: catalog.models }]
                 ).map((group) => (
-                <React.Fragment key={group.vendor || "all"}>
-                {group.vendor ? (
-                  <div className="chat-model-menu-vendor" role="presentation">
-                    {group.vendor}
-                  </div>
-                ) : null}
-                {group.models.map((entry) => {
-                  const checked = entry.id === modelId;
-                  return (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={checked}
-                      className="chat-model-menu-item"
-                      onClick={() =>
-                        onChange(
-                          selectChatModel(
-                            catalog,
-                            selection,
-                            entry.id === catalog.defaultModel ? "" : entry.id,
-                          ),
-                        )
-                      }
-                    >
-                      <span>{entry.name}</span>
-                      {entry.id === catalog.defaultModel ? (
-                        <small>默认</small>
-                      ) : null}
-                      {checked ? <Check size={14} aria-hidden="true" /> : null}
-                    </button>
-                  );
-                })}
-                </React.Fragment>
+                  <React.Fragment key={group.vendor || "all"}>
+                    {group.vendor ? (
+                      <div
+                        className="chat-model-menu-vendor"
+                        role="presentation"
+                      >
+                        {group.vendor}
+                      </div>
+                    ) : null}
+                    {group.models.map((entry) => {
+                      const checked = entry.id === modelId;
+                      return (
+                        <button
+                          key={entry.id}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={checked}
+                          className="chat-model-menu-item"
+                          onClick={() =>
+                            onChange(
+                              selectChatModel(
+                                catalog,
+                                selection,
+                                entry.id === catalog.defaultModel
+                                  ? ""
+                                  : entry.id,
+                              ),
+                            )
+                          }
+                        >
+                          <span>{entry.name}</span>
+                          {entry.id === catalog.defaultModel ? (
+                            <small>默认</small>
+                          ) : null}
+                          {checked ? (
+                            <Check size={14} aria-hidden="true" />
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </React.Fragment>
                 ))}
               </div>
               {model?.reasoningEfforts.length ? (
                 <>
                   <div className="chat-model-menu-heading">思考强度</div>
-                  <div className="chat-model-menu-efforts" role="group" aria-label="思考强度">
+                  <div
+                    className="chat-model-menu-efforts"
+                    role="group"
+                    aria-label="思考强度"
+                  >
                     {model.reasoningEfforts.map((entry) => {
-                      const checked = entry.id === (effort ?? model.defaultReasoningEffort);
+                      const checked =
+                        entry.id === (effort ?? model.defaultReasoningEffort);
                       return (
                         <button
                           key={entry.id}
@@ -211,7 +235,9 @@ export function ChatModelControls({
                           className="chat-model-menu-effort"
                           onClick={() =>
                             onChange({
-                              ...(selection.model ? { model: selection.model } : {}),
+                              ...(selection.model
+                                ? { model: selection.model }
+                                : {}),
                               ...(entry.id === model.defaultReasoningEffort
                                 ? {}
                                 : { reasoningEffort: entry.id }),
@@ -225,7 +251,9 @@ export function ChatModelControls({
                   </div>
                 </>
               ) : null}
-              <p className="chat-model-menu-note">仅影响当前会话，不改变工作流 Agent 的模型配置。</p>
+              <p className="chat-model-menu-note">
+                仅影响当前会话，不改变工作流 Agent 的模型配置。
+              </p>
             </>
           ) : (
             <div className="chat-model-menu-state" role="status">
