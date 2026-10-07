@@ -105,28 +105,32 @@ export class ServiceRuns {
     await this.#flows.request("answer", {
       id: body.checkpointRunId, stepKey: body.stepKey, requestId: body.commandId, output: body.answer,
     });
-    return this.get(runId);
+    return this.#view(await this.#root(root.id));
   }
 
   async command(runId: string, operation: "cancel" | "resume", source: unknown): Promise<ServiceRunView> {
     if (operation === "resume" && isRecord(source) && "input" in source) {
       // Resume with input lets the serving provider re-admit data, such as a refreshed scope.
       const body = exact<{ commandId: string; input: JsonValue }>(source, { commandId: isUuid, input: json });
-      await this.#root(runId);
-      await this.#flows.request("services/resume", { id: runId, requestId: body.commandId, input: body.input });
-      return this.get(runId);
+      const root = await this.#root(runId);
+      await this.#flows.request("services/resume", { id: root.id, requestId: body.commandId, input: body.input });
+      return this.get(root.id);
     }
     const body = exact<{ commandId: string }>(source, { commandId: isUuid });
-    await this.#root(runId);
-    await this.#flows.request(operation, { id: runId, requestId: body.commandId });
-    return this.get(runId);
+    const root = await this.#root(runId);
+    await this.#flows.request(operation, { id: root.id, requestId: body.commandId });
+    return this.get(root.id);
   }
 
-  async #root(runId: string): Promise<FlowRun> {
-    if (!isUuid(runId)) throw new ServiceError("run_not_found", 404);
+  /** Resolves a Run ID or the client's own requestId to a published root Run. */
+  async #root(id: string): Promise<FlowRun> {
+    if (!isUuid(id)) throw new ServiceError("run_not_found", 404);
     let run: FlowRun;
-    try { run = await this.#flows.request<FlowRun>("get", { id: runId }); }
-    catch { throw new ServiceError("run_not_found", 404); }
+    try { run = await this.#flows.request<FlowRun>("get", { id }); }
+    catch {
+      try { run = await this.#flows.request<FlowRun>("services/find", { requestId: id }); }
+      catch { throw new ServiceError("run_not_found", 404); }
+    }
     const published = (await this.flows()).some((flow) => flow.id === run.flow.id);
     if (run.parent || !published) throw new ServiceError("run_not_found", 404);
     return run;

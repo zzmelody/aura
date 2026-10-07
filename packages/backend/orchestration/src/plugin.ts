@@ -655,19 +655,21 @@ export async function apply(ctx: Context) {
           data = await engine.start(params);
           break;
         case "services/start": {
-          // Admission belongs to the Flow's plugin; an existing requestId skips it.
+          // Admission belongs to the Flow's plugin and runs on every POST, so a
+          // repeated request can refresh client state (for example a replaced
+          // session descriptor). An existing Run is returned, never restarted.
           const request = z.object({ requestId: z.uuid(), flowId: z.string().min(1).max(130), input: z.json() }).strict().parse(params);
-          const existing = [...engine.runs.entries()].find(([, run]) => run.requestId === request.requestId)?.[1];
-          data = existing ?? await engine.start({
-            requestId: request.requestId, flowId: request.flowId, serviceOnly: true, useConfiguredModel: true, mode: "codex",
-            input: await auraCapabilities.admit(request.flowId, request.requestId, request.input, AbortSignal.timeout(60_000))
-              .catch((error: unknown) => {
-                // Only a bounded snake_case code crosses to the client; never free text or paths.
-                const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(String((error as Error)?.message ?? ""))?.[0];
-                throw new FlowError(code ?? "admission_failed", 422);
-              }),
-          });
+          const existing = [...engine.runs.entries()].find(([, run]) => run.requestId === request.requestId && !run.parent)?.[1];
           if (existing && existing.flow.id !== request.flowId) throw new FlowError("同一请求 ID 不能用于不同 Flow。", 409);
+          const input = await auraCapabilities.admit(request.flowId, request.requestId, request.input, AbortSignal.timeout(60_000))
+            .catch((error: unknown) => {
+              // Only a bounded snake_case code crosses to the client; never free text or paths.
+              const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(String((error as Error)?.message ?? ""))?.[0];
+              throw new FlowError(code ?? "admission_failed", 422);
+            });
+          data = existing ?? await engine.start({
+            requestId: request.requestId, flowId: request.flowId, serviceOnly: true, useConfiguredModel: true, mode: "codex", input,
+          });
           break;
         }
         case "services/find": {

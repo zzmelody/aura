@@ -35,6 +35,11 @@ function fixture() {
         runs.set(created.id, created);
         return created as T;
       }
+      if (method === "services/find") {
+        const found = [...runs.values()].find((item) => item.requestId === p.requestId && !item.parent);
+        if (!found) throw Object.assign(new Error("Flow 运行不存在。"), { status: 404 });
+        return found as T;
+      }
       if (method === "services/view")
         return (runs.get(String(p.id))?.status === "completed" ? { delivery: "pending" } : null) as T;
       if (method === "get") {
@@ -133,6 +138,17 @@ test("the view exposes report, output, sanitized failure code and the deepest wa
   assert.deepEqual(doneView.output, { artifactId: hash });
   assert.deepEqual(doneView.view, { delivery: "pending" });
   assert.equal(view.view, undefined);
+});
+
+test("a client addresses its Run by its own requestId, and commands reach the resolved root Run", async () => {
+  const { send, runs, calls } = fixture();
+  const root = run(randomUUID(), "veya/veya-wish");
+  runs.set(root.id, root);
+  const view = await (await send(`/runs/${root.requestId}`)).json() as Record<string, unknown>;
+  assert.equal(view.runId, root.id);
+  const commandId = randomUUID();
+  assert.equal((await send(`/runs/${root.requestId}/cancel`, { commandId })).status, 200);
+  assert.deepEqual(calls.filter((c) => c.method === "cancel").at(-1)?.params, { id: root.id, requestId: commandId });
 });
 
 test("cancel and resume forward the command id to the root Run", async () => {
