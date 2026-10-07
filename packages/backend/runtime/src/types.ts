@@ -16,7 +16,6 @@ export interface AuraRuntimeOptions {
   port?: number;
   /** Defaults to <root>/.aura/plugins.json. */
   pluginConfigPath?: string;
-  /** Defaults to the current platform's Godot user:// path for Veya. */
 }
 
 /** Handle owned by the server or desktop application entrypoint. */
