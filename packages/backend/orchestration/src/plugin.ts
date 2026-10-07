@@ -690,7 +690,10 @@ export async function apply(ctx: Context) {
               const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(String((error as Error)?.message ?? ""))?.[0];
               throw new FlowError(code ?? "resume_refused", 422);
             });
-          data = await engine.command(request.id, "resume", { requestId: request.requestId });
+          // Re-admitted input applies to the Run in any state; only a paused Run is resumed.
+          data = engine.get(request.id).status === "paused"
+            ? await engine.command(request.id, "resume", { requestId: request.requestId })
+            : engine.get(request.id);
           break;
         }
         case "wait":
