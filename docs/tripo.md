@@ -21,7 +21,7 @@ AURA_TRIPO_REGION=global  -> https://openapi.tripo3d.ai/v3
 AURA_TRIPO_REGION=china   -> https://openapi.tripo3d.com/v3
 ```
 
-Veya 设置页通过本机授权的 `/ai/services/tripo` 保存 Key 与地区，后续请求动态读取，无需重启 Runtime；仍有制作任务时拒绝修改。`TRIPO_API_KEY` 存在时界面只读。`POST /ai/services/check/tripo` 使用官方 SDK 查询账户余额，不提交付费任务；失败提示不透传供应商响应。`GET /tripo/status` 只返回 `configured`、区域、API 版本和能力列表，不会返回凭据。
+本机客户端通过授权的 `/ai/services/tripo` 保存 Key 与地区，后续请求动态读取，无需重启 Runtime；仍有制作任务时拒绝修改。`TRIPO_API_KEY` 存在时界面只读。`POST /ai/services/check/tripo` 使用官方 SDK 查询账户余额，不提交付费任务；失败提示不透传供应商响应。`GET /tripo/status` 只返回 `configured`、区域、API 版本和能力列表，不会返回凭据。
 
 ## HTTP API
 
@@ -70,10 +70,10 @@ Tripo 未文档化字段。Tripo 的模型下载 URL 有效期很短，状态变
 这避免把一个带付费额度的通用上游代理暴露出来。后续需要模型转换、贴图、减面、绑骨
 或上传时，应在 `@aura/tripo` 增加明确的类型化能力和独立的 body/文件大小限制。
 
-## Veya 模型生成 capability
+## 插件 capability
 
 受信任插件可在 manifest 声明 `aura.tripo.game-asset`，再通过 Plugin SDK 调用唯一的
-`generate` 操作。该操作不是通用代理，而是一条固定的付费链路：
+`generate`（模型）、`image`（单张图片）和 `ledger`（只读付费账本）操作。`generate` 不是通用代理，而是一条固定的付费链路：
 
 1. 无参考图时用 GPT Image 2.5 文生前视图；有参考图时先上传受限的本地
    PNG/JPEG/WebP，再用图生图得到前视图。
@@ -85,6 +85,8 @@ Tripo 未文档化字段。Tripo 的模型下载 URL 有效期很短，状态变
 默认图像模型由插件选择 `chat_image_2.5_sunburst`，也可显式选择速度档
 `chat_image_2.5_flare`。付费任务使用 Action 的手工恢复语义；未知提交结果不会自动重试，
 避免重复扣费。
+
+每个付费阶段先在 `<root>/.aura/tripo/`（`budget.json`、`paid.json`）中预留再提交。调用方可传入不透明的 `scope` 给付费工作分组并设置单组上限；`noNewPaidWork` 只复用已付费结果，拒绝新的付费请求。被拒绝的预留不写入账本。
 
 实现依据：[Tripo 官方 JavaScript SDK](https://github.com/VAST-AI-Research/tripo-js-sdk)、
 [Tripo v3 API 文档](https://developers.tripo3d.ai/en/docs/introduction)。

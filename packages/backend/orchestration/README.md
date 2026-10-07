@@ -85,14 +85,6 @@ V1 不支持 parallel 分支内的 checkpoint。运行时暂停会退出作用�
 
 `images` 最多接收 4 个 `FlowImageReference`，包括 DSH 返回的 `attachmentId: "sha256:<digest>"`、`mediaType`、`bytes`、宽高和可选名称/原始尺寸；不接受文件路径、URL 或 base64。运行记录/请求指纹只保存这些引用；Session 边界通过 DSH attachment store 校验并读取实际图片，再传入 Session Controller。还会检查 DSH 自身的数量及消息总字节限制。图片缺失、损坏或模型不支持视觉时失败，不降级为纯文本。`MODEL_DOES_NOT_SUPPORT_IMAGES` 会作为可定位的安全错误保留。当前 demo 模型不支持图片；真实视觉验收需要选择支持图片的运行模式/模型。
 
-Veya 的现有 `world-preview` Action 由 `aura.veya.world-agent` 宿主能力补充 `image` 引用。宿主仅按 native capture ID 从会话绑定的预览目录读取 PNG，校验原始 SHA-256/大小，然后交给 DSH 入库。DSH 可能规范化为 WebP，因此原始 PNG hash 与附件 digest 分别记录。Flow 可调用 `ctx.agent({ images: [capture.image], ... })`；Action render 也可输出 `{type:"image",attachment:capture.image}`。真实 renderer/candidate/frame 是否符合验收由领域 Flow 检查，Aura 不凭文件名判定视觉通过。
-
-### Veya 生成资产交接
-
-Tripo capability 成功后在 `<DSH_HOME>/aura-generated-assets/` 登记不可变 GLB（SHA-256 ID，最多 200 MiB），普通独立生成保留原有路径、task IDs、manifest 和费用字段。绑定 Creator 的调用只返回受管资产引用、任务 ID 和费用等筛选字段，不暴露本机路径；登记失败返回稳定的 `artifactRegistration` 状态，保留付费结果供后续重试。`veya.assets.import` 只接受已登记 ID；宿主复制到 Veya 描述符绑定的 exchange root，原生宿主再次验证并调用随产品提供的 Cooker。`veya.cooker.submit` 的声明源也可使用 `artifact://<sha256>`。没有新增任意路径读写 Action。
-
-模型 Action 未指定输出目录时，连接开发 Veya 使用项目 `assets/generated/`，发行版使用其可写创作项目目录；默认根来自可信会话描述符的 `generation_root`。普通独立生成的显式用户输出目录保留原行为；Creator 调用固定使用绑定 worker 的受管目录，拒绝任意本机参考图或输出路径。会话根目录、token 和上游 URL 不交给 Agent 选择。长任务有界等待复用同一 canonical 工具。模型与云图通过项目级持久账本记录预留、已知任务和实际费用；绑定创作身份后更换 worker 不重置额度。Creator 默认货币额度无限，部署可配置有限额度；未知提交或费用仍阻止新增付费。详见 [Creator 服务与预算](../../../docs/veya-creator-service.md)。
-
 ### 参数优先级
 
 参数优先级为 **步骤选项 > `defineFlow.agentDefaults` > 运行时默认值**；字段为 `undefined` 时继承。旧的 Flow 级 `agentTimeoutMs` 仍有效，但优先级低于 `agentDefaults.timeoutMs` 和步骤 `timeoutMs`。
@@ -174,7 +166,7 @@ Action `recovery` 默认为 `manual`。只有显式 `idempotent` 的直接 Actio
 
 `ctx` 还提供 `signal`、`cwd`、Action 目录 `directory`、每次工具调用的 `callId`、`mode`，以及调用方存在时的 `runId`、`stepId`、`sessionId`。直接 Flow Action 的 `idempotencyKey` 跨 attempt 和重启保持不变。Agent 内部 Action 调用由 DSH 记录和调度，不是单独的 Flow durable step；未完成 Agent 一旦调用过工具，就需人工处理，不能自动重跑整个 Agent。
 
-外部插件可以通过 `@aura/plugin-sdk/action` 的 `auraCapability(ctx, id)` 使用 manifest 已声明且宿主支持的领域能力。能力实现由长驻宿主持有，Action 只收到固定操作及 JSON 结果，不接触凭据、任意 URL 或进程句柄。`aura.veya.world-agent` 映射 Veya 的固定世界操作、运行观察/检查、探索动作/对话/重生和 `veya.cooker.capabilities/submit/status/cancel`，从平台默认 Godot `user://world-agent-session.json` 读取连接描述符；描述符声明 `veya-agent-tools/1` 时调用原生 `/agent/v1/call`，旧服务仅对已有世界操作回退到对应 `/v2` 路径，运行态、截图与 Cooker 工具不回退。可用后端环境变量 `AURA_VEYA_WORLD_AGENT_SESSION` 覆盖绝对路径。`aura.tripo.game-asset` 则只暴露固定的 GPT Image 2.5 四视图到 Tripo P1 GLB 生成操作，Key、短时下载 URL 和任务轮询全部留在宿主。描述符、bearer token 与 Tripo Key 不进入 Action 入参、输出或运行记录。
+外部插件可以通过 `@aura/plugin-sdk/action` 的 `auraCapability(ctx, id)` 使用 manifest 已声明且宿主支持的领域能力，或本插件 `contributes.capabilities` 贡献的 provider。能力实现由长驻宿主或插件 provider 持有，Action 只收到固定操作及 JSON 结果，不接触凭据、任意 URL 或进程句柄。
 
 Flow Agent 使用 fail-closed 工具白名单：固定为原生工具呈现并屏蔽 DSH、preset 及 profile 的全部继承工具，只把 `flow.agent({actions:["text-stats"],...})` 显式声明的 Action 注册到当前 Agent scope；未声明时模型工具集合为空。profile 对已知内置工具的禁用继续作为纵深防护，未来新增的 DSH 默认工具也不会自动进入 Flow Agent 上下文。Action 名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。Action 超时默认 30 秒、最大 10 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
 
@@ -297,13 +289,11 @@ Discovery 对旧根 `ctx.agent/action` 和原生 Promise 并发给出行号诊�
 
 ## 验证
 
-Veya capability 还转发 canonical `veya.world.mode/undo/redo`、`veya.draft.create/read/update/discard/compose`、`veya.playtest.begin/end/save_resume`、`veya.creation.module.write/read`、`veya.creation.export`、`veya.preview.performance` 与 `veya.character.navigate/act/cancel`。这些新工具仅接受原生 Agent 协议，不回退到旧 ContentAPI。性能采样等待保留同一请求，不把 `performance_not_ready` 误报成通过。失败时以 `ActionFailure` 保留有界领域错误码，不公开可能含本机路径的原生错误。图片附件、资产交接和付费恢复由前述宿主边界实现；数据测试并不证明真实 renderer、供应商生成或原生内容验收。
-
 执行 `pnpm --filter @aura/orchestration typecheck`、`pnpm --filter @aura/orchestration test`，再运行 `pnpm run check` 和 Web build。测试覆盖 FIFO、作用域、暂停、checkpoint、retry、未知结果、版本冲突和写盘故障；真实 DSH 测试使用临时目录及本地模拟模型，强制 SIGKILL 验证无工具 Agent 恢复、工具副作用隔离、历史读取和 HMR，不调用付费模型。
 
 ## 工作流产物预览
 
-图片（PNG/JPEG/WebP）、MP4 视频和自包含 GLB 通过 `GeneratedArtifacts` 按 SHA-256 归档，原有 GLB ID 与 Veya 导入保持兼容。图片限制 32 MiB / 4000 万像素，视频和模型限制 200 MiB。图片缩略图为最长 640×480 的 WebP；Tripo 模型使用已有海报，不为预览再次调用生成服务。含外部资源 URI 或无法解析的 GLB 仅允许下载。
+图片（PNG/JPEG/WebP）、MP4 视频和自包含 GLB 通过 `GeneratedArtifacts` 按 SHA-256 归档，图片限制 32 MiB / 4000 万像素，视频和模型限制 200 MiB。图片缩略图为最长 640×480 的 WebP；Tripo 模型使用已有海报，不为预览再次调用生成服务。含外部资源 URI 或无法解析的 GLB 仅允许下载。
 
 `WorkflowArtifactIndex` 在同一受管目录的 `runs/` 保存版本化 sidecar，记录 run、step、attempt 和工具 call 的关联、补登记状态与后端恢复信息。文件路径仅留在后端索引；公开 DTO 不包含路径或上游 URL。原 Action 输出、JSON Schema、运行记录与重放指纹均保持原样。`localAI.image`、`localAI.comfyWorkflow` 和 Tripo game-asset capability 在调用上下文内自动登记，因此直接 Action 和 Agent 工具都可在生成后立即展示文件。受信任 Action 也可调用 `await ctx.artifacts?.register(path, { name, poster })`，该端口没有模型可调用的任意文件读取接口。
 

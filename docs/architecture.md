@@ -56,15 +56,13 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 受信任的本地外部插件由 `packages/backend/extensions` 从 `.aura/plugins.json` 中显式列出的目录加载；Aura 不扫描任意磁盘目录，也不安装依赖。插件根的 `aura.plugin.json`、ESM package、引擎范围、贡献目录、能力声明和公共 `@aura/plugin-sdk` 依赖会先经过后端校验。通过校验的多根 Action/Flow 进入同一个 Cordis Loader/HMR 与注册表，外部贡献使用 `<plugin-id>/<local-id>` 规范 ID，内置贡献继续使用原 ID。catalog 与运行记录保留插件身份、版本和贡献 hash；前端无需为注册插件重新构建。设置页可通过 runtime 固定的 `/plugins/config` 边界替换这份目录清单并查看预校验状态，但配置代码执行权限只对绑定 loopback 的本机服务开放。保存会在编排子进程内动态增删发现根和 HMR 监听，实际加载成功后再原子持久化；失败则回滚。已有运行使用创建时固定的版本，新运行立即看到新配置，无需重启 runtime。
 
-插件 manifest 请求的宿主能力必须全部受当前 Runtime 支持，否则插件不会加载。Action 通过 Plugin SDK 的 `auraCapability()` 取得按调用取消域绑定的领域端口，不接触凭据、任意 URL 或底层进程。`aura.veya.world-agent` 从平台默认的 Godot Veya 会话描述符发现随机 loopback 服务，只允许固定世界操作并在宿主内部附加 bearer token；新服务走 `veya-agent-tools/1` 的统一调用端点，旧服务兼容对应 `/v2` 路径。`aura.tripo.game-asset` 只允许一条固定的 GPT Image 2.5 四视图到 Tripo P1 GLB 链路，由宿主上传受限参考图、串行等待付费任务、验证并立即持久化短时产物 URL。token、API Key 和上游 URL 不进入插件输入、Flow/Agent 上下文、前端 DTO 或日志；本地参考路径只在用户输入和 capability 调用边界内使用，不写入结果或 provenance manifest。
+插件 manifest 请求的宿主能力必须全部受当前 Runtime 支持，否则插件不会加载。Action 通过 Plugin SDK 的 `auraCapability()` 取得按调用取消域绑定的领域端口，不接触凭据、任意 URL 或底层进程。插件还可以在 `contributes.capabilities` 下贡献自己的 provider（`<plugin-id>/<local-id>`），由宿主在激活插件时打开，取得插件数据目录、`plugins.json` 中的 `settings`、只读的本插件 Run 视图和内置能力；领域专用的服务连接与策略都在插件 provider 内实现。`aura.tripo.game-asset` 只允许固定的 GPT Image 2.5 四视图到 Tripo P1 GLB 链路和单张付费图片，所有付费阶段先在用户拥有的账本中预留；调用方可用不透明的 `scope` 给付费工作分组。token、API Key 和上游 URL 不进入插件输入、Flow/Agent 上下文、前端 DTO 或日志。
 
 Flow 的模型参数由 `flow.agent({model,reasoningEffort,temperature,maxTokens,timeoutMs,...})` 按步骤声明，或通过 `defineFlow.agentDefaults` 提供公共默认值；步骤覆盖 Flow 默认，Flow 默认覆盖运行时配置。provider 仍绑定 Run.mode，脚本不接触凭据或任意 endpoint。入队时固定 Run 默认参数，Agent dispatch 前保存完整 `config` 并纳入请求指纹；重试与重放不读取新的环境默认值。`sessionController.selectModel` 选择模型，DSH Agent 的官方 `agent/request` scoped waterfall 将同一配置应用到每轮模型请求并写入 DSH request header。模型与思考强度先经过 DSH 能力校验，无效配置不会启动 Agent attempt。升级前未保存参数的未结束记录安全中断为 `agent_config_unrecoverable`；已完成历史继续可读。
 
-Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Session 边界校验并读取实际图片，不把 base64 或任意图片路径塞入 durable JSON。Veya 截图从会话绑定的 preview root 读取并校验原始 hash 后入库；DSH 规范化图片的 digest 单独保留。文本模型拒绝图片并返回明确错误，不退回只看路径的“视觉验收”。生成 GLB 由 Tripo 宿主登记 SHA-256 引用，只有已登记内容能通过 `veya.assets.import` 复制到 Veya 受控交换区，再由其原生 Cooker 编译。`aura.veya.cloud-image` 是独立的单图能力：只提交一次付费云图请求，限定 8 MiB 方形 PNG，登记实际模型/任务/费用与不可变 SHA-256 artifact，再由 `veya.atmosphere.build` 受控转交 Cooker；请求结果不确定时不自动重试。生成成功、登记失败时仍保存可观测的计费信息，不能因此重新付费。目录、进程、凭据仍属于后端领域能力；外部 Veya Action 只调用一个 canonical 工具，组合仍在 Flow。
+Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Session 边界校验并读取实际图片，不把 base64 或任意图片路径塞入 durable JSON。插件 provider 可经 `host.attachments.image` 把图片放入会话附件，经 `host.artifacts` 读写按 SHA-256 寻址的 artifact 存储。文本模型拒绝图片并返回明确错误，不退回只看路径的“视觉验收”。
 
 ## 当前取舍
-
-Veya 创建后居民生成由固定服务 Flow `veya/veya-npc-agent` 承担，`/veya/npc/v1/recruitments` 对账按世界与持久招聘请求确定唯一 Run；启动前保存绑定，未知回执不重新调用模型。前台实例变化可更新会话绑定并读取同一结果，安装仍由 Veya 核对源指纹。Flow 的 World Agent 能力仅开放绑定的 `veya.npc.creation.context`；角色组装、资源预检、步行与日程门禁属于原生 Veya，不进入 Aura 前端或另一套执行器。
 
 `comfy-workflow` Action 从对象或本地 API JSON 文件调用所选 ComfyUI，支持节点参数覆盖、受管图片资产到 `LoadImage` 的绑定和输出节点筛选；普通界面画布 JSON 不做转换。文件内容在排队前固定并记录 hash，图片资产通过上传端点或 `local-image` 登记为内容哈希 ID；ComfyUI 执行每次使用独立 input/output/temp 目录，输入图在启动前按 ID 校验并暂存，保存/预览产物归档后删除中间目录。`local-video` 的预置模板可选择首帧、末帧图片资产；前端不解释 ComfyUI 图或调度模型。
 
@@ -89,11 +87,3 @@ Codex 默认模型是 `gpt-6.1-sol`，推理档位为 `xhigh`（Extra high），
 工作流产物通过 `@aura/orchestration` 的 `GeneratedArtifacts` 与独立 `WorkflowArtifactIndex` 登记、生成缩略图及迁移历史记录；不修改 Action 输出和 durable 重放身份。shared/protocol 的 `WorkflowArtifact` / `WorkflowArtifacts` 只传文件 ID、可用状态、元数据和来源步骤。`/flows/runs/:runId/artifacts` 与其内容路由验证运行关联；二进制由 Hono 流式发送，不进入 DSH JSON-RPC。已生成结果不因预览登记失败而触发再次生成。
 
 workbench 在工作流回复与步骤详情展示同一套文件卡片，使用原有轮询节奏同步产物。图片弹层支持缩放/拖动，MP4 使用浏览器原生播放器，GLB 使用按需加载的 `@google/model-viewer`，以独立卡片在对话内直接交互预览；模型卡片进入视区时加载查看器，其余图片加载缩略图，模型的参考图片默认折叠，放大操作仍打开弹层。`model-viewer` 和 Three.js 由三个应用通过 peer dependency 提供同一运行时，解码器由根构建插件统一部署到各宿主产物，无运行时 CDN 依赖。三个宿主按应用与 serve/build 隔离 Vite 缓存，开发期预优化查看器，避免并行开发或构建使懒加载依赖失效。Web、Electron 和 Capacitor 共享 DOM 与 HTTP 文件地址，不向 renderer 暴露磁盘读取能力。
-
-### Veya 创作接入与共享插件代码
-
-本机 Creator 服务将创作请求固定到一个验证 worker session，子 Flow/Action 继承绑定；`aura.veya.creator` 返回经过筛选的需求授权与数量上限。付费记录绑定 Aura 项目和创作身份，云图和模型任务共享已声明计费单位的额度，已知任务恢复不重发。成果通过受管 manifest/blob 的精确哈希读取，Run 完成不等于前台交付。接口及当前验证范围见 [Veya Creator 服务](veya-creator-service.md)。
-
-试玩租约由编排宿主记录并清理，不依赖已取消的 Flow。租约把根 Run、原生 operation 与准确 playtest ID 绑定；清理结果未知时保留 worker 占用及 needs_attention。尚未导出的已付费物件可通过受信 previousRequestId 创建关联恢复，复用原规格、资产和账本，禁止新增付费。
-
-外部贡献的版本 hash 包含其目录以及插件根内静态 ESM 依赖闭包，共享 schema/prompt 的变更也改变版本。可信插件根由 extensions 传入，不进入公共 catalog。Cordis HMR 监听包含共享模块的插件根；重启时无法匹配原版本继续保持 revision mismatch，不能用新 helper 重放旧副作用。

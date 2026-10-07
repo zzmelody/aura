@@ -36,9 +36,9 @@ Aura 后端优先采用进程已有的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY
 
 ## 自定义 API
 
-2026-10-03：Veya 的原生设置页已接入 Codex 订阅和自定义模型。受本机 bootstrap capability 保护的 `/ai/services` 负责保存非密钥配置；Key 留在 DSH credentials。支持 `openai-completions`、`openai-responses` 和 `anthropic-messages`，服务地址、模型 ID、上下文、图片输入能力及思考强度由玩家明确填写。留空 Key 只继承同一地址与协议的已存密钥；更换地址不携带旧密钥。所有协议按其服务约定填写 API Key。
+本机客户端可接入 Codex 订阅和自定义模型。由服务 token 保护的 `/ai/services` 负责保存非密钥配置；Key 留在 DSH credentials。支持 `openai-completions`、`openai-responses` 和 `anthropic-messages`，服务地址、模型 ID、上下文、图片输入能力及思考强度由用户明确填写。留空 Key 只继承同一地址与协议的已存密钥；更换地址不携带旧密钥。所有协议按其服务约定填写 API Key。
 
-自定义模型继续使用官方 `dsh-llm-pi-ai`，不新增一套 Aura 模型客户端。每次保存产生不可变 provider 版本和凭据引用，并通过公开 settings seam 更新运行中的 DSH。新 Run 固定选定版本；子 Flow 继承父 Run 配置，修改设置不改变已有请求重试。Veya 的许愿、居民生成和 Avatar 决策通过受控服务参数 `useConfiguredModel` 选择当前模式；演示模式保持独立。清除历史密钥和退出账号要求没有未完成的 Flow；失败、中断、取消不会持续锁住配置，主动清除凭据后旧任务重试需要恢复原凭据。
+自定义模型继续使用官方 `dsh-llm-pi-ai`，不新增一套 Aura 模型客户端。每次保存产生不可变 provider 版本和凭据引用，并通过公开 settings seam 更新运行中的 DSH。新 Run 固定选定版本；子 Flow 继承父 Run 配置，修改设置不改变已有请求重试。经 `/services` 启动的服务 Flow 通过受控参数 `useConfiguredModel` 选择当前模式；演示模式保持独立。清除历史密钥和退出账号要求没有未完成的 Flow；失败、中断、取消不会持续锁住配置，主动清除凭据后旧任务重试需要恢复原凭据。
 
 自定义网关对应的 DSH 配置示例：
 
@@ -71,7 +71,7 @@ Aura 后端优先采用进程已有的 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY
 
 「设置 → 模型与账号 → 自定义 API」使用上文的 `/ai/services/model` 保存协议、地址、默认模型、上下文、图片能力与 Key，保存后立即检查连接并把服务列出的模型记为路由目录（`routes[*].catalog`），聊天时可在输入框按供应商切换。对话走 `POST /chat/custom`。
 
-`/ai/services` 仍只在仅绑定本机的 runtime 上开放。Veya 携带 bootstrap capability；本机工作台与插件设置一致，依赖本机绑定和来源策略，可不带 capability，但携带错误的 capability 一律拒绝。
+`/ai/services` 仍只在仅绑定本机的 runtime 上开放。服务客户端携带 `.aura/service.json` 中的 token；本机工作台与插件设置一致，依赖本机绑定和来源策略，可不带 token，但携带错误的 token 一律拒绝。
 
 ## 本地剧情模型调研
 

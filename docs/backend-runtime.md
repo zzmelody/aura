@@ -31,7 +31,7 @@ apps/desktop ────┘          │            ├─→ Codex auth routes
 | 模块                    | 单一职责                                          | 不应承担                     |
 | ----------------------- | ------------------------------------------------- | ---------------------------- |
 | `index.ts`              | 组合依赖、启动服务、统一关闭                      | 路由判断、协议解析、模型逻辑 |
-| `runtime-config.ts`     | 解析配置，定位 DSH home 与 Veya session          | 启动网络服务                 |
+| `runtime-config.ts`     | 解析配置，定位 DSH home 与插件配置               | 启动网络服务                 |
 | `api-server.ts`         | Hono、CORS、健康检查、并发准入、对话路由          | OAuth 细节、子进程协议细节   |
 | `codex-auth-routes.ts`  | 把授权端口映射为脱敏 HTTP API                     | 读取或保存 token             |
 | `demo-model.ts`         | 提供开发期 OpenAI-compatible loopback 模型        | 对外提供生产模型服务         |
@@ -53,7 +53,7 @@ Tripo 由独立的 `@aura/tripo` 后端包调用官方 v3 SDK，不进入 DSH �
 task ID 与经过白名单投影的任务状态。文本/图片生成使用显式 DTO，不能把任意付费 Tripo
 payload 作为通用代理透传。完整配置见 [Tripo 3D 接入](tripo.md)。
 
-Veya World Agent 使用宿主能力而不是通用 HTTP 代理。Runtime 默认按当前平台解析 Godot `Veya` 项目的 `user://world-agent-session.json`，也可用 `AuraRuntimeOptions.worldAgentSessionPath` 或后端环境变量 `AURA_VEYA_WORLD_AGENT_SESSION` 指定绝对路径。编排子进程只获得描述符路径，由固定操作 client 在每次调用时重新读取随机地址和 token；插件、浏览器和 Agent 不取得连接材料。
+本机客户端经 `/services` 使用插件发布的服务 Flow（`service: true`）。Runtime 启动时把地址和每进程 token 写入 `<root>/.aura/service.json`；Run 按客户端自己的 `requestId` 幂等启动，准入、视图和带输入的恢复由提供该 Flow 的插件 provider 负责，响应只含状态、进度、输出和有界错误码。
 
 ## 5. 生命周期与失败策略
 
