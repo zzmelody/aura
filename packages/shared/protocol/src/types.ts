@@ -508,3 +508,72 @@ export interface TripoTask {
   };
   error?: { code?: number; message?: string };
 }
+
+/** A project directory a coding conversation runs in. */
+export interface CodingProjectInfo {
+  id: string;
+  /** Canonical absolute directory; becomes the session's sandbox write root. */
+  directory: string;
+  title: string;
+  /** `missing-dir` flags a directory that was moved or removed after creation. */
+  status?: "ok" | "missing-dir";
+}
+
+/** One coding conversation listed under a project. */
+export interface CodingConversationInfo {
+  id: string;
+  projectId: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** One entry in the coding activity stream. */
+export type CodingActivity =
+  | {
+      type: "tool";
+      phase: "start";
+      callId: string;
+      name: string;
+      /** The file, command or pattern the call touches, when it names one. */
+      detail?: string;
+    }
+  | {
+      type: "tool";
+      phase: "end";
+      callId: string;
+      ok: boolean;
+      /** Applied hunks of a write or edit, for the file-change card. */
+      diffs?: CodingFileDiff[];
+    }
+  | { type: "progress"; done: number; total: number }
+  | { type: "deliverable"; path: string }
+  | {
+      type: "question";
+      questionId: string;
+      questions: CodingQuestionItem[];
+    };
+
+/** One question the agent is asking the user. */
+export interface CodingQuestionItem {
+  id: string;
+  question: string;
+  detail?: string;
+  header?: string;
+  options?: Array<{ label: string; description?: string }>;
+  multiSelect?: boolean;
+}
+
+/** The user's answer to one question in a coding session. */
+export interface CodingQuestionAnswer {
+  id: string;
+  selected: string[];
+  custom?: string;
+}
+
+/** One applied hunk; `oldText` is null for a new or overwritten file. */
+export interface CodingFileDiff {
+  path: string;
+  oldText: string | null;
+  newText: string;
+}

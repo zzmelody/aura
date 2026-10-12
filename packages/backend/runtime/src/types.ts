@@ -67,6 +67,18 @@ export interface ChatPort {
     emit: (event: ChatEvent) => void,
     signal: AbortSignal,
   ): Promise<{ model: string }>;
+  /** Streams one turn of a persistent coding conversation. Optional so a
+   * host without coding support still satisfies this port. */
+  coding?(
+    turn: {
+      sessionId: string;
+      projectId: string;
+      prompt: string;
+      mode: ChatRoute["mode"];
+    } & ChatModelSelection,
+    emit: (event: unknown) => void,
+    signal: AbortSignal,
+  ): Promise<{ model: string }>;
 }
 
 /** Fixed-path plugin configuration exposed only by a loopback runtime. */

@@ -51,18 +51,17 @@ export async function provisionProfile(
       if (parent === watchBase) break;
       watchBase = parent;
     }
+  // Coding tools stay mounted so a coding agent can read, edit and run code in
+  // its project directory. Every other agent scope keeps them out through the
+  // fail-closed `tools.restrict({ allow: [] })` allow-list each chat and Flow
+  // session already applies, so re-admitting a tool here grants it only to a
+  // scope that names it explicitly.
   const disabled = [
-    "tool-bash",
-    "tool-pwsh",
     "tool-jobs",
-    "tool-fs",
-    "tool-fs-search",
-    "tool-str-replace-editor",
     "skill-filesystem",
     "tool-skill",
     "command-goal",
     "tool-goal",
-    "plan-mode",
     "compaction-basic",
     "command-compact",
     "tool-result-pruner",
@@ -73,8 +72,9 @@ export async function provisionProfile(
     "workflow-worker-thread",
     "tool-workflow",
     "tool-ralph",
+    // Prompt section, not a tool: the per-scope tool allow-list cannot keep it
+    // out, so an ambient instruction loader would reach every agent.
     "agent-instructions",
-    "tool-todo",
     "tool-web",
     "session-title-llm",
   ];
@@ -119,6 +119,17 @@ ${Object.entries(customProfiles(await readAiServices(root)))
 - insert:
     - id: aura-orchestration
       name: ${JSON.stringify(new URL("./plugin.ts", import.meta.url).href)}
+    # Coding mode pauses for human decisions; this registers the
+    # ask_user_question tool over the userQuestions seam, which Aura answers
+    # through its own coding routes.
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'
+    # dsh-base leaves this to the shipped Web presets, which Aura excludes; a
+    # coding agent declares its finished files through it.
+    - id: tool-present
+      name: '@deepseek-ai/dsh-tool-present'
+      config:
+        maxFiles: 8
     - id: workspace-registry
       name: '@deepseek-ai/dsh-workspace'
     - id: client-connection
