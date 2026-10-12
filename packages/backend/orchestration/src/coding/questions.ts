@@ -133,14 +133,31 @@ export function approvalQuestion(
   toolName: string,
   reason?: string,
 ): CodingQuestion {
+  // The card title already says this is an authorization, so no header.
   return {
     id: APPROVAL_QUESTION_ID,
     kind: "approval",
-    header: "需要你授权",
     question: `允许 ${toolName} 执行这个操作吗？`,
-    ...(reason ? { detail: reason } : {}),
+    ...(reason ? { detail: approvalReason(reason) } : {}),
     options: [{ label: APPROVAL_ALLOW }, { label: APPROVAL_REJECT }],
   };
+}
+
+const SANDBOX_MODES: Record<string, string> = {
+  "workspace-write": "可写项目目录",
+  "danger-full-access": "完全访问（不受沙箱限制）",
+};
+
+/**
+ * DSH phrases a sandbox escalation as `escalate sandbox to <mode>: <why>`.
+ * Rewrite that one known form so the user sees what is being widened; any
+ * other reason passes through unchanged.
+ */
+function approvalReason(reason: string): string {
+  const match = /^escalate sandbox to ([\w-]+): ([\s\S]*)$/u.exec(reason);
+  if (!match) return reason;
+  const mode = SANDBOX_MODES[match[1]!] ?? match[1]!;
+  return `请求把沙箱放宽到「${mode}」。理由：${match[2]!.trim()}`;
 }
 
 /** Only an explicit grant allows; a skipped or refused card rejects. */

@@ -39,7 +39,9 @@ import { diffLines, diffStats } from "./diff";
 import {
   answerTurn,
   applyTurnEvent,
+  hasSummary,
   newTurn,
+  summarizeTurn,
   turnsFromHistory,
   type AskedQuestion,
   type Turn,
@@ -397,7 +399,62 @@ function TurnView({
           </ul>
         </section>
       ) : null}
+      {!running ? <TurnSummaryView turn={turn} /> : null}
     </article>
+  );
+}
+
+/**
+ * What a finished turn changed and ran, built from its own recorded steps
+ * rather than the model's description of them.
+ */
+function TurnSummaryView({ turn }: { turn: Turn }) {
+  const summary = summarizeTurn(turn, (diff) =>
+    diffStats(diffLines(diff.oldText, diff.newText)),
+  );
+  if (!hasSummary(summary)) return null;
+  return (
+    <section className="coding-summary" aria-label="本轮小结">
+      <h3>本轮小结</h3>
+      {summary.files.length ? (
+        <div>
+          <h4>改动了 {summary.files.length} 个文件</h4>
+          <ul>
+            {summary.files.map((file) => (
+              <li key={file.path}>
+                <code title={file.path}>{file.path}</code>
+                <span className="coding-diff-added">+{file.added}</span>
+                <span className="coding-diff-removed">−{file.removed}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {summary.commands.length ? (
+        <div>
+          <h4>运行了 {summary.commands.length} 条命令</h4>
+          <ul>
+            {summary.commands.map((item, index) => (
+              <li key={index} className={item.ok ? "ok" : "failed"}>
+                {item.ok ? <Check size={12} /> : <X size={12} />}
+                <code title={item.command}>{item.command}</code>
+                <span>{item.ok ? "成功" : "失败"}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {summary.failedSteps || summary.unanswered ? (
+        <p className="coding-summary-note">
+          {[
+            summary.failedSteps ? `${summary.failedSteps} 个步骤失败` : "",
+            summary.unanswered ? `${summary.unanswered} 个问题未回答` : "",
+          ]
+            .filter(Boolean)
+            .join("，")}
+        </p>
+      ) : null}
+    </section>
   );
 }
 

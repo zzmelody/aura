@@ -149,3 +149,57 @@ export function turnsFromHistory(
     return turn;
   });
 }
+
+/** Tools that run a shell command; their detail is the command line. */
+const SHELL_TOOLS = new Set(["bash", "pwsh"]);
+
+/** What a finished turn changed and ran, for the end-of-turn summary. */
+export type TurnSummary = {
+  /** Files written or edited, in first-touched order, with line counts. */
+  files: Array<{ path: string; added: number; removed: number }>;
+  /** Shell commands, in run order, with their outcome. */
+  commands: Array<{ command: string; ok: boolean }>;
+  /** Steps that failed, other than commands (already listed above). */
+  failedSteps: number;
+  /** Questions the agent asked that were never answered. */
+  unanswered: number;
+};
+
+/**
+ * Summarises a turn from its own steps. `countLines` turns one hunk into
+ * added/removed counts; it is injected so this module stays free of the
+ * diff renderer.
+ */
+export function summarizeTurn(
+  turn: Turn,
+  countLines: (diff: CodingFileDiff) => { added: number; removed: number },
+): TurnSummary {
+  const files = new Map<string, { added: number; removed: number }>();
+  const commands: TurnSummary["commands"] = [];
+  let failedSteps = 0;
+  for (const tool of turn.tools) {
+    for (const diff of tool.diffs ?? []) {
+      const counted = countLines(diff);
+      const entry = files.get(diff.path) ?? { added: 0, removed: 0 };
+      files.set(diff.path, {
+        added: entry.added + counted.added,
+        removed: entry.removed + counted.removed,
+      });
+    }
+    if (SHELL_TOOLS.has(tool.name)) {
+      if (tool.detail && tool.state !== "running")
+        commands.push({ command: tool.detail, ok: tool.state === "ok" });
+    } else if (tool.state === "failed") failedSteps++;
+  }
+  return {
+    files: [...files].map(([path, counts]) => ({ path, ...counts })),
+    commands,
+    failedSteps,
+    unanswered: turn.questions.filter((item) => !item.answered).length,
+  };
+}
+
+/** A summary is worth showing only when the turn changed or ran something. */
+export function hasSummary(summary: TurnSummary): boolean {
+  return summary.files.length > 0 || summary.commands.length > 0;
+}

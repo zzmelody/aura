@@ -150,3 +150,17 @@ test("a plan-review intent survives only when it names an offered option", () =>
   assert.deepEqual(kept!.intent, { kind: "plan-review", approve: "批准" });
   assert.equal(dropped!.intent, undefined);
 });
+
+test("a sandbox escalation reason is shown in plain language", () => {
+  const card = approvalQuestion(
+    "bash",
+    "escalate sandbox to danger-full-access: 测试需要访问网络",
+  );
+  assert.equal(card.header, undefined);
+  assert.equal(
+    card.detail,
+    "请求把沙箱放宽到「完全访问（不受沙箱限制）」。理由：测试需要访问网络",
+  );
+  // Any other reason is shown as given.
+  assert.equal(approvalQuestion("write", "hook 拦截").detail, "hook 拦截");
+});
