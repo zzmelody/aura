@@ -474,3 +474,11 @@
 .coding-question-actions button:disabled {
   opacity: 0.6;
 }
+
+/* A plan under review is the main content of its card, so give it room. */
+.coding-question-detail.plan {
+  max-height: 480px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 14px;
+}

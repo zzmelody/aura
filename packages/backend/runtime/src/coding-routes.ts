@@ -63,6 +63,15 @@ export function createCodingApp(host: OrchestrationHost) {
     }
   });
 
+  // The full transcript of one conversation, read back from its session log.
+  app.get("/sessions/:id/history", async (context) => {
+    try {
+      return context.json(await host.codingHistory(context.req.param("id")));
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
   // The agent's pending question resolves only for the session that asked it.
   app.post("/sessions/:id/answer", async (context) => {
     const body = await context.req.json().catch(() => undefined);

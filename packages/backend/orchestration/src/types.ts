@@ -175,6 +175,12 @@ export type CodingStreamEvent =
       type: "question";
       questionId: string;
       questions: CodingQuestion[];
+    }
+  /** Only in replayed history: the answer the user gave to a question. */
+  | {
+      type: "answered";
+      questionId: string;
+      answers: CodingQuestionAnswer[];
     };
 
 /** One question the agent is asking the user. */
@@ -185,6 +191,21 @@ export interface CodingQuestion {
   header?: string;
   options?: Array<{ label: string; description?: string }>;
   multiSelect?: boolean;
+  /** `plan-review`: `detail` is a plan and `approve` names the approving option. */
+  intent?: { kind: "plan-review"; approve: string };
+  /** `approval`: a grant-once-or-refuse decision; free text is not accepted. */
+  kind?: "approval";
+}
+
+/** One request in a replayed coding conversation and everything it produced. */
+export interface CodingHistoryTurn {
+  prompt: string;
+  startedAt: number;
+  endedAt?: number;
+  status: "running" | "complete" | "stopped" | "error";
+  error?: string;
+  /** The same events a live turn streams, in log order. */
+  events: CodingStreamEvent[];
 }
 
 /** The user's answer to one question. */

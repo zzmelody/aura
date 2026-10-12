@@ -1,4 +1,5 @@
 import type {} from "@deepseek-ai/cordis-plugin-loader";
+import { SessionId } from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-agent-presets";
 import type {} from "@deepseek-ai/dsh-settings";
 import type { AuraCapabilityClient } from "./action-api.ts";
@@ -70,6 +71,7 @@ import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 import { configureDshNetwork } from "./dsh-network.ts";
 import { chatService } from "./chat.ts";
 import { codingService } from "./coding/session.ts";
+import { historyTurns, readSessionEvents } from "./coding/history.ts";
 import {
   CodingConversationIndex,
   codingDomainSpec,
@@ -1004,7 +1006,7 @@ export async function apply(ctx: Context) {
               turn.data.projectId,
               turn.data.prompt,
             );
-            data = await coding(
+            data = await coding.stream(
               {
                 ...turn.data,
                 project: directory,
@@ -1085,6 +1087,34 @@ export async function apply(ctx: Context) {
             params.answers,
           );
           data = { accepted: true };
+          break;
+        }
+        case "coding/history": {
+          if (typeof params.sessionId !== "string")
+            throw new FlowError("无效的对话。", 400);
+          // Only an indexed conversation is readable, so this cannot open an
+          // arbitrary DSH session (a Flow agent's, or another chat's).
+          if (!codingConversations.get(params.sessionId))
+            throw new FlowError("对话不存在或已移除。", 404);
+          const sessionId = SessionId(params.sessionId);
+          const events = await readSessionEvents(
+            ctx.sessionController,
+            sessionId,
+            AbortSignal.timeout(30_000),
+          );
+          const running = coding.running(params.sessionId);
+          const turns = historyTurns(events ?? [], running);
+          // Questions still waiting carry the ids an answer must quote.
+          const open = codingAnswers.open(params.sessionId);
+          const last = turns.at(-1);
+          if (last && running)
+            for (const item of open)
+              last.events.push({
+                type: "question",
+                questionId: item.questionId,
+                questions: item.questions,
+              });
+          data = { turns, running };
           break;
         }
         case "action/get":

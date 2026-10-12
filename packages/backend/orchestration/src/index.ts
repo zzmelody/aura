@@ -33,6 +33,7 @@ import type {
   ChatStreamEvent,
   ChatTurn,
   CodingConversation,
+  CodingHistoryTurn,
   CodingProject,
   CodingQuestionAnswer,
   CodingStreamEvent,
@@ -405,6 +406,16 @@ export class OrchestrationHost {
       questionId,
       answers,
     });
+  }
+
+  /** A coding conversation rebuilt from its stored session log. */
+  codingHistory(
+    sessionId: string,
+  ): Promise<{ turns: CodingHistoryTurn[]; running: boolean }> {
+    return this.request<{ turns: CodingHistoryTurn[]; running: boolean }>(
+      "coding/history",
+      { sessionId },
+    );
   }
 
   conversations(projectId: string): Promise<CodingConversation[]> {

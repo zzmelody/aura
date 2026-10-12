@@ -3,6 +3,7 @@ import type {
   CodingActivity,
   CodingConversationInfo,
   CodingFileDiff,
+  CodingHistoryTurn,
   CodingProjectInfo,
   CodingQuestionAnswer,
   CodingQuestionItem,
@@ -86,8 +87,7 @@ export const listConversations = (
   );
 
 /** Reply text or one activity entry from a streamed coding turn. */
-export type CodingChunk =
-  { type: "delta"; text: string } | ({ kind: "activity" } & CodingActivity);
+export type CodingChunk = { type: "delta"; text: string } | CodingActivity;
 
 /**
  * Streams one coding turn. The runtime sends NDJSON: text deltas, activity
@@ -130,58 +130,8 @@ export async function* codingTurn(
       for (const line of lines) {
         if (!line) continue;
         const event = JSON.parse(line) as Record<string, unknown>;
-        if (event.type === "delta" && typeof event.text === "string")
-          yield { type: "delta", text: event.text };
-        else if (
-          event.type === "tool" &&
-          typeof event.callId === "string" &&
-          (event.phase === "start" || event.phase === "end")
-        )
-          yield event.phase === "start"
-            ? {
-                kind: "activity",
-                type: "tool",
-                phase: "start",
-                callId: event.callId,
-                name: String(event.name ?? "tool"),
-                ...(typeof event.detail === "string"
-                  ? { detail: event.detail }
-                  : {}),
-              }
-            : {
-                kind: "activity",
-                type: "tool",
-                phase: "end",
-                callId: event.callId,
-                ok: event.ok !== false,
-                ...(Array.isArray(event.diffs)
-                  ? { diffs: fileDiffs(event.diffs) }
-                  : {}),
-              };
-        else if (
-          event.type === "progress" &&
-          typeof event.done === "number" &&
-          typeof event.total === "number"
-        )
-          yield {
-            kind: "activity",
-            type: "progress",
-            done: event.done,
-            total: event.total,
-          };
-        else if (event.type === "deliverable" && typeof event.path === "string")
-          yield { kind: "activity", type: "deliverable", path: event.path };
-        else if (
-          event.type === "question" &&
-          typeof event.questionId === "string" &&
-          Array.isArray(event.questions)
-        )
-          yield {
-            kind: "activity",
-            type: "question",
-            questionId: event.questionId,
-            questions: questionItems(event.questions),
-          };
+        const parsed = parseCodingEvent(event);
+        if (parsed) yield parsed;
         else if (event.type === "error")
           throw new Error(
             typeof event.message === "string"
@@ -196,6 +146,90 @@ export async function* codingTurn(
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
+}
+
+/**
+ * Validates one untrusted turn event, live or replayed. Unknown or malformed
+ * events yield nothing, so a newer runtime cannot break an older page.
+ */
+function parseCodingEvent(
+  event: Record<string, unknown>,
+): CodingChunk | undefined {
+  if (event.type === "delta" && typeof event.text === "string")
+    return { type: "delta", text: event.text };
+  if (
+    event.type === "tool" &&
+    typeof event.callId === "string" &&
+    (event.phase === "start" || event.phase === "end")
+  )
+    return event.phase === "start"
+      ? {
+          type: "tool",
+          phase: "start",
+          callId: event.callId,
+          name: String(event.name ?? "tool"),
+          ...(typeof event.detail === "string" ? { detail: event.detail } : {}),
+        }
+      : {
+          type: "tool",
+          phase: "end",
+          callId: event.callId,
+          ok: event.ok !== false,
+          ...(Array.isArray(event.diffs)
+            ? { diffs: fileDiffs(event.diffs) }
+            : {}),
+        };
+  if (
+    event.type === "progress" &&
+    typeof event.done === "number" &&
+    typeof event.total === "number"
+  )
+    return { type: "progress", done: event.done, total: event.total };
+  if (event.type === "deliverable" && typeof event.path === "string")
+    return { type: "deliverable", path: event.path };
+  if (
+    event.type === "question" &&
+    typeof event.questionId === "string" &&
+    Array.isArray(event.questions)
+  )
+    return {
+      type: "question",
+      questionId: event.questionId,
+      questions: questionItems(event.questions),
+    };
+  if (
+    event.type === "answered" &&
+    typeof event.questionId === "string" &&
+    Array.isArray(event.answers)
+  )
+    return {
+      type: "answered",
+      questionId: event.questionId,
+      answers: answerItems(event.answers),
+    };
+  return undefined;
+}
+
+function answerItems(value: unknown[]): CodingQuestionAnswer[] {
+  return value.flatMap((raw) => {
+    const item = raw as {
+      id?: unknown;
+      selected?: unknown;
+      custom?: unknown;
+    } | null;
+    if (typeof item?.id !== "string") return [];
+    return [
+      {
+        id: item.id,
+        selected: Array.isArray(item.selected)
+          ? item.selected.filter(
+              (label): label is string => typeof label === "string",
+            )
+          : [],
+        ...(typeof item.custom === "string" ? { custom: item.custom } : {}),
+      },
+    ];
+  });
 }
 
 /** Keeps only well-formed hunks from an untrusted stream event. */
@@ -263,7 +297,71 @@ function questionItems(value: unknown[]): CodingQuestionItem[] {
         ...(typeof item.header === "string" ? { header: item.header } : {}),
         ...(options.length ? { options } : {}),
         ...(item.multiSelect === true ? { multiSelect: true } : {}),
+        ...(item.kind === "approval" ? { kind: "approval" as const } : {}),
+        ...planIntent(item.intent, options),
       },
     ];
   });
+}
+
+/** A stored conversation, rebuilt from its session log by the runtime. */
+export async function conversationHistory(
+  endpoint: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<{ turns: CodingHistoryTurn[]; running: boolean }> {
+  const value = await codingApi<unknown>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/history`,
+    "GET",
+    undefined,
+    signal,
+  );
+  const body = value as { turns?: unknown; running?: unknown } | null;
+  const turns = Array.isArray(body?.turns) ? body.turns : [];
+  return {
+    running: body?.running === true,
+    turns: turns.flatMap((raw) => {
+      const turn = raw as Partial<Record<keyof CodingHistoryTurn, unknown>>;
+      if (
+        typeof turn?.prompt !== "string" ||
+        typeof turn.startedAt !== "number" ||
+        !Array.isArray(turn.events)
+      )
+        return [];
+      const status = ["running", "complete", "stopped", "error"].includes(
+        String(turn.status),
+      )
+        ? (turn.status as CodingHistoryTurn["status"])
+        : "stopped";
+      return [
+        {
+          prompt: turn.prompt,
+          startedAt: turn.startedAt,
+          status,
+          ...(typeof turn.endedAt === "number"
+            ? { endedAt: turn.endedAt }
+            : {}),
+          ...(typeof turn.error === "string" ? { error: turn.error } : {}),
+          events: turn.events.flatMap((event) => {
+            const parsed = parseCodingEvent(event as Record<string, unknown>);
+            return parsed ? [parsed] : [];
+          }),
+        },
+      ];
+    }),
+  };
+}
+
+/** Keeps a plan-review intent only when it names one of the offered options. */
+function planIntent(
+  intent: unknown,
+  options: ReadonlyArray<{ label: string }>,
+): Pick<CodingQuestionItem, "intent"> {
+  const value = intent as { kind?: unknown; approve?: unknown } | null;
+  return value?.kind === "plan-review" &&
+    typeof value.approve === "string" &&
+    options.some((option) => option.label === value.approve)
+    ? { intent: { kind: "plan-review", approve: value.approve } }
+    : {};
 }

@@ -3,6 +3,9 @@ import { resolve } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import type { SessionRequestId } from "@deepseek-ai/dsh-api-session-controller";
+// Type-only: activates the approval service's `approval/request` event.
+import type {} from "@deepseek-ai/dsh-user-approval";
+import type { AskUserQuestionAnswer } from "@deepseek-ai/dsh-user-questions";
 import { resolveChatModel } from "../chat-models.ts";
 import { agentFailure } from "../sessions.ts";
 import { FlowError } from "../schema.ts";
@@ -11,8 +14,14 @@ import type {
   CodingStreamEvent,
   CodingTurn,
 } from "../types.ts";
-import type { AskUserQuestionAnswer } from "@deepseek-ai/dsh-user-questions";
-import { codingQuestions, type CodingQuestions } from "./questions.ts";
+import { projectCodingEvent } from "./activity.ts";
+import { readSessionEvents } from "./history.ts";
+import {
+  approvalOutcome,
+  approvalQuestion,
+  codingQuestions,
+  type CodingQuestions,
+} from "./questions.ts";
 
 /**
  * Tools a coding agent may use. Re-admitting a name here is the only way it
@@ -52,8 +61,31 @@ export interface CodingSessionKey {
  */
 export function codingService(ctx: Context, questions: CodingQuestions) {
   const controller = ctx.sessionController;
+  /** Sessions with a turn in progress in this process. */
+  const active = new Set<string>();
 
-  return async function stream(
+  return {
+    stream,
+    /** Whether a turn of this conversation is running right now. */
+    running: (sessionId: string) => active.has(sessionId),
+  };
+
+  async function stream(
+    turn: CodingTurn,
+    emit: (event: CodingStreamEvent) => void,
+    signal: AbortSignal,
+  ): Promise<{ model: string }> {
+    if (active.has(turn.sessionId))
+      throw new FlowError("这段对话还有一轮在进行，请先等它结束或停止。", 409);
+    active.add(turn.sessionId);
+    try {
+      return await run(turn, emit, signal);
+    } finally {
+      active.delete(turn.sessionId);
+    }
+  }
+
+  async function run(
     turn: CodingTurn,
     emit: (event: CodingStreamEvent) => void,
     signal: AbortSignal,
@@ -77,23 +109,36 @@ export function codingService(ctx: Context, questions: CodingQuestions) {
     );
     const sessionId = SessionId(turn.sessionId);
     const preset = (await ctx.agentPresets.resolve("coder-v1")).id;
+    const agentOptions = { provider: config.provider, model: config.model };
+    const setup = async (agentCtx: Context) => {
+      await ctx.agentPresets.mount(agentCtx, preset);
+    };
     // A live agent means a later turn of an existing conversation: reuse it so
-    // the todo list, plan mode and tool history carry over.
-    const existing = ctx.agents.get(sessionId);
+    // the todo list, plan mode and tool history carry over. A conversation
+    // whose agent is gone (the host restarted) resumes from its stored log, so
+    // the model keeps its context instead of starting over.
+    const live = ctx.agents.get(sessionId);
+    const stored =
+      !live &&
+      (await readSessionEvents(controller, sessionId, stop, 1)) !== undefined;
     const agent =
-      existing ??
-      (
-        await ctx.agents.create({
-          sessionId,
-          agentOptions: { provider: config.provider, model: config.model },
-          // The session header cwd is immutable and becomes the sandbox's
-          // workspace-write boundary, so every mutation stays in the project.
-          meta: { agentPreset: preset, cwd },
-          signal: stop,
-          setup: async (agentCtx) => {
-            await ctx.agentPresets.mount(agentCtx, preset);
-          },
-        })
+      live ??
+      (stored
+        ? await ctx.agents.resume({
+            resumeSessionId: sessionId,
+            agentOptions,
+            signal: stop,
+            setup,
+          })
+        : await ctx.agents.create({
+            sessionId,
+            agentOptions,
+            // The session header cwd is immutable and becomes the sandbox's
+            // workspace-write boundary, so every mutation stays in the project.
+            meta: { agentPreset: preset, cwd },
+            signal: stop,
+            setup,
+          })
       ).agent;
     const scoped: Array<() => void> = [];
     const disposers: Array<() => void> = [];
@@ -122,6 +167,25 @@ export function codingService(ctx: Context, questions: CodingQuestions) {
           return { answers } satisfies AskUserQuestionAnswer;
         }),
       );
+      // Approvals (for example a command retried outside the sandbox) reach
+      // the user as a grant-once-or-refuse card. Stopping the turn rejects the
+      // wait, which DSH turns into the fail-closed `unavailable` outcome.
+      scoped.push(
+        agent.ctx.on("approval/request", async (request) => {
+          const item = approvalQuestion(request.toolName, request.reason);
+          const asked = request.signal
+            ? AbortSignal.any([stop, request.signal])
+            : stop;
+          const answers = await questions.ask(
+            turn.sessionId,
+            [item],
+            asked,
+            (questionId) =>
+              emit({ type: "question", questionId, questions: [item] }),
+          );
+          return approvalOutcome(answers);
+        }),
+      );
       const requestId = randomUUID() as SessionRequestId;
       let turnNumber: number | undefined;
       let matched: number | undefined;
@@ -137,7 +201,7 @@ export function codingService(ctx: Context, questions: CodingQuestions) {
       disposers.push(
         ctx.on("session/event", (session, event) => {
           if (session.id !== sessionId) return;
-          emitCodingEvent(event, emit, created);
+          projectCodingEvent(event, emit, created);
           if (event.type === "turn/start") turnNumber = event.data.turn;
           if (
             event.type === "user/message" &&
@@ -208,7 +272,7 @@ export function codingService(ctx: Context, questions: CodingQuestions) {
       if (session) await ctx.sessions.flush(session).catch(() => false);
       // The agent stays registered so the next turn resumes this session.
     }
-  };
+  }
 
   /**
    * Admits the coding tool set to this agent's own scope. DSH restrictions
@@ -253,149 +317,4 @@ export function codingCwd(project: string): string {
 
 function isAbsolutePath(value: string): boolean {
   return /^([a-zA-Z]:[\\/]|[\\/])/u.test(value);
-}
-
-/** Projects DSH session events into the coding activity stream. */
-function emitCodingEvent(
-  event: { type: string } & Record<string, unknown>,
-  emit: (event: CodingStreamEvent) => void,
-  created: Map<string, CodingFileDiff>,
-) {
-  const data = (event as { data?: unknown }).data;
-  if (typeof data !== "object" || data === null) return;
-  const fields = data as Record<string, unknown>;
-  if (event.type === "tool/call") {
-    const { callId, name } = fields;
-    if (typeof callId === "string" && typeof name === "string") {
-      const detail = toolDetail(fields.arguments);
-      if (name === "write") {
-        const diff = createdFile(fields.arguments);
-        if (diff) created.set(callId, diff);
-      }
-      emit({
-        type: "tool",
-        phase: "start",
-        callId,
-        name,
-        ...(detail ? { detail } : {}),
-      });
-    }
-  }
-  if (event.type === "tool/result") {
-    // The call id and failure flag live on the single tool-result block, not
-    // on the event itself.
-    const message = fields.message as { content?: unknown } | undefined;
-    const block = Array.isArray(message?.content)
-      ? (message.content[0] as { toolCallId?: unknown; isError?: unknown })
-      : undefined;
-    if (typeof block?.toolCallId === "string") {
-      const pending = created.get(block.toolCallId);
-      created.delete(block.toolCallId);
-      let diffs = resultDiffs(fields.meta);
-      if (!diffs.length && pending && block.isError !== true) diffs = [pending];
-      emit({
-        type: "tool",
-        phase: "end",
-        callId: block.toolCallId,
-        ok: block.isError !== true,
-        ...(diffs.length ? { diffs } : {}),
-      });
-    }
-  }
-  if (event.type === "todo/write") {
-    const todos = Array.isArray(fields.todos) ? fields.todos : [];
-    const done = todos.filter(
-      (todo) =>
-        typeof todo === "object" &&
-        todo !== null &&
-        (todo as { status?: unknown }).status === "completed",
-    ).length;
-    emit({ type: "progress", done, total: todos.length });
-  }
-  if (event.type === "deliverables/presented") {
-    const files = Array.isArray(fields.files) ? fields.files : [];
-    for (const file of files) {
-      const path = (file as { path?: unknown } | null)?.path;
-      if (typeof path === "string") emit({ type: "deliverable", path });
-    }
-  }
-}
-
-/**
- * The one argument that says what a tool call touches — a file, a command or a
- * search pattern — so the transcript can show it. `arguments` is the model's
- * raw JSON; anything unparsable simply yields no detail.
- */
-function toolDetail(raw: unknown): string | undefined {
-  if (typeof raw !== "string") return undefined;
-  let args: unknown;
-  try {
-    args = JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-  if (typeof args !== "object" || args === null) return undefined;
-  const fields = args as Record<string, unknown>;
-  for (const key of ["file_path", "path", "command", "pattern"]) {
-    const value = fields[key];
-    if (typeof value === "string" && value.trim())
-      return value.replace(/\s+/gu, " ").trim().slice(0, 160);
-  }
-  return undefined;
-}
-
-/** Hunks per result and characters per side kept for the change card. */
-const DIFF_HUNKS = 12;
-const DIFF_TEXT = 4_000;
-
-/**
- * The applied hunks `dsh-tool-fs` attaches to a write or edit result as
- * `{ diffs: [{ path, oldText, newText }] }`. The shape is tool-private, so
- * anything unexpected yields no card rather than an error; each side is
- * clipped so a large rewrite cannot flood the stream.
- */
-function resultDiffs(meta: unknown): CodingFileDiff[] {
-  const diffs = (meta as { diffs?: unknown } | null | undefined)?.diffs;
-  if (!Array.isArray(diffs)) return [];
-  const result: CodingFileDiff[] = [];
-  for (const item of diffs.slice(0, DIFF_HUNKS)) {
-    const diff = item as Partial<Record<keyof CodingFileDiff, unknown>> | null;
-    if (
-      typeof diff?.path !== "string" ||
-      typeof diff.newText !== "string" ||
-      (diff.oldText !== null && typeof diff.oldText !== "string")
-    )
-      continue;
-    result.push({
-      path: diff.path,
-      oldText:
-        typeof diff.oldText === "string"
-          ? diff.oldText.slice(0, DIFF_TEXT)
-          : null,
-      newText: diff.newText.slice(0, DIFF_TEXT),
-    });
-  }
-  return result;
-}
-
-/**
- * `write` attaches hunks only when the file already existed; for a new file
- * its card shows the written content as added, as DSH's own card does. The
- * call's arguments are the only place that content appears.
- */
-function createdFile(raw: unknown): CodingFileDiff | undefined {
-  if (typeof raw !== "string") return undefined;
-  try {
-    const args = JSON.parse(raw) as { file_path?: unknown; content?: unknown };
-    return typeof args.file_path === "string" &&
-      typeof args.content === "string"
-      ? {
-          path: args.file_path,
-          oldText: null,
-          newText: args.content.slice(0, DIFF_TEXT),
-        }
-      : undefined;
-  } catch {
-    return undefined;
-  }
 }

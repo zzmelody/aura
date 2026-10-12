@@ -20,7 +20,6 @@ import type {
   CodingFileDiff,
   CodingProjectInfo,
   CodingQuestionAnswer,
-  CodingQuestionItem,
 } from "@aura/protocol/types";
 import {
   chooseWorkflowPath,
@@ -32,21 +31,20 @@ import {
   createProject,
   listConversations,
   listProjects,
+  conversationHistory,
   removeProject,
   answerQuestion,
 } from "./api";
 import { diffLines, diffStats } from "./diff";
+import {
+  answerTurn,
+  applyTurnEvent,
+  newTurn,
+  turnsFromHistory,
+  type AskedQuestion,
+  type Turn,
+} from "./turns";
 import "./coding.css";
-
-type ToolEntry = {
-  callId: string;
-  name: string;
-  /** The file, command or pattern the call touches, when it names one. */
-  detail?: string;
-  state: "running" | "ok" | "failed";
-  /** Applied hunks of a write or edit. */
-  diffs?: CodingFileDiff[];
-};
 
 /** One file-change card: path, line counts, and the line diff. */
 function DiffCard({ diff }: { diff: CodingFileDiff }) {
@@ -73,29 +71,6 @@ function DiffCard({ diff }: { diff: CodingFileDiff }) {
     </details>
   );
 }
-
-/** One request and everything the agent did to answer it. */
-type Turn = {
-  id: string;
-  prompt: string;
-  reply: string;
-  tools: ToolEntry[];
-  progress?: { done: number; total: number };
-  deliverables: string[];
-  /** Questions the agent asked during this turn, answered or still open. */
-  questions: AskedQuestion[];
-  status: "running" | "complete" | "stopped" | "error";
-  error?: string;
-  startedAt: number;
-  endedAt?: number;
-};
-
-type AskedQuestion = {
-  questionId: string;
-  questions: CodingQuestionItem[];
-  /** Set once the user answered; an open question has none. */
-  answered?: CodingQuestionAnswer[];
-};
 
 const toolLabels: Record<string, string> = {
   read: "读取文件",
@@ -157,6 +132,8 @@ function QuestionCard({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const done = asked.answered !== undefined;
+  const approval = asked.questions.some((item) => item.kind === "approval");
+  const plan = asked.questions.some((item) => item.intent);
   const toggle = (id: string, label: string, multi: boolean) =>
     setSelected((current) => {
       const now = current[id] ?? [];
@@ -204,7 +181,19 @@ function QuestionCard({
     >
       <h3>
         <MessageCircleQuestion size={14} />
-        {done ? "已回答" : live ? "需要你的决定" : "提问已结束"}
+        {done
+          ? approval
+            ? "已处理授权"
+            : plan
+              ? "已审阅计划"
+              : "已回答"
+          : !live
+            ? "提问已结束"
+            : approval
+              ? "需要你授权"
+              : plan
+                ? "请审阅计划"
+                : "需要你的决定"}
       </h3>
       {asked.questions.map((question) => (
         <fieldset key={question.id} disabled={done || !live || sending}>
@@ -213,7 +202,9 @@ function QuestionCard({
             {question.question}
           </legend>
           {question.detail ? (
-            <div className="coding-question-detail">
+            <div
+              className={`coding-question-detail${question.intent ? " plan" : ""}`}
+            >
               <WorkflowRichText text={question.detail} />
             </div>
           ) : null}
@@ -235,26 +226,36 @@ function QuestionCard({
                   />
                   <span>
                     {option.label}
+                    {question.intent?.approve === option.label ? (
+                      <small>批准后开始实施</small>
+                    ) : null}
                     {option.description ? (
                       <small>{option.description}</small>
                     ) : null}
                   </span>
                 </label>
               ))}
-              <input
-                className="coding-question-custom"
-                aria-label={`${question.question} 的其他回答`}
-                placeholder={
-                  question.options?.length ? "或者写下你的回答" : "写下你的回答"
-                }
-                value={custom[question.id] ?? ""}
-                onChange={(event) =>
-                  setCustom((current) => ({
-                    ...current,
-                    [question.id]: event.target.value,
-                  }))
-                }
-              />
+              {/* An approval is grant-or-refuse; the backend ignores text. */}
+              {question.kind === "approval" ? null : (
+                <input
+                  className="coding-question-custom"
+                  aria-label={`${question.question} 的其他回答`}
+                  placeholder={
+                    question.intent
+                      ? "或者写下要修改的地方"
+                      : question.options?.length
+                        ? "或者写下你的回答"
+                        : "写下你的回答"
+                  }
+                  value={custom[question.id] ?? ""}
+                  onChange={(event) =>
+                    setCustom((current) => ({
+                      ...current,
+                      [question.id]: event.target.value,
+                    }))
+                  }
+                />
+              )}
             </>
           )}
         </fieldset>
@@ -420,6 +421,9 @@ export function CodingStudio({
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
   const [pathInput, setPathInput] = useState("");
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  /** Conversations already read from the log; a live turn is never overwritten. */
+  const loaded = useRef(new Set<string>());
   const controller = useRef<AbortController | undefined>(undefined);
   const transcript = useRef<HTMLDivElement>(null);
 
@@ -467,6 +471,42 @@ export function CodingStudio({
       });
     return () => abort.abort();
   }, [endpoint, projectId]);
+
+  // Opening a stored conversation reads its transcript back from the log, so
+  // a reload or another device shows the same steps, diffs and answers.
+  // Conversations started in this page already hold their live turns.
+  useEffect(() => {
+    if (!conversationId || loaded.current.has(conversationId)) return;
+    const sessionId = conversationId;
+    const abort = new AbortController();
+    setLoadingHistory(true);
+    conversationHistory(endpoint, sessionId, abort.signal)
+      .then((history) => {
+        loaded.current.add(sessionId);
+        setTurns((current) =>
+          // A turn sent while history was loading wins over the snapshot.
+          current[sessionId]?.length
+            ? current
+            : {
+                ...current,
+                [sessionId]: turnsFromHistory(sessionId, history.turns),
+              },
+        );
+      })
+      .catch((reason: unknown) => {
+        if (abort.signal.aborted) return;
+        // A conversation with no stored log yet is simply empty.
+        if ((reason as { status?: number }).status === 404) {
+          loaded.current.add(sessionId);
+          return;
+        }
+        setError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => {
+        if (!abort.signal.aborted) setLoadingHistory(false);
+      });
+    return () => abort.abort();
+  }, [endpoint, conversationId]);
 
   // Stop an in-flight turn when the studio unmounts.
   useEffect(() => () => controller.current?.abort(), []);
@@ -534,20 +574,17 @@ export function CodingStudio({
     (sessionId: string, turnId: string) =>
     async (questionId: string, answers: CodingQuestionAnswer[]) => {
       await answerQuestion(endpoint, sessionId, questionId, answers);
-      updateTurn(sessionId, turnId, (turn) => ({
-        ...turn,
-        questions: turn.questions.map((item) =>
-          item.questionId === questionId
-            ? { ...item, answered: answers }
-            : item,
-        ),
-      }));
+      updateTurn(sessionId, turnId, (turn) =>
+        answerTurn(turn, questionId, answers),
+      );
     };
 
   const send = async () => {
     const prompt = draft.trim();
     if (!prompt || !project || running) return;
     const sessionId = conversationId ?? `coding-${newId()}`;
+    // A brand-new conversation has no stored log to read back.
+    if (!conversationId) loaded.current.add(sessionId);
     const turnId = newId();
     setConversationId(sessionId);
     setDraft("");
@@ -556,16 +593,7 @@ export function CodingStudio({
       ...current,
       [sessionId]: [
         ...(current[sessionId] ?? []),
-        {
-          id: turnId,
-          prompt,
-          reply: "",
-          tools: [],
-          deliverables: [],
-          questions: [],
-          status: "running",
-          startedAt: Date.now(),
-        },
+        newTurn(turnId, prompt, Date.now()),
       ],
     }));
     const abort = new AbortController();
@@ -581,52 +609,7 @@ export function CodingStudio({
         },
         abort.signal,
       )) {
-        updateTurn(sessionId, turnId, (turn) => {
-          if (chunk.type === "delta")
-            return { ...turn, reply: turn.reply + chunk.text };
-          if (chunk.type === "progress")
-            return {
-              ...turn,
-              progress: { done: chunk.done, total: chunk.total },
-            };
-          if (chunk.type === "deliverable")
-            return turn.deliverables.includes(chunk.path)
-              ? turn
-              : { ...turn, deliverables: [...turn.deliverables, chunk.path] };
-          if (chunk.type === "question")
-            return {
-              ...turn,
-              questions: [
-                ...turn.questions,
-                { questionId: chunk.questionId, questions: chunk.questions },
-              ],
-            };
-          if (chunk.phase === "start")
-            return {
-              ...turn,
-              tools: [
-                ...turn.tools,
-                {
-                  callId: chunk.callId,
-                  name: chunk.name,
-                  ...(chunk.detail ? { detail: chunk.detail } : {}),
-                  state: "running",
-                },
-              ],
-            };
-          return {
-            ...turn,
-            tools: turn.tools.map((tool) =>
-              tool.callId === chunk.callId
-                ? {
-                    ...tool,
-                    state: chunk.ok ? "ok" : "failed",
-                    ...(chunk.diffs?.length ? { diffs: chunk.diffs } : {}),
-                  }
-                : tool,
-            ),
-          };
-        });
+        updateTurn(sessionId, turnId, (turn) => applyTurnEvent(turn, chunk));
       }
       updateTurn(sessionId, turnId, (turn) => ({
         ...turn,
@@ -871,7 +854,9 @@ export function CodingStudio({
             <div className="coding-empty">
               <p>
                 {conversationId
-                  ? "这段对话的过程记录只在本次打开期间保留，可以继续发送新的请求。"
+                  ? loadingHistory
+                    ? "正在读取这段对话的过程记录…"
+                    : "这段对话还没有记录，可以继续发送新的请求。"
                   : `描述你要在「${project.title}」里完成的事情。改动只会写入这个目录。`}
               </p>
             </div>

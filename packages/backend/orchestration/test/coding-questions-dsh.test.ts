@@ -159,6 +159,17 @@ test(
         .join("");
       assert.match(reply, /收到：/u);
       assert.match(reply, /类/u);
+
+      // Replayed history shows the question together with the answer given.
+      const history = await host.codingHistory("ask-session");
+      const replayed = history.turns[0]!.events;
+      const shown = replayed.find((item) => item.type === "question");
+      assert.ok(shown?.type === "question", JSON.stringify(replayed));
+      assert.equal(shown.questions[0]!.question, "用哪种写法？");
+      const answered = replayed.find((item) => item.type === "answered");
+      assert.ok(answered?.type === "answered", JSON.stringify(replayed));
+      assert.equal(answered.questionId, shown.questionId);
+      assert.deepEqual(answered.answers, [{ id: "style", selected: ["类"] }]);
     } finally {
       await host.close?.();
       model.close();

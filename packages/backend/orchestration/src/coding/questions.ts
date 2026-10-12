@@ -103,8 +103,11 @@ function validAnswers(
           )
           .slice(0, question.multiSelect ? MAX_SELECTED : 1)
       : [];
+    // An approval is a yes/no decision; typed text cannot stand in for it.
     const custom =
-      typeof item?.custom === "string" && item.custom.trim()
+      question.kind !== "approval" &&
+      typeof item?.custom === "string" &&
+      item.custom.trim()
         ? item.custom.trim().slice(0, MAX_TEXT)
         : undefined;
     // For a single-select question, typed text replaces the chosen option.
@@ -114,6 +117,52 @@ function validAnswers(
       ...(custom ? { custom } : {}),
     };
   });
+}
+
+/** Option labels of an approval card; the first is the one-shot grant. */
+export const APPROVAL_ALLOW = "允许这一次";
+export const APPROVAL_REJECT = "拒绝";
+export const APPROVAL_QUESTION_ID = "approval";
+
+/**
+ * An approval request as a question card: DSH asks before an operation that
+ * needs consent (for example a command retried outside the sandbox), and the
+ * user grants it once or refuses. Typed answers are not offered.
+ */
+export function approvalQuestion(
+  toolName: string,
+  reason?: string,
+): CodingQuestion {
+  return {
+    id: APPROVAL_QUESTION_ID,
+    kind: "approval",
+    header: "需要你授权",
+    question: `允许 ${toolName} 执行这个操作吗？`,
+    ...(reason ? { detail: reason } : {}),
+    options: [{ label: APPROVAL_ALLOW }, { label: APPROVAL_REJECT }],
+  };
+}
+
+/** Only an explicit grant allows; a skipped or refused card rejects. */
+export function approvalOutcome(
+  answers: readonly CodingQuestionAnswer[],
+): "allowed-once" | "rejected" {
+  return answers.some((answer) => answer.selected.includes(APPROVAL_ALLOW))
+    ? "allowed-once"
+    : "rejected";
+}
+
+/** The card answer that a logged approval outcome corresponds to. */
+export function approvalAnswer(
+  outcome: string,
+): CodingQuestionAnswer | undefined {
+  if (outcome === "allowed-once")
+    return { id: APPROVAL_QUESTION_ID, selected: [APPROVAL_ALLOW] };
+  if (outcome === "rejected")
+    return { id: APPROVAL_QUESTION_ID, selected: [APPROVAL_REJECT] };
+  if (outcome === "cancelled")
+    return { id: APPROVAL_QUESTION_ID, selected: [], custom: "已取消" };
+  return undefined;
 }
 
 /** Narrows DSH's question items to what Aura forwards to the client. */
@@ -145,7 +194,24 @@ export function codingQuestions(items: readonly unknown[]): CodingQuestion[] {
         ...(typeof item.header === "string" ? { header: item.header } : {}),
         ...(options.length ? { options } : {}),
         ...(item.multiSelect === true ? { multiSelect: true } : {}),
+        ...planReview(item.intent, options),
       },
     ];
   });
+}
+
+/**
+ * Keeps a `plan-review` intent only when its approving label is one of the
+ * offered options, as DSH itself requires, so the card can mark it.
+ */
+function planReview(
+  intent: unknown,
+  options: ReadonlyArray<{ label: string }>,
+): Pick<CodingQuestion, "intent"> {
+  const value = intent as { kind?: unknown; approve?: unknown } | null;
+  return value?.kind === "plan-review" &&
+    typeof value.approve === "string" &&
+    options.some((option) => option.label === value.approve)
+    ? { intent: { kind: "plan-review", approve: value.approve } }
+    : {};
 }

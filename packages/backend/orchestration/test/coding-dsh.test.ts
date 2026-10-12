@@ -41,9 +41,11 @@ test(
     await mkdir(flowRoot, { recursive: true });
 
     const seenTools: string[][] = [];
+    const requests: ModelRequest[] = [];
     const modelApp = new Hono();
     modelApp.post("/v1/chat/completions", async (context) => {
       const request = (await context.req.json()) as ModelRequest;
+      requests.push(request);
       if (request.tools)
         seenTools.push(request.tools.map((t) => t.function.name));
       const hasToolResult = request.messages.some((m) => m.role === "tool");
@@ -107,12 +109,13 @@ test(
       );
       model.once("error", fail);
     });
-    const host = new OrchestrationHost({
+    const options = {
       root,
       flowRoot,
       dshHome: join(root, "dsh"),
       modelURL: `http://127.0.0.1:${port}/v1`,
-    });
+    };
+    let host = new OrchestrationHost(options);
 
     try {
       // A project registers the directory that becomes the sandbox root. The
@@ -265,6 +268,83 @@ test(
           !chatTools.has(name),
           `ordinary chat must not expose ${name}; saw ${[...chatTools].join(", ")}`,
         );
+
+      // History replays the conversation from the stored log: both turns,
+      // with the write step, its diff and the reply.
+      const checkHistory = async (expectedTurns: number) => {
+        const history = await host.codingHistory("coding-session-1");
+        assert.equal(history.running, false);
+        assert.equal(
+          history.turns.length,
+          expectedTurns,
+          JSON.stringify(history.turns.map((turn) => turn.prompt)),
+        );
+        const [first] = history.turns;
+        assert.match(first!.prompt, /WRITE_FILE/u);
+        assert.equal(first!.status, "complete");
+        assert.ok(first!.endedAt! >= first!.startedAt);
+        const start = first!.events.find(
+          (event) =>
+            event.type === "tool" &&
+            event.phase === "start" &&
+            event.name === "write",
+        );
+        assert.ok(start, JSON.stringify(first!.events));
+        const end = first!.events.find(
+          (event) =>
+            event.type === "tool" &&
+            event.phase === "end" &&
+            start.type === "tool" &&
+            event.callId === start.callId,
+        );
+        assert.ok(
+          end?.type === "tool" && end.phase === "end" && end.diffs?.length,
+          JSON.stringify(first!.events),
+        );
+        assert.ok(
+          first!.events.some(
+            (event) =>
+              event.type === "delta" && event.text.includes("notes.txt"),
+          ),
+        );
+        assert.equal(history.turns[1]!.prompt, "继续");
+        return history;
+      };
+      await checkHistory(2);
+
+      // An unknown session is refused rather than read.
+      await assert.rejects(host.codingHistory("not-a-coding-session"));
+
+      // After a restart the log is still readable, and a further turn resumes
+      // the stored session instead of starting a new one.
+      await host.close();
+      host = new OrchestrationHost(options);
+      await checkHistory(2);
+      seenTools.length = 0;
+      await host.coding(
+        {
+          sessionId: "coding-session-1",
+          projectId: created.id,
+          prompt: "重启后继续",
+          mode: "demo",
+          model: "deepseek-v4-flash",
+          reasoningEffort: "off",
+        },
+        () => {},
+        AbortSignal.timeout(150_000),
+      );
+      const resumed = await checkHistory(3);
+      assert.equal(resumed.turns[2]!.prompt, "重启后继续");
+      assert.ok(
+        new Set(seenTools.flat()).has("write"),
+        "a resumed session keeps its coding tools",
+      );
+      // The model saw the earlier turns, so it kept its context.
+      const resumedRequest = requests.at(-1)!;
+      assert.ok(
+        JSON.stringify(resumedRequest.messages).includes("WRITE_FILE"),
+        "a resumed session sends the earlier conversation to the model",
+      );
     } finally {
       await host.close?.();
       model.close();
