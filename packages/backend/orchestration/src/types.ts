@@ -62,6 +62,7 @@ export interface Table<T> {
   get(id: string): T | undefined;
   entries(): IterableIterator<[string, T]>;
   put(id: string, value: T): Promise<void>;
+  delete(id: string): Promise<boolean>;
   update(id: string, change: (current: T) => T): Promise<T>;
 }
 
@@ -125,3 +126,72 @@ export interface ChatTurn {
 /** Streamed chat output: reply text or a workflow started by a tool call. */
 export type ChatStreamEvent =
   { type: "delta"; text: string } | ({ type: "workflow" } & ChatWorkflowStart);
+
+/** One turn of a persistent coding conversation bound to a project directory. */
+export interface CodingTurn {
+  /** Aura-owned id of the coding conversation, stable across turns. */
+  sessionId: string;
+  /** Project the conversation belongs to; the backend resolves its directory. */
+  projectId: string;
+  /**
+   * Absolute project directory the sandbox confines writes to. Filled in by the
+   * backend from the project record, never taken from a client.
+   */
+  project: string;
+  prompt: string;
+  mode: FlowMode;
+  model?: string;
+  reasoningEffort?: string;
+  /** Resolved server-side for gateway modes; never accepted from a client. */
+  defaults?: FlowAgentConfig;
+}
+
+/**
+ * Streamed coding output. Beyond reply text it carries what the agent is
+ * doing, so the transcript can show tool activity, task progress and files
+ * the agent declared, rather than only its final answer.
+ */
+export type CodingStreamEvent =
+  | { type: "delta"; text: string }
+  | {
+      type: "tool";
+      phase: "start";
+      callId: string;
+      name: string;
+      /** The file, command or pattern the call touches, when it names one. */
+      detail?: string;
+    }
+  | {
+      type: "tool";
+      phase: "end";
+      callId: string;
+      ok: boolean;
+      /** Applied hunks of a write or edit, for the file-change card. */
+      diffs?: CodingFileDiff[];
+    }
+  | { type: "progress"; done: number; total: number }
+  | { type: "deliverable"; path: string };
+
+/** One applied hunk; `oldText` is null for a new or overwritten file. */
+export interface CodingFileDiff {
+  path: string;
+  oldText: string | null;
+  newText: string;
+}
+
+/** A project directory a coding conversation can run in. */
+export interface CodingProject {
+  id: string;
+  /** Canonical absolute path; the workspace registry's uniqueness canon. */
+  directory: string;
+  title: string;
+}
+
+/** A coding conversation as listed for one project. */
+export interface CodingConversation {
+  id: string;
+  projectId: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+}

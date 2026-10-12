@@ -69,6 +69,13 @@ import { LocalAIManager } from "./local-ai/manager.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 import { configureDshNetwork } from "./dsh-network.ts";
 import { chatService } from "./chat.ts";
+import { codingService } from "./coding/session.ts";
+import {
+  CodingConversationIndex,
+  codingDomainSpec,
+  type CodingConversationRecord,
+} from "./coding/index-record.ts";
+import { CodingProjects } from "./coding/projects.ts";
 import { chatModelCatalog, RejectedChatModels } from "./chat-models.ts";
 import { GptImageService, codexImageRequest } from "./gpt-image.ts";
 import {
@@ -268,6 +275,9 @@ export const inject = [
   "agents",
   "agentPresets",
   "storageDomain",
+  // Coding projects are DSH workspace records; injecting the registry keeps
+  // this plugin from starting before its durable domain is initialized.
+  "workspaceRegistry",
   "sdkAppStartup",
   "loader",
   "hmr",
@@ -496,6 +506,15 @@ export async function apply(ctx: Context) {
 
   const domain = await ctx.storageDomain.open(spec);
   const actionDomain = await ctx.storageDomain.open(actionSpec);
+  // Coding projects ride on DSH's workspace registry; only conversation
+  // titles need Aura's own index, since a session header carries none.
+  const codingDomain = await ctx.storageDomain.open(codingDomainSpec);
+  const codingConversations = new CodingConversationIndex(
+    codingDomain.table(
+      "conversations",
+    ) as unknown as Table<CodingConversationRecord>,
+  );
+  const codingProjects = new CodingProjects(ctx, codingConversations);
   let reconfiguration: Promise<unknown> = Promise.resolve();
   const refreshFlows = async () => {
     await reconfiguration;
@@ -690,6 +709,7 @@ export async function apply(ctx: Context) {
   );
   const chats = new Map<string, AbortController>();
   const rejectedChatModels = new RejectedChatModels();
+  const coding = codingService(ctx);
 
   transport.onNotification((method, params) => {
     if (method === "chat/cancel" && typeof params.chatId === "string")
@@ -955,9 +975,102 @@ export async function apply(ctx: Context) {
           }
           break;
         }
+        case "coding": {
+          const chatId = typeof params.chatId === "string" ? params.chatId : "";
+          const turn = z
+            .object({
+              sessionId: z.string().trim().min(1).max(200),
+              projectId: z.string().trim().min(1).max(200),
+              prompt: z.string().min(1).max(80_000),
+              mode: chatModeSchema,
+              model: z.string().trim().min(1).max(200).optional(),
+              reasoningEffort: z.string().trim().min(1).max(80).optional(),
+            })
+            .safeParse(params);
+          if (!chatId || chatId.length > 200 || !turn.success)
+            throw new FlowError("无效的编码请求。", 400);
+          if (chats.size >= 2)
+            throw new FlowError("对话服务忙，请稍后再试。", 503);
+          // The registry owns the directory, so the sandbox root always comes
+          // from the project record rather than a client-supplied path.
+          const directory = codingProjects.directory(turn.data.projectId);
+          const abort = new AbortController();
+          chats.set(chatId, abort);
+          try {
+            await codingConversations.open(
+              turn.data.sessionId,
+              turn.data.projectId,
+              turn.data.prompt,
+            );
+            data = await coding(
+              {
+                ...turn.data,
+                project: directory,
+                defaults: await resolveModeDefaults(turn.data.mode),
+              },
+              (event) => transport.notify("chat/event", { chatId, event }),
+              abort.signal,
+            );
+            // Attach only once the session exists: the registry validates a
+            // session's stored header, which the first turn just created.
+            await codingProjects.attach(
+              turn.data.projectId,
+              turn.data.sessionId,
+            );
+          } finally {
+            chats.delete(chatId);
+          }
+          break;
+        }
         case "action/start":
           data = await actionRuns.start(params);
           break;
+        case "coding/projects":
+          data = codingProjects.list();
+          break;
+        case "coding/projects/create": {
+          const input = z
+            .object({
+              directory: z.string().trim().min(1).max(4096),
+              title: z.string().trim().max(100).optional(),
+            })
+            .safeParse(params);
+          if (!input.success) throw new FlowError("无效的项目目录。", 400);
+          data = await codingProjects.create(
+            input.data.directory,
+            input.data.title,
+          );
+          break;
+        }
+        case "coding/projects/rename": {
+          const input = z
+            .object({
+              id: z.string().trim().min(1).max(200),
+              title: z.string().trim().min(1).max(100),
+            })
+            .safeParse(params);
+          if (!input.success) throw new FlowError("无效的项目名称。", 400);
+          data = await codingProjects.rename(input.data.id, input.data.title);
+          break;
+        }
+        case "coding/projects/remove": {
+          if (typeof params.id !== "string")
+            throw new FlowError("无效的项目。", 400);
+          data = await codingProjects.remove(params.id);
+          break;
+        }
+        case "coding/projects/status": {
+          if (typeof params.id !== "string")
+            throw new FlowError("无效的项目。", 400);
+          data = await codingProjects.status(params.id);
+          break;
+        }
+        case "coding/conversations": {
+          if (typeof params.projectId !== "string")
+            throw new FlowError("无效的项目。", 400);
+          data = codingProjects.conversationsOf(params.projectId);
+          break;
+        }
         case "action/get":
           data = actionRuns.get(id);
           break;

@@ -29,7 +29,14 @@ import {
 } from "./profile.ts";
 import { FlowError, jsonValue } from "./schema.ts";
 export { FlowError } from "./schema.ts";
-import type { ChatStreamEvent, ChatTurn } from "./types.ts";
+import type {
+  ChatStreamEvent,
+  ChatTurn,
+  CodingConversation,
+  CodingProject,
+  CodingStreamEvent,
+  CodingTurn,
+} from "./types.ts";
 import type {
   ContributionConfiguration,
   FlowRpcResult,
@@ -50,6 +57,11 @@ export class OrchestrationHost {
   closed = false;
   /** Per-request listeners for `chat/event` notifications from the DSH host. */
   readonly chatListeners = new Map<string, (event: ChatStreamEvent) => void>();
+  /** Coding turns stream over the same channel under their own ids. */
+  readonly codingListeners = new Map<
+    string,
+    (event: CodingStreamEvent) => void
+  >();
 
   constructor(options: HostOptions) {
     this.options = { ...options };
@@ -244,7 +256,14 @@ export class OrchestrationHost {
     });
     rpc.onNotification((method, params) => {
       if (method !== "chat/event" || typeof params.chatId !== "string") return;
-      this.chatListeners.get(params.chatId)?.(params.event as ChatStreamEvent);
+      const listener = this.chatListeners.get(params.chatId);
+      if (listener) {
+        listener(params.event as ChatStreamEvent);
+        return;
+      }
+      this.codingListeners.get(params.chatId)?.(
+        params.event as CodingStreamEvent,
+      );
     });
     rpc.start();
     try {
@@ -318,6 +337,66 @@ export class OrchestrationHost {
       signal.removeEventListener("abort", onAbort);
       this.chatListeners.delete(chatId);
     }
+  }
+
+  /**
+   * Streams one turn of a persistent coding conversation. The session is bound
+   * to a project directory and keeps its agent across turns, so the model can
+   * read, edit and run code there with its tool history intact.
+   */
+  async coding(
+    // The backend resolves the directory and mode defaults itself.
+    turn: Omit<CodingTurn, "project" | "defaults">,
+    emit: (event: CodingStreamEvent) => void,
+    signal: AbortSignal,
+  ): Promise<{ model: string }> {
+    const chatId = randomUUID();
+    this.codingListeners.set(chatId, emit);
+    const { rpc } = await this.open();
+    const onAbort = () => rpc.notify("chat/cancel", { chatId });
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      return await this.request<{ model: string }>(
+        "coding",
+        { chatId, ...turn },
+        AbortSignal.any([signal, AbortSignal.timeout(30 * 60_000)]),
+      );
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      this.codingListeners.delete(chatId);
+    }
+  }
+
+  /** Project list and lifecycle for coding mode. */
+  projects(): Promise<CodingProject[]> {
+    return this.request<CodingProject[]>("coding/projects");
+  }
+
+  createProject(directory: string, title?: string): Promise<CodingProject> {
+    return this.request<CodingProject>("coding/projects/create", {
+      directory,
+      ...(title ? { title } : {}),
+    });
+  }
+
+  renameProject(id: string, title: string): Promise<CodingProject> {
+    return this.request<CodingProject>("coding/projects/rename", { id, title });
+  }
+
+  removeProject(id: string): Promise<boolean> {
+    return this.request<boolean>("coding/projects/remove", { id });
+  }
+
+  projectStatus(id: string): Promise<"ok" | "missing-dir"> {
+    return this.request<"ok" | "missing-dir">("coding/projects/status", {
+      id,
+    });
+  }
+
+  conversations(projectId: string): Promise<CodingConversation[]> {
+    return this.request<CodingConversation[]>("coding/conversations", {
+      projectId,
+    });
   }
 
   /** Direct backend invocation using the same durable engine as HTTP calls. */

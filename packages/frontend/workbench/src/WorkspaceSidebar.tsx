@@ -5,6 +5,7 @@ import {
   ArchiveRestore,
   Clapperboard,
   Clock3,
+  Code2,
   FolderOpen,
   GitBranch,
   ListFilter,
@@ -43,6 +44,7 @@ const studios = [
   { id: "studio:content", label: "自媒体内容", icon: Newspaper },
   { id: "studio:video", label: "视频项目", icon: Clapperboard },
   { id: "studio:research", label: "选题库", icon: Telescope },
+  { id: "studio:coding", label: "编码", icon: Code2 },
 ] as const;
 
 export function WorkspaceSidebar({

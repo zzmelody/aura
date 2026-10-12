@@ -60,12 +60,18 @@ const TopicLibrary = React.lazy(() =>
     default: module.TopicLibrary,
   })),
 );
+const CodingStudio = React.lazy(() =>
+  import("./features/coding/CodingStudio").then((module) => ({
+    default: module.CodingStudio,
+  })),
+);
 const tabTitles: Record<Tab, string> = {
   chat: "对话",
   flows: "工作流",
   "studio:content": "自媒体内容",
   "studio:video": "视频项目",
   "studio:research": "选题库",
+  "studio:coding": "编码",
   history: "全部记录",
   site: "Site",
   settings: "设置",
@@ -502,6 +508,13 @@ export default function App() {
                             key={codexAuth.endpoint}
                             endpoint={codexAuth.endpoint}
                             onDirtyChange={setStudioDirty}
+                            onBack={() => navigate("chat")}
+                          />
+                        ) : tab === "studio:coding" ? (
+                          <CodingStudio
+                            key={codexAuth.endpoint}
+                            endpoint={codexAuth.endpoint}
+                            provider={workspace.state.provider}
                             onBack={() => navigate("chat")}
                           />
                         ) : (

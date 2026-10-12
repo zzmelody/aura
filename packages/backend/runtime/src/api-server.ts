@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { bodyLimit } from "hono/body-limit";
 import { stream } from "hono/streaming";
 import { createCodexAuthApp } from "./codex-auth-routes.ts";
+import { createCodingApp } from "./coding-routes.ts";
 import {
   closeHonoServer,
   formatHttpUrl,
@@ -200,6 +201,8 @@ export function createApiApp({
   app.route("/auth/codex", createCodexAuthApp(codexAuth));
   if (tripo) app.route("/tripo", createTripoApp(tripo));
   if (flows) app.route("/flows", createFlowApp(flows));
+  // Coding projects ride on the same host; a runtime without it omits the set.
+  if (flows) app.route("/coding", createCodingApp(flows));
   if (services) app.route("/services", createServiceApp(services));
   if (aiServices)
     app.route(
@@ -267,6 +270,91 @@ export function createApiApp({
     () => ({ mode: "custom" }),
     chat ?? flows,
     lifecycle,
+  );
+
+  app.post(
+    "/coding/turn",
+    bodyLimit({
+      maxSize: 256 * 1_024,
+      onError: (context) => context.text("无效的编码请求。", 413),
+    }),
+    async (context) => {
+      if (lifecycle.shuttingDown)
+        return context.text("服务忙，请稍后再试。", 503);
+      const body = (await context.req.json().catch(() => undefined)) as
+        Record<string, unknown> | undefined;
+      if (
+        !isRecord(body) ||
+        typeof body.sessionId !== "string" ||
+        typeof body.projectId !== "string" ||
+        typeof body.prompt !== "string" ||
+        !body.prompt.trim() ||
+        body.prompt.length > 80_000 ||
+        !["codex", "lumina", "custom", "demo"].includes(String(body.mode)) ||
+        (body.modelConfig !== undefined &&
+          !validateChatModelSelection(body.modelConfig))
+      )
+        return context.text("无效的编码请求。", 400);
+      if (!chat && !flows) return context.text("编码服务不可用。", 503);
+      const host = chat ?? flows;
+      const coding = host?.coding?.bind(host);
+      if (!coding) return context.text("编码服务不可用。", 503);
+
+      const mode = body.mode as ChatRoute["mode"];
+      const selection = body.modelConfig as
+        { model?: string; reasoningEffort?: string } | undefined;
+      context.header("Content-Type", "application/x-ndjson; charset=utf-8");
+      context.header("Cache-Control", "no-cache");
+      return stream(context, async (output) => {
+        const disconnected = new AbortController();
+        output.onAbort(() =>
+          disconnected.abort(new Error("客户端连接已关闭。")),
+        );
+        let pendingWrite = Promise.resolve();
+        const emit = (event: unknown) => {
+          if (output.aborted) return;
+          pendingWrite = pendingWrite
+            .then(async () => {
+              await output.writeln(JSON.stringify(event));
+            })
+            .catch(() => undefined);
+        };
+        try {
+          const { model } = await coding(
+            {
+              sessionId: body.sessionId as string,
+              projectId: body.projectId as string,
+              prompt: body.prompt as string,
+              mode,
+              ...(selection?.model ? { model: selection.model } : {}),
+              ...(selection?.reasoningEffort
+                ? { reasoningEffort: selection.reasoningEffort }
+                : {}),
+            },
+            emit,
+            disconnected.signal,
+          );
+          emit({
+            type: "done",
+            engine: "deepseek-harness",
+            mode: mode === "codex" ? "codex-subscription" : mode,
+            model,
+          });
+          await pendingWrite;
+        } catch (error) {
+          emit({
+            type: "error",
+            message:
+              // Validation failures (removed project, wrong project, missing
+              // tools) are written for the user; anything else stays generic.
+              error instanceof FlowError && error.status < 500
+                ? error.message
+                : "编码请求暂时不可用，请检查服务终端和登录状态后重试。",
+          });
+          await pendingWrite;
+        }
+      });
+    },
   );
 
   app.notFound((context) => context.body(null, 404));
