@@ -74,8 +74,8 @@ const videoSchema = z
       .regex(/^[a-f0-9]{64}$/u)
       .optional(),
     seed,
-    width: z.number().int().min(256).max(608).multipleOf(32).default(608),
-    height: z.number().int().min(256).max(608).multipleOf(32).default(352),
+    width: z.number().int().min(256).max(1312).multipleOf(32).default(608),
+    height: z.number().int().min(256).max(1312).multipleOf(32).default(352),
     frames: z
       .number()
       .int()
@@ -85,8 +85,8 @@ const videoSchema = z
       .refine((v) => (v - 5) % 17 === 0, "帧数必须为 17k+5。"),
   })
   .refine(
-    (v) => v.width * v.height <= 608 * 352,
-    "视频总像素不能超过 608×352。",
+    (v) => v.width * v.height <= 736 * 1312,
+    "视频总像素不能超过 736×1312。",
   );
 const ttsSchema = z
   .object({

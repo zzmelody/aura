@@ -23,12 +23,12 @@ export default defineAction({
     width: {
       type: "integer",
       default: 608,
-      description: "256–608，32 的倍数；总像素不超过 608×352。",
+      description: "256–1312，32 的倍数；总像素不超过 736×1312。",
     },
     height: {
       type: "integer",
       default: 352,
-      description: "256–608，32 的倍数。",
+      description: "256–1312，32 的倍数。",
     },
     frames: {
       type: "integer",

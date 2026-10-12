@@ -477,6 +477,12 @@ test("validation, startup failure, generation failure and output escape leave no
       f.manager.video({ prompt: "x", frames: 40 }, signal()),
     );
     await assert.rejects(
+      f.manager.video({ prompt: "x", width: 720, height: 1280 }, signal()),
+    );
+    await assert.rejects(
+      f.manager.video({ prompt: "x", width: 1312, height: 1312 }, signal()),
+    );
+    await assert.rejects(
       f.manager.tts({ text: "x", mode: "voice-design" }, signal()),
     );
     await assert.rejects(
@@ -515,6 +521,21 @@ test("validation, startup failure, generation failure and output escape leave no
     assert.deepEqual(await readdir(f.outputs), ["outside.png"]);
     assert.equal(f.counts.live, 0);
     assert.equal(f.counts.lease, false);
+  } finally {
+    await f.close();
+  }
+});
+
+test("720p model dimensions reach ComfyUI without falling back to preview size", async () => {
+  const f = await fixture();
+  try {
+    await f.manager.video(
+      { prompt: "高清画面", width: 736, height: 1312, frames: 22, seed: 5 },
+      signal(),
+    );
+    assert.equal(f.graph?.["6"].inputs.width, 736);
+    assert.equal(f.graph?.["6"].inputs.height, 1312);
+    assert.equal(f.counts.live, 0);
   } finally {
     await f.close();
   }

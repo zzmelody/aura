@@ -4,7 +4,13 @@ import {
   DEFAULT_RESEARCH_REQUEST,
   type ResearchRequest,
 } from "@aura/protocol/research";
-import { VIDEO_VOICES, type VideoScript } from "@aura/protocol/video";
+import {
+  VIDEO_VOICES,
+  VIDEO_RESOLUTIONS,
+  DEFAULT_VIDEO_RESOLUTION,
+  type VideoScript,
+  type VideoResolution,
+} from "@aura/protocol/video";
 import type {
   ChatWorkflowStart,
   FlowMode,
@@ -208,6 +214,13 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
     description:
       "运行 Aura「多镜头剧情视频」工作流：按镜头清单新建视频项目并生成整片。用户明确要求把一段故事做成视频时调用。每个镜头旁白不超过 36 字，最多 20 个镜头。",
     parameters: {
+      resolution: {
+        type: "string",
+        enum: [...VIDEO_RESOLUTIONS],
+        default: DEFAULT_VIDEO_RESOLUTION,
+        description:
+          "竖屏分辨率，默认 720p 高清；只有用户明确要求低分辨率快速预览时选 360p。",
+      },
       name: {
         type: "string",
         required: true,
@@ -242,6 +255,7 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
     execute: (
       args: {
         name: string;
+        resolution?: VideoResolution;
         shots: Array<{
           title: string;
           narration: string;
@@ -254,8 +268,10 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
       once(exec.callId, exec.signal, async (requestId) => {
         if (!args.shots.length || args.shots.length > 20)
           throw new FlowError("视频需要 1–20 个镜头。");
+        const resolution = args.resolution ?? DEFAULT_VIDEO_RESOLUTION;
         const script: VideoScript = {
           schemaVersion: 1,
+          resolution,
           scenes: [
             {
               id: randomUUID(),
@@ -282,7 +298,11 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
           runId,
           flowId: "multi-shot-video",
           title: "多镜头剧情视频",
-          input: { name: args.name, shots: args.shots.length },
+          input: {
+            name: args.name,
+            shots: args.shots.length,
+            resolution,
+          },
         };
       }),
   });
