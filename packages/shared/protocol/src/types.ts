@@ -547,7 +547,29 @@ export type CodingActivity =
       diffs?: CodingFileDiff[];
     }
   | { type: "progress"; done: number; total: number }
-  | { type: "deliverable"; path: string };
+  | { type: "deliverable"; path: string }
+  | {
+      type: "question";
+      questionId: string;
+      questions: CodingQuestionItem[];
+    };
+
+/** One question the agent is asking the user. */
+export interface CodingQuestionItem {
+  id: string;
+  question: string;
+  detail?: string;
+  header?: string;
+  options?: Array<{ label: string; description?: string }>;
+  multiSelect?: boolean;
+}
+
+/** The user's answer to one question in a coding session. */
+export interface CodingQuestionAnswer {
+  id: string;
+  selected: string[];
+  custom?: string;
+}
 
 /** One applied hunk; `oldText` is null for a new or overwritten file. */
 export interface CodingFileDiff {

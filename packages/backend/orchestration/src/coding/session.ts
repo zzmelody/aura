@@ -11,16 +11,14 @@ import type {
   CodingStreamEvent,
   CodingTurn,
 } from "../types.ts";
+import type { AskUserQuestionAnswer } from "@deepseek-ai/dsh-user-questions";
+import { codingQuestions, type CodingQuestions } from "./questions.ts";
 
 /**
  * Tools a coding agent may use. Re-admitting a name here is the only way it
  * reaches the model: the profile mounts DSH's coding plugins, and this
- * allow-list decides which of them a coding session actually sees.
- *
- * `ask_user_question` is deliberately absent until Aura answers the question
- * seam: DSH fails such a call closed with no answerer, so exposing it now would
- * only give the model a tool that always errors. `read_image` registers only
- * with an attachment store, so a missing name is dropped rather than failing.
+ * allow-list decides which of them a coding session actually sees. Every
+ * name must be registered, or the turn fails rather than run short a tool.
  */
 export const codingTools = [
   "read",
@@ -31,6 +29,7 @@ export const codingTools = [
   "todo_write",
   "present",
   "exit_plan_mode",
+  "ask_user_question",
 ] as const;
 
 /** Shell tool names differ by platform; whichever exists is admitted. */
@@ -51,7 +50,7 @@ export interface CodingSessionKey {
  * turn so the todo list, plan mode, and tool history accumulate across
  * follow-up requests, and the JSONL log stays readable afterwards.
  */
-export function codingService(ctx: Context) {
+export function codingService(ctx: Context, questions: CodingQuestions) {
   const controller = ctx.sessionController;
 
   return async function stream(
@@ -102,6 +101,27 @@ export function codingService(ctx: Context) {
       // Scoped restrictions are lifted when this turn ends, so every turn,
       // including follow-ups on a live agent, re-applies the allow-list.
       scoped.push(...mountCodingTools(agent));
+      // Answer this agent's `ask_user_question` calls through the client:
+      // the question goes out on the turn stream and the call waits until
+      // the user answers or the turn stops. Agent-scoped, so it never claims
+      // a question from another session.
+      scoped.push(
+        agent.ctx.on("user-questions/request", async (request) => {
+          const items = codingQuestions(request.questions);
+          if (!items.length) throw new FlowError("模型发起了空的问题。");
+          const asked = request.signal
+            ? AbortSignal.any([stop, request.signal])
+            : stop;
+          const answers = await questions.ask(
+            turn.sessionId,
+            items,
+            asked,
+            (questionId) =>
+              emit({ type: "question", questionId, questions: items }),
+          );
+          return { answers } satisfies AskUserQuestionAnswer;
+        }),
+      );
       const requestId = randomUUID() as SessionRequestId;
       let turnNumber: number | undefined;
       let matched: number | undefined;

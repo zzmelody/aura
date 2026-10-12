@@ -4,6 +4,8 @@ import type {
   CodingConversationInfo,
   CodingFileDiff,
   CodingProjectInfo,
+  CodingQuestionAnswer,
+  CodingQuestionItem,
   FlowMode,
 } from "@aura/protocol/types";
 import { WorkflowApiError } from "../../workflowSessions";
@@ -169,6 +171,17 @@ export async function* codingTurn(
           };
         else if (event.type === "deliverable" && typeof event.path === "string")
           yield { kind: "activity", type: "deliverable", path: event.path };
+        else if (
+          event.type === "question" &&
+          typeof event.questionId === "string" &&
+          Array.isArray(event.questions)
+        )
+          yield {
+            kind: "activity",
+            type: "question",
+            questionId: event.questionId,
+            questions: questionItems(event.questions),
+          };
         else if (event.type === "error")
           throw new Error(
             typeof event.message === "string"
@@ -200,6 +213,56 @@ function fileDiffs(value: unknown[]): CodingFileDiff[] {
         path: diff.path,
         oldText: typeof diff.oldText === "string" ? diff.oldText : null,
         newText: diff.newText,
+      },
+    ];
+  });
+}
+
+/** Sends the user's answer to a question the agent is waiting on. */
+export const answerQuestion = (
+  endpoint: string,
+  sessionId: string,
+  questionId: string,
+  answers: CodingQuestionAnswer[],
+) =>
+  codingApi<{ accepted: boolean }>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/answer`,
+    "POST",
+    { questionId, answers },
+  );
+
+/** Keeps only well-formed questions from an untrusted stream event. */
+function questionItems(value: unknown[]): CodingQuestionItem[] {
+  return value.flatMap((raw) => {
+    const item = raw as Partial<
+      Record<keyof CodingQuestionItem, unknown>
+    > | null;
+    if (typeof item?.id !== "string" || typeof item.question !== "string")
+      return [];
+    const options = Array.isArray(item.options)
+      ? item.options.flatMap((option) => {
+          const value = option as { label?: unknown; description?: unknown };
+          return typeof value?.label === "string"
+            ? [
+                {
+                  label: value.label,
+                  ...(typeof value.description === "string"
+                    ? { description: value.description }
+                    : {}),
+                },
+              ]
+            : [];
+        })
+      : [];
+    return [
+      {
+        id: item.id,
+        question: item.question,
+        ...(typeof item.detail === "string" ? { detail: item.detail } : {}),
+        ...(typeof item.header === "string" ? { header: item.header } : {}),
+        ...(options.length ? { options } : {}),
+        ...(item.multiSelect === true ? { multiSelect: true } : {}),
       },
     ];
   });

@@ -34,6 +34,7 @@ import type {
   ChatTurn,
   CodingConversation,
   CodingProject,
+  CodingQuestionAnswer,
   CodingStreamEvent,
   CodingTurn,
 } from "./types.ts";
@@ -390,6 +391,19 @@ export class OrchestrationHost {
   projectStatus(id: string): Promise<"ok" | "missing-dir"> {
     return this.request<"ok" | "missing-dir">("coding/projects/status", {
       id,
+    });
+  }
+
+  /** Delivers the user's answer to a question a coding agent is waiting on. */
+  answerCoding(
+    sessionId: string,
+    questionId: string,
+    answers: CodingQuestionAnswer[],
+  ): Promise<{ accepted: boolean }> {
+    return this.request<{ accepted: boolean }>("coding/answer", {
+      sessionId,
+      questionId,
+      answers,
     });
   }
 

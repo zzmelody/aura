@@ -63,6 +63,28 @@ export function createCodingApp(host: OrchestrationHost) {
     }
   });
 
+  // The agent's pending question resolves only for the session that asked it.
+  app.post("/sessions/:id/answer", async (context) => {
+    const body = await context.req.json().catch(() => undefined);
+    if (
+      !isRecord(body) ||
+      typeof body.questionId !== "string" ||
+      !Array.isArray(body.answers)
+    )
+      return context.json({ message: "无效的回答。" }, 400);
+    try {
+      return context.json(
+        await host.answerCoding(
+          context.req.param("id"),
+          body.questionId,
+          body.answers,
+        ),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
   app.get("/projects/:id/conversations", async (context) => {
     try {
       return context.json(await host.conversations(context.req.param("id")));

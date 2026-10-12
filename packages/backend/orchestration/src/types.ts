@@ -170,7 +170,29 @@ export type CodingStreamEvent =
       diffs?: CodingFileDiff[];
     }
   | { type: "progress"; done: number; total: number }
-  | { type: "deliverable"; path: string };
+  | { type: "deliverable"; path: string }
+  | {
+      type: "question";
+      questionId: string;
+      questions: CodingQuestion[];
+    };
+
+/** One question the agent is asking the user. */
+export interface CodingQuestion {
+  id: string;
+  question: string;
+  detail?: string;
+  header?: string;
+  options?: Array<{ label: string; description?: string }>;
+  multiSelect?: boolean;
+}
+
+/** The user's answer to one question. */
+export interface CodingQuestionAnswer {
+  id: string;
+  selected: string[];
+  custom?: string;
+}
 
 /** One applied hunk; `oldText` is null for a new or overwritten file. */
 export interface CodingFileDiff {

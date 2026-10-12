@@ -9,6 +9,7 @@ import {
   LoaderCircle,
   Plus,
   Square,
+  MessageCircleQuestion,
   Trash2,
   X,
 } from "lucide-react";
@@ -18,6 +19,8 @@ import type {
   CodingConversationInfo,
   CodingFileDiff,
   CodingProjectInfo,
+  CodingQuestionAnswer,
+  CodingQuestionItem,
 } from "@aura/protocol/types";
 import {
   chooseWorkflowPath,
@@ -30,6 +33,7 @@ import {
   listConversations,
   listProjects,
   removeProject,
+  answerQuestion,
 } from "./api";
 import { diffLines, diffStats } from "./diff";
 import "./coding.css";
@@ -78,10 +82,19 @@ type Turn = {
   tools: ToolEntry[];
   progress?: { done: number; total: number };
   deliverables: string[];
+  /** Questions the agent asked during this turn, answered or still open. */
+  questions: AskedQuestion[];
   status: "running" | "complete" | "stopped" | "error";
   error?: string;
   startedAt: number;
   endedAt?: number;
+};
+
+type AskedQuestion = {
+  questionId: string;
+  questions: CodingQuestionItem[];
+  /** Set once the user answered; an open question has none. */
+  answered?: CodingQuestionAnswer[];
 };
 
 const toolLabels: Record<string, string> = {
@@ -96,6 +109,7 @@ const toolLabels: Record<string, string> = {
   todo_write: "更新任务清单",
   present: "交付文件",
   exit_plan_mode: "提交计划",
+  ask_user_question: "向你提问",
 };
 
 /** Stable empty list so an idle transcript does not re-run its effects. */
@@ -127,9 +141,155 @@ function useTicker(active: boolean): number {
   return now;
 }
 
-function TurnView({ turn, now }: { turn: Turn; now: number }) {
+/** One question batch from the agent: open with a form, or its answer once sent. */
+function QuestionCard({
+  asked,
+  live,
+  onAnswer,
+}: {
+  asked: AskedQuestion;
+  /** False once the turn ended; the agent is no longer waiting. */
+  live: boolean;
+  onAnswer(answers: CodingQuestionAnswer[]): Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Record<string, string[]>>({});
+  const [custom, setCustom] = useState<Record<string, string>>({});
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const done = asked.answered !== undefined;
+  const toggle = (id: string, label: string, multi: boolean) =>
+    setSelected((current) => {
+      const now = current[id] ?? [];
+      return {
+        ...current,
+        [id]: multi
+          ? now.includes(label)
+            ? now.filter((item) => item !== label)
+            : [...now, label]
+          : [label],
+      };
+    });
+  const submit = async () => {
+    setSending(true);
+    setError("");
+    try {
+      await onAnswer(
+        asked.questions.map((question) => ({
+          id: question.id,
+          selected: selected[question.id] ?? [],
+          ...(custom[question.id]?.trim()
+            ? { custom: custom[question.id]!.trim() }
+            : {}),
+        })),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSending(false);
+    }
+  };
+  const answerText = (id: string) => {
+    const answer = asked.answered?.find((item) => item.id === id);
+    if (!answer) return "未回答";
+    return (
+      [...answer.selected, ...(answer.custom ? [answer.custom] : [])].join(
+        "、",
+      ) || "已跳过"
+    );
+  };
+  return (
+    <section
+      className={`coding-question${done ? " answered" : ""}`}
+      aria-label="模型的提问"
+    >
+      <h3>
+        <MessageCircleQuestion size={14} />
+        {done ? "已回答" : live ? "需要你的决定" : "提问已结束"}
+      </h3>
+      {asked.questions.map((question) => (
+        <fieldset key={question.id} disabled={done || !live || sending}>
+          <legend>
+            {question.header ? <span>{question.header}</span> : null}
+            {question.question}
+          </legend>
+          {question.detail ? (
+            <div className="coding-question-detail">
+              <WorkflowRichText text={question.detail} />
+            </div>
+          ) : null}
+          {done ? (
+            <p className="coding-question-answer">{answerText(question.id)}</p>
+          ) : (
+            <>
+              {question.options?.map((option) => (
+                <label key={option.label} className="coding-question-option">
+                  <input
+                    type={question.multiSelect ? "checkbox" : "radio"}
+                    name={`${asked.questionId}-${question.id}`}
+                    checked={(selected[question.id] ?? []).includes(
+                      option.label,
+                    )}
+                    onChange={() =>
+                      toggle(question.id, option.label, !!question.multiSelect)
+                    }
+                  />
+                  <span>
+                    {option.label}
+                    {option.description ? (
+                      <small>{option.description}</small>
+                    ) : null}
+                  </span>
+                </label>
+              ))}
+              <input
+                className="coding-question-custom"
+                aria-label={`${question.question} 的其他回答`}
+                placeholder={
+                  question.options?.length ? "或者写下你的回答" : "写下你的回答"
+                }
+                value={custom[question.id] ?? ""}
+                onChange={(event) =>
+                  setCustom((current) => ({
+                    ...current,
+                    [question.id]: event.target.value,
+                  }))
+                }
+              />
+            </>
+          )}
+        </fieldset>
+      ))}
+      {!done && live ? (
+        <div className="coding-question-actions">
+          <button disabled={sending} onClick={() => void submit()}>
+            {sending ? (
+              <LoaderCircle size={13} className="coding-spin" />
+            ) : null}
+            发送回答
+          </button>
+        </div>
+      ) : null}
+      {error ? (
+        <p className="coding-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function TurnView({
+  turn,
+  now,
+  onAnswer,
+}: {
+  turn: Turn;
+  now: number;
+  onAnswer(questionId: string, answers: CodingQuestionAnswer[]): Promise<void>;
+}) {
   const elapsed = (turn.endedAt ?? now) - turn.startedAt;
   const running = turn.status === "running";
+  const waiting = turn.questions.some((item) => !item.answered);
   return (
     <article className="coding-turn">
       <div className="coding-prompt">{turn.prompt}</div>
@@ -144,7 +304,9 @@ function TurnView({ turn, now }: { turn: Turn; now: number }) {
               <X size={13} />
             )}
             {running
-              ? "正在处理"
+              ? waiting
+                ? "等待你的回答"
+                : "正在处理"
               : turn.status === "complete"
                 ? "已完成"
                 : turn.status === "stopped"
@@ -202,6 +364,15 @@ function TurnView({ turn, now }: { turn: Turn; now: number }) {
           </ol>
         ) : null}
       </div>
+      {/* Questions come before the reply: the agent asked, then answered. */}
+      {turn.questions.map((asked) => (
+        <QuestionCard
+          key={asked.questionId}
+          asked={asked}
+          live={running}
+          onAnswer={(answers) => onAnswer(asked.questionId, answers)}
+        />
+      ))}
       {turn.reply ? (
         <div className="coding-reply">
           <WorkflowRichText text={turn.reply} />
@@ -358,6 +529,21 @@ export function CodingStudio({
       ),
     }));
 
+  /** Sends an answer; the card shows it once the backend accepted it. */
+  const answer =
+    (sessionId: string, turnId: string) =>
+    async (questionId: string, answers: CodingQuestionAnswer[]) => {
+      await answerQuestion(endpoint, sessionId, questionId, answers);
+      updateTurn(sessionId, turnId, (turn) => ({
+        ...turn,
+        questions: turn.questions.map((item) =>
+          item.questionId === questionId
+            ? { ...item, answered: answers }
+            : item,
+        ),
+      }));
+    };
+
   const send = async () => {
     const prompt = draft.trim();
     if (!prompt || !project || running) return;
@@ -376,6 +562,7 @@ export function CodingStudio({
           reply: "",
           tools: [],
           deliverables: [],
+          questions: [],
           status: "running",
           startedAt: Date.now(),
         },
@@ -406,6 +593,14 @@ export function CodingStudio({
             return turn.deliverables.includes(chunk.path)
               ? turn
               : { ...turn, deliverables: [...turn.deliverables, chunk.path] };
+          if (chunk.type === "question")
+            return {
+              ...turn,
+              questions: [
+                ...turn.questions,
+                { questionId: chunk.questionId, questions: chunk.questions },
+              ],
+            };
           if (chunk.phase === "start")
             return {
               ...turn,
@@ -682,7 +877,12 @@ export function CodingStudio({
             </div>
           ) : (
             shown.map((turn) => (
-              <TurnView key={turn.id} turn={turn} now={now} />
+              <TurnView
+                key={turn.id}
+                turn={turn}
+                now={now}
+                onAnswer={answer(conversationId!, turn.id)}
+              />
             ))
           )}
         </div>

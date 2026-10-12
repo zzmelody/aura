@@ -6,6 +6,7 @@ import test from "node:test";
 import { serve, type ServerType } from "@hono/node-server";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import { codingTools } from "../src/coding/session.ts";
 import { OrchestrationHost } from "../src/index.ts";
 import type { CodingStreamEvent } from "../src/types.ts";
 
@@ -227,10 +228,13 @@ test(
           followUpTools.has(expected),
           `follow-up turn should expose ${expected}; saw ${[...followUpTools].join(", ")}`,
         );
-      assert.ok(
-        !followUpTools.has("ask_user_question"),
-        `follow-up turn must keep the allow-list; saw ${[...followUpTools].join(", ")}`,
-      );
+      // Nothing outside the allow-list (e.g. read_image) may leak back in.
+      const allowed = new Set<string>([...codingTools, "bash", "pwsh"]);
+      for (const name of followUpTools)
+        assert.ok(
+          allowed.has(name),
+          `follow-up turn must keep the allow-list; saw ${[...followUpTools].join(", ")}`,
+        );
       const afterFollowUp = await host.conversations(created.id);
       assert.equal(afterFollowUp.length, 1);
       assert.match(afterFollowUp[0]!.title, /WRITE_FILE/u);

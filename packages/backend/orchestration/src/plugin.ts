@@ -76,6 +76,7 @@ import {
   type CodingConversationRecord,
 } from "./coding/index-record.ts";
 import { CodingProjects } from "./coding/projects.ts";
+import { CodingQuestions } from "./coding/questions.ts";
 import { chatModelCatalog, RejectedChatModels } from "./chat-models.ts";
 import { GptImageService, codexImageRequest } from "./gpt-image.ts";
 import {
@@ -709,7 +710,8 @@ export async function apply(ctx: Context) {
   );
   const chats = new Map<string, AbortController>();
   const rejectedChatModels = new RejectedChatModels();
-  const coding = codingService(ctx);
+  const codingAnswers = new CodingQuestions();
+  const coding = codingService(ctx, codingAnswers);
 
   transport.onNotification((method, params) => {
     if (method === "chat/cancel" && typeof params.chatId === "string")
@@ -1069,6 +1071,20 @@ export async function apply(ctx: Context) {
           if (typeof params.projectId !== "string")
             throw new FlowError("无效的项目。", 400);
           data = codingProjects.conversationsOf(params.projectId);
+          break;
+        }
+        case "coding/answer": {
+          if (
+            typeof params.sessionId !== "string" ||
+            typeof params.questionId !== "string"
+          )
+            throw new FlowError("无效的回答。", 400);
+          codingAnswers.answer(
+            params.sessionId,
+            params.questionId,
+            params.answers,
+          );
+          data = { accepted: true };
           break;
         }
         case "action/get":

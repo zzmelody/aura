@@ -368,3 +368,109 @@
   background: color-mix(in srgb, var(--danger) 14%, transparent);
   color: var(--text);
 }
+
+/* Questions the agent asks; the turn waits until one is answered. */
+.coding-question {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--soft);
+}
+.coding-question.answered {
+  border-color: var(--border);
+  background: var(--surface);
+}
+.coding-question h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+.coding-question.answered h3 {
+  color: var(--muted);
+}
+.coding-question fieldset {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.coding-question legend {
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  margin-bottom: 4px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+}
+.coding-question legend span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.coding-question-detail {
+  max-height: 280px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--background);
+  font-size: 13px;
+}
+.coding-question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.coding-question-option:hover {
+  background: var(--elevated);
+}
+.coding-question-option input {
+  margin-top: 3px;
+}
+.coding-question-option span {
+  display: grid;
+  gap: 2px;
+}
+.coding-question-option small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.coding-question-custom {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--text);
+  font-size: 13px;
+}
+.coding-question-answer {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 13px;
+}
+.coding-question-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+}
+.coding-question-actions button:disabled {
+  opacity: 0.6;
+}

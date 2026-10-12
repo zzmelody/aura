@@ -192,9 +192,22 @@ AI 对话，全程可见、可干预，结束时产出报告。对标 Codex 的�
 
 ### Phase 3 · 双向交互
 
-- 提问应答：SSE 下发 `question` 事件（含 `intent`），客户端作答回传。
+**提问应答已完成** ✅（`src/coding/questions.ts`，测试 `coding-questions*.test.ts`）：
+
+- `ask_user_question` 加入白名单。每轮在 agent 作用域挂 `user-questions/request`
+  应答端，问题以 `question` 事件推给客户端，调用挂起直到用户作答或本轮停止。
+- `POST /coding/sessions/:id/answer` 交回答案。只接受提问的那个会话、只接受被问到的
+  问题 id，选项必须是给出的选项，单选最多一项，自由文本截断到 4000 字符；一个问题只能答一次。
+- 前端问题卡片：选项、可选的自由回答、发送；作答后折叠为“已回答”，等待时轮次状态显示
+  “等待你的回答”。
+- 新增依赖 `@deepseek-ai/dsh-user-questions@0.1.5-rc.3`（固定版本，DSH 自带包）。
+
+剩余：
+
 - 审批应答：`approval/asked` 同样处理；UI 明确展示被请求的操作与范围。
-- 规划审阅：`exit_plan_mode` 的计划以审阅卡片呈现，可批准或退回修改。
+- 规划审阅：`exit_plan_mode` 的计划带 `intent: plan-review`，目前按普通问题渲染，
+  可以批准或退回，但还没有专门的计划审阅卡片。
+- 刷新页面后，挂起的问题需要重新拉取（后端已有 `open(sessionId)`，尚未接 HTTP）。
 
 ### Phase 4 · 报告与回看
 
