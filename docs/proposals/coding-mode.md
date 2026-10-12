@@ -234,16 +234,27 @@ AI 对话，全程可见、可干预，结束时产出报告。对标 Codex 的�
 
 ## 风险与待定
 
-- **安全**：编码工具让模型可写本机文件。`workspace-write` 沙箱把写入限制在项目目录，但
-  **读取不受限**；`danger-full-access` 会解除全部限制。默认模式与审批策略需明确设定，
-  且必须在 UI 上说清当前处于哪种模式（`sandbox/mode` 事件可用于展示）。
-- **profile 改动的影响面**：若走兜底路线，`profile.ts` 是全局配置，需回归普通对话、
-  Flow Agent、演示模式三条链路。
-- **`AURA_HISTORY_V1` 回灌**与长驻 session 并存会重复上下文，编码模式应改为真正的多轮
-  session，不复用回灌路径。
-- **并发**：现有 `/chat` 限制单进程 2 个并发请求（`api-server.ts:97`）。编码会话是长驻的，
-  需要独立的并发与生命周期策略，不能直接套用。
-- **跨平台**：命令执行在 Windows 走 `tool-pwsh`，与 POSIX 的 `tool-bash` 是两条路径，需分别验证。
+仍然成立：
+
+- **读取不受限**：`workspace-write` 沙箱只限制写入。`read`、`glob`、`grep` 能读项目目录以外的
+  文件，`glob`/`grep` 也不经过 `fs-sandbox`。
+- **界面不显示当前沙箱模式**：默认是 `workspace-write`，可被 `DSH_PERMISSION_MODE` 改掉；
+  设成 `danger-full-access` 时审批策略变为 `never`，越权不再询问。界面目前看不出处于哪种模式
+  （可用 `sandbox/mode` 事件展示）。
+- **并发与普通对话共用名额**：编码轮次和 `/chat` 共用进程内 2 个并发名额（`plugin.ts` 的
+  `chats.size >= 2`）。一轮编码最长 30 分钟，两轮编码同时进行会让普通对话返回“服务忙”。
+  同一对话同时只允许一轮。
+- **Windows 未验证**：命令在 Windows 走 `tool-pwsh`。白名单接受 `pwsh`，但审批端到端测试在
+  Windows 上跳过，pwsh 路径没有跑过。
+- **等待中的问题只在内存里**：宿主重启时等待中的问题会丢失（那一轮本身也随之中断），重启后该轮
+  显示为已停止。
+
+已解决：
+
+- **profile 全局启用工具的影响面**：走了兜底路线。测试锁住了普通对话只看到自己的工作流工具、
+  看不到编码工具；追问轮也会重新挂白名单（`coding-dsh.test.ts`）。
+- **`AURA_HISTORY_V1` 回灌**：编码模式用真正的长驻多轮 session，不走回灌路径；宿主重启后用
+  `agents.resume` 续上存储的会话。
 
 ## 验收
 
@@ -254,3 +265,7 @@ AI 对话，全程可见、可干预，结束时产出报告。对标 Codex 的�
 - 对话结束有一份报告，且事后可回到该对话查看完整过程。
 - 普通对话、Flow Agent 与演示模式的现有行为不变。
 - 通过 `pnpm run format:check`、`pnpm run lint`、`pnpm run check`。
+
+验收结果：以上功能项都已完成并测试。`format:check`、`lint`、`check:workspaces`、`typecheck`
+通过；`pnpm run check` 里的 `test` 有 4 个失败（orchestration 3 个 ffmpeg 相关、runtime 1 个
+AI routes），在编码模式改动之前的代码上同样失败，与本功能无关，因此 `pnpm run check` 整体不通过。
