@@ -10,6 +10,10 @@ contextBridge.exposeInMainWorld("auraHost", {
     setTheme: (dark: boolean) =>
       ipcRenderer.invoke("aura:window:theme", dark) as Promise<void>,
   },
+  files: {
+    reveal: (root: string, path: string) =>
+      ipcRenderer.invoke("aura:files:reveal", root, path) as Promise<void>,
+  },
   workflowFiles: {
     choose: (kind: WorkflowPathKind) =>
       ipcRenderer.invoke("aura:workflow-files:choose", kind) as Promise<

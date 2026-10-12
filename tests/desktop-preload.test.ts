@@ -16,6 +16,7 @@ interface PreloadHost {
     stop(directory: string): Promise<unknown>;
     open(project: object): Promise<unknown>;
   };
+  files: { reveal(root: string, path: string): Promise<unknown> };
 }
 
 test("built desktop preload runs with sandbox CommonJS and exposes working Site IPC", async (t) => {
@@ -75,11 +76,15 @@ test("built desktop preload runs with sandbox CommonJS and exposes working Site 
   await host.site.start(project);
   await host.site.stop("/tmp/site");
   await host.site.open(project);
+  // Coding deliverables are revealed through their own channel, with the
+  // project root so the main process can confine the path.
+  await host.files.reveal("/tmp/project", "src/a.ts");
   assert.deepEqual(requests, [
     ["aura:site:choose-directory"],
     ["aura:site:status"],
     ["aura:site:start", project],
     ["aura:site:stop", "/tmp/site"],
     ["aura:site:open", project],
+    ["aura:files:reveal", "/tmp/project", "src/a.ts"],
   ]);
 });

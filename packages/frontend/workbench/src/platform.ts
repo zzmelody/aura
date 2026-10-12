@@ -10,6 +10,8 @@ declare global {
       openExternal?(url: string): Promise<void>;
       site?: SiteHostApi;
       workflowFiles?: WorkflowFileHostApi;
+      /** Show a project file in the system file manager; never opens it. */
+      files?: { reveal(root: string, path: string): Promise<void> };
       chrome?: { setTheme(dark: boolean): Promise<void> };
     };
   }

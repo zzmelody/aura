@@ -9,6 +9,7 @@ import { startAuraRuntime } from "@aura/runtime";
 import { closeSiteHost, installSiteHost } from "./site-host.ts";
 import { installWorkflowFileHost } from "./workflow-file-host.ts";
 import { installWindowHost } from "./window-host.ts";
+import { installFileRevealHost } from "./file-reveal-host.ts";
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(sourceDir, "..");
@@ -19,6 +20,7 @@ let renderer: ServerType | null = null;
 installSiteHost();
 installWorkflowFileHost();
 installWindowHost();
+installFileRevealHost();
 const development = !app.isPackaged && process.argv.includes("--dev");
 if (development) {
   const parentPid = Number(process.env.AURA_DEV_PARENT_PID);

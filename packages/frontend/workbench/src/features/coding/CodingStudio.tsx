@@ -3,7 +3,9 @@ import {
   ArrowLeft,
   ArrowUp,
   Check,
+  Copy,
   FileText,
+  FolderSearch,
   FolderOpen,
   FolderPlus,
   LoaderCircle,
@@ -26,6 +28,7 @@ import {
   workflowFilePickerAvailable,
 } from "../../file-picker";
 import { WorkflowRichText } from "../../screens/WorkflowValue";
+import { writeClipboard } from "../../clipboard";
 import {
   codingTurn,
   createProject,
@@ -281,13 +284,76 @@ function QuestionCard({
   );
 }
 
+/**
+ * One declared file: copy its full path anywhere, and on desktop reveal it in
+ * the file manager. Revealing never opens the file, so a script the agent
+ * produced cannot be run from here.
+ */
+function DeliverableItem({
+  path,
+  directory,
+}: {
+  path: string;
+  directory: string;
+}) {
+  const [note, setNote] = useState("");
+  const reveal = globalThis.window?.auraHost?.files?.reveal;
+  // Relative paths resolve against the project, as the agent declared them.
+  const full = /^([a-zA-Z]:[\\/]|[\\/])/u.test(path)
+    ? path
+    : `${directory.replace(/[\\/]+$/u, "")}/${path}`;
+  useEffect(() => {
+    if (!note) return;
+    const timer = setTimeout(() => setNote(""), 2000);
+    return () => clearTimeout(timer);
+  }, [note]);
+  const run = async (action: () => Promise<void>, done: string) => {
+    try {
+      await action();
+      setNote(done);
+    } catch (reason) {
+      setNote(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+  return (
+    <li>
+      <FileText size={13} />
+      <code title={full}>{path}</code>
+      <span className="coding-report-actions">
+        {note ? <span role="status">{note}</span> : null}
+        <button
+          className="icon-control"
+          aria-label={`复制 ${path} 的完整路径`}
+          title="复制完整路径"
+          onClick={() => void run(() => writeClipboard(full), "已复制")}
+        >
+          <Copy size={13} />
+        </button>
+        {reveal ? (
+          <button
+            className="icon-control"
+            aria-label={`在文件夹中显示 ${path}`}
+            title="在文件夹中显示"
+            onClick={() => void run(() => reveal(directory, path), "已定位")}
+          >
+            <FolderSearch size={13} />
+          </button>
+        ) : null}
+      </span>
+    </li>
+  );
+}
+
 function TurnView({
   turn,
   now,
+  directory,
   onAnswer,
 }: {
   turn: Turn;
   now: number;
+  /** Project directory; deliverable paths resolve against it. */
+  directory: string;
   onAnswer(questionId: string, answers: CodingQuestionAnswer[]): Promise<void>;
 }) {
   const elapsed = (turn.endedAt ?? now) - turn.startedAt;
@@ -391,10 +457,7 @@ function TurnView({
           <h3>交付文件</h3>
           <ul>
             {turn.deliverables.map((path) => (
-              <li key={path}>
-                <FileText size={13} />
-                <code>{path}</code>
-              </li>
+              <DeliverableItem key={path} path={path} directory={directory} />
             ))}
           </ul>
         </section>
@@ -923,6 +986,7 @@ export function CodingStudio({
                 key={turn.id}
                 turn={turn}
                 now={now}
+                directory={project.directory}
                 onAnswer={answer(conversationId!, turn.id)}
               />
             ))
