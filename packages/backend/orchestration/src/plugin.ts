@@ -1057,6 +1057,20 @@ export async function apply(ctx: Context) {
           data = await codingProjects.rename(input.data.id, input.data.title);
           break;
         }
+        case "coding/projects/relocate": {
+          const input = z
+            .object({
+              id: z.string().trim().min(1).max(200),
+              directory: z.string().trim().min(1).max(4096),
+            })
+            .safeParse(params);
+          if (!input.success) throw new FlowError("无效的项目目录。", 400);
+          data = await codingProjects.relocate(
+            input.data.id,
+            input.data.directory,
+          );
+          break;
+        }
         case "coding/projects/remove": {
           if (typeof params.id !== "string")
             throw new FlowError("无效的项目。", 400);

@@ -95,7 +95,11 @@ export function chatService(
     const handle = await ctx.agents.create({
       sessionId,
       agentOptions: { provider: config.provider, model: config.model },
-      meta: { agentPreset: preset, cwd: process.env.AURA_FLOW_CWD },
+      // Ordinary chats belong to no workspace; they run in the built-in one.
+      meta: {
+        agentPreset: preset,
+        cwd: process.env.AURA_DEFAULT_WORKSPACE ?? process.env.AURA_FLOW_CWD,
+      },
       signal: stop,
       setup: async (agentCtx) => {
         await ctx.agentPresets.mount(agentCtx, preset);

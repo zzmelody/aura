@@ -1,47 +1,4 @@
-/* Coding studio: project rail, live activity transcript, composer. */
-.coding-project {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-.coding-project .studio-rail-item {
-  flex: 1;
-  min-width: 0;
-  padding-right: 30px;
-}
-.coding-project-remove {
-  position: absolute;
-  right: 4px;
-  opacity: 0;
-}
-.coding-project:hover .coding-project-remove,
-.coding-project-remove:focus-visible {
-  opacity: 1;
-}
-.coding-conversation-heading {
-  margin-top: 12px;
-  padding-left: 8px;
-}
-
-.coding-add {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  color: var(--muted);
-}
-.coding-add input {
-  flex: 1;
-  min-width: 0;
-  padding: 7px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--input);
-  color: var(--text);
-  font-size: 13px;
-}
-.coding-add button[type="submit"],
+/* Workspace conversation: live activity transcript and composer. */
 .coding-empty button {
   display: inline-flex;
   align-items: center;
@@ -52,9 +9,6 @@
   background: var(--primary);
   color: #fff;
   font-size: 13px;
-}
-.coding-add button[type="submit"]:disabled {
-  opacity: 0.5;
 }
 .coding-notice {
   margin: 0;
@@ -237,70 +191,12 @@
   }
 }
 
-/* Composer: match the chat screen, whose rules are scoped to .chat-screen. */
-.coding-studio .chat-composer-area {
-  padding: 0 max(16px, calc((100% - 760px) / 2)) 16px;
-}
-.coding-studio .chat-composer {
-  padding: 12px 10px 8px 16px;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 24px;
-  background: var(--elevated);
-  box-shadow: none;
-}
-.coding-studio .chat-composer:focus-within {
-  border-color: var(--border);
-}
-.coding-studio .chat-composer textarea {
-  min-height: 40px;
-  max-height: 220px;
-  padding: 2px 2px 10px;
-  resize: none;
-  font-size: 14px;
-  line-height: 1.6;
-}
-.coding-studio .composer-spacer {
-  flex: 1;
-}
-.coding-studio .send-button {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--primary);
-  color: #fff;
-}
-.coding-studio .send-button:disabled {
-  background: color-mix(in srgb, var(--text) 10%, transparent);
-  color: var(--muted);
-}
-
 /* Toolbar: long project paths truncate instead of wrapping. */
 .coding-studio .studio-title span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Narrow screens: the rail is hidden, so its selects take a second row. */
-@media (max-width: 899px) {
-  .coding-studio .studio-toolbar {
-    flex-wrap: wrap;
-    row-gap: 8px;
-    padding-block: 8px;
-  }
-  .coding-studio .studio-title {
-    flex: 1 1 calc(100% - 96px);
-  }
-  .coding-studio label.studio-project-select {
-    /* Half-width basis keeps both selects off the title row. */
-    flex: 1 1 calc(50% - 5px);
-    min-width: 0;
-  }
-  .coding-studio label.studio-project-select select {
-    width: 100%;
-    max-width: none;
-  }
-}
-
 /* File-change cards under a write or edit step. */
 .coding-tools li:has(.coding-diffs) {
   flex-wrap: wrap;

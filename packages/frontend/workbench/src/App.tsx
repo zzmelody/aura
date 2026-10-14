@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   useColorScheme,
@@ -20,6 +20,7 @@ import "@fontsource/ibm-plex-mono/latin-400.css";
 import "./styles.css";
 import "./shell.css";
 import "./workflow-output.css";
+import { providerMode } from "@aura/core";
 import { ThemeContext } from "@aura/ui/components";
 import { palettes } from "@aura/ui/theme";
 import { useWorkspace } from "./useWorkspace";
@@ -43,6 +44,8 @@ import { SessionStatus } from "./SessionStatus";
 import { ToastProvider } from "./toast";
 import { sidebarSessionStatus, sidebarSessionTitle } from "./sidebarSessions";
 import { platform } from "./platform";
+import { useCodingProjects } from "./features/coding/useCodingProjects";
+import type { CodingHandoff } from "./features/coding/CodingStudio";
 import "./workspace-chrome.css";
 
 const VideoProjects = React.lazy(() =>
@@ -71,7 +74,7 @@ const tabTitles: Record<Tab, string> = {
   "studio:content": "自媒体内容",
   "studio:video": "视频项目",
   "studio:research": "选题库",
-  "studio:coding": "编码",
+  "studio:coding": "工作空间",
   history: "全部记录",
   site: "Site",
   settings: "设置",
@@ -89,7 +92,13 @@ export default function App() {
   const codexAuth = useCodexAuth(workspace);
   const flowDraft = useFlowDraft();
   const catalogState = useFlowCatalog(codexAuth.endpoint);
+  const codingWorkspaces = useCodingProjects(
+    codexAuth.endpoint,
+    workspace.ready && workspace.state.provider !== "offline",
+  );
   const [workflowDetail, setWorkflowDetail] = useState(false);
+  const [codingHandoff, setCodingHandoff] = useState<CodingHandoff>();
+  const takeHandoff = useCallback(() => setCodingHandoff(undefined), []);
   const [studioDirty, setStudioDirty] = useState(false);
   const canLeaveStudio = () =>
     !studioDirty || window.confirm("工作台有未保存修改，确认离开？");
@@ -225,6 +234,9 @@ export default function App() {
       showArchived={showArchived}
       onArchived={setShowArchived}
       onDialog={setSessionDialog}
+      endpoint={codexAuth.endpoint}
+      codingWorkspaces={codingWorkspaces}
+      offline={workspace.state.provider === "offline"}
     />
   );
   const showChat =
@@ -471,6 +483,18 @@ export default function App() {
                             !catalogState.catalog && !catalogState.error
                           }
                           onOpenStudio={navigate}
+                          workspaces={
+                            tab === "chat" ? codingWorkspaces : undefined
+                          }
+                          onWorkspaceTask={(projectId, prompt) => {
+                            codingWorkspaces.open(projectId);
+                            setCodingHandoff({
+                              id: crypto.randomUUID(),
+                              projectId,
+                              prompt,
+                            });
+                            navigate("studio:coding");
+                          }}
                           context={
                             tab === "flows"
                               ? flowContext(flowDraft.code)
@@ -515,6 +539,27 @@ export default function App() {
                             key={codexAuth.endpoint}
                             endpoint={codexAuth.endpoint}
                             provider={workspace.state.provider}
+                            workspaces={codingWorkspaces}
+                            handoff={codingHandoff}
+                            onHandoffTaken={takeHandoff}
+                            modelConfig={
+                              workspace.chatModelConfig[
+                                providerMode(workspace.state.provider)
+                              ] ?? {}
+                            }
+                            onModelConfig={(selection) =>
+                              workspace.setChatModelConfig(
+                                providerMode(workspace.state.provider),
+                                selection,
+                              )
+                            }
+                            onProvider={(provider) =>
+                              workspace.setState((s) => ({
+                                ...s,
+                                provider,
+                                endpoint: s.endpoint || "http://127.0.0.1:4311",
+                              }))
+                            }
                             onBack={() => navigate("chat")}
                           />
                         ) : (

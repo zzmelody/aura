@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowUp,
@@ -6,38 +6,23 @@ import {
   Copy,
   FileText,
   FolderSearch,
-  FolderOpen,
   FolderPlus,
   LoaderCircle,
-  Plus,
   Square,
   MessageCircleQuestion,
-  Trash2,
   X,
 } from "lucide-react";
 import { providerMode } from "@aura/core";
 import type { Workspace } from "@aura/core/types";
 import type {
-  CodingConversationInfo,
+  ChatModelSelection,
   CodingFileDiff,
-  CodingProjectInfo,
   CodingQuestionAnswer,
 } from "@aura/protocol/types";
-import {
-  chooseWorkflowPath,
-  workflowFilePickerAvailable,
-} from "../../file-picker";
 import { WorkflowRichText } from "../../screens/WorkflowValue";
+import { ChatModelControls } from "../../screens/ChatModelControls";
 import { writeClipboard } from "../../clipboard";
-import {
-  codingTurn,
-  createProject,
-  listConversations,
-  listProjects,
-  conversationHistory,
-  removeProject,
-  answerQuestion,
-} from "./api";
+import { codingTurn, conversationHistory, answerQuestion } from "./api";
 import { diffLines, diffStats } from "./diff";
 import {
   answerTurn,
@@ -49,6 +34,8 @@ import {
   type AskedQuestion,
   type Turn,
 } from "./turns";
+import type { CodingProjectsController } from "./useCodingProjects";
+import { WorkspaceDialog } from "./WorkspaceDialog";
 import "./coding.css";
 
 /** One file-change card: path, line counts, and the line diff. */
@@ -103,11 +90,6 @@ function duration(ms: number): string {
   if (seconds < 60) return `${seconds} 秒`;
   const minutes = Math.floor(seconds / 60);
   return `${minutes} 分 ${seconds % 60} 秒`;
-}
-
-function shortPath(directory: string): string {
-  const parts = directory.split(/[\\/]/u).filter(Boolean);
-  return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : directory;
 }
 
 /** Re-renders once a second while `active`, for live elapsed time. */
@@ -521,26 +503,48 @@ function TurnSummaryView({ turn }: { turn: Turn }) {
   );
 }
 
+export type CodingHandoff = { id: string; projectId: string; prompt: string };
+
+/**
+ * The open workspace conversation. Workspaces and their conversations are
+ * listed in the sidebar tree, so this page only shows the transcript and the
+ * composer for the selection held by `workspaces`.
+ */
 export function CodingStudio({
   endpoint,
   provider,
+  workspaces,
+  handoff,
+  onHandoffTaken,
+  modelConfig,
+  onModelConfig,
+  onProvider,
   onBack,
 }: {
   endpoint: string;
   provider: Workspace["provider"];
+  /** Workspace tree state shared with the sidebar. */
+  workspaces: CodingProjectsController;
+  /** A first request started from the chat page in a chosen workspace. */
+  handoff?: CodingHandoff;
+  onHandoffTaken?(): void;
+  /** Model and effort for the current mode, shared with the chat page. */
+  modelConfig: ChatModelSelection;
+  onModelConfig(selection: ChatModelSelection): void;
+  onProvider(provider: Workspace["provider"]): void;
   onBack(): void;
 }) {
-  const [projects, setProjects] = useState<CodingProjectInfo[]>([]);
-  const [projectId, setProjectId] = useState<string>();
-  const [conversations, setConversations] = useState<CodingConversationInfo[]>(
-    [],
-  );
-  const [conversationId, setConversationId] = useState<string>();
+  const {
+    projects,
+    selectedId: projectId,
+    conversationId,
+    open,
+    refreshConversations,
+  } = workspaces;
   const [turns, setTurns] = useState<Record<string, Turn[]>>({});
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [pathInput, setPathInput] = useState("");
+  const [creating, setCreating] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   /** Conversations already read from the log; a live turn is never overwritten. */
   const loaded = useRef(new Set<string>());
@@ -548,49 +552,16 @@ export function CodingStudio({
   const transcript = useRef<HTMLDivElement>(null);
 
   const project = projects.find((item) => item.id === projectId);
+  const conversation = project
+    ? workspaces.conversations[project.id]?.find(
+        (item) => item.id === conversationId,
+      )
+    : undefined;
   const shown = conversationId ? (turns[conversationId] ?? noTurns) : noTurns;
   const running = shown.some((turn) => turn.status === "running");
   const now = useTicker(running);
   const offline = provider === "offline";
-  const desktopPicker = workflowFilePickerAvailable();
-
-  const refreshProjects = useCallback(
-    async (signal?: AbortSignal) => {
-      const list = await listProjects(endpoint, signal);
-      setProjects(list);
-      setProjectId((current) =>
-        current && list.some((item) => item.id === current)
-          ? current
-          : list[0]?.id,
-      );
-    },
-    [endpoint],
-  );
-
-  useEffect(() => {
-    if (offline) return;
-    const abort = new AbortController();
-    refreshProjects(abort.signal).catch((reason: unknown) => {
-      if (!abort.signal.aborted)
-        setError(reason instanceof Error ? reason.message : String(reason));
-    });
-    return () => abort.abort();
-  }, [offline, refreshProjects]);
-
-  useEffect(() => {
-    if (!projectId) {
-      setConversations([]);
-      return;
-    }
-    const abort = new AbortController();
-    listConversations(endpoint, projectId, abort.signal)
-      .then(setConversations)
-      .catch((reason: unknown) => {
-        if (!abort.signal.aborted)
-          setError(reason instanceof Error ? reason.message : String(reason));
-      });
-    return () => abort.abort();
-  }, [endpoint, projectId]);
+  const mode = providerMode(provider);
 
   // Opening a stored conversation reads its transcript back from the log, so
   // a reload or another device shows the same steps, diffs and answers.
@@ -635,48 +606,6 @@ export function CodingStudio({
     transcript.current?.scrollTo({ top: transcript.current.scrollHeight });
   }, [shown]);
 
-  const addProject = async (directory: string) => {
-    const value = directory.trim();
-    if (!value) return;
-    setError("");
-    try {
-      const created = await createProject(endpoint, value);
-      await refreshProjects();
-      setProjectId(created.id);
-      setConversationId(undefined);
-      setAdding(false);
-      setPathInput("");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
-
-  const pickDirectory = async () => {
-    setError("");
-    try {
-      const chosen = await chooseWorkflowPath("directory");
-      if (chosen) await addProject(chosen);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
-
-  const forgetProject = async (id: string) => {
-    if (
-      !window.confirm(
-        "从 Aura 移除这个项目？目录里的文件和对话记录都不会被删除。",
-      )
-    )
-      return;
-    try {
-      await removeProject(endpoint, id);
-      if (id === projectId) setConversationId(undefined);
-      await refreshProjects();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    }
-  };
-
   const updateTurn = (
     sessionId: string,
     turnId: string,
@@ -699,14 +628,14 @@ export function CodingStudio({
       );
     };
 
-  const send = async () => {
-    const prompt = draft.trim();
+  const send = async (text = draft) => {
+    const prompt = text.trim();
     if (!prompt || !project || running) return;
     const sessionId = conversationId ?? `coding-${newId()}`;
     // A brand-new conversation has no stored log to read back.
     if (!conversationId) loaded.current.add(sessionId);
     const turnId = newId();
-    setConversationId(sessionId);
+    open(project.id, sessionId);
     setDraft("");
     setError("");
     setTurns((current) => ({
@@ -718,6 +647,11 @@ export function CodingStudio({
     }));
     const abort = new AbortController();
     controller.current = abort;
+    // The sidebar lists the conversation as soon as its session exists.
+    const listed = setTimeout(
+      () => void refreshConversations(project.id).catch(() => {}),
+      1_500,
+    );
     try {
       for await (const chunk of codingTurn(
         endpoint,
@@ -725,7 +659,8 @@ export function CodingStudio({
           sessionId,
           projectId: project.id,
           prompt,
-          mode: providerMode(provider),
+          mode,
+          modelConfig,
         },
         abort.signal,
       )) {
@@ -749,290 +684,178 @@ export function CodingStudio({
             }),
       }));
     } finally {
+      clearTimeout(listed);
       if (controller.current === abort) controller.current = undefined;
-      listConversations(endpoint, project.id)
-        .then(setConversations)
-        .catch(() => {});
+      void refreshConversations(project.id).catch(() => {});
     }
   };
 
+  // A request started on the chat page sends once its workspace is selected.
+  // The latest `send` is read through a ref so typing does not re-run this.
+  const latestSend = useRef(send);
+  useEffect(() => {
+    latestSend.current = send;
+  });
+  // Deferred so a mount that is immediately torn down (StrictMode re-runs
+  // effects) neither sends twice nor has its unmount abort the first send.
+  useEffect(() => {
+    if (!handoff || project?.id !== handoff.projectId) return;
+    const timer = setTimeout(() => {
+      onHandoffTaken?.();
+      void latestSend.current(handoff.prompt);
+    });
+    return () => clearTimeout(timer);
+  }, [handoff, project?.id, onHandoffTaken]);
+
   return (
-    <section className="coding-studio studio-shell" aria-label="编码模式">
-      <aside className="studio-rail" aria-label="编码项目">
-        <div className="studio-rail-heading">
-          <span>项目</span>
-          <button
-            className="icon-control"
-            aria-label="添加项目"
-            title="添加项目"
-            disabled={offline}
-            onClick={() =>
-              desktopPicker ? void pickDirectory() : setAdding(true)
-            }
-          >
-            <FolderPlus size={15} />
-          </button>
+    <section
+      className="coding-studio chat-screen studio-main"
+      aria-label="工作空间对话"
+    >
+      <header className="studio-toolbar">
+        <button
+          className="icon-control studio-back"
+          aria-label="返回对话"
+          onClick={onBack}
+        >
+          <ArrowLeft size={16} />
+        </button>
+        <div className="studio-title">
+          <strong>
+            {project
+              ? conversation
+                ? conversation.title
+                : `${project.title} · 新对话`
+              : "工作空间"}
+          </strong>
+          <span title={project?.directory}>
+            {project ? project.directory : "在左侧选择或新建一个工作空间"}
+          </span>
         </div>
-        <div className="studio-rail-list">
-          {projects.map((item) => (
-            <div
-              key={item.id}
-              className={`coding-project${item.id === projectId ? " selected" : ""}`}
-            >
-              <button
-                className={`studio-rail-item${item.id === projectId ? " selected" : ""}`}
-                aria-current={item.id === projectId ? "true" : undefined}
-                disabled={running}
-                onClick={() => {
-                  if (item.id === projectId) return;
-                  setProjectId(item.id);
-                  setConversationId(undefined);
-                }}
-              >
-                <strong>{item.title}</strong>
-                <span title={item.directory}>{shortPath(item.directory)}</span>
-              </button>
-              <button
-                className="icon-control coding-project-remove"
-                aria-label={`移除项目 ${item.title}`}
-                title="移除项目"
-                disabled={running}
-                onClick={() => void forgetProject(item.id)}
-              >
-                <Trash2 size={13} />
-              </button>
-            </div>
-          ))}
-          {!projects.length && !offline ? (
-            <p className="studio-rail-empty">添加一个本机目录作为项目</p>
-          ) : null}
-          {project ? (
-            <>
-              <div className="studio-rail-heading coding-conversation-heading">
-                <span>对话</span>
-                <button
-                  className="icon-control"
-                  aria-label="新对话"
-                  title="新对话"
-                  disabled={running}
-                  onClick={() => setConversationId(undefined)}
-                >
-                  <Plus size={15} />
-                </button>
-              </div>
-              {conversations.map((item) => (
-                <button
-                  key={item.id}
-                  className={`studio-rail-item${item.id === conversationId ? " selected" : ""}`}
-                  aria-current={item.id === conversationId ? "true" : undefined}
-                  disabled={running}
-                  onClick={() => setConversationId(item.id)}
-                >
-                  <strong>{item.title}</strong>
-                  <span>
-                    {new Date(item.updatedAt).toLocaleString("zh-CN", {
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </button>
-              ))}
-              {!conversations.length ? (
-                <p className="studio-rail-empty">还没有对话</p>
-              ) : null}
-            </>
-          ) : null}
-        </div>
-      </aside>
-      <div className="studio-main">
-        <header className="studio-toolbar">
-          <button
-            className="icon-control studio-back"
-            aria-label="返回对话"
-            onClick={onBack}
-          >
-            <ArrowLeft size={16} />
-          </button>
-          <div className="studio-title">
-            <strong>{project?.title ?? "编码模式"}</strong>
-            <span title={project?.directory}>
-              {project ? project.directory : "选择或添加一个项目开始"}
-            </span>
-          </div>
-          {/* The rail is hidden on narrow screens; these controls replace it. */}
-          <div className="studio-project-select">
-            <button
-              className="icon-control"
-              aria-label="添加项目"
-              title="添加项目"
-              disabled={offline || running}
-              onClick={() =>
-                desktopPicker ? void pickDirectory() : setAdding(true)
-              }
-            >
+      </header>
+      {error || workspaces.error ? (
+        <p className="coding-notice" role="alert">
+          {error || workspaces.error}
+        </p>
+      ) : null}
+      <div className="studio-scroll coding-transcript" ref={transcript}>
+        {!project ? (
+          <div className="coding-empty">
+            <p>
+              工作空间对应一个本机目录：在里面读写代码、运行命令，并把过程实时展示给你。
+            </p>
+            <button onClick={() => setCreating(true)}>
               <FolderPlus size={15} />
+              新建工作空间
             </button>
           </div>
-          {projects.length ? (
-            <label className="studio-project-select">
-              <span className="sr-only">选择项目</span>
-              <select
-                value={projectId ?? ""}
-                disabled={running}
-                onChange={(event) => {
-                  setProjectId(event.target.value);
-                  setConversationId(undefined);
-                }}
-              >
-                {projects.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {project ? (
-            <label className="studio-project-select">
-              <span className="sr-only">选择对话</span>
-              <select
-                value={conversationId ?? ""}
-                disabled={running}
-                onChange={(event) =>
-                  setConversationId(event.target.value || undefined)
-                }
-              >
-                <option value="">新对话</option>
-                {conversations.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </header>
-        {adding ? (
-          <form
-            className="coding-add"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void addProject(pathInput);
-            }}
-          >
-            <FolderOpen size={15} />
-            <input
-              aria-label="项目目录的绝对路径"
-              placeholder="粘贴 Aura 服务端可访问的绝对路径，例如 /Users/me/project"
-              value={pathInput}
-              autoFocus
-              onChange={(event) => setPathInput(event.target.value)}
+        ) : !shown.length ? (
+          <div className="coding-empty">
+            <p>
+              {conversationId
+                ? loadingHistory
+                  ? "正在读取这段对话的过程记录…"
+                  : "这段对话还没有记录，可以继续发送新的请求。"
+                : `描述你要在「${project.title}」里完成的事情。改动只会写入这个目录。`}
+            </p>
+          </div>
+        ) : (
+          shown.map((turn) => (
+            <TurnView
+              key={turn.id}
+              turn={turn}
+              now={now}
+              directory={project.directory}
+              onAnswer={answer(conversationId!, turn.id)}
             />
-            <button type="submit" disabled={!pathInput.trim()}>
-              添加
-            </button>
-            <button
-              type="button"
-              className="icon-control"
-              aria-label="取消"
-              onClick={() => setAdding(false)}
-            >
-              <X size={14} />
-            </button>
-          </form>
-        ) : null}
-        {error ? (
-          <p className="coding-notice" role="alert">
-            {error}
-          </p>
-        ) : null}
-        <div className="studio-scroll coding-transcript" ref={transcript}>
-          {offline ? (
-            <div className="coding-empty">
-              <p>
-                编码模式需要连接 Aura 服务。请在对话页切换到 DSH 演示或 Codex
-                模式。
-              </p>
-            </div>
-          ) : !project ? (
-            <div className="coding-empty">
-              <p>
-                编码模式在一个本机目录里工作：读写代码、运行命令，并把过程实时展示给你。
-              </p>
-              <button
-                onClick={() =>
-                  desktopPicker ? void pickDirectory() : setAdding(true)
+          ))
+        )}
+      </div>
+      {project ? (
+        <div className="chat-composer-area">
+          <div className="chat-composer">
+            <textarea
+              aria-label="工作空间请求输入框"
+              placeholder={`在「${project.title}」中描述要完成的事情…`}
+              maxLength={80_000}
+              value={draft}
+              disabled={offline}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault();
+                  void send();
                 }
-              >
-                <FolderPlus size={15} />
-                添加项目
-              </button>
-            </div>
-          ) : !shown.length ? (
-            <div className="coding-empty">
-              <p>
-                {conversationId
-                  ? loadingHistory
-                    ? "正在读取这段对话的过程记录…"
-                    : "这段对话还没有记录，可以继续发送新的请求。"
-                  : `描述你要在「${project.title}」里完成的事情。改动只会写入这个目录。`}
-              </p>
-            </div>
-          ) : (
-            shown.map((turn) => (
-              <TurnView
-                key={turn.id}
-                turn={turn}
-                now={now}
-                directory={project.directory}
-                onAnswer={answer(conversationId!, turn.id)}
-              />
-            ))
-          )}
-        </div>
-        {project && !offline ? (
-          <div className="chat-composer-area">
-            <div className="chat-composer">
-              <textarea
-                aria-label="编码请求输入框"
-                placeholder="例如：给登录页加上表单校验，并跑一遍相关测试"
-                maxLength={80_000}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.shiftKey &&
-                    !event.nativeEvent.isComposing
-                  ) {
-                    event.preventDefault();
-                    void send();
-                  }
-                }}
-              />
-              <div className="composer-tools">
-                <span className="composer-spacer" />
-                <button
-                  className="send-button"
-                  aria-label={running ? "停止" : "发送"}
-                  disabled={!running && !draft.trim()}
-                  onClick={() =>
-                    running ? controller.current?.abort() : void send()
+              }}
+            />
+            <div className="composer-tools">
+              <label className="provider-select">
+                <select
+                  aria-label="对话模式"
+                  value={provider}
+                  disabled={running}
+                  onChange={(event) =>
+                    onProvider(event.target.value as Workspace["provider"])
                   }
                 >
-                  {running ? (
-                    <Square size={14} fill="currentColor" />
-                  ) : (
-                    <ArrowUp size={18} />
-                  )}
-                </button>
-              </div>
+                  <option value="offline">本地演示</option>
+                  <option value="dsh">DSH 演示</option>
+                  <option value="codex">Codex 订阅</option>
+                  <option value="lumina">Lumina</option>
+                  <option value="custom">自定义 API</option>
+                </select>
+              </label>
+              <span className="composer-spacer" />
+              {!offline ? (
+                <ChatModelControls
+                  endpoint={endpoint}
+                  mode={mode}
+                  selection={modelConfig}
+                  disabled={running}
+                  onChange={onModelConfig}
+                />
+              ) : null}
+              <button
+                className="send-button"
+                aria-label={running ? "停止生成" : "发送消息"}
+                disabled={offline || (!running && !draft.trim())}
+                onClick={() =>
+                  running ? controller.current?.abort() : void send()
+                }
+              >
+                {running ? (
+                  <Square size={14} fill="currentColor" />
+                ) : (
+                  <ArrowUp size={18} />
+                )}
+              </button>
             </div>
           </div>
-        ) : null}
-      </div>
+          <p className="composer-footnote">
+            {offline
+              ? "工作空间需要连接 Aura 服务，请切换到 DSH 演示或其他模式"
+              : mode === "demo"
+                ? `演示模式 · 未调用真实 AI · ${project.directory}`
+                : `可读写文件、运行命令 · ${project.directory}`}
+          </p>
+        </div>
+      ) : null}
+      {creating ? (
+        <WorkspaceDialog
+          endpoint={endpoint}
+          onSaved={(saved) => {
+            void workspaces
+              .refresh()
+              .then(() => open(saved.id))
+              .catch(() => {});
+          }}
+          onClose={() => setCreating(false)}
+        />
+      ) : null}
     </section>
   );
 }

@@ -52,18 +52,43 @@ export const createProject = (
   endpoint: string,
   directory: string,
   title?: string,
+  signal?: AbortSignal,
 ) =>
-  codingApi<CodingProjectInfo>(endpoint, "/projects", "POST", {
-    directory,
-    ...(title ? { title } : {}),
-  });
+  codingApi<CodingProjectInfo>(
+    endpoint,
+    "/projects",
+    "POST",
+    { directory, ...(title ? { title } : {}) },
+    signal,
+  );
 
-export const renameProject = (endpoint: string, id: string, title: string) =>
+export const renameProject = (
+  endpoint: string,
+  id: string,
+  title: string,
+  signal?: AbortSignal,
+) =>
   codingApi<CodingProjectInfo>(
     endpoint,
     `/projects/${encodeURIComponent(id)}/rename`,
     "POST",
     { title },
+    signal,
+  );
+
+/** Points a project at another directory; the project id changes with it. */
+export const relocateProject = (
+  endpoint: string,
+  id: string,
+  directory: string,
+  signal?: AbortSignal,
+) =>
+  codingApi<CodingProjectInfo>(
+    endpoint,
+    `/projects/${encodeURIComponent(id)}/directory`,
+    "POST",
+    { directory },
+    signal,
   );
 
 export const removeProject = (endpoint: string, id: string) =>

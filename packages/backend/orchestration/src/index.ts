@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { stat } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { artifactResponse, type ArtifactFile } from "./artifacts/http.ts";
 import { GeneratedArtifacts } from "./artifacts/generated.ts";
@@ -201,6 +201,9 @@ export class OrchestrationHost {
       { root: actionRoot },
       ...(this.options.actionRoots ?? []),
     ];
+    // Conversations outside any workspace run in this built-in directory.
+    const defaultWorkspace = join(root, ".aura", "workspace");
+    await mkdir(defaultWorkspace, { recursive: true });
     await provisionProfile(
       dshHome,
       flowRoots.map((entry) => entry.pluginRoot ?? entry.root),
@@ -220,6 +223,7 @@ export class OrchestrationHost {
           DSH_HOME: dshHome,
           DSH_TELEMETRY_DISABLED: "1",
           AURA_FLOW_CWD: root,
+          AURA_DEFAULT_WORKSPACE: defaultWorkspace,
           AURA_FLOW_ROOT: flowRoot,
           AURA_ACTION_ROOT: actionRoot,
           AURA_FLOW_ROOTS: JSON.stringify(flowRoots),
@@ -269,10 +273,12 @@ export class OrchestrationHost {
     });
     rpc.start();
     try {
+      // A cold DSH start loads its profile and TypeScript sources and has been
+      // measured at 20–35 s on Windows, so 30 s rejected healthy starts.
       const result = (await rpc.request(
         "initialize",
         {},
-        AbortSignal.timeout(30_000),
+        AbortSignal.timeout(120_000),
       )) as FlowRpcResult<{ name: string; version: number }>;
       if (
         !result.ok ||
@@ -383,6 +389,14 @@ export class OrchestrationHost {
 
   renameProject(id: string, title: string): Promise<CodingProject> {
     return this.request<CodingProject>("coding/projects/rename", { id, title });
+  }
+
+  /** Moves a project to another directory, keeping its title. */
+  relocateProject(id: string, directory: string): Promise<CodingProject> {
+    return this.request<CodingProject>("coding/projects/relocate", {
+      id,
+      directory,
+    });
   }
 
   removeProject(id: string): Promise<boolean> {

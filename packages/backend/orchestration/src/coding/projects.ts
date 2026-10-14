@@ -53,6 +53,27 @@ export class CodingProjects {
   }
 
   /**
+   * Points a project at another directory. The registry never rewrites a
+   * record's canonical path, so this registers the new directory under the
+   * same title and drops the old registration. Conversations stay bound to the
+   * directory they ran in: their logs are untouched and reappear if the old
+   * directory is added back.
+   */
+  async relocate(id: string, directory: string): Promise<CodingProject> {
+    const current = this.require(id);
+    const path = await this.requireDirectory(directory);
+    const taken = new Set(
+      this.ctx.workspaceRegistry.list().map((item) => item.id as string),
+    );
+    const next = await this.ctx.workspaceRegistry.create(path, current.title);
+    if (next.id === current.id) return project(current);
+    if (taken.has(next.id))
+      throw new FlowError("该目录已是另一个工作空间。", 400);
+    await this.ctx.workspaceRegistry.delete(current.id);
+    return project(next);
+  }
+
+  /**
    * Removes the registration only. The directory, its files and every session
    * log are left untouched, matching the registry's contract.
    */

@@ -6,6 +6,7 @@ import {
   Clapperboard,
   Copy,
   FileCode2,
+  FolderOpen,
   GitBranch,
   LoaderCircle,
   Newspaper,
@@ -37,6 +38,8 @@ import { WorkflowRunResult } from "./WorkflowRun";
 import { ChatModelControls } from "./ChatModelControls";
 import { ComposerAddMenu } from "./ComposerAddMenu";
 import { WorkflowRichText } from "./WorkflowValue";
+import type { CodingProjectsController } from "../features/coding/useCodingProjects";
+import { WorkspaceDialog } from "../features/coding/WorkspaceDialog";
 import "./chat.css";
 
 const emptyMessages: Message[] = [];
@@ -181,6 +184,8 @@ export function ChatScreen({
   flows = [],
   flowsLoading = false,
   onOpenStudio,
+  workspaces,
+  onWorkspaceTask,
 }: {
   workspace: WorkspaceController;
   flowMode?: boolean;
@@ -190,6 +195,10 @@ export function ChatScreen({
   flows?: FlowCatalogEntry[];
   flowsLoading?: boolean;
   onOpenStudio?: (studio: StudioTab) => void;
+  /** Workspaces a new conversation may start in; omitted where unsupported. */
+  workspaces?: CodingProjectsController;
+  /** Starts the request as a full-tool conversation in that workspace. */
+  onWorkspaceTask?: (projectId: string, prompt: string) => void;
 }) {
   const scroll = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -207,10 +216,20 @@ export function ChatScreen({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachError, setAttachError] = useState("");
   const [dragging, setDragging] = useState(false);
+  /** Chosen workspace for a new conversation; none keeps it an ordinary chat. */
+  const [spaceId, setSpaceId] = useState("");
+  const [creatingSpace, setCreatingSpace] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const previews = useRef(new Set<string>());
   const endpoint = workspace.workflows.endpoint;
-  const canAttach = !flowMode && workspace.state.provider !== "offline";
+  // Only a fresh conversation picks a workspace; an existing one keeps its kind.
+  const spacePicker =
+    workspaces && onWorkspaceTask && !flowMode && !messages.length
+      ? workspaces
+      : undefined;
+  const space = spacePicker?.projects.find((item) => item.id === spaceId);
+  const canAttach =
+    !flowMode && !space && workspace.state.provider !== "offline";
   const uploading = attachments.some((item) => !item.image && !item.error);
   const ready = attachments.flatMap((item) => (item.image ? [item.image] : []));
   useEffect(() => {
@@ -373,6 +392,14 @@ export function ChatScreen({
     nearBottom.current = true;
   }
   function submit() {
+    if (space && onWorkspaceTask) {
+      if (!draft.trim()) return;
+      onWorkspaceTask(space.id, draft);
+      workspace.setDraft("");
+      clearAttachments();
+      setSpaceId("");
+      return;
+    }
     if (
       (!draft.trim() && !ready.length) ||
       streaming ||
@@ -818,6 +845,44 @@ export function ChatScreen({
             </button>
           </div>
         </div>
+        {spacePicker && workspace.state.provider !== "offline" ? (
+          <div className="composer-workspace">
+            <label className="provider-select composer-workspace-select">
+              <FolderOpen size={13} aria-hidden="true" />
+              <select
+                aria-label="选择工作空间"
+                value={space ? space.id : ""}
+                onChange={(event) => {
+                  if (event.target.value === "+new") setCreatingSpace(true);
+                  else setSpaceId(event.target.value);
+                }}
+              >
+                <option value="">不使用工作空间</option>
+                {spacePicker.projects.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+                <option value="+new">新建工作空间…</option>
+              </select>
+            </label>
+            <span className="composer-workspace-hint" title={space?.directory}>
+              {space
+                ? `在「${space.title}」中工作，可读写文件、运行命令`
+                : "普通对话，在内置默认目录中进行"}
+            </span>
+          </div>
+        ) : null}
+        {creatingSpace && spacePicker ? (
+          <WorkspaceDialog
+            endpoint={spacePicker.endpoint}
+            onSaved={(saved) => {
+              setSpaceId(saved.id);
+              void spacePicker.refresh().catch(() => {});
+            }}
+            onClose={() => setCreatingSpace(false)}
+          />
+        ) : null}
         {attachError ? (
           <p className="composer-attach-error" role="alert">
             {attachError}

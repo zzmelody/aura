@@ -54,6 +54,19 @@ export function createCodingApp(host: OrchestrationHost) {
     }
   });
 
+  app.post("/projects/:id/directory", async (context) => {
+    const body = await context.req.json().catch(() => undefined);
+    if (!isRecord(body) || typeof body.directory !== "string")
+      return context.json({ message: "缺少项目目录。" }, 400);
+    try {
+      return context.json(
+        await host.relocateProject(context.req.param("id"), body.directory),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
   app.delete("/projects/:id", async (context) => {
     try {
       const removed = await host.removeProject(context.req.param("id"));

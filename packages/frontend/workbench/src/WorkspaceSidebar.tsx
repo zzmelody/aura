@@ -5,9 +5,10 @@ import {
   ArchiveRestore,
   Clapperboard,
   Clock3,
-  Code2,
   FolderOpen,
+  FolderPlus,
   GitBranch,
+  Layers,
   ListFilter,
   MessageCircle,
   Newspaper,
@@ -15,6 +16,7 @@ import {
   PanelsTopLeft,
   Search,
   Settings2,
+  SlidersHorizontal,
   SquarePen,
   Telescope,
   X,
@@ -32,6 +34,9 @@ import { SessionStatus } from "./SessionStatus";
 import { sessionMenuItems, type SessionDialogRequest } from "./SessionActions";
 import { WorkbenchContextMenu } from "./WorkbenchContextMenu";
 import { useToast } from "./toast";
+import type { CodingProjectInfo } from "@aura/protocol/types";
+import type { CodingProjectsController } from "./features/coding/useCodingProjects";
+import { WorkspaceDialog } from "./features/coding/WorkspaceDialog";
 
 const tabs = [
   { id: "chat", label: "对话", icon: MessageCircle },
@@ -44,7 +49,6 @@ const studios = [
   { id: "studio:content", label: "自媒体内容", icon: Newspaper },
   { id: "studio:video", label: "视频项目", icon: Clapperboard },
   { id: "studio:research", label: "选题库", icon: Telescope },
-  { id: "studio:coding", label: "编码", icon: Code2 },
 ] as const;
 
 export function WorkspaceSidebar({
@@ -58,6 +62,9 @@ export function WorkspaceSidebar({
   showArchived,
   onArchived,
   onDialog,
+  endpoint,
+  codingWorkspaces,
+  offline,
 }: {
   workspace: WorkspaceController;
   tab: Tab;
@@ -69,7 +76,12 @@ export function WorkspaceSidebar({
   showArchived: boolean;
   onArchived(value: boolean): void;
   onDialog(request: SessionDialogRequest): void;
+  endpoint: string;
+  codingWorkspaces: CodingProjectsController;
+  offline: boolean;
 }) {
+  /** `null` creates a workspace; a record configures that one. */
+  const [spaceDialog, setSpaceDialog] = useState<CodingProjectInfo | null>();
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [onlyRunning, setOnlyRunning] = useState(false);
@@ -111,6 +123,32 @@ export function WorkspaceSidebar({
         .includes(query.trim().toLowerCase()),
   );
   const groups = groupSidebarSessions(filtered);
+  // Workspace folders hold their own conversations; archive and running
+  // filters only apply to ordinary sessions.
+  const needle = query.trim().toLowerCase();
+  const spaceFolders =
+    showArchived || onlyRunning
+      ? []
+      : codingWorkspaces.projects.flatMap((space) => {
+          const all = codingWorkspaces.conversations[space.id] ?? [];
+          if (!needle || space.title.toLowerCase().includes(needle))
+            return [{ space, conversations: all }];
+          const matched = all.filter((item) =>
+            item.title.toLowerCase().includes(needle),
+          );
+          return matched.length ? [{ space, conversations: matched }] : [];
+        });
+  const toggleFolder = (key: string) =>
+    setClosed((value) => {
+      const next = new Set(value);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const openSpace = (projectId: string, conversationId?: string) => {
+    codingWorkspaces.open(projectId, conversationId);
+    navigate("studio:coding");
+  };
   const now = Date.now();
   const closeSearch = () => {
     setQuery("");
@@ -176,9 +214,25 @@ export function WorkspaceSidebar({
       </nav>
       <div className="session-heading">
         <span>
-          {showArchived ? "已归档" : "会话"} <small>{filtered.length}</small>
+          {showArchived ? "已归档" : "会话"}{" "}
+          <small>
+            {filtered.length +
+              spaceFolders.reduce(
+                (sum, folder) => sum + folder.conversations.length,
+                0,
+              )}
+          </small>
         </span>
         <div className="session-heading-actions">
+          <button
+            className="icon-control"
+            aria-label="新建工作空间"
+            title={offline ? "需要连接 Aura 服务" : "新建工作空间"}
+            disabled={offline}
+            onClick={() => setSpaceDialog(null)}
+          >
+            <FolderPlus size={15} />
+          </button>
           <button
             className="icon-control"
             aria-label={showArchived ? "返回会话列表" : "查看已归档会话"}
@@ -225,6 +279,90 @@ export function WorkspaceSidebar({
         </div>
       ) : null}
       <div className="session-list">
+        {spaceFolders.map(({ space, conversations }) => {
+          const key = `space:${space.id}`;
+          const expanded = Boolean(query.trim() || !closed.has(key));
+          return (
+            <section
+              className="session-folder workspace-folder"
+              key={key}
+              aria-label={`工作空间：${space.title}`}
+            >
+              <div className="workspace-folder-head">
+                <button
+                  className="session-folder-heading"
+                  aria-label={`${expanded ? "收起" : "展开"}工作空间：${space.title}`}
+                  aria-expanded={expanded}
+                  title={space.directory}
+                  onClick={() => toggleFolder(key)}
+                >
+                  <Layers size={16} />
+                  <span>{space.title}</span>
+                  <ChevronDown size={13} className={expanded ? "" : "folded"} />
+                </button>
+                <div className="workspace-folder-actions">
+                  <button
+                    type="button"
+                    className="icon-control"
+                    aria-label={`在「${space.title}」中新建对话`}
+                    title="新建对话"
+                    onClick={() => openSpace(space.id)}
+                  >
+                    <SquarePen size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-control"
+                    aria-label={`配置工作空间：${space.title}`}
+                    title="配置名称与目录"
+                    onClick={() => setSpaceDialog(space)}
+                  >
+                    <SlidersHorizontal size={14} />
+                  </button>
+                </div>
+              </div>
+              {expanded ? (
+                <div className="session-folder-items">
+                  {conversations.map((item) => {
+                    const selected =
+                      tab === "studio:coding" &&
+                      codingWorkspaces.conversationId === item.id;
+                    return (
+                      <div
+                        className={`session-row${selected ? " selected" : ""}`}
+                        key={item.id}
+                      >
+                        <button
+                          className={`session-item${selected ? " selected" : ""}`}
+                          aria-current={selected ? "true" : undefined}
+                          aria-label={`打开工作空间对话：${item.title}`}
+                          onClick={() => openSpace(space.id, item.id)}
+                        >
+                          <span className="session-name">{item.title}</span>
+                        </button>
+                        <div className="session-row-tail">
+                          <span className="session-row-meta">
+                            <time
+                              className="session-row-time"
+                              dateTime={new Date(item.updatedAt).toISOString()}
+                            >
+                              {sidebarSessionTime(item.updatedAt, now)}
+                            </time>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!conversations.length ? (
+                    <div className="sidebar-empty workspace-folder-empty">
+                      还没有对话
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
         {groups.map((group) => {
           const expanded = Boolean(
             query.trim() || onlyRunning || !closed.has(group.id),
@@ -240,14 +378,7 @@ export function WorkspaceSidebar({
                 aria-label={`${expanded ? "收起" : "展开"}${group.workflow ? "工作流会话" : "会话分组"}：${group.title}`}
                 aria-expanded={expanded}
                 title={group.title}
-                onClick={() =>
-                  setClosed((value) => {
-                    const next = new Set(value);
-                    if (next.has(group.id)) next.delete(group.id);
-                    else next.add(group.id);
-                    return next;
-                  })
-                }
+                onClick={() => toggleFolder(group.id)}
               >
                 {group.workflow ? (
                   <GitBranch size={16} />
@@ -349,7 +480,7 @@ export function WorkspaceSidebar({
             </section>
           );
         })}
-        {!groups.length ? (
+        {!groups.length && !spaceFolders.length ? (
           <div className="sidebar-empty">
             {query || onlyRunning
               ? "没有匹配的会话"
@@ -376,6 +507,19 @@ export function WorkspaceSidebar({
             ) : null;
           })()
         : null}
+      {spaceDialog !== undefined ? (
+        <WorkspaceDialog
+          endpoint={endpoint}
+          workspace={spaceDialog ?? undefined}
+          onSaved={(saved) => {
+            void codingWorkspaces
+              .refresh()
+              .then(() => openSpace(saved.id))
+              .catch(() => {});
+          }}
+          onClose={() => setSpaceDialog(undefined)}
+        />
+      ) : null}
       <footer className="sidebar-footer">
         <button
           className={`sidebar-workspace${tab === "settings" ? " selected" : ""}`}
