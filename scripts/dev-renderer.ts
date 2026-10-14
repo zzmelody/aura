@@ -47,11 +47,14 @@ try {
   if (target === "desktop") {
     const require = createRequire(resolve(appRoot, "package.json"));
     const electronCli = require.resolve("electron/cli.js");
+    // An inherited ELECTRON_RUN_AS_NODE (set by some IDE and agent hosts)
+    // would start Electron as plain Node, without its `app` and window APIs.
+    const { ELECTRON_RUN_AS_NODE: _runAsNode, ...env } = process.env;
     desktop = spawn(process.execPath, [electronCli, ".", "--dev"], {
       cwd: appRoot,
       stdio: "inherit",
       windowsHide: true,
-      env: { ...process.env, AURA_DEV_PARENT_PID: String(process.pid) },
+      env: { ...env, AURA_DEV_PARENT_PID: String(process.pid) },
     });
     desktop.once("error", (error) => {
       console.error(error.message);

@@ -103,6 +103,7 @@ async function serveRenderer(): Promise<string> {
 /** Opens the Aura renderer after its local services are ready. */
 async function openWorkbench() {
   await ensureRuntime();
+  watchBorrowedRuntime();
   const url = await serveRenderer();
   const window = new BrowserWindow({
     width: 1360,
@@ -155,11 +156,43 @@ async function openWorkbench() {
 app.on("window-all-closed", () => app.quit());
 let finishingQuit = false;
 let closingServices = false;
+let runtimeWatch: NodeJS.Timeout | null = null;
+
+/**
+ * A runtime this window reused (started by `pnpm dev` or another launcher)
+ * can exit while the window stays open. Take over the port when it does, so
+ * the workbench is never left without a backend.
+ */
+function watchBorrowedRuntime() {
+  if (ownedRuntime || runtimeWatch) return;
+  let checking = false;
+  runtimeWatch = setInterval(() => {
+    if (checking || ownedRuntime || closingServices) return;
+    checking = true;
+    void ensureRuntime()
+      .catch((error: unknown) =>
+        console.error(
+          "Aura runtime takeover failed:",
+          error instanceof Error ? error.message : error,
+        ),
+      )
+      .finally(() => {
+        checking = false;
+        if (ownedRuntime && runtimeWatch) {
+          clearInterval(runtimeWatch);
+          runtimeWatch = null;
+        }
+      });
+  }, 3000);
+  runtimeWatch.unref();
+}
+
 app.on("before-quit", (event) => {
   if (finishingQuit) return;
   event.preventDefault();
   if (closingServices) return;
   closingServices = true;
+  if (runtimeWatch) clearInterval(runtimeWatch);
   renderer?.close();
   void Promise.all([closeSiteHost(), ownedRuntime?.close()])
     .then(() => {
