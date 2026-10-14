@@ -123,7 +123,10 @@ export function chatService(
           return {
             provider: config.provider,
             model: config.model,
-            reasoningEffort: config.reasoningEffort,
+            // DSH logs this header and rejects undefined fields.
+            ...(config.reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: config.reasoningEffort }),
             ...(config.maxTokens === undefined
               ? {}
               : { maxTokens: config.maxTokens }),

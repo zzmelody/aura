@@ -109,7 +109,7 @@ test(
         messages: Array<{ role: string; content: unknown }>;
         tools?: Array<{ function: { name: string } }>;
         temperature?: number;
-        max_tokens?: number;
+        max_completion_tokens?: number;
       };
       const user = JSON.stringify(
         input.messages.filter((m) => m.role === "user"),
@@ -119,7 +119,7 @@ test(
         user,
         tools: names,
         temperature: input.temperature,
-        maxTokens: input.max_tokens,
+        maxTokens: input.max_completion_tokens,
       });
       const result = input.messages.findLast((m) => m.role === "tool");
       if (holdToolResult && result)

@@ -10,7 +10,7 @@ import type {
   CodingQuestionAnswer,
   CodingStreamEvent,
 } from "../types.ts";
-import { projectCodingEvent } from "./activity.ts";
+import { projectCodingEvent, toolResult } from "./activity.ts";
 import {
   approvalAnswer,
   approvalQuestion,
@@ -268,12 +268,9 @@ function questionArgs(raw: unknown): unknown[] {
 function resultBlock(
   data: Record<string, unknown>,
 ): { toolCallId: string; text: string } | undefined {
-  const content = (data.message as { content?: unknown } | undefined)?.content;
-  const block = Array.isArray(content)
-    ? (content[0] as { toolCallId?: unknown; content?: unknown } | undefined)
-    : undefined;
-  return typeof block?.toolCallId === "string"
-    ? { toolCallId: block.toolCallId, text: text(block.content) }
+  const result = toolResult(data);
+  return result
+    ? { toolCallId: result.toolCallId, text: text(result.content) }
     : undefined;
 }
 

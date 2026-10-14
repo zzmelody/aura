@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { realpath } from "node:fs/promises";
+import { readdir, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL, URL } from "node:url";
 import { writeFileAtomic } from "@deepseek-ai/dsh-atomic-write";
@@ -22,11 +22,56 @@ export const defaultActionRoot = fileURLToPath(
   new URL("../action", import.meta.url),
 );
 
+/**
+ * Declares each preset directory as one `dsh-agent-preset` row. DSH 0.2 no
+ * longer scans preset roots, so `<id>/preset.yml` supplies the display fields
+ * (flat `key: value` lines) and `<id>/agent.cordis.yml` the child plugin list,
+ * spliced in by indentation.
+ */
+async function presetRows(root: string): Promise<string> {
+  const ids = (await readdir(root, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  const rows = await Promise.all(
+    ids.map(async (id, order) => {
+      const meta = await readFile(join(root, id, "preset.yml"), "utf8");
+      const fields = new Map(
+        [...meta.matchAll(/^(name|description):[ \t]*(.+?)[ \t]*$/gm)].map(
+          ([, key, value]) => [key, value],
+        ),
+      );
+      const plugins = (
+        await readFile(join(root, id, "agent.cordis.yml"), "utf8")
+      )
+        .replace(/\r\n/g, "\n")
+        .trimEnd()
+        .split("\n")
+        .map((line) => (line ? `          ${line}` : line))
+        .join("\n");
+      const display = ["name", "description"]
+        .filter((key) => fields.has(key))
+        .map((key) => `        ${key}: ${JSON.stringify(fields.get(key))}\n`)
+        .join("");
+      return `    - id: ${JSON.stringify(`preset-${id}`)}
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: ${JSON.stringify(id)}
+${display}        order: ${order}
+        plugins:
+${plugins}
+`;
+    }),
+  );
+  return rows.join("");
+}
+
 export async function provisionProfile(
   dshHome: string,
   flowRoots: readonly string[] = [defaultFlowRoot],
   actionRoots: readonly string[] = [defaultActionRoot],
   root: string = dirname(dirname(dshHome)),
+  demoURL?: string,
 ) {
   const dir = join(dshHome, "profiles", "aura-flow");
   // HMR compares watched paths with canonical Node module URLs (not /var symlinks).
@@ -96,16 +141,29 @@ export async function provisionProfile(
 - id: settings
   config:
     path: !!js dshHomePath('aura-flow-settings.yaml')
+# DSH 0.2's DeepSeek adapter speaks only the Messages protocol, while the demo
+# model is a local OpenAI-compatible server. The demo keeps the
+# \`deepseek-official\` route id, so stored Runs replay unchanged, but is served
+# by pi-ai; the native adapters stay off to avoid a duplicate route.
 - id: llm-deepseek
-  config:
-    apiKeyEnv: AURA_DEMO_KEY
-    baseURL: !!js process.env.AURA_DEMO_BASE_URL
-    thinking: disabled
-    maxTokens: 4096
+  disabled: true
+- id: llm-deepseek-account
+  disabled: true
 - id: llm-pi-ai
   config:
     providers:
       openai-codex: ${JSON.stringify(await codexProviderProfile())}
+      deepseek-official:
+        displayName: Aura Demo
+        api: openai-completions
+        # A literal, not a !!js expression: settings updates re-validate this
+        # route and expect a plain string.
+        baseURL: ${JSON.stringify(demoURL ?? process.env.AURA_DEMO_BASE_URL ?? "http://127.0.0.1:1/v1")}
+        apiKeyEnv: AURA_DEMO_KEY
+        defaultMaxTokens: 4096
+        models:
+          - { id: deepseek-v4-flash, input: [text], reasoningEfforts: false }
+          - { id: deepseek-v4-pro, input: [text], reasoningEfforts: false }
 ${Object.entries(customProfiles(await readAiServices(root)))
   .map(([id, profile]) => `      ${id}: ${JSON.stringify(profile)}`)
   .join("\n")}
@@ -140,16 +198,11 @@ ${Object.entries(customProfiles(await readAiServices(root)))
       name: '@deepseek-ai/dsh-api-session-controller'
       config:
         nativeOpen: false
-    - id: agent-presets
-      name: '@deepseek-ai/dsh-agent-presets'
+    - id: agent-preset-registry
+      name: '@deepseek-ai/dsh-agent-preset-registry'
       config:
         default: researcher-v1
-        includeShippedRoot: false
-        includeUserRoot: true
-        roots:
-          - path: ${JSON.stringify(fileURLToPath(new URL("../presets", import.meta.url)))}
-            trust: system
-`;
+${await presetRows(fileURLToPath(new URL("../presets", import.meta.url)))}`;
   const options = { mode: 0o600, dirMode: 0o700 };
   await writeFileAtomic(
     join(dir, "package.json"),

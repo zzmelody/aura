@@ -30,22 +30,17 @@ export function projectCodingEvent(
     }
   }
   if (event.type === "tool/result") {
-    // The call id and failure flag live on the single tool-result block, not
-    // on the event itself.
-    const message = fields.message as { content?: unknown } | undefined;
-    const block = Array.isArray(message?.content)
-      ? (message.content[0] as { toolCallId?: unknown; isError?: unknown })
-      : undefined;
-    if (typeof block?.toolCallId === "string") {
-      const pending = created.get(block.toolCallId);
-      created.delete(block.toolCallId);
+    const result = toolResult(fields);
+    if (result) {
+      const pending = created.get(result.toolCallId);
+      created.delete(result.toolCallId);
       let diffs = resultDiffs(fields.meta);
-      if (!diffs.length && pending && block.isError !== true) diffs = [pending];
+      if (!diffs.length && pending && !result.isError) diffs = [pending];
       emit({
         type: "tool",
         phase: "end",
-        callId: block.toolCallId,
-        ok: block.isError !== true,
+        callId: result.toolCallId,
+        ok: !result.isError,
         ...(diffs.length ? { diffs } : {}),
       });
     }
@@ -67,6 +62,36 @@ export function projectCodingEvent(
       if (typeof path === "string") emit({ type: "deliverable", path });
     }
   }
+}
+
+/**
+ * The call id, failure flag and text content of a `tool/result` event. DSH 0.2
+ * puts the id and flag on the tool message itself; logs written by 0.1 carry
+ * them on a single wrapping block, so replay accepts both.
+ */
+export function toolResult(
+  data: Record<string, unknown>,
+): { toolCallId: string; isError: boolean; content: unknown } | undefined {
+  const message = data.message as
+    { toolCallId?: unknown; isError?: unknown; content?: unknown } | undefined;
+  if (typeof message?.toolCallId === "string")
+    return {
+      toolCallId: message.toolCallId,
+      isError: message.isError === true,
+      content: message.content,
+    };
+  const block = Array.isArray(message?.content)
+    ? (message.content[0] as
+        | { toolCallId?: unknown; isError?: unknown; content?: unknown }
+        | undefined)
+    : undefined;
+  return typeof block?.toolCallId === "string"
+    ? {
+        toolCallId: block.toolCallId,
+        isError: block.isError === true,
+        content: block.content,
+      }
+    : undefined;
 }
 
 /**

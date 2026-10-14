@@ -92,9 +92,13 @@ export async function resolveChatModel(
   const model = selection.model ?? defaults.model;
   try {
     const info = await llm.resolveModelInfo(defaults.provider, model, signal);
+    // "off" on a model without reasoning levels means "send none".
+    const requested =
+      selection.reasoningEffort === "off" && !info.reasoning
+        ? undefined
+        : selection.reasoningEffort;
     const effort =
-      selection.reasoningEffort ??
-      defaultEffort(info.reasoning, defaults.reasoningEffort);
+      requested ?? defaultEffort(info.reasoning, defaults.reasoningEffort);
     return await llm.resolveCallConfig(
       {
         provider: defaults.provider,

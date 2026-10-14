@@ -89,7 +89,10 @@ export class ActionRuntime {
       for (const [name, masks] of this.directMasks)
         masks.push(agent.ctx.tools.restrict({ deny: [name] }));
     };
-    ctx.on("agent/created", ({ agent }) => hideDirectTools(agent));
+    ctx.on("agent/created", ({ agent }) => {
+      hideDirectTools(agent);
+      return undefined;
+    });
     ctx.tools.guard((exec) =>
       exec.agent && exec.name.startsWith(internalPrefix)
         ? "Direct Action dispatch is backend-only."

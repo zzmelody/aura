@@ -74,7 +74,13 @@ export function historicalArtifactReader(ctx: Context) {
             }
             if (item.content) await scan(item.content, id);
           };
-          await scan(event.data.message.content);
+          // DSH 0.2 carries the call id on the tool message; 0.1 logs carry it
+          // on a wrapping content block, which the scan picks up itself.
+          const { toolCallId } = event.data.message as { toolCallId?: unknown };
+          await scan(
+            event.data.message.content,
+            typeof toolCallId === "string" ? toolCallId : undefined,
+          );
         }
       }
     }

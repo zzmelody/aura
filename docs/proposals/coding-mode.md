@@ -109,7 +109,7 @@ AI 对话，全程可见、可干预，结束时产出报告。对标 Codex 的�
 ### 工具启用方式
 
 **首选**：在 `coder-v1` preset 的 `agent.cordis.yml` 里挂载 `dsh-tool-fs`、`dsh-tool-fs-search`、
-`dsh-tool-bash`、`dsh-tool-todo`、`dsh-tool-present`、`dsh-plan-mode` 与人设。`dsh-agent-presets`
+`dsh-tool-bash`、`dsh-tool-todo`、`dsh-tool-present`、`dsh-plan-mode` 与人设。`dsh-agent-preset-registry`
 的文档确认 preset 就是按 session 组合工具、提示词与 skills 的机制，`dsh-tool-present` 也说明
 自带 preset 就是这样挂的。
 
@@ -145,8 +145,10 @@ AI 对话，全程可见、可干预，结束时产出报告。对标 Codex 的�
 
 验证中修正的两处事实：
 
-- **`present` 需要显式挂载**。它不在 `dsh-base`，而由 DSH 自带的 Web preset 提供，Aura 用
-  `includeShippedRoot: false` 排除了那些 preset，因此必须在 profile 显式插入。
+- **`present` 需要显式挂载**。它不在 `dsh-base`，而由 DSH 自带的 Web preset 提供，Aura 不加载
+  那些 preset，因此必须在 profile 显式插入。DSH 0.2 起 preset 不再按目录扫描：`profile.ts` 把
+  `presets/<id>/` 下的 `preset.yml` 与 `agent.cordis.yml` 转成 `dsh-agent-preset` 行，由
+  `dsh-agent-preset-registry` 登记。
 - **`agent-instructions` 不能启用**。它是提示词插件而非工具，`restrict` 只过滤工具，
   启用后会让**每个** agent 都加载仓库指令文件。已保留禁用。
 

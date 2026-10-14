@@ -209,6 +209,7 @@ export class OrchestrationHost {
       flowRoots.map((entry) => entry.pluginRoot ?? entry.root),
       actionRoots.map((entry) => entry.pluginRoot ?? entry.root),
       root,
+      modelURL,
     );
     const child = spawn(
       process.execPath,

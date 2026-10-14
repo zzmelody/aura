@@ -15,9 +15,9 @@ import { OrchestrationHost } from "../src/index.ts";
 interface ModelRequest {
   messages: Array<{ role: string; content: unknown }>;
   model: string;
-  max_tokens?: number;
+  max_completion_tokens?: number;
   temperature?: number;
-  thinking?: { type: string };
+  reasoning_effort?: string;
 }
 
 const nodeMajor = Number(process.versions.node.split(".")[0]);
@@ -264,8 +264,12 @@ export default defineFlow({
           node === "review" ? "deepseek-v4-pro" : "deepseek-v4-flash",
         );
         assert.equal(request.temperature, node === "review" ? 0.75 : 0.25);
-        assert.equal(request.max_tokens, node === "review" ? 1280 : 512);
-        assert.deepEqual(request.thinking, { type: "disabled" });
+        assert.equal(
+          request.max_completion_tokens,
+          node === "review" ? 1280 : 512,
+        );
+        // The demo models declare no reasoning levels, so "off" sends none.
+        assert.equal(request.reasoning_effort, undefined);
         const step = run.steps.find((step) => step.id === node)!;
         assert.ok(step.kind === "agent");
         assert.equal(step.config!.model, request.model);
