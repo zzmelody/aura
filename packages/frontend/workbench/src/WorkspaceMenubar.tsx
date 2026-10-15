@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Check,
   Copy,
-  GitBranch,
   Moon,
   PanelLeft,
   Pencil,
@@ -13,6 +12,7 @@ import {
   SquarePen,
   Sun,
 } from "lucide-react";
+import { FlowIcon } from "./FlowIcon";
 import type { WorkspaceController } from "./useWorkspace";
 import type { Tab } from "./types";
 import type { SessionDialogRequest } from "./SessionActions";
@@ -115,7 +115,7 @@ export function WorkspaceMenubar({
             {
               id: "flows",
               label: "工作流",
-              icon: <GitBranch size={15} />,
+              icon: <FlowIcon size={15} />,
               action: () => navigate("flows"),
             },
             {

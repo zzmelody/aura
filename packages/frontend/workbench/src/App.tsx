@@ -7,12 +7,12 @@ import {
 import {
   MessageCircle,
   FolderOpen,
-  GitBranch,
   PanelRightClose,
   PanelRightOpen,
   Plus,
   X,
 } from "lucide-react";
+import { FlowIcon } from "./FlowIcon";
 import "@fontsource/manrope/latin-400.css";
 import "@fontsource/manrope/latin-500.css";
 import "@fontsource/manrope/latin-600.css";
@@ -316,7 +316,7 @@ export default function App() {
                   <header className="workspace-header">
                     <div className="workspace-heading">
                       {workspace.active?.workflow && tab === "chat" ? (
-                        <GitBranch size={16} />
+                        <FlowIcon size={16} />
                       ) : (
                         <FolderOpen size={16} />
                       )}
@@ -486,12 +486,13 @@ export default function App() {
                           workspaces={
                             tab === "chat" ? codingWorkspaces : undefined
                           }
-                          onWorkspaceTask={(projectId, prompt) => {
+                          onWorkspaceTask={(projectId, prompt, images) => {
                             codingWorkspaces.open(projectId);
                             setCodingHandoff({
                               id: crypto.randomUUID(),
                               projectId,
                               prompt,
+                              ...(images.length ? { images } : {}),
                             });
                             navigate("studio:coding");
                           }}

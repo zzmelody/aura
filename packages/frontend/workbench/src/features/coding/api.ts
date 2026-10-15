@@ -125,6 +125,10 @@ export async function* codingTurn(
     sessionId: string;
     projectId: string;
     prompt: string;
+    /** Uploaded chat image asset IDs. */
+    images?: string[];
+    /** Set on a side chat: the conversation it branches from. */
+    forkFrom?: string;
     mode: FlowMode;
     modelConfig?: ChatModelSelection;
   },
@@ -276,6 +280,14 @@ function fileDiffs(value: unknown[]): CodingFileDiff[] {
     ];
   });
 }
+
+/** Discards a side chat; the main conversation is not affected. */
+export const closeSideChat = (endpoint: string, sessionId: string) =>
+  codingApi<{ closed: boolean }>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/side`,
+    "DELETE",
+  );
 
 /** Sends the user's answer to a question the agent is waiting on. */
 export const answerQuestion = (

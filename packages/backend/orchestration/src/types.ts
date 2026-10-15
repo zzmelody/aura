@@ -139,6 +139,13 @@ export interface CodingTurn {
    */
   project: string;
   prompt: string;
+  /** Uploaded chat image asset IDs attached to this request. */
+  images?: string[];
+  /**
+   * Set on a side chat: the indexed conversation it branches from. The first
+   * turn forks that conversation's log; a side chat is never indexed.
+   */
+  forkFrom?: string;
   mode: FlowMode;
   model?: string;
   reasoningEffort?: string;

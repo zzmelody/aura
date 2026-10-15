@@ -74,6 +74,10 @@ export interface ChatPort {
       sessionId: string;
       projectId: string;
       prompt: string;
+      /** Uploaded chat image asset IDs. */
+      images?: string[];
+      /** Set on a side chat: the conversation it branches from. */
+      forkFrom?: string;
       mode: ChatRoute["mode"];
     } & ChatModelSelection,
     emit: (event: unknown) => void,

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import {
   ChevronDown,
   FileCode2,
-  GitBranch,
   Pencil,
   Play,
   Plus,
@@ -10,6 +9,7 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { FlowIcon } from "../FlowIcon";
 import type { FlowCatalogEntry } from "@aura/protocol/types";
 import type { FlowCatalogController } from "../flowCatalog";
 import type { FlowDraftController } from "../flowDraft";
@@ -209,7 +209,7 @@ export function Workflows({
                 }
               >
                 <span className="workflow-card-icon">
-                  <GitBranch size={22} strokeWidth={1.5} />
+                  <FlowIcon size={22} strokeWidth={1.5} />
                 </span>
                 <span className="workflow-card-copy">
                   <strong>{flow.title}</strong>
@@ -259,7 +259,7 @@ export function Workflows({
         ))}
         {catalogState.catalog && !visible.length ? (
           <div className="workflow-empty">
-            <GitBranch size={28} />
+            <FlowIcon size={28} />
             <h2>{flows.length ? "没有匹配的工作流" : "从第一个工作流开始"}</h2>
             <p>
               {flows.length

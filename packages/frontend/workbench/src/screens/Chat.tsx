@@ -7,7 +7,6 @@ import {
   Copy,
   FileCode2,
   FolderOpen,
-  GitBranch,
   LoaderCircle,
   Newspaper,
   RotateCcw,
@@ -15,6 +14,7 @@ import {
   Square,
   X,
 } from "lucide-react";
+import { FlowIcon } from "../FlowIcon";
 import type { FlowCatalogEntry, FlowMode } from "@aura/protocol/types";
 import { AuraMark } from "@aura/ui/components";
 import { writeClipboard } from "../clipboard";
@@ -28,6 +28,7 @@ import {
   chatImageUrl,
   uploadChatImage,
 } from "../chatImages";
+import { pastedImages } from "../useImageAttachments";
 import type { StudioTab } from "../types";
 import { workflowRunKey } from "../workflowSessions";
 import { workflowExecutions } from "../workflowPresentation";
@@ -198,7 +199,11 @@ export function ChatScreen({
   /** Workspaces a new conversation may start in; omitted where unsupported. */
   workspaces?: CodingProjectsController;
   /** Starts the request as a full-tool conversation in that workspace. */
-  onWorkspaceTask?: (projectId: string, prompt: string) => void;
+  onWorkspaceTask?: (
+    projectId: string,
+    prompt: string,
+    images: ChatImage[],
+  ) => void;
 }) {
   const scroll = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -228,8 +233,8 @@ export function ChatScreen({
       ? workspaces
       : undefined;
   const space = spacePicker?.projects.find((item) => item.id === spaceId);
-  const canAttach =
-    !flowMode && !space && workspace.state.provider !== "offline";
+  // Images also travel with a workspace request; the workspace page sends them.
+  const canAttach = !flowMode && workspace.state.provider !== "offline";
   const uploading = attachments.some((item) => !item.image && !item.error);
   const ready = attachments.flatMap((item) => (item.image ? [item.image] : []));
   useEffect(() => {
@@ -238,33 +243,6 @@ export function ChatScreen({
       for (const url of urls) URL.revokeObjectURL(url);
     };
   }, []);
-  /**
-   * Images from the clipboard: screenshots and copied browser images often
-   * arrive only as clipboard items, with an empty `files` list.
-   */
-  function pastedImages(data: DataTransfer) {
-    const files = Array.from(data.files);
-    if (!files.length)
-      for (const item of Array.from(data.items))
-        if (item.kind === "file") {
-          const file = item.getAsFile();
-          if (file) files.push(file);
-        }
-    return files
-      .filter((file) => chatImageType(file))
-      .map((file, index) =>
-        // Clipboard images are usually all named "image.png"; keep them apart.
-        file.name && file.name !== "image.png"
-          ? file
-          : new File(
-              [file],
-              `粘贴的图片-${Date.now()}-${index + 1}.${(chatImageType(file) ?? "image/png").split("/")[1]}`,
-              {
-                type: chatImageType(file) ?? file.type,
-              },
-            ),
-      );
-  }
   function paste(event: React.ClipboardEvent) {
     const files = pastedImages(event.clipboardData);
     if (!files.length) return;
@@ -393,8 +371,8 @@ export function ChatScreen({
   }
   function submit() {
     if (space && onWorkspaceTask) {
-      if (!draft.trim()) return;
-      onWorkspaceTask(space.id, draft);
+      if ((!draft.trim() && !ready.length) || uploading) return;
+      onWorkspaceTask(space.id, draft, ready);
       workspace.setDraft("");
       clearAttachments();
       setSpaceId("");
@@ -452,7 +430,7 @@ export function ChatScreen({
           <div className={`chat-empty${flowMode ? "" : " chat-home"}`}>
             <div className="chat-empty-icon">
               {flowMode ? (
-                <GitBranch size={24} strokeWidth={1.4} />
+                <FlowIcon size={24} strokeWidth={1.4} />
               ) : (
                 <Sparkles size={24} strokeWidth={1.4} />
               )}
@@ -561,7 +539,7 @@ export function ChatScreen({
         )}
         {pendingRun ? (
           <article className="chat-pending-run" aria-label="待确认的工作流">
-            <GitBranch size={16} />
+            <FlowIcon size={16} />
             <div>
               <strong>
                 {submitting
@@ -654,7 +632,7 @@ export function ChatScreen({
         {selected ? (
           <div className="composer-flow-chip">
             <span>
-              <GitBranch size={13} />
+              <FlowIcon size={13} />
               {selected.title}
             </span>
             <button

@@ -1,6 +1,7 @@
 import { providerMode } from "@aura/core";
 import React, { useEffect, useId, useRef, useState } from "react";
-import { GitBranch, Play, Plus } from "lucide-react";
+import { Play, Plus } from "lucide-react";
+import { FlowIcon } from "../FlowIcon";
 import type {
   FlowCatalogEntry,
   FlowMode,
@@ -137,7 +138,7 @@ export function WorkflowChat({
             className="workflow-binding"
             title={`绑定工作流：${binding.title}`}
           >
-            <GitBranch size={13} />
+            <FlowIcon size={13} />
             <span>{binding.title}</span>
           </span>
         </div>
@@ -168,7 +169,7 @@ export function WorkflowChat({
           {!executions.length && !pending && !composerOpen ? (
             <div className="workflow-chat-empty">
               <span className="workflow-empty-icon">
-                <GitBranch size={24} />
+                <FlowIcon size={24} />
               </span>
               <h2>{binding.title}</h2>
               <p>
@@ -236,7 +237,7 @@ export function WorkflowChat({
               </section>
               <section className="workflow-message workflow-message-assistant workflow-pending-response">
                 <div className="workflow-pending-heading">
-                  <GitBranch size={17} />
+                  <FlowIcon size={17} />
                   <strong>
                     {submitting ? "正在提交工作流" : "这次执行待确认"}
                   </strong>

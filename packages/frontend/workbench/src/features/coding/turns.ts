@@ -5,6 +5,7 @@ import type {
   CodingQuestionAnswer,
   CodingQuestionItem,
 } from "@aura/protocol/types";
+import type { ChatImage } from "@aura/core/types";
 
 export type ToolEntry = {
   callId: string;
@@ -27,6 +28,8 @@ export type AskedQuestion = {
 export type Turn = {
   id: string;
   prompt: string;
+  /** Images sent with this request; only known for turns sent from this page. */
+  images?: ChatImage[];
   reply: string;
   tools: ToolEntry[];
   progress?: { done: number; total: number };
@@ -42,10 +45,16 @@ export type Turn = {
 /** A reply fragment or one activity entry, live or replayed. */
 export type TurnEvent = { type: "delta"; text: string } | CodingActivity;
 
-export function newTurn(id: string, prompt: string, startedAt: number): Turn {
+export function newTurn(
+  id: string,
+  prompt: string,
+  startedAt: number,
+  images?: ChatImage[],
+): Turn {
   return {
     id,
     prompt,
+    ...(images?.length ? { images } : {}),
     reply: "",
     tools: [],
     deliverables: [],
@@ -202,4 +211,45 @@ export function summarizeTurn(
 /** A summary is worth showing only when the turn changed or ran something. */
 export function hasSummary(summary: TurnSummary): boolean {
   return summary.files.length > 0 || summary.commands.length > 0;
+}
+
+/**
+ * Fallback summary of a side chat when the model did not write one: its last
+ * reply, or the files and commands it touched.
+ */
+export function handoffPrompt(
+  turns: readonly Turn[],
+  countLines: (diff: CodingFileDiff) => { added: number; removed: number },
+): string {
+  const last = turns
+    .map((turn) => turn.reply.trim())
+    .filter(Boolean)
+    .at(-1);
+  if (last) return last;
+  const files = new Map<string, { added: number; removed: number }>();
+  const commands: Array<{ command: string; ok: boolean }> = [];
+  for (const turn of turns) {
+    const summary = summarizeTurn(turn, countLines);
+    for (const file of summary.files) {
+      const current = files.get(file.path) ?? { added: 0, removed: 0 };
+      files.set(file.path, {
+        added: current.added + file.added,
+        removed: current.removed + file.removed,
+      });
+    }
+    commands.push(...summary.commands);
+  }
+  const lines: string[] = ["旁支对话没有文字结论。"];
+  if (files.size) {
+    lines.push("改动了这些文件：");
+    for (const [path, counts] of files)
+      lines.push(`- ${path}（+${counts.added} −${counts.removed}）`);
+  }
+  if (commands.length) {
+    lines.push("运行了这些命令：");
+    for (const item of commands)
+      lines.push(`- \`${item.command}\`（${item.ok ? "成功" : "失败"}）`);
+  }
+  if (lines.length === 1) lines.push("没有改文件，也没有跑命令。");
+  return lines.join("\n");
 }

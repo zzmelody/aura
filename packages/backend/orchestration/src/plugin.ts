@@ -17,6 +17,7 @@ import { FlowRegistry } from "./registry.ts";
 import { actionRunSchema, FlowError, runSchema } from "./schema.ts";
 import { dshSessions } from "./sessions.ts";
 import type { FlowMode } from "@aura/protocol/types";
+import { CHAT_IMAGE_LIMIT } from "@aura/protocol/types";
 
 const chatModeSchema = z.enum(["demo", "codex", "lumina", "custom"]);
 import type {
@@ -712,7 +713,7 @@ export async function apply(ctx: Context) {
   const chats = new Map<string, AbortController>();
   const rejectedChatModels = new RejectedChatModels();
   const codingAnswers = new CodingQuestions();
-  const coding = codingService(ctx, codingAnswers);
+  const coding = codingService(ctx, codingAnswers, artifacts);
 
   transport.onNotification((method, params) => {
     if (method === "chat/cancel" && typeof params.chatId === "string")
@@ -949,8 +950,6 @@ export async function apply(ctx: Context) {
             .safeParse(params);
           if (!chatId || chatId.length > 200 || !turn.success)
             throw new FlowError("无效的对话请求。", 400);
-          if (chats.size >= 2)
-            throw new FlowError("对话服务忙，请稍后再试。", 503);
           const abort = new AbortController();
           chats.set(chatId, abort);
           try {
@@ -982,27 +981,53 @@ export async function apply(ctx: Context) {
             .object({
               sessionId: z.string().trim().min(1).max(200),
               projectId: z.string().trim().min(1).max(200),
-              prompt: z.string().min(1).max(80_000),
+              prompt: z.string().max(80_000),
+              images: z
+                .array(z.string().regex(/^[a-f0-9]{64}$/u))
+                .max(CHAT_IMAGE_LIMIT)
+                .optional(),
+              forkFrom: z.string().trim().min(1).max(200).optional(),
               mode: chatModeSchema,
               model: z.string().trim().min(1).max(200).optional(),
               reasoningEffort: z.string().trim().min(1).max(80).optional(),
             })
             .safeParse(params);
-          if (!chatId || chatId.length > 200 || !turn.success)
+          if (
+            !chatId ||
+            chatId.length > 200 ||
+            !turn.success ||
+            // An image-only request is fine; an empty one is not.
+            (!turn.data.prompt.trim() && !turn.data.images?.length)
+          )
             throw new FlowError("无效的编码请求。", 400);
-          if (chats.size >= 2)
-            throw new FlowError("对话服务忙，请稍后再试。", 503);
+          const side = turn.data.forkFrom;
+          if (side !== undefined) {
+            // A side chat may only branch from an indexed conversation of the
+            // same project, and may not reuse an indexed id as its own.
+            const parent = codingConversations.get(side);
+            if (!parent || parent.projectId !== turn.data.projectId)
+              throw new FlowError("主对话不存在或不属于这个项目。", 404);
+            // The `side-` prefix keeps a side chat from adopting some other
+            // live agent (a Flow step's, a chat's) by guessing its id.
+            if (
+              !turn.data.sessionId.startsWith("side-") ||
+              codingConversations.get(turn.data.sessionId)
+            )
+              throw new FlowError("旁支对话需要独立的会话 ID。", 400);
+          }
           // The registry owns the directory, so the sandbox root always comes
           // from the project record rather than a client-supplied path.
           const directory = codingProjects.directory(turn.data.projectId);
           const abort = new AbortController();
           chats.set(chatId, abort);
           try {
-            await codingConversations.open(
-              turn.data.sessionId,
-              turn.data.projectId,
-              turn.data.prompt,
-            );
+            // Side chats are throwaway: never indexed, never attached.
+            if (side === undefined)
+              await codingConversations.open(
+                turn.data.sessionId,
+                turn.data.projectId,
+                turn.data.prompt,
+              );
             data = await coding.stream(
               {
                 ...turn.data,
@@ -1014,13 +1039,24 @@ export async function apply(ctx: Context) {
             );
             // Attach only once the session exists: the registry validates a
             // session's stored header, which the first turn just created.
-            await codingProjects.attach(
-              turn.data.projectId,
-              turn.data.sessionId,
-            );
+            if (side === undefined)
+              await codingProjects.attach(
+                turn.data.projectId,
+                turn.data.sessionId,
+              );
           } finally {
             chats.delete(chatId);
           }
+          break;
+        }
+        case "coding/side/close": {
+          if (typeof params.sessionId !== "string")
+            throw new FlowError("无效的旁支对话。", 400);
+          // Only a side chat opened here can be closed; an indexed
+          // conversation is never disposed through this path.
+          if (codingConversations.get(params.sessionId))
+            throw new FlowError("只能关闭旁支对话。", 400);
+          data = { closed: await coding.closeSide(params.sessionId) };
           break;
         }
         case "action/start":

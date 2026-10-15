@@ -107,6 +107,15 @@ export function createCodingApp(host: OrchestrationHost) {
     }
   });
 
+  // Closing a side chat discards it; nothing of it is kept or listed.
+  app.delete("/sessions/:id/side", async (context) => {
+    try {
+      return context.json(await host.closeCodingSide(context.req.param("id")));
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
   app.get("/projects/:id/conversations", async (context) => {
     try {
       return context.json(await host.conversations(context.req.param("id")));

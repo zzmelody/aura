@@ -4,7 +4,7 @@ import {
   type OrchestrationHost,
 } from "@aura/orchestration";
 import { validateMessages, validateChatModelSelection } from "@aura/protocol";
-import type { ChatEvent } from "@aura/protocol/types";
+import { CHAT_IMAGE_LIMIT, type ChatEvent } from "@aura/protocol/types";
 import type { TripoPort } from "@aura/tripo";
 import { Hono } from "hono";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -46,6 +46,16 @@ interface ApiServerOptions {
   flows?: OrchestrationHost;
   pluginSettings?: AuraPluginSettingsPort;
   pluginSettingsAccessible?: boolean;
+}
+
+/** Optional list of uploaded chat image asset IDs (sha256 hex). */
+function validCodingImages(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.length <= CHAT_IMAGE_LIMIT &&
+      value.every((id) => typeof id === "string" && /^[a-f0-9]{64}$/u.test(id)))
+  );
 }
 
 /** Atomically publishes a 0600 loopback descriptor that local clients read. */
@@ -287,8 +297,15 @@ export function createApiApp({
         typeof body.sessionId !== "string" ||
         typeof body.projectId !== "string" ||
         typeof body.prompt !== "string" ||
-        !body.prompt.trim() ||
         body.prompt.length > 80_000 ||
+        !validCodingImages(body.images) ||
+        (body.forkFrom !== undefined &&
+          (typeof body.forkFrom !== "string" ||
+            !body.forkFrom.trim() ||
+            body.forkFrom.length > 200)) ||
+        // An image-only request is allowed; an empty one is not.
+        (!body.prompt.trim() &&
+          !(body.images as string[] | undefined)?.length) ||
         !["codex", "lumina", "custom", "demo"].includes(String(body.mode)) ||
         (body.modelConfig !== undefined &&
           !validateChatModelSelection(body.modelConfig))
@@ -324,6 +341,12 @@ export function createApiApp({
               sessionId: body.sessionId as string,
               projectId: body.projectId as string,
               prompt: body.prompt as string,
+              ...((body.images as string[] | undefined)?.length
+                ? { images: body.images as string[] }
+                : {}),
+              ...(typeof body.forkFrom === "string"
+                ? { forkFrom: body.forkFrom }
+                : {}),
               mode,
               ...(selection?.model ? { model: selection.model } : {}),
               ...(selection?.reasoningEffort

@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
-import { SessionId } from "@deepseek-ai/dsh-session";
+import {
+  buildForkSeed,
+  SessionId,
+  SessionLogOffset as sessionLogOffset,
+  SessionSeq as sessionSeq,
+} from "@deepseek-ai/dsh-session";
 import type { SessionRequestId } from "@deepseek-ai/dsh-api-session-controller";
 // Type-only: activates the approval service's `approval/request` event.
 import type {} from "@deepseek-ai/dsh-user-approval";
@@ -14,6 +19,7 @@ import type {
   CodingStreamEvent,
   CodingTurn,
 } from "../types.ts";
+import type { GeneratedArtifacts } from "../artifacts/generated.ts";
 import { projectCodingEvent } from "./activity.ts";
 import { readSessionEvents } from "./history.ts";
 import {
@@ -59,13 +65,27 @@ export interface CodingSessionKey {
  * turn so the todo list, plan mode, and tool history accumulate across
  * follow-up requests, and the JSONL log stays readable afterwards.
  */
-export function codingService(ctx: Context, questions: CodingQuestions) {
+export function codingService(
+  ctx: Context,
+  questions: CodingQuestions,
+  images: Pick<GeneratedArtifacts, "readImage">,
+) {
   const controller = ctx.sessionController;
   /** Sessions with a turn in progress in this process. */
   const active = new Set<string>();
+  /** Settles when the session's in-progress turn ends, however it ends. */
+  const settled = new Map<string, Promise<void>>();
+  /**
+   * Side chats forked in this process. Their agents are owned here rather
+   * than left registered, so closing one disposes it; the stop aborts a turn
+   * still running when the side chat closes.
+   */
+  const sideHandles = new Map<string, AgentHandle>();
+  const sideStops = new Map<string, AbortController>();
 
   return {
     stream,
+    closeSide,
     /** Whether a turn of this conversation is running right now. */
     running: (sessionId: string) => active.has(sessionId),
   };
@@ -78,11 +98,96 @@ export function codingService(ctx: Context, questions: CodingQuestions) {
     if (active.has(turn.sessionId))
       throw new FlowError("这段对话还有一轮在进行，请先等它结束或停止。", 409);
     active.add(turn.sessionId);
+    const turnDone = run(turn, emit, signal);
+    settled.set(
+      turn.sessionId,
+      turnDone.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
     try {
-      return await run(turn, emit, signal);
+      return await turnDone;
     } finally {
       active.delete(turn.sessionId);
+      settled.delete(turn.sessionId);
     }
+  }
+
+  /**
+   * Discards a side chat: stops its running turn, then disposes its agent so
+   * nothing of it stays live. The DSH log is left as DSH wrote it; Aura never
+   * indexed it, so it is not listed anywhere.
+   *
+   * @returns whether a side chat with this id was open.
+   */
+  async function closeSide(sessionId: string): Promise<boolean> {
+    const stop = sideStops.get(sessionId);
+    const handle = sideHandles.get(sessionId);
+    if (!stop && !handle) return false;
+    stop?.abort(new FlowError("旁支对话已关闭。"));
+    await settled.get(sessionId);
+    sideStops.delete(sessionId);
+    sideHandles.delete(sessionId);
+    const session = ctx.sessions.get(SessionId(sessionId));
+    if (session) await ctx.sessions.flush(session).catch(() => false);
+    await handle?.dispose();
+    return true;
+  }
+
+  function sideStop(sessionId: string): AbortController {
+    let stop = sideStops.get(sessionId);
+    if (!stop) {
+      stop = new AbortController();
+      sideStops.set(sessionId, stop);
+    }
+    return stop;
+  }
+
+  /**
+   * Creates a side chat's agent from its parent's log, cut at the parent's
+   * latest completed turn so a turn still running there is not half-copied.
+   * A parent with no completed turn yet is cut at its last event; DSH closes
+   * that open tail with synthetic results that tell the model the parent may
+   * have finished those calls. The child keeps the parent's directory, so
+   * the sandbox boundary is unchanged.
+   */
+  async function forkAgent(
+    parentId: string,
+    options: {
+      sessionId: SessionId;
+      cwd: string;
+      preset: string;
+      agentOptions: { provider: string; model: string };
+      setup: (agentCtx: Context) => Promise<void>;
+      signal: AbortSignal;
+    },
+  ): Promise<AgentHandle> {
+    const parent = await controller
+      .inspect(SessionId(parentId), options.signal)
+      .catch(() => {
+        throw new FlowError("主对话还没有记录，暂时不能开旁支。", 404);
+      });
+    const boundary = forkBoundary(parent.events);
+    return ctx.agents.create({
+      sessionId: options.sessionId,
+      agentOptions: options.agentOptions,
+      meta: {
+        agentPreset: options.preset,
+        cwd: options.cwd,
+        ...(boundary === undefined
+          ? {}
+          : { parentSession: SessionId(parentId), isSeeded: true }),
+      },
+      ...(boundary === undefined
+        ? {}
+        : {
+            seed: buildForkSeed(parent.events, sessionSeq(boundary)),
+            inheritedEventCount: sessionLogOffset(boundary + 1),
+          }),
+      signal: options.signal,
+      setup: options.setup,
+    });
   }
 
   async function run(
@@ -94,6 +199,8 @@ export function codingService(ctx: Context, questions: CodingQuestions) {
     const stop = AbortSignal.any([
       signal,
       AbortSignal.timeout(CODING_TURN_TIMEOUT_MS),
+      // Closing a side chat stops its turn too.
+      ...(turn.forkFrom ? [sideStop(turn.sessionId).signal] : []),
     ]);
     const config = await resolveChatModel(
       ctx.llm,
@@ -117,29 +224,41 @@ export function codingService(ctx: Context, questions: CodingQuestions) {
     // the todo list, plan mode and tool history carry over. A conversation
     // whose agent is gone (the host restarted) resumes from its stored log, so
     // the model keeps its context instead of starting over.
+    // A side chat's first turn forks its parent instead of starting empty.
     const live = ctx.agents.get(sessionId);
     const stored =
       !live &&
       (await readSessionEvents(controller, sessionId, stop, 1)) !== undefined;
-    const agent =
-      live ??
-      (stored
+    let agent = live;
+    if (!agent) {
+      const handle = stored
         ? await ctx.agents.resume({
             resumeSessionId: sessionId,
             agentOptions,
             signal: stop,
             setup,
           })
-        : await ctx.agents.create({
-            sessionId,
-            agentOptions,
-            // The session header cwd is immutable and becomes the sandbox's
-            // workspace-write boundary, so every mutation stays in the project.
-            meta: { agentPreset: preset, cwd },
-            signal: stop,
-            setup,
-          })
-      ).agent;
+        : turn.forkFrom
+          ? await forkAgent(turn.forkFrom, {
+              sessionId,
+              cwd,
+              preset,
+              agentOptions,
+              setup,
+              signal: stop,
+            })
+          : await ctx.agents.create({
+              sessionId,
+              agentOptions,
+              // The session header cwd is immutable and becomes the sandbox's
+              // workspace-write boundary, so every mutation stays in the project.
+              meta: { agentPreset: preset, cwd },
+              signal: stop,
+              setup,
+            });
+      if (turn.forkFrom) sideHandles.set(turn.sessionId, handle);
+      agent = handle.agent;
+    }
     const scoped: Array<() => void> = [];
     const disposers: Array<() => void> = [];
     try {
@@ -249,12 +368,31 @@ export function codingService(ctx: Context, questions: CodingQuestions) {
       stop.addEventListener("abort", onAbort, { once: true });
       try {
         stop.throwIfAborted();
+        // Uploaded images are re-read by content ID, so a client can only
+        // reference pictures it uploaded, never arbitrary paths.
+        const pictures = [];
+        for (const [index, id] of (turn.images ?? []).entries()) {
+          const image = await images.readImage(id, stop);
+          pictures.push({
+            type: "image" as const,
+            mediaType: image.mediaType,
+            data: image.bytes.toString("base64"),
+            name: `图${index + 1}`,
+          });
+        }
         await controller.prompt(
           {
             sessionId,
             requestId,
             mode: "queue",
-            content: [{ type: "text", text: turn.prompt }],
+            content: [
+              // DSH needs a text part; an image-only request gets a short cue.
+              {
+                type: "text",
+                text: turn.prompt.trim() || "请查看我附上的图片。",
+              },
+              ...pictures,
+            ],
           },
           stop,
         );
@@ -304,6 +442,32 @@ export function codingService(ctx: Context, questions: CodingQuestions) {
     );
     return mounted;
   }
+}
+
+type AgentHandle = Awaited<ReturnType<Context["agents"]["create"]>>;
+
+/**
+ * The inclusive seq a side chat inherits through: the end of the latest
+ * completed turn, including standalone events before the next turn starts
+ * (the rule DSH's own session fork uses). Without a completed turn it is the
+ * last event, and an empty log has none.
+ */
+export function forkBoundary(
+  events: ReadonlyArray<{ seq: number; type: string; surfaceOp?: unknown }>,
+): number | undefined {
+  const end = events.findLast((event) => event.type === "turn/end");
+  if (!end) return events.at(-1)?.seq;
+  let boundary = end.seq;
+  for (const next of events.slice(end.seq + 1)) {
+    if (
+      next.type === "turn/start" ||
+      (next.type === "user/message" && next.surfaceOp === "append") ||
+      next.type === "agent/inbox/spliced"
+    )
+      break;
+    boundary = next.seq;
+  }
+  return boundary;
 }
 
 /** Validates the project directory and returns the absolute session cwd. */

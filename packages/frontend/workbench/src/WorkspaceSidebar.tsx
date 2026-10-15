@@ -7,7 +7,6 @@ import {
   Clock3,
   FolderOpen,
   FolderPlus,
-  GitBranch,
   Layers,
   ListFilter,
   MessageCircle,
@@ -21,6 +20,7 @@ import {
   Telescope,
   X,
 } from "lucide-react";
+import { FlowIcon } from "./FlowIcon";
 import { AuraMark } from "@aura/ui/components";
 import type { WorkspaceController } from "./useWorkspace";
 import type { Tab } from "./types";
@@ -40,7 +40,7 @@ import { WorkspaceDialog } from "./features/coding/WorkspaceDialog";
 
 const tabs = [
   { id: "chat", label: "对话", icon: MessageCircle },
-  { id: "flows", label: "工作流", icon: GitBranch },
+  { id: "flows", label: "工作流", icon: FlowIcon },
   { id: "history", label: "全部记录", icon: Clock3 },
   { id: "site", label: "Site", icon: PanelsTopLeft },
 ] as const;
@@ -381,7 +381,7 @@ export function WorkspaceSidebar({
                 onClick={() => toggleFolder(group.id)}
               >
                 {group.workflow ? (
-                  <GitBranch size={16} />
+                  <FlowIcon size={16} />
                 ) : (
                   <FolderOpen size={16} />
                 )}
@@ -434,7 +434,7 @@ export function WorkspaceSidebar({
                           onClick={() => open(session.id)}
                         >
                           {session.workflow ? (
-                            <GitBranch
+                            <FlowIcon
                               size={12}
                               className="session-workflow-icon"
                               aria-label="工作流会话"

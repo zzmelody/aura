@@ -1,11 +1,6 @@
 import React, { useState } from "react";
-import {
-  Archive,
-  GitBranch,
-  MessageCircle,
-  Search,
-  SquarePen,
-} from "lucide-react";
+import { Archive, MessageCircle, Search, SquarePen } from "lucide-react";
+import { FlowIcon } from "../FlowIcon";
 import type { WorkspaceController } from "../useWorkspace";
 import { sidebarSessionStatus, sidebarSessionTitle } from "../sidebarSessions";
 import { SessionActions, type SessionDialogRequest } from "../SessionActions";
@@ -84,7 +79,7 @@ export function HistoryScreen({
               >
                 <span className="history-session-icon">
                   {session.workflow ? (
-                    <GitBranch size={17} />
+                    <FlowIcon size={17} />
                   ) : (
                     <MessageCircle size={17} />
                   )}

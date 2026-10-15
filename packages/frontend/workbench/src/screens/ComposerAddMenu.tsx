@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
-import { GitBranch, ImagePlus, Plus } from "lucide-react";
+import { ImagePlus, Plus } from "lucide-react";
+import { FlowIcon } from "../FlowIcon";
 
 /**
  * Codex-style "+" in the composer: one entry point for attaching images and
@@ -109,7 +110,7 @@ export function ComposerAddMenu({
               className="composer-add-item"
               onClick={() => choose(onWorkflow)}
             >
-              <GitBranch size={16} aria-hidden="true" />
+              <FlowIcon size={16} aria-hidden="true" />
               <span>
                 调用工作流
                 <small>或在输入框键入 /</small>

@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef } from "react";
-import { GitBranch, Search } from "lucide-react";
+import { Search } from "lucide-react";
+import { FlowIcon } from "../FlowIcon";
 import type { FlowCatalogEntry } from "@aura/protocol/types";
 
 /** Searchable popover above the composer; the textarea keeps keyboard focus. */
@@ -79,7 +80,7 @@ export function FlowPicker({
             title={flow.error}
           >
             <span className="flow-picker-icon">
-              <GitBranch size={15} />
+              <FlowIcon size={15} />
             </span>
             <span className="flow-picker-copy">
               <strong>{flow.title}</strong>

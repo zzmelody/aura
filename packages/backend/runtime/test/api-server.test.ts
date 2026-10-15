@@ -330,3 +330,50 @@ test("Hono API exposes validated asynchronous Tripo tasks", async () => {
     message: "Tripo 尚未配置，请先在后端设置 API Key。",
   });
 });
+
+test("coding turns accept uploaded image IDs and reject invalid ones", async () => {
+  const turns: Array<{ prompt: string; images?: string[] }> = [];
+  const app = createApiApp({
+    codexAuth,
+    chat: {
+      ...chat,
+      async coding(turn) {
+        turns.push(turn);
+        return { model: "gpt-test" };
+      },
+    },
+  });
+  const id = "a".repeat(64);
+  const send = (body: Record<string, unknown>) =>
+    app.request("/coding/turn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "coding-1",
+        projectId: "project-1",
+        mode: "codex",
+        ...body,
+      }),
+    });
+  const withImage = await send({ prompt: "look", images: [id] });
+  assert.equal(withImage.status, 200);
+  await withImage.text();
+  const imageOnly = await send({ prompt: "", images: [id] });
+  assert.equal(imageOnly.status, 200);
+  await imageOnly.text();
+  const textOnly = await send({ prompt: "hello" });
+  await textOnly.text();
+  assert.deepEqual(turns[0]!.images, [id]);
+  assert.equal(turns[1]!.prompt, "");
+  assert.deepEqual(turns[1]!.images, [id]);
+  assert.equal("images" in turns[2]!, false);
+  for (const invalid of [
+    { prompt: "", images: [] },
+    { prompt: "  " },
+    { prompt: "x", images: ["../secret.png"] },
+    { prompt: "x", images: "a".repeat(64) },
+    { prompt: "x", images: Array(5).fill(id) },
+  ])
+    assert.equal((await send(invalid)).status, 400);
+  assert.equal(turns.length, 3, "invalid requests never reach the host");
+});

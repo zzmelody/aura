@@ -444,6 +444,13 @@ export class OrchestrationHost {
     });
   }
 
+  /** Discards a side chat: stops its turn and disposes its agent. */
+  closeCodingSide(sessionId: string): Promise<{ closed: boolean }> {
+    return this.request<{ closed: boolean }>("coding/side/close", {
+      sessionId,
+    });
+  }
+
   /** A coding conversation rebuilt from its stored session log. */
   codingHistory(
     sessionId: string,

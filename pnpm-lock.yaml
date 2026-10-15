@@ -259,8 +259,8 @@ importers:
         specifier: 6.1.1
         version: 6.1.1(vite@8.2.2(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
       electron:
-        specifier: 44.2.0
-        version: 44.2.0
+        specifier: 44.7.0
+        version: 44.7.0
       typescript:
         specifier: ~5.9.2
         version: 5.9.3
@@ -4597,7 +4597,7 @@ packages:
     resolution: {integrity: sha512-1mEZtMKPM09vDmQt5y7YvmN2+DFTP7Tg0EWXdic8/C6VRnpb33e4ghisCIE3WZjsE2N8mf+QV1Zqh7ZFYLWInQ==}
 
   '@vastai/tripo-sdk@0.3.0':
-    resolution: {integrity: sha512-ipzCrlgs2Tg/jUPKzWSL+HHMslzwWksKtZmQiAlN+YY990n8ih79Snm8XJTrlc7tOEr+VbJff7lkIP1FdbTDxA==, tarball: https://registry.npmjs.org/@vastai/tripo-sdk/-/tripo-sdk-0.3.0.tgz}
+    resolution: {integrity: sha512-ipzCrlgs2Tg/jUPKzWSL+HHMslzwWksKtZmQiAlN+YY990n8ih79Snm8XJTrlc7tOEr+VbJff7lkIP1FdbTDxA==}
     engines: {node: '>=18'}
 
   '@vitejs/plugin-react@6.1.1':
@@ -5027,8 +5027,8 @@ packages:
   electron-to-chromium@1.5.452:
     resolution: {integrity: sha512-cVvk1YBSj6571VmV6hdJTqj94Y79xSu8cj6Y9t6ae4Y4431z8/7EJFvu3rVp90xhfuv9BpPKUmaLfTo4+FOGBg==}
 
-  electron@44.2.0:
-    resolution: {integrity: sha512-oK1icjhapp3xsUZycO9WZaLmd3hJnA7ieobC4mpdtO1pEN+PPGWpA3m1Mgzzuc1wzSD2Wai4zcH4yfpGJqxFMA==}
+  electron@44.7.0:
+    resolution: {integrity: sha512-aUq9/zLAAFYc+a9gy6cd0C3Y/N/RmovLCD8TV8LhIzNhuND6HEgsu96jJz9cbAxvckSPv+Trf2PKEjktoZgFkw==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -11770,7 +11770,7 @@ snapshots:
 
   electron-to-chromium@1.5.452: {}
 
-  electron@44.2.0:
+  electron@44.7.0:
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.1.0

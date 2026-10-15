@@ -4,12 +4,12 @@ import {
   Circle,
   CircleAlert,
   Clock3,
-  GitBranch,
   GitFork,
   LoaderCircle,
   RefreshCw,
   Square,
 } from "lucide-react";
+import { FlowIcon } from "../FlowIcon";
 import { AuraMark } from "@aura/ui/components";
 import type {
   FlowHistory,
@@ -664,7 +664,7 @@ export function WorkflowRunResult({
                   {active ? (
                     <LoaderCircle size={16} className="workflow-spinner" />
                   ) : (
-                    <GitBranch size={16} />
+                    <FlowIcon size={16} />
                   )}
                   <span>
                     {!cached && !savedOutput && !error
