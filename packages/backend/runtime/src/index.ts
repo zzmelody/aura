@@ -111,6 +111,17 @@ export async function startAuraRuntime(
     pluginManager.setActivator((resolution) =>
       flows!.configureContributions(contributions(resolution)),
     );
+    // Start the long-lived DSH host now rather than on the first request, so
+    // its cold start (20–35 s on Windows) is not charged to whatever the user
+    // opens first. A failed start is retried by the next request.
+    flows
+      .open()
+      .catch((error: unknown) =>
+        console.error(
+          "Aura orchestration host failed to start:",
+          error instanceof Error ? error.message : error,
+        ),
+      );
     api = await startApiServer({
       config,
       codexAuth,

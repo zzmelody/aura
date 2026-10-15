@@ -399,6 +399,9 @@ test(
       const childHost = await host.open();
       childHost.child.kill("SIGKILL");
       await childHost.exited;
+      // A runtime crash takes its host object with it; close this one so its
+      // crash restart does not leave a second DSH host on the same storage.
+      await host.close();
       holdToolResult = false;
       releaseToolResult!();
       host = new OrchestrationHost(options);

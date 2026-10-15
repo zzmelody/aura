@@ -250,6 +250,7 @@ export class OrchestrationHost {
     const rpc = new JsonRpcLineTransport(child.stdout, child.stdin);
     // DSH/provider logs may contain credentials; never forward raw stderr.
     child.stderr.resume();
+    let ready = false;
     const exited = new Promise<void>((resolve) => {
       child.once("error", () => {
         rpc.close();
@@ -259,6 +260,14 @@ export class OrchestrationHost {
         rpc.close();
         this.opening = undefined;
         resolve();
+        // The host is meant to stay up for the runtime's lifetime. Bring back
+        // one that crashed after a good start; a failed handshake is left to
+        // the next request so a broken profile cannot restart in a loop.
+        if (ready && !this.closed)
+          setTimeout(() => {
+            if (!this.closed && !this.opening)
+              this.open().catch(() => undefined);
+          }, 2_000).unref();
       });
     });
     rpc.onNotification((method, params) => {
@@ -287,6 +296,7 @@ export class OrchestrationHost {
         result.data.version !== 4
       )
         throw new Error("Invalid host handshake");
+      ready = true;
       return { child, rpc, exited };
     } catch {
       rpc.close();
@@ -319,11 +329,22 @@ export class OrchestrationHost {
   }
 
   /**
-   * Streams one chat turn through the long-lived DSH host, where the model may
-   * start chat workflows as tools. Events arrive before the request settles.
+   * Reads the model catalog from the DSH host that executes chat. The caller's
+   * signal bounds only the catalog request: a cold host start (20–35 s on
+   * Windows, at runtime start or after a crash) has its own handshake timeout
+   * and must not spend the catalog's budget.
    */
-  chatModels(mode: FlowMode, signal: AbortSignal): Promise<ChatModelCatalog> {
-    return this.request("chat/models", { mode }, signal);
+  async chatModels(
+    mode: FlowMode,
+    signal: AbortSignal,
+  ): Promise<ChatModelCatalog> {
+    await this.open();
+    signal.throwIfAborted();
+    return this.request(
+      "chat/models",
+      { mode },
+      AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
+    );
   }
 
   async chat(

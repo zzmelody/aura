@@ -670,7 +670,6 @@ export async function apply(ctx: Context) {
     return task;
   };
 
-  let lastActivity = Date.now();
   let exiting = false;
   const transport = new JsonRpcLineTransport(process.stdin, process.stdout);
   const disposeAndExit = async () => {
@@ -722,9 +721,7 @@ export async function apply(ctx: Context) {
 
   transport.onRequest(async (method, params) => {
     try {
-      if (exiting)
-        throw new FlowError("编排服务正在回收空闲资源，请刷新。", 503);
-      lastActivity = Date.now();
+      if (exiting) throw new FlowError("编排服务正在关闭，请刷新。", 503);
       if (method.startsWith("content-projects/"))
         return {
           ok: true,
@@ -1185,7 +1182,9 @@ export async function apply(ctx: Context) {
 
   ctx.effect(() => {
     transport.start();
-    // Parent death closes stdin. Do not keep model/tool work alive until idle expiry.
+    // The host lives as long as the Aura runtime that spawned it: Flow
+    // schedules, chat and the model catalog all need it warm. Parent death
+    // closes stdin, which is the only exit path besides an explicit shutdown.
     const disconnected = () => {
       void disposeAndExit().catch(() => process.exit(1));
     };
@@ -1195,20 +1194,10 @@ export async function apply(ctx: Context) {
       () => void refreshFlows().catch(() => undefined),
       1_000,
     );
-    const idle = setInterval(() => {
-      if (
-        !engine.running.size &&
-        !actionRuns.running.size &&
-        !chats.size &&
-        Date.now() - lastActivity > 300_000
-      )
-        void disposeAndExit();
-    }, 30_000);
     return async () => {
       process.stdin.off("end", disconnected);
       process.stdin.off("error", disconnected);
       clearInterval(scan);
-      clearInterval(idle);
       await engine.close();
       await actionRuns.close();
       await localAI.close();

@@ -229,12 +229,11 @@ export function createApiApp({
     try {
       context.header("Cache-Control", "no-store");
       return context.json(
+        // Only client disconnect cancels here: the host bounds the catalog
+        // read itself, after any cold DSH start, so a start never spends it.
         await host.chatModels(
           mode as ChatRoute["mode"],
-          AbortSignal.any([
-            context.req.raw.signal,
-            AbortSignal.timeout(20_000),
-          ]),
+          context.req.raw.signal,
         ),
       );
     } catch {
