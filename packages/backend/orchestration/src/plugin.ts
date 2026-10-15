@@ -763,6 +763,9 @@ export async function apply(ctx: Context) {
       const stepId = typeof params.stepId === "string" ? params.stepId : "";
       let data;
       switch (method) {
+        case "ping":
+          data = {};
+          break;
         case "ai-services/busy":
           // Match terminal task states; a crashed Run must not lock settings forever.
           data = [...engine.runs.entries()].some(
@@ -1234,18 +1237,31 @@ export async function apply(ctx: Context) {
       process.stdin.off("end", disconnected);
       process.stdin.off("error", disconnected);
       clearInterval(scan);
-      await engine.close();
-      await actionRuns.close();
-      await localAI.close();
-      await Promise.all([discoveries.close(), actionDiscoveries.close()]);
-      transport.close();
-      await domain.close();
-      await actionDomain.close();
-      await videoDomain.close();
-      await contentDomain.close();
-      await analyticsDomain.close();
-      await topicDomain.close();
-      await research.close();
+      // Cordis disposes this fiber on its own when an injected service is
+      // replaced. The transport below is the process's only RPC listener, so
+      // a host left running without it is alive but deaf. Exit once cleanup
+      // finishes, and let the parent's crash restart bring back a fresh host.
+      const unplanned = !exiting;
+      exiting = true;
+      // A close below can hang (storage already torn down by the same reload),
+      // and a hung cleanup must not keep the deaf process alive.
+      if (unplanned) setTimeout(() => process.exit(1), 10_000);
+      try {
+        await engine.close();
+        await actionRuns.close();
+        await localAI.close();
+        await Promise.all([discoveries.close(), actionDiscoveries.close()]);
+        transport.close();
+        await domain.close();
+        await actionDomain.close();
+        await videoDomain.close();
+        await contentDomain.close();
+        await analyticsDomain.close();
+        await topicDomain.close();
+        await research.close();
+      } finally {
+        if (unplanned) process.exit(1);
+      }
     };
   }, "aura-orchestration.serve");
 }

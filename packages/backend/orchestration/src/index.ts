@@ -297,6 +297,28 @@ export class OrchestrationHost {
       )
         throw new Error("Invalid host handshake");
       ready = true;
+      // A host can stay alive yet stop answering (its RPC listener detached),
+      // and an exit-only watch never notices. Requests run concurrently, so a
+      // ping is not queued behind long work; three misses in a row (about 90 s
+      // of silence) mean the host is gone, and killing it triggers the crash
+      // restart above.
+      let missed = 0;
+      const liveness = setInterval(() => {
+        rpc
+          .request("ping", {}, AbortSignal.timeout(15_000))
+          .then(() => {
+            missed = 0;
+          })
+          .catch(() => {
+            if (++missed < 3 || this.closed) return;
+            console.error(
+              "Aura orchestration host stopped answering; restarting it.",
+            );
+            child.kill();
+          });
+      }, 30_000);
+      liveness.unref();
+      child.once("exit", () => clearInterval(liveness));
       return { child, rpc, exited };
     } catch {
       rpc.close();
