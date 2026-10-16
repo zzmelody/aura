@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import type { CodingHistoryTurn } from "@aura/protocol/types";
 import {
   applyTurnEvent,
+  finishTurn,
   hasSummary,
   newTurn,
+  recapParts,
   summarizeTurn,
   turnsFromHistory,
   type TurnEvent,
@@ -69,7 +71,7 @@ test("replayed history matches the live fold and keeps its outcome", () => {
   assert.deepEqual(replayed, { ...live, status: "complete", endedAt: 9 });
 });
 
-test("a step left running in a finished turn shows as failed, not spinning", () => {
+test("a step left running in a stopped turn shows as interrupted, not failed", () => {
   const [turn] = turnsFromHistory("s1", [
     {
       prompt: "跑命令",
@@ -80,8 +82,48 @@ test("a step left running in a finished turn shows as failed, not spinning", () 
     },
   ]);
   assert.equal(turn!.status, "stopped");
-  assert.equal(turn!.tools[0]!.state, "failed");
+  assert.equal(turn!.tools[0]!.state, "stopped");
 });
+
+for (const status of ["complete", "stopped", "error"] as const) {
+  test(`live and replayed ${status} settle unfinished tools without changing recorded outcomes`, () => {
+    const steps: TurnEvent[] = [
+      ...events,
+      { type: "tool", phase: "start", callId: "bad", name: "read" },
+      { type: "tool", phase: "end", callId: "bad", ok: false },
+      {
+        type: "tool",
+        phase: "start",
+        callId: "pending",
+        name: "bash",
+        detail: "pnpm test",
+      },
+    ];
+    const live = steps.reduce(applyTurnEvent, newTurn("s1-0", "验证", 1));
+    const error = status === "error" ? "连接中断" : undefined;
+    const finished = finishTurn(live, status, 9, error);
+    const [replayed] = turnsFromHistory("s1", [
+      {
+        prompt: "验证",
+        startedAt: 1,
+        endedAt: 9,
+        status,
+        events: steps,
+        error,
+      },
+    ]);
+    assert.deepEqual(finished, replayed);
+    assert.equal(finished.tools[0]!.state, "ok");
+    assert.equal(finished.tools[1]!.state, "failed");
+    assert.equal(
+      finished.tools[2]!.state,
+      status === "error" ? "failed" : "stopped",
+    );
+    assert.equal(live.tools[2]!.state, "running");
+    const summary = summarizeTurn(finished, () => ({ added: 0, removed: 0 }));
+    assert.equal(summary.commands.length, status === "error" ? 1 : 0);
+  });
+}
 
 test("a turn still running keeps its open step running", () => {
   const [turn] = turnsFromHistory("s1", [
@@ -157,12 +199,20 @@ test("a turn summary lists changed files, commands and loose ends", () => {
   // Two edits of one file merge into one entry with summed counts.
   assert.deepEqual(summary.files, [{ path: "a.ts", added: 2, removed: 1 }]);
   assert.deepEqual(summary.commands, [{ command: "pnpm test", ok: false }]);
+  assert.equal(summary.steps, 4);
+  assert.equal(summary.reads, 0);
   assert.equal(summary.failedSteps, 1);
   assert.equal(summary.unanswered, 1);
   assert.equal(hasSummary(summary), true);
+  assert.deepEqual(recapParts(summary), [
+    "改动 1 个文件",
+    "运行 1 条命令（1 条失败）",
+    "1 个步骤失败",
+    "1 个问题未回答",
+  ]);
 });
 
-test("a turn that only read files has nothing to summarise", () => {
+test("a turn that only read files still recaps what it did", () => {
   let turn = newTurn("t", "看看", 1);
   turn = applyTurnEvent(turn, {
     type: "tool",
@@ -177,8 +227,8 @@ test("a turn that only read files has nothing to summarise", () => {
     callId: "r1",
     ok: true,
   });
-  assert.equal(
-    hasSummary(summarizeTurn(turn, () => ({ added: 0, removed: 0 }))),
-    false,
-  );
+  const summary = summarizeTurn(turn, () => ({ added: 0, removed: 0 }));
+  assert.equal(hasSummary(summary), true);
+  assert.equal(summary.reads, 1);
+  assert.deepEqual(recapParts(summary), ["读取 1 个文件"]);
 });

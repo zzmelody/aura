@@ -244,4 +244,10 @@ export interface CodingConversation {
   title: string;
   createdAt: number;
   updatedAt: number;
+  archivedAt?: number;
+  sideSessionId?: string;
+  /** Outcome of the last stored turn; omitted when the session has no turns. */
+  lastTurnStatus?: "running" | "complete" | "stopped" | "error";
+  /** Set while the running turn waits for the user to answer a question. */
+  waitingForAnswer?: true;
 }

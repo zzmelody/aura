@@ -213,7 +213,15 @@ test("Hono API restricts and delegates trusted plugin configuration", async () =
 });
 
 test("Hono API serves health, enforces origin policy and streams NDJSON", async () => {
-  const app = createApiApp({ codexAuth, chat });
+  const app = createApiApp({
+    codexAuth,
+    chat,
+    readiness: {
+      async health() {
+        return { status: "ready" };
+      },
+    },
+  });
 
   const health = await app.request("/health");
   assert.equal(health.status, 200);
@@ -278,6 +286,46 @@ test("Hono API serves health, enforces origin policy and streams NDJSON", async 
   assert.equal(codexEvents[1]?.runId, "run-1");
   assert.equal(codexEvents[2]?.mode, "codex-subscription");
   assert.equal(codexEvents[2]?.model, codexAuth.modelId);
+});
+
+test("health reports DSH startup, failure, recovery and shutdown without leaking errors", async () => {
+  let status: "starting" | "ready" | "unavailable" | "stopped" = "starting";
+  let fail = false;
+  const lifecycle = { shuttingDown: false, admittedRequests: 0 };
+  const app = createApiApp({
+    codexAuth,
+    lifecycle,
+    readiness: {
+      async health() {
+        if (fail) throw new Error("Bearer private-provider-token");
+        return { status };
+      },
+    },
+  });
+  for (const state of [
+    "starting",
+    "unavailable",
+    "ready",
+    "stopped",
+  ] as const) {
+    status = state;
+    const response = await app.request("/health");
+    assert.equal(response.status, state === "ready" ? 200 : 503);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const body = await response.json();
+    assert.equal(body.service, "aura-runtime");
+    assert.deepEqual(body.dsh, { status: state });
+  }
+  fail = true;
+  const failed = await app.request("/health");
+  assert.equal(failed.status, 503);
+  assert.doesNotMatch(await failed.text(), /private-provider-token/);
+  fail = false;
+  status = "ready";
+  lifecycle.shuttingDown = true;
+  assert.equal((await app.request("/health")).status, 503);
+  const noHost = createApiApp({ codexAuth });
+  assert.equal((await noHost.request("/health")).status, 503);
 });
 
 test("Hono API exposes validated asynchronous Tripo tasks", async () => {

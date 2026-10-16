@@ -1,15 +1,44 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
-  Check,
+  ChevronDown,
+  ChevronRight,
+  CircleCheck,
+  CircleStop,
+  CircleX,
+  ClipboardCheck,
   Copy,
+  File as FileIcon,
+  FileArchive,
+  FileBraces,
+  FileCheck,
+  FileCode,
+  FileCodeCorner,
+  FileDiff,
+  FileImage,
+  FileLock,
+  FileMusic,
+  FilePen,
+  FilePlus,
+  FileSpreadsheet,
+  FileTerminal,
   FileText,
+  FileType,
+  FileVideoCamera,
   FolderSearch,
+  Palette,
+  Image as ImageIcon,
   ImagePlus,
+  ListTodo,
   LoaderCircle,
+  PackageCheck,
+  Search,
   Square,
+  SquareTerminal,
   MessageCircleQuestion,
+  Wrench,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { providerMode } from "@aura/core";
 import type { Workspace } from "@aura/core/types";
@@ -24,42 +53,160 @@ import { writeClipboard } from "../../clipboard";
 import type { ChatImage } from "@aura/core/types";
 import { chatImageUrl } from "../../chatImages";
 import { pastedImages, useImageAttachments } from "../../useImageAttachments";
-import { codingTurn, conversationHistory, answerQuestion } from "./api";
+import {
+  codingTurn,
+  conversationHistory,
+  answerQuestion,
+  stopCodingTurn,
+} from "./api";
 import { diffLines, diffStats } from "./diff";
+import {
+  BINARY_KINDS,
+  displayPath,
+  fileDir,
+  fileKind,
+  fileName,
+  fullPath,
+  type FileKind,
+} from "./fileKinds";
 import {
   answerTurn,
   applyTurnEvent,
+  finishTurn,
   hasSummary,
   newTurn,
+  recapParts,
   summarizeTurn,
   turnsFromHistory,
   type AskedQuestion,
+  type ToolEntry,
   type Turn,
 } from "./turns";
 
-/** One file-change card: path, line counts, and the line diff. */
+/** One file-change block inside an expanded step: path header, then lines. */
 function DiffCard({ diff }: { diff: CodingFileDiff }) {
   const lines = diffLines(diff.oldText, diff.newText);
-  const { added, removed } = diffStats(lines);
   return (
-    <details className="coding-diff" open={lines.length <= 40}>
-      <summary>
-        <code title={diff.path}>{diff.path}</code>
-        <span className="coding-diff-added">+{added}</span>
-        <span className="coding-diff-removed">−{removed}</span>
-      </summary>
+    <div className="coding-diff">
       <pre aria-label={`${diff.path} 的改动`}>
+        <span className="coding-diff-path">{diff.path}</span>
+        {"\n"}
         {lines.map((line, index) => (
           <span key={index} className={`coding-diff-line ${line.kind}`}>
             <span aria-hidden="true">
-              {line.kind === "add" ? "+" : line.kind === "remove" ? "−" : " "}
+              {line.kind === "add"
+                ? "+ "
+                : line.kind === "remove"
+                  ? "- "
+                  : "  "}
             </span>
             {line.text || " "}
             {"\n"}
           </span>
         ))}
       </pre>
-    </details>
+    </div>
+  );
+}
+
+const toolIcons: Record<string, LucideIcon> = {
+  read: FileText,
+  read_image: ImageIcon,
+  write: FilePlus,
+  edit: FilePen,
+  glob: FolderSearch,
+  grep: Search,
+  bash: SquareTerminal,
+  pwsh: SquareTerminal,
+  todo_write: ListTodo,
+  present: PackageCheck,
+  exit_plan_mode: ClipboardCheck,
+  ask_user_question: MessageCircleQuestion,
+};
+
+const toolStates = {
+  running: { icon: LoaderCircle, label: "执行中" },
+  ok: { icon: CircleCheck, label: "已完成" },
+  failed: { icon: CircleX, label: "失败" },
+  stopped: { icon: CircleStop, label: "已中断" },
+};
+
+/** DSH-style tool identity and expandable diff, with an explicit outcome. */
+function ToolRow({ tool }: { tool: ToolEntry }) {
+  const [open, setOpen] = useState(false);
+  const Icon = toolIcons[tool.name] ?? Wrench;
+  const title = toolLabels[tool.name] ?? tool.name;
+  const { icon: StateIcon, label: stateLabel } = toolStates[tool.state];
+  const expandable = !!tool.diffs?.length && tool.state !== "running";
+  const totals = tool.diffs?.length
+    ? tool.diffs.reduce(
+        (sum, diff) => {
+          const counts = diffStats(diffLines(diff.oldText, diff.newText));
+          return {
+            added: sum.added + counts.added,
+            removed: sum.removed + counts.removed,
+          };
+        },
+        { added: 0, removed: 0 },
+      )
+    : undefined;
+  const content = (
+    <>
+      <span className="coding-tool-leading" aria-hidden="true">
+        <Icon className="coding-tool-icon" />
+        {expandable ? <ChevronRight className="coding-tool-chevron" /> : null}
+      </span>
+      <span className="coding-tool-title">{title}</span>
+      {tool.detail ? (
+        <>
+          <span className="coding-tool-sep" aria-hidden="true" />
+          <span className="coding-tool-summary" title={tool.detail}>
+            {tool.detail}
+          </span>
+        </>
+      ) : null}
+      {totals && tool.state === "ok" ? (
+        <span className="coding-tool-stat">
+          <span className="coding-diff-added">+{totals.added}</span>{" "}
+          <span className="coding-diff-removed">-{totals.removed}</span>
+        </span>
+      ) : null}
+      <span className={`coding-tool-state ${tool.state}`}>
+        <StateIcon
+          size={13}
+          className={tool.state === "running" ? "coding-spin" : undefined}
+          aria-hidden="true"
+        />
+        <span>{stateLabel}</span>
+      </span>
+    </>
+  );
+  return (
+    <li
+      className={`coding-tool ${tool.state}`}
+      data-tool={tool.name}
+      data-open={open || undefined}
+    >
+      {expandable ? (
+        <button
+          type="button"
+          className="coding-tool-row"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {content}
+        </button>
+      ) : (
+        <div className="coding-tool-row">{content}</div>
+      )}
+      {expandable && open ? (
+        <div className="coding-diffs">
+          {tool.diffs!.map((diff, index) => (
+            <DiffCard key={index} diff={diff} />
+          ))}
+        </div>
+      ) : null}
+    </li>
   );
 }
 
@@ -262,10 +409,7 @@ function DeliverableItem({
 }) {
   const [note, setNote] = useState("");
   const reveal = globalThis.window?.auraHost?.files?.reveal;
-  // Relative paths resolve against the project, as the agent declared them.
-  const full = /^([a-zA-Z]:[\\/]|[\\/])/u.test(path)
-    ? path
-    : `${directory.replace(/[\\/]+$/u, "")}/${path}`;
+  const full = fullPath(path, directory);
   useEffect(() => {
     if (!note) return;
     const timer = setTimeout(() => setNote(""), 2000);
@@ -326,6 +470,29 @@ function TurnView({
   const elapsed = (turn.endedAt ?? now) - turn.startedAt;
   const running = turn.status === "running";
   const waiting = turn.questions.some((item) => !item.answered);
+  // Like DSH, the process stays open while it runs and folds away once the
+  // turn ends; an explicit toggle by the user wins over both.
+  const [toggled, setToggled] = useState<boolean | undefined>(undefined);
+  const open = toggled ?? running;
+  const hasSteps = turn.tools.length > 0 || !!turn.progress?.total;
+  const stateLabel = running
+    ? waiting
+      ? "等待你的回答"
+      : "执行中"
+    : turn.status === "complete"
+      ? "执行完成"
+      : turn.status === "stopped"
+        ? "已停止"
+        : "执行失败";
+  const StateIcon = running
+    ? waiting
+      ? MessageCircleQuestion
+      : LoaderCircle
+    : turn.status === "complete"
+      ? CircleCheck
+      : turn.status === "stopped"
+        ? CircleStop
+        : CircleX;
   return (
     <article className="coding-turn">
       {turn.prompt ? <div className="coding-prompt">{turn.prompt}</div> : null}
@@ -347,74 +514,67 @@ function TurnView({
         </div>
       ) : null}
       <div className="coding-work" aria-live="polite">
-        <div className="coding-work-meta">
-          <span className={`coding-state ${turn.status}`}>
-            {running ? (
-              <LoaderCircle size={13} className="coding-spin" />
-            ) : turn.status === "complete" ? (
-              <Check size={13} />
-            ) : (
-              <X size={13} />
-            )}
-            {running
-              ? waiting
-                ? "等待你的回答"
-                : "正在处理"
-              : turn.status === "complete"
-                ? "已完成"
-                : turn.status === "stopped"
-                  ? "已停止"
-                  : "失败"}
-          </span>
-          <span>用时 {duration(elapsed)}</span>
-          {turn.tools.length ? <span>{turn.tools.length} 次操作</span> : null}
-        </div>
-        {turn.progress && turn.progress.total > 0 ? (
-          <div className="coding-progress">
-            <div
-              className="coding-progress-bar"
-              role="progressbar"
-              aria-label="任务进度"
-              aria-valuemin={0}
-              aria-valuemax={turn.progress.total}
-              aria-valuenow={turn.progress.done}
-            >
-              <span
-                style={{
-                  width: `${(turn.progress.done / turn.progress.total) * 100}%`,
-                }}
-              />
-            </div>
-            <span>
-              {turn.progress.done}/{turn.progress.total} 项任务
+        <button
+          type="button"
+          className={`coding-process ${turn.status}`}
+          aria-expanded={hasSteps ? open : undefined}
+          disabled={!hasSteps}
+          data-open={(hasSteps && open) || undefined}
+          onClick={() => setToggled(!open)}
+        >
+          <StateIcon
+            size={15}
+            className={`coding-process-icon${running && !waiting ? " coding-spin" : ""}`}
+            aria-hidden="true"
+          />
+          <span className="coding-process-label">
+            <span className="coding-process-state">{stateLabel}</span>
+            <span className="coding-process-number">
+              {" "}
+              · {duration(elapsed)}
             </span>
+            {turn.tools.length ? ` · ${turn.tools.length} 次操作` : ""}
+          </span>
+          {hasSteps ? (
+            <ChevronDown
+              size={14}
+              className="coding-process-chevron"
+              aria-hidden="true"
+            />
+          ) : null}
+        </button>
+        {hasSteps && open ? (
+          <div className="coding-process-body">
+            {turn.progress && turn.progress.total > 0 ? (
+              <div className="coding-progress">
+                <ListTodo size={14} aria-hidden="true" />
+                <div
+                  className="coding-progress-bar"
+                  role="progressbar"
+                  aria-label="任务进度"
+                  aria-valuemin={0}
+                  aria-valuemax={turn.progress.total}
+                  aria-valuenow={turn.progress.done}
+                >
+                  <span
+                    style={{
+                      width: `${(turn.progress.done / turn.progress.total) * 100}%`,
+                    }}
+                  />
+                </div>
+                <span>
+                  {turn.progress.done}/{turn.progress.total} 项任务
+                </span>
+              </div>
+            ) : null}
+            {turn.tools.length ? (
+              <ol className="coding-tools" aria-label="操作记录">
+                {turn.tools.map((tool) => (
+                  <ToolRow key={tool.callId} tool={tool} />
+                ))}
+              </ol>
+            ) : null}
           </div>
-        ) : null}
-        {turn.tools.length ? (
-          <ol className="coding-tools" aria-label="操作记录">
-            {turn.tools.map((tool) => (
-              <li key={tool.callId} className={tool.state}>
-                {tool.state === "running" ? (
-                  <LoaderCircle size={12} className="coding-spin" />
-                ) : tool.state === "ok" ? (
-                  <Check size={12} />
-                ) : (
-                  <X size={12} />
-                )}
-                <span>{toolLabels[tool.name] ?? tool.name}</span>
-                <code title={tool.detail ?? tool.name}>
-                  {tool.detail ?? tool.name}
-                </code>
-                {tool.diffs?.length ? (
-                  <div className="coding-diffs">
-                    {tool.diffs.map((diff, index) => (
-                      <DiffCard key={index} diff={diff} />
-                    ))}
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ol>
         ) : null}
       </div>
       {/* Questions come before the reply: the agent asked, then answered. */}
@@ -446,60 +606,262 @@ function TurnView({
           </ul>
         </section>
       ) : null}
-      {!running ? <TurnSummaryView turn={turn} /> : null}
+      {!running ? <TurnSummaryView turn={turn} directory={directory} /> : null}
     </article>
   );
 }
 
 /**
- * What a finished turn changed and ran, built from its own recorded steps
- * rather than the model's description of them.
+ * End-of-turn recap, after DSH's changed-files card: one line of what it did
+ * and how long it took, then the files it changed. A single file is just the
+ * header; more files fold after four rows.
  */
-function TurnSummaryView({ turn }: { turn: Turn }) {
+const COLLAPSED_FILES = 4;
+
+/** Icon and tint per file kind, so a list of changes is scannable at a glance. */
+const kindIcons: Record<FileKind, LucideIcon> = {
+  code: FileCode,
+  style: Palette,
+  markup: FileCodeCorner,
+  config: FileBraces,
+  markdown: FileType,
+  image: FileImage,
+  video: FileVideoCamera,
+  audio: FileMusic,
+  archive: FileArchive,
+  data: FileSpreadsheet,
+  shell: FileTerminal,
+  lock: FileLock,
+  text: FileText,
+  unknown: FileIcon,
+};
+
+/** Copies a path or reveals it, with a short note in place of the buttons. */
+function useFileActions(directory: string) {
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    if (!note) return;
+    const timer = setTimeout(() => setNote(""), 2000);
+    return () => clearTimeout(timer);
+  }, [note]);
+  const reveal = globalThis.window?.auraHost?.files?.reveal;
+  const run = async (action: () => Promise<void>, done: string) => {
+    try {
+      await action();
+      setNote(done);
+    } catch (reason) {
+      setNote(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+  return {
+    note,
+    copy: (path: string) =>
+      void run(() => writeClipboard(fullPath(path, directory)), "已复制路径"),
+    ...(reveal
+      ? {
+          reveal: (path: string) =>
+            void run(() => reveal(directory, path), "已在文件夹中显示"),
+        }
+      : {}),
+  };
+}
+
+/**
+ * One changed file: a kind icon, the file name with its folder dimmed after
+ * it, line counts, and actions that fit the kind. Text files can unfold their
+ * diff in place; binary ones only offer the path and the folder.
+ */
+function RecapFile({
+  path,
+  added,
+  removed,
+  diffs,
+  directory,
+}: {
+  path: string;
+  added: number;
+  removed: number;
+  diffs: CodingFileDiff[];
+  directory: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const actions = useFileActions(directory);
+  const shown = displayPath(path, directory);
+  const kind = fileKind(path);
+  const Icon = kindIcons[kind];
+  const binary = BINARY_KINDS.has(kind);
+  const created =
+    diffs.length > 0 && diffs.every((diff) => diff.oldText === null);
+  const dir = fileDir(shown);
+  return (
+    <li
+      className="coding-recap-file"
+      data-kind={kind}
+      data-open={open || undefined}
+    >
+      <div className="coding-recap-file-row">
+        <span className="coding-recap-file-icon" aria-hidden="true">
+          <Icon size={15} />
+        </span>
+        <span className="coding-recap-file-name" title={shown}>
+          <span>{fileName(shown)}</span>
+          {dir ? <small>{dir}</small> : null}
+        </span>
+        {created ? <span className="coding-recap-badge">新文件</span> : null}
+        <span className="coding-recap-counts">
+          {binary ? (
+            <span>二进制</span>
+          ) : (
+            <>
+              <span className="coding-diff-added">+{added}</span>
+              <span className="coding-diff-removed">-{removed}</span>
+            </>
+          )}
+        </span>
+        <span className="coding-recap-actions">
+          {actions.note ? (
+            <span className="coding-recap-note" role="status">
+              {actions.note}
+            </span>
+          ) : (
+            <>
+              {!binary && diffs.length ? (
+                <button
+                  type="button"
+                  className="icon-control"
+                  aria-label={`${open ? "收起" : "查看"} ${fileName(shown)} 的改动`}
+                  aria-expanded={open}
+                  title={open ? "收起改动" : "查看改动"}
+                  onClick={() => setOpen((value) => !value)}
+                >
+                  <FileDiff size={14} />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="icon-control"
+                aria-label={`复制 ${fileName(shown)} 的完整路径`}
+                title="复制完整路径"
+                onClick={() => actions.copy(path)}
+              >
+                <Copy size={14} />
+              </button>
+              {actions.reveal ? (
+                <button
+                  type="button"
+                  className="icon-control"
+                  aria-label={`在文件夹中显示 ${fileName(shown)}`}
+                  title="在文件夹中显示"
+                  onClick={() => actions.reveal?.(path)}
+                >
+                  <FolderSearch size={14} />
+                </button>
+              ) : null}
+            </>
+          )}
+        </span>
+      </div>
+      {open ? (
+        <div className="coding-diffs coding-recap-diff">
+          {diffs.map((diff, index) => (
+            <DiffCard key={index} diff={diff} />
+          ))}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+function TurnSummaryView({
+  turn,
+  directory,
+}: {
+  turn: Turn;
+  directory: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
   const summary = summarizeTurn(turn, (diff) =>
     diffStats(diffLines(diff.oldText, diff.newText)),
   );
   if (!hasSummary(summary)) return null;
+  const elapsed = (turn.endedAt ?? Date.now()) - turn.startedAt;
+  const work = recapParts(summary);
+  const totals = summary.files.reduce(
+    (sum, file) => ({
+      added: sum.added + file.added,
+      removed: sum.removed + file.removed,
+    }),
+    { added: 0, removed: 0 },
+  );
+  const foldable = summary.files.length > COLLAPSED_FILES;
+  const files =
+    foldable && !expanded
+      ? summary.files.slice(0, COLLAPSED_FILES)
+      : summary.files;
+  const diffsByPath = new Map<string, CodingFileDiff[]>();
+  for (const tool of turn.tools)
+    for (const diff of tool.diffs ?? []) {
+      const list = diffsByPath.get(diff.path) ?? [];
+      list.push(diff);
+      diffsByPath.set(diff.path, list);
+    }
+  // Every changed file has its own row below, so the header names the count
+  // and keeps the rest of the work and the time on the quiet second line.
+  const changed = summary.files.length > 0;
+  const title = changed
+    ? `改动了 ${summary.files.length} 个文件`
+    : (work[0] ?? `${summary.steps} 次操作`);
+  // The title already says what it changed (or the first thing it did).
+  const rest = changed
+    ? work.filter((part) => !part.startsWith("改动 "))
+    : work.slice(1);
+  const line = [...rest, `用时 ${duration(elapsed)}`].join(" · ");
+  const HeaderIcon = changed ? FileCheck : Wrench;
   return (
-    <section className="coding-summary" aria-label="本轮小结">
-      <h3>本轮小结</h3>
-      {summary.files.length ? (
-        <div>
-          <h4>改动了 {summary.files.length} 个文件</h4>
-          <ul>
-            {summary.files.map((file) => (
-              <li key={file.path}>
-                <code title={file.path}>{file.path}</code>
-                <span className="coding-diff-added">+{file.added}</span>
-                <span className="coding-diff-removed">−{file.removed}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+    <section className="coding-recap" aria-label="本轮小结">
+      <div className="coding-recap-header">
+        <span className="coding-recap-tile" aria-hidden="true">
+          <HeaderIcon size={18} />
+        </span>
+        <span className="coding-recap-titles">
+          <span className="coding-recap-title">{title}</span>
+          <span className="coding-recap-line">{line}</span>
+        </span>
+        {summary.files.length ? (
+          <span className="coding-recap-stat">
+            <span className="coding-diff-added">+{totals.added}</span>
+            <span className="coding-diff-removed">-{totals.removed}</span>
+          </span>
+        ) : null}
+      </div>
+      {files.length ? (
+        <ul className="coding-recap-files">
+          {files.map((file) => (
+            <RecapFile
+              key={file.path}
+              path={file.path}
+              added={file.added}
+              removed={file.removed}
+              diffs={diffsByPath.get(file.path) ?? []}
+              directory={directory}
+            />
+          ))}
+        </ul>
       ) : null}
-      {summary.commands.length ? (
-        <div>
-          <h4>运行了 {summary.commands.length} 条命令</h4>
-          <ul>
-            {summary.commands.map((item, index) => (
-              <li key={index} className={item.ok ? "ok" : "failed"}>
-                {item.ok ? <Check size={12} /> : <X size={12} />}
-                <code title={item.command}>{item.command}</code>
-                <span>{item.ok ? "成功" : "失败"}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {summary.failedSteps || summary.unanswered ? (
-        <p className="coding-summary-note">
-          {[
-            summary.failedSteps ? `${summary.failedSteps} 个步骤失败` : "",
-            summary.unanswered ? `${summary.unanswered} 个问题未回答` : "",
-          ]
-            .filter(Boolean)
-            .join("，")}
-        </p>
+      {foldable ? (
+        <button
+          type="button"
+          className="coding-recap-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "收起" : `全部 ${summary.files.length} 个文件`}
+          <ChevronDown
+            size={14}
+            aria-hidden="true"
+            {...(expanded ? { className: "coding-recap-toggle-up" } : {})}
+          />
+        </button>
       ) : null}
     </section>
   );
@@ -530,7 +892,7 @@ export type ConversationSend = (
 
 /**
  * One conversation's transcript and composer. The studio hosts the main
- * conversation and, beside it, a throwaway side chat; both go through the
+ * conversation and its retained side chat; both go through the
  * same streaming, answer and history path.
  */
 export function ConversationPane({
@@ -541,6 +903,7 @@ export function ConversationPane({
   label,
   sessionId,
   forkFrom,
+  readOnly = false,
   placeholder,
   empty,
   footnote,
@@ -563,11 +926,10 @@ export function ConversationPane({
   label: string;
   /** Selected conversation; undefined starts a new one on the first send. */
   sessionId?: string;
-  /**
-   * Set on a side chat: the indexed conversation it branches from. A side
-   * chat has no stored history of its own to read back.
-   */
+  /** The parent whose context seeds the side chat's first turn only. */
   forkFrom?: string;
+  /** Archived parents retain a readable transcript, but cannot accept turns. */
+  readOnly?: boolean;
   placeholder: string;
   empty: React.ReactNode;
   footnote?: React.ReactNode;
@@ -595,7 +957,13 @@ export function ConversationPane({
   const fileInput = useRef<HTMLInputElement>(null);
   /** Conversations already read from the log; a live turn is never overwritten. */
   const loaded = useRef(new Set<string>());
-  const controller = useRef<AbortController | undefined>(undefined);
+  /**
+   * One stream per conversation. The pane is reused when switching
+   * conversations, so a single controller would let "stop" in one
+   * conversation abort another one's turn.
+   */
+  const controllers = useRef(new Map<string, AbortController>());
+  const [stopping, setStopping] = useState(false);
   const transcript = useRef<HTMLDivElement>(null);
 
   const shown = sessionId ? (turns[sessionId] ?? noTurns) : noTurns;
@@ -611,7 +979,7 @@ export function ConversationPane({
   // a reload or another device shows the same steps, diffs and answers.
   // Conversations started in this pane already hold their live turns.
   useEffect(() => {
-    if (forkFrom || !sessionId || loaded.current.has(sessionId)) return;
+    if (!sessionId || loaded.current.has(sessionId)) return;
     const id = sessionId;
     const abort = new AbortController();
     setLoadingHistory(true);
@@ -640,8 +1008,44 @@ export function ConversationPane({
     return () => abort.abort();
   }, [endpoint, sessionId, forkFrom]);
 
-  // Stop an in-flight turn when the pane unmounts.
-  useEffect(() => () => controller.current?.abort(), []);
+  // Stop in-flight turns when the pane unmounts.
+  useEffect(() => {
+    const live = controllers.current;
+    return () => {
+      for (const abort of live.values()) abort.abort();
+    };
+  }, []);
+
+  /**
+   * Stops the shown conversation's turn. Aborting the local stream alone is
+   * not enough: after a reload there is no local stream, and the backend
+   * may not notice a dropped connection, so the backend is told directly.
+   */
+  const stop = async () => {
+    if (!sessionId || stopping) return;
+    const id = sessionId;
+    setStopping(true);
+    setError("");
+    controllers.current.get(id)?.abort();
+    try {
+      await stopCodingTurn(endpoint, id);
+      // A turn restored from history has no stream to settle it.
+      setTurns((current) => ({
+        ...current,
+        [id]: (current[id] ?? []).map((turn) =>
+          turn.status === "running"
+            ? finishTurn(turn, "stopped", Date.now())
+            : turn,
+        ),
+      }));
+    } catch (reason) {
+      setError(
+        `停止失败：${reason instanceof Error ? reason.message : String(reason)}`,
+      );
+    } finally {
+      setStopping(false);
+    }
+  };
 
   useEffect(() => {
     transcript.current?.scrollTo({ top: transcript.current.scrollHeight });
@@ -672,7 +1076,14 @@ export function ConversationPane({
     attached = images.ready,
   ) => {
     const prompt = text.trim();
-    if ((!prompt && !attached.length) || running || images.uploading)
+    if (
+      (!prompt && !attached.length) ||
+      running ||
+      images.uploading ||
+      loadingHistory ||
+      readOnly ||
+      offline
+    )
       return undefined;
     // Side chats use a prefix the backend requires, so they never collide
     // with an indexed conversation.
@@ -680,7 +1091,7 @@ export function ConversationPane({
     // A brand-new conversation has no stored log to read back.
     if (!sessionId) loaded.current.add(id);
     const turnId = newId();
-    onOpen?.(id);
+    if (!sessionId) onOpen?.(id);
     setDraft("");
     setError("");
     images.clear();
@@ -695,7 +1106,7 @@ export function ConversationPane({
       [id]: [...(current[id] ?? []), latest],
     }));
     const abort = new AbortController();
-    controller.current = abort;
+    controllers.current.set(id, abort);
     // The sidebar lists the conversation as soon as its session exists.
     const listed = setTimeout(() => onSettled?.(), 1_500);
     try {
@@ -715,22 +1126,30 @@ export function ConversationPane({
         abort.signal,
       ))
         change((turn) => applyTurnEvent(turn, chunk));
-      change((turn) => ({ ...turn, status: "complete", endedAt: Date.now() }));
+      change((turn) =>
+        finishTurn(
+          turn,
+          abort.signal.aborted ? "stopped" : "complete",
+          Date.now(),
+        ),
+      );
     } catch (reason) {
       const stopped = abort.signal.aborted;
-      change((turn) => ({
-        ...turn,
-        status: stopped ? "stopped" : "error",
-        endedAt: Date.now(),
-        ...(stopped
-          ? {}
-          : {
-              error: reason instanceof Error ? reason.message : String(reason),
-            }),
-      }));
+      change((turn) =>
+        finishTurn(
+          turn,
+          stopped ? "stopped" : "error",
+          Date.now(),
+          stopped
+            ? undefined
+            : reason instanceof Error
+              ? reason.message
+              : String(reason),
+        ),
+      );
     } finally {
       clearTimeout(listed);
-      if (controller.current === abort) controller.current = undefined;
+      if (controllers.current.get(id) === abort) controllers.current.delete(id);
       onSettled?.();
     }
     return latest;
@@ -755,7 +1174,13 @@ export function ConversationPane({
   }, [initialSend, onInitialSendTaken]);
 
   return (
-    <div className="coding-pane">
+    // Like DSH's conversation phases: an empty conversation is a "hero" with
+    // the hint and composer centred together; once it has turns the
+    // transcript fills the pane and scrolls above a bottom-docked composer.
+    <div
+      className="coding-pane"
+      data-phase={!shown.length && !loadingHistory ? "hero" : "active"}
+    >
       {error ? (
         <p className="coding-notice" role="alert">
           {error}
@@ -779,7 +1204,13 @@ export function ConversationPane({
           ))
         )}
       </div>
-      <div className="chat-composer-area">
+      {readOnly ? (
+        <p className="composer-footnote">这段对话已归档，取消归档后可继续。</p>
+      ) : null}
+      <div
+        className="chat-composer-area"
+        style={readOnly ? { display: "none" } : undefined}
+      >
         <div
           className={`chat-composer${dragging ? " dragging" : ""}`}
           onPaste={(event) => {
@@ -788,7 +1219,7 @@ export function ConversationPane({
             event.preventDefault();
             if (offline) {
               images.setError(
-                "本地演示模式不能附带图片，请切换到 DSH 演示或其他模式。",
+                "本地演示模式不能附带图片，请切换到 Codex 订阅或其他模式。",
               );
               return;
             }
@@ -900,7 +1331,6 @@ export function ConversationPane({
                 }
               >
                 <option value="offline">本地演示</option>
-                <option value="dsh">DSH 演示</option>
                 <option value="codex">Codex 订阅</option>
                 <option value="lumina">Lumina</option>
                 <option value="custom">自定义 API</option>
@@ -918,15 +1348,18 @@ export function ConversationPane({
             ) : null}
             <button
               className="send-button"
-              aria-label={running ? "停止生成" : "发送消息"}
+              aria-label={
+                running ? (stopping ? "正在停止" : "停止生成") : "发送消息"
+              }
               disabled={
                 offline ||
-                (!running &&
-                  ((!draft.trim() && !images.ready.length) || images.uploading))
+                loadingHistory ||
+                readOnly ||
+                (running
+                  ? stopping
+                  : (!draft.trim() && !images.ready.length) || images.uploading)
               }
-              onClick={() =>
-                running ? controller.current?.abort() : void send()
-              }
+              onClick={() => (running ? void stop() : void send())}
             >
               {running ? (
                 <Square size={14} fill="currentColor" />

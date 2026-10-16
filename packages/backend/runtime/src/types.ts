@@ -21,6 +21,8 @@ export interface AuraRuntimeOptions {
 /** Handle owned by the server or desktop application entrypoint. */
 export interface AuraRuntimeHandle {
   url: string;
+  /** Resolves only after DSH has completed the Aura initialize handshake. */
+  ready(): Promise<void>;
   close(): Promise<void>;
 }
 

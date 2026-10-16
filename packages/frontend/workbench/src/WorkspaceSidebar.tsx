@@ -27,6 +27,7 @@ import type { Tab } from "./types";
 import {
   groupSidebarSessions,
   sidebarSessionTitle,
+  sidebarRowStatus,
   sidebarSessionStatus,
   sidebarSessionTime,
 } from "./sidebarSessions";
@@ -105,6 +106,7 @@ export function WorkspaceSidebar({
   // The "..." button is gone; actions live in a right-click menu per row.
   const [context, setContext] = useState<{
     sessionId: string;
+    projectId?: string;
     x: number;
     y: number;
   }>();
@@ -123,21 +125,22 @@ export function WorkspaceSidebar({
         .includes(query.trim().toLowerCase()),
   );
   const groups = groupSidebarSessions(filtered);
-  // Workspace folders hold their own conversations; archive and running
-  // filters only apply to ordinary sessions.
+  // Workspace folders use the same archive view as ordinary conversations.
   const needle = query.trim().toLowerCase();
-  const spaceFolders =
-    showArchived || onlyRunning
-      ? []
-      : codingWorkspaces.projects.flatMap((space) => {
-          const all = codingWorkspaces.conversations[space.id] ?? [];
-          if (!needle || space.title.toLowerCase().includes(needle))
-            return [{ space, conversations: all }];
-          const matched = all.filter((item) =>
-            item.title.toLowerCase().includes(needle),
-          );
-          return matched.length ? [{ space, conversations: matched }] : [];
-        });
+  const spaceFolders = onlyRunning
+    ? []
+    : codingWorkspaces.projects.flatMap((space) => {
+        const all = (codingWorkspaces.conversations[space.id] ?? []).filter(
+          (item) => (item.archivedAt !== undefined) === showArchived,
+        );
+        if (showArchived && !all.length) return [];
+        if (!needle || space.title.toLowerCase().includes(needle))
+          return [{ space, conversations: all }];
+        const matched = all.filter((item) =>
+          item.title.toLowerCase().includes(needle),
+        );
+        return matched.length ? [{ space, conversations: matched }] : [];
+      });
   const toggleFolder = (key: string) =>
     setClosed((value) => {
       const next = new Set(value);
@@ -327,28 +330,78 @@ export function WorkspaceSidebar({
                     const selected =
                       tab === "studio:coding" &&
                       codingWorkspaces.conversationId === item.id;
+                    const status = codingWorkspaces.statuses[item.id];
+                    const badge = sidebarRowStatus(status);
                     return (
                       <div
                         className={`session-row${selected ? " selected" : ""}`}
                         key={item.id}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          setContext({
+                            sessionId: item.id,
+                            projectId: space.id,
+                            x: event.clientX,
+                            y: event.clientY,
+                          });
+                        }}
                       >
                         <button
                           className={`session-item${selected ? " selected" : ""}`}
                           aria-current={selected ? "true" : undefined}
                           aria-label={`打开工作空间对话：${item.title}`}
+                          aria-description={`${new Date(item.updatedAt).toLocaleString("zh-CN")}${status ? ` · ${status.label}` : ""}${item.archivedAt !== undefined ? " · 已归档" : ""}`}
                           onClick={() => openSpace(space.id, item.id)}
                         >
                           <span className="session-name">{item.title}</span>
                         </button>
                         <div className="session-row-tail">
                           <span className="session-row-meta">
-                            <time
-                              className="session-row-time"
-                              dateTime={new Date(item.updatedAt).toISOString()}
-                            >
-                              {sidebarSessionTime(item.updatedAt, now)}
-                            </time>
+                            {badge ? (
+                              <SessionStatus status={badge} />
+                            ) : (
+                              <time
+                                className="session-row-time"
+                                dateTime={new Date(
+                                  item.updatedAt,
+                                ).toISOString()}
+                              >
+                                {sidebarSessionTime(item.updatedAt, now)}
+                              </time>
+                            )}
                           </span>
+                          <button
+                            type="button"
+                            className="icon-control session-archive"
+                            aria-label={`${item.archivedAt !== undefined ? "取消归档" : "归档"}：${item.title}`}
+                            title={
+                              item.archivedAt !== undefined
+                                ? "取消归档"
+                                : "归档（同时关闭旁支）"
+                            }
+                            onClick={() =>
+                              void codingWorkspaces
+                                .archive(
+                                  space.id,
+                                  item.id,
+                                  item.archivedAt === undefined,
+                                )
+                                .catch((reason: unknown) =>
+                                  toast({
+                                    message:
+                                      reason instanceof Error
+                                        ? reason.message
+                                        : String(reason),
+                                  }),
+                                )
+                            }
+                          >
+                            {item.archivedAt !== undefined ? (
+                              <ArchiveRestore size={14} />
+                            ) : (
+                              <Archive size={14} />
+                            )}
+                          </button>
                         </div>
                       </div>
                     );
@@ -393,6 +446,7 @@ export function WorkspaceSidebar({
                   {group.sessions.map((session) => {
                     const busy = running.has(session.id);
                     const status = sidebarSessionStatus(session, busy);
+                    const badge = sidebarRowStatus(status);
                     const label = sidebarSessionTitle(session);
                     const selected =
                       workspace.active?.id === session.id && tab === "chat";
@@ -445,18 +499,18 @@ export function WorkspaceSidebar({
                         {/* Metadata and archive share a reserved column, never the title. */}
                         <div className="session-row-tail">
                           <span className="session-row-meta">
-                            <time
-                              className="session-row-time"
-                              dateTime={new Date(
-                                session.updatedAt,
-                              ).toISOString()}
-                            >
-                              {sidebarSessionTime(session.updatedAt, now)}
-                            </time>
-                            {status.kind !== "completed" &&
-                            status.kind !== "idle" ? (
-                              <SessionStatus status={status} />
-                            ) : null}
+                            {badge ? (
+                              <SessionStatus status={badge} />
+                            ) : (
+                              <time
+                                className="session-row-time"
+                                dateTime={new Date(
+                                  session.updatedAt,
+                                ).toISOString()}
+                              >
+                                {sidebarSessionTime(session.updatedAt, now)}
+                              </time>
+                            )}
                           </span>
                           <button
                             type="button"
@@ -492,6 +546,56 @@ export function WorkspaceSidebar({
       </div>
       {context
         ? (() => {
+            if (context.projectId) {
+              const projectId = context.projectId;
+              const target = codingWorkspaces.conversations[projectId]?.find(
+                (item) => item.id === context.sessionId,
+              );
+              const failed = (reason: unknown) =>
+                toast({
+                  message:
+                    reason instanceof Error ? reason.message : String(reason),
+                });
+              return target ? (
+                <WorkbenchContextMenu
+                  label={`会话操作：${target.title}`}
+                  items={[
+                    {
+                      id: "archive",
+                      label:
+                        target.archivedAt !== undefined
+                          ? "取消归档"
+                          : "归档会话",
+                      icon:
+                        target.archivedAt !== undefined ? (
+                          <ArchiveRestore size={15} />
+                        ) : (
+                          <Archive size={15} />
+                        ),
+                      action: () =>
+                        void codingWorkspaces
+                          .archive(
+                            projectId,
+                            target.id,
+                            target.archivedAt === undefined,
+                          )
+                          .catch(failed),
+                    },
+                    {
+                      id: "close",
+                      label: "关闭会话及旁支",
+                      icon: <X size={15} />,
+                      action: () =>
+                        void codingWorkspaces
+                          .close(projectId, target.id)
+                          .catch(failed),
+                    },
+                  ]}
+                  at={{ x: context.x, y: context.y }}
+                  onClose={() => setContext(undefined)}
+                />
+              ) : null;
+            }
             const target = workspace.state.sessions.find(
               ({ id }) => id === context.sessionId,
             );

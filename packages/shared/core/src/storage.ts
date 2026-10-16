@@ -165,9 +165,8 @@ export function restoreState(value: unknown): Workspace {
         : "dark",
     reduceMotion: value.reduceMotion === true,
     endpoint: typeof value.endpoint === "string" ? value.endpoint : "",
-    provider: ["dsh", "codex", "lumina", "custom"].includes(
-      String(value.provider),
-    )
+    // The retired "dsh" demo, like any unknown value, falls back to offline.
+    provider: ["codex", "lumina", "custom"].includes(String(value.provider))
       ? (value.provider as Workspace["provider"])
       : "offline",
     sessions,

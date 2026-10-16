@@ -341,6 +341,40 @@ function questionItems(value: unknown[]): CodingQuestionItem[] {
   });
 }
 
+/** Stops a conversation's running turn on the backend. */
+export const stopCodingTurn = (endpoint: string, sessionId: string) =>
+  codingApi<{ stopped: boolean }>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/stop`,
+    "POST",
+  );
+
+export const openSideChat = (endpoint: string, parentId: string) =>
+  codingApi<{ sessionId: string }>(
+    endpoint,
+    `/sessions/${encodeURIComponent(parentId)}/side`,
+    "POST",
+  );
+
+export const archiveConversation = (
+  endpoint: string,
+  sessionId: string,
+  archived: boolean,
+) =>
+  codingApi<{ updated: boolean }>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/archive`,
+    "POST",
+    { archived },
+  );
+
+export const closeConversation = (endpoint: string, sessionId: string) =>
+  codingApi<{ updated: boolean }>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}`,
+    "DELETE",
+  );
+
 /** A stored conversation, rebuilt from its session log by the runtime. */
 export async function conversationHistory(
   endpoint: string,

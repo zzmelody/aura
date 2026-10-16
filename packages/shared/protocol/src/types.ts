@@ -526,6 +526,17 @@ export interface CodingConversationInfo {
   title: string;
   createdAt: number;
   updatedAt: number;
+  archivedAt?: number;
+  /** The open side chat, retained until explicitly closed or its parent ends. */
+  sideSessionId?: string;
+  /**
+   * Outcome of the last stored turn, omitted when the conversation has no
+   * turns or its session log is not readable. The frontend uses this to show
+   * sidebar badges without loading full history.
+   */
+  lastTurnStatus?: "running" | "complete" | "stopped" | "error";
+  /** Set while the running turn waits for the user to answer a question. */
+  waitingForAnswer?: true;
 }
 
 /** One entry in the coding activity stream. */

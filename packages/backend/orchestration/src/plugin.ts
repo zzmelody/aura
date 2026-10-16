@@ -72,7 +72,11 @@ import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 import { configureDshNetwork } from "./dsh-network.ts";
 import { chatService } from "./chat.ts";
 import { codingService } from "./coding/session.ts";
-import { historyTurns, readSessionEvents } from "./coding/history.ts";
+import {
+  historyTurns,
+  lastTurnStatus,
+  readSessionEvents,
+} from "./coding/history.ts";
 import {
   CodingConversationIndex,
   codingDomainSpec,
@@ -1008,8 +1012,13 @@ export async function apply(ctx: Context) {
             // A side chat may only branch from an indexed conversation of the
             // same project, and may not reuse an indexed id as its own.
             const parent = codingConversations.get(side);
-            if (!parent || parent.projectId !== turn.data.projectId)
-              throw new FlowError("主对话不存在或不属于这个项目。", 404);
+            if (
+              !parent ||
+              parent.archivedAt !== undefined ||
+              parent.projectId !== turn.data.projectId ||
+              parent.sideSessionId !== turn.data.sessionId
+            )
+              throw new FlowError("旁支已关闭，或主对话不存在、已归档。", 404);
             // The `side-` prefix keeps a side chat from adopting some other
             // live agent (a Flow step's, a chat's) by guessing its id.
             if (
@@ -1024,7 +1033,7 @@ export async function apply(ctx: Context) {
           const abort = new AbortController();
           chats.set(chatId, abort);
           try {
-            // Side chats are throwaway: never indexed, never attached.
+            // Side chats are retained by their parent's index, never listed alone.
             if (side === undefined)
               await codingConversations.open(
                 turn.data.sessionId,
@@ -1052,14 +1061,53 @@ export async function apply(ctx: Context) {
           }
           break;
         }
+        case "coding/stop": {
+          if (typeof params.sessionId !== "string")
+            throw new FlowError("无效的对话。", 400);
+          // Only coding turns are registered here, so another DSH session
+          // (a Flow agent, an ordinary chat) cannot be stopped by its id.
+          data = { stopped: await coding.stop(params.sessionId) };
+          break;
+        }
+        case "coding/side/open": {
+          if (typeof params.sessionId !== "string")
+            throw new FlowError("无效的主对话。", 400);
+          data = {
+            sessionId: await codingConversations.openSide(params.sessionId),
+          };
+          break;
+        }
         case "coding/side/close": {
           if (typeof params.sessionId !== "string")
             throw new FlowError("无效的旁支对话。", 400);
-          // Only a side chat opened here can be closed; an indexed
-          // conversation is never disposed through this path.
           if (codingConversations.get(params.sessionId))
             throw new FlowError("只能关闭旁支对话。", 400);
-          data = { closed: await coding.closeSide(params.sessionId) };
+          const closed = await codingConversations.closeSide(params.sessionId);
+          if (closed) await coding.closeSide(params.sessionId);
+          data = { closed };
+          break;
+        }
+        case "coding/conversation/archive":
+        case "coding/conversation/close": {
+          if (
+            typeof params.sessionId !== "string" ||
+            (method === "coding/conversation/archive" &&
+              typeof params.archived !== "boolean")
+          )
+            throw new FlowError("无效的对话操作。", 400);
+          const parent = codingConversations.get(params.sessionId);
+          if (!parent) throw new FlowError("对话不存在或已关闭。", 404);
+          const closing = method === "coding/conversation/close";
+          if (closing) await codingConversations.close(parent.id);
+          else
+            await codingConversations.archive(
+              parent.id,
+              params.archived === true,
+            );
+          if (parent.sideSessionId && (closing || params.archived === true))
+            await coding.closeSide(parent.sideSessionId);
+          if (closing) await coding.close(parent.id);
+          data = { updated: true };
           break;
         }
         case "action/start":
@@ -1122,7 +1170,32 @@ export async function apply(ctx: Context) {
         case "coding/conversations": {
           if (typeof params.projectId !== "string")
             throw new FlowError("无效的项目。", 400);
-          data = codingProjects.conversationsOf(params.projectId);
+          const list = codingProjects.conversationsOf(params.projectId);
+          const signal = AbortSignal.timeout(10_000);
+          data = await Promise.all(
+            list.map(async (conv) => {
+              // The live process is authoritative for running turns; the log
+              // alone cannot tell an open turn from one a restart cut off.
+              if (coding.running(conv.id))
+                return {
+                  ...conv,
+                  lastTurnStatus: "running" as const,
+                  ...(codingAnswers.open(conv.id).length
+                    ? { waitingForAnswer: true as const }
+                    : {}),
+                };
+              const stored = await lastTurnStatus(
+                ctx.sessionController,
+                SessionId(conv.id),
+                signal,
+              ).catch(() => undefined);
+              if (stored === undefined) return conv;
+              return {
+                ...conv,
+                lastTurnStatus: stored === "running" ? "stopped" : stored,
+              };
+            }),
+          );
           break;
         }
         case "coding/answer": {
@@ -1142,18 +1215,28 @@ export async function apply(ctx: Context) {
         case "coding/history": {
           if (typeof params.sessionId !== "string")
             throw new FlowError("无效的对话。", 400);
-          // Only an indexed conversation is readable, so this cannot open an
-          // arbitrary DSH session (a Flow agent's, or another chat's).
-          if (!codingConversations.get(params.sessionId))
+          // A retained side grants access only while its parent is open.
+          // Arbitrary DSH sessions (Flow agents, ordinary chats) stay private.
+          const side = codingConversations.sideParent(params.sessionId);
+          if (!codingConversations.get(params.sessionId) && !side)
             throw new FlowError("对话不存在或已移除。", 404);
           const sessionId = SessionId(params.sessionId);
+          const signal = AbortSignal.timeout(30_000);
           const events = await readSessionEvents(
             ctx.sessionController,
             sessionId,
-            AbortSignal.timeout(30_000),
+            signal,
           );
+          // The inherited context is for the model, not duplicate UI history.
+          const own =
+            side && events
+              ? await ctx.sessionController.inspect(sessionId, signal)
+              : undefined;
           const running = coding.running(params.sessionId);
-          const turns = historyTurns(events ?? [], running);
+          const turns = historyTurns(
+            own ? own.events.slice(own.inheritedEventCount) : (events ?? []),
+            running,
+          );
           // Questions still waiting carry the ids an answer must quote.
           const open = codingAnswers.open(params.sessionId);
           const last = turns.at(-1);

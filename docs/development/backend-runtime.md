@@ -62,7 +62,13 @@ payload 作为通用代理透传。完整配置见 [Tripo 3D 接入](../features
 
 ## 5. 生命周期与失败策略
 
-启动顺序为：解析配置与网络设置 → 校验插件配置 → 创建授权服务与 Tripo adapter → 启动 loopback 演示模型 → 创建编排宿主并绑定插件激活器 → 启动 API。DSH profile 与进程由编排宿主在需要时打开，并在空闲时回收。
+启动顺序为：解析配置与网络设置 → 校验插件配置 → 创建授权服务与 Tripo adapter → 启动 loopback 演示模型 → 创建编排宿主并绑定插件激活器 → 启动 API。编排宿主同时预热常驻 DSH profile，不做空闲回收。
+
+`GET /health` 是就绪检查：只有 DSH 完成 Aura `initialize` 握手，并且当前 JSON-RPC `ping` 在 500ms 内成功，才返回 HTTP 200 和 `status: "ready"`。启动中返回 `starting`，启动失败、进程退出或 RPC 无响应返回 `unavailable`，关闭中返回 `stopped`，这些状态均为 HTTP 503；响应包含 `dsh.status`，使用 `Cache-Control: no-store`，不包含本机路径、错误栈或凭据。健康探测不触发 DSH 启动，也不等待最长 120 秒的冷启动。
+
+桌面和 Web 启动器通过响应中的 `service: "aura-runtime"` 识别已经监听的 Aura API，即使其就绪状态为 503，也不会再抢占端口。自有 runtime 的 `ready()` 和独立服务的 `AURA_READY` 标记都必须等 DSH 握手成功；Web 启动器为冷启动预留 130 秒，遇到明确失败立即停止启动。
+
+DSH 的 Cordis 日志 exporter 会提取插件导入/激活错误及有界 cause 链，将错误类型、受支持的原因、错误码、源文件行号和缺失服务写到终端及 `<root>/.aura/dsh/logs/aura-host.log`。日志文件以 0600 创建，达到 1MiB 后轮换到 `aura-host.log.1`。原始 stderr、源代码片段、环境变量和 provider payload 不会转发或落盘；HTTP 只返回就绪状态。Aura 插件明确导入失败或等待缺失服务时，启动握手会提前终止，避免只留下一个存活但不处理 RPC 的 DSH 进程。
 
 关闭操作幂等：先停止编排宿主中的活动会话，再关闭 API、演示模型和授权上下文。对话并发暂限为 2；超过限制返回 503。协议或模型错误以稳定的客户端消息结束流，完整诊断仅写入本机服务终端，且不得包含凭据。
 

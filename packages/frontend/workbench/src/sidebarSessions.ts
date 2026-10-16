@@ -10,7 +10,8 @@ export type SessionStatus = {
     | "stopped"
     | "failed"
     | "paused"
-    | "attention";
+    | "attention"
+    | "waiting";
   label: string;
 };
 
@@ -28,6 +29,18 @@ export function sidebarSessionTime(
   if (seconds < 365 * 86400)
     return `${Math.floor(seconds / (30 * 86400))}个月前`;
   return `${Math.floor(seconds / (365 * 86400))}年前`;
+}
+
+/**
+ * A sidebar row shows either a status icon or its time, never both. Only
+ * states worth noticing earn the icon; settled rows fall back to the time.
+ */
+export function sidebarRowStatus(
+  status: SessionStatus | undefined,
+): SessionStatus | undefined {
+  return status && status.kind !== "completed" && status.kind !== "idle"
+    ? status
+    : undefined;
 }
 
 /** Aggregate live work first; completed older runs do not mask the latest turn. */

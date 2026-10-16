@@ -50,7 +50,6 @@ const providers: Array<{
   hint: string;
 }> = [
   { id: "offline", title: "本地演示", hint: "无需联网，规则生成回复" },
-  { id: "dsh", title: "DSH 演示", hint: "经工作台服务，可调用工作流" },
   { id: "codex", title: "Codex 订阅", hint: "真实模型，需要登录 Codex" },
   {
     id: "lumina",
@@ -188,11 +187,7 @@ export function SettingsScreen({
         !health.modes.includes("dsh-demo")
       )
         throw new Error("此地址没有运行 Aura 对话服务。");
-      workspace.setState((s) => ({
-        ...s,
-        endpoint,
-        provider: s.provider === "offline" ? "dsh" : s.provider,
-      }));
+      workspace.setState((s) => ({ ...s, endpoint }));
       setConnection({ tone: "ok", text: "已连接工作台服务。" });
     } catch (e) {
       setConnection({

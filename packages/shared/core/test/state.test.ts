@@ -144,6 +144,15 @@ test("restoration preserves the DSH Codex provider selection", () => {
   assert.equal(restored.provider, "codex");
 });
 
+test("a stored DSH demo selection falls back to the local demo", () => {
+  const restored = restoreState({
+    version: 1,
+    provider: "dsh",
+    sessions: [],
+  });
+  assert.equal(restored.provider, "offline");
+});
+
 test("workflow conversations restore bindings, run references and pending request identity", () => {
   const workflow = {
     id: "research",

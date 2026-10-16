@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import { z } from "zod";
 import { FlowError } from "../schema.ts";
@@ -8,23 +9,20 @@ import type { CodingConversation, Table } from "../types.ts";
  * conversation list a client renders comes from Aura's own index. It stores
  * only presentation facts; the session log itself remains DSH's.
  */
-export interface CodingConversationRecord {
-  id: string;
-  projectId: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
+export interface CodingConversationRecord extends CodingConversation {
+  /** A tombstone prevents delayed requests from reopening a closed parent. */
+  closedAt?: number;
 }
 
-const recordSchema = z.custom<CodingConversationRecord>((value) => {
-  const record = value as CodingConversationRecord;
-  return (
-    typeof record?.id === "string" &&
-    typeof record.projectId === "string" &&
-    typeof record.title === "string" &&
-    typeof record.createdAt === "number" &&
-    typeof record.updatedAt === "number"
-  );
+const recordSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  title: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  archivedAt: z.number().optional(),
+  closedAt: z.number().optional(),
+  sideSessionId: z.string().startsWith("side-").optional(),
 });
 
 export const codingDomainSpec = defineDomain({
@@ -52,8 +50,12 @@ export class CodingConversationIndex {
     projectId: string,
     prompt: string,
   ): Promise<CodingConversationRecord> {
+    if (id.startsWith("side-"))
+      throw new FlowError("旁支对话不能作为主对话打开。", 400);
     const existing = this.table.get(id);
     if (existing) {
+      if (existing.closedAt !== undefined || existing.archivedAt !== undefined)
+        throw new FlowError("这段对话已关闭或归档。", 409);
       if (existing.projectId !== projectId)
         throw new FlowError("这段对话属于另一个项目，请新建对话。", 409);
       return this.touch(id);
@@ -83,14 +85,70 @@ export class CodingConversationIndex {
   }
 
   get(id: string): CodingConversationRecord | undefined {
-    return this.table.get(id);
+    const record = this.table.get(id);
+    return record?.closedAt === undefined ? record : undefined;
+  }
+
+  /** Allocates even an empty panel durably; repeated opens reuse its identity. */
+  async openSide(parentId: string): Promise<string> {
+    if (!this.get(parentId)) throw new FlowError("主对话不存在或已关闭。", 404);
+    const id = `side-${randomUUID()}`;
+    const record = await this.table.update(parentId, (current) => {
+      if (current.closedAt !== undefined || current.archivedAt !== undefined)
+        throw new FlowError("主对话已关闭或归档。", 409);
+      return { ...current, sideSessionId: current.sideSessionId ?? id };
+    });
+    return record.sideSessionId!;
+  }
+
+  /** Only a still-open parent grants access to a side chat's stored log. */
+  sideParent(sessionId: string): CodingConversationRecord | undefined {
+    return [...this.table.entries()]
+      .map(([, record]) => record)
+      .find(
+        (record) =>
+          record.closedAt === undefined &&
+          record.archivedAt === undefined &&
+          record.sideSessionId === sessionId,
+      );
+  }
+
+  async closeSide(sessionId: string): Promise<boolean> {
+    const parent = this.sideParent(sessionId);
+    if (!parent) return false;
+    await this.table.update(parent.id, (current) => {
+      if (current.sideSessionId !== sessionId) return current;
+      const { sideSessionId: _side, ...rest } = current;
+      return rest;
+    });
+    return true;
+  }
+
+  /** Archiving or closing a parent forgets its side, never its DSH logs. */
+  async archive(id: string, archived: boolean): Promise<void> {
+    if (!this.get(id)) throw new FlowError("对话不存在或已关闭。", 404);
+    await this.table.update(id, (current) => {
+      const { archivedAt: _archived, sideSessionId: _side, ...rest } = current;
+      return archived ? { ...rest, archivedAt: Date.now() } : rest;
+    });
+  }
+
+  async close(id: string): Promise<void> {
+    if (!this.get(id)) return;
+    await this.table.update(id, (current) => {
+      const { sideSessionId: _side, ...rest } = current;
+      return { ...rest, closedAt: Date.now() };
+    });
   }
 
   /** Conversations of one project, most recently active first. */
   list(projectId: string): CodingConversation[] {
     return [...this.table.entries()]
       .map(([, record]) => record)
-      .filter((record) => record.projectId === projectId)
+      .filter(
+        (record) =>
+          record.projectId === projectId && record.closedAt === undefined,
+      )
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .map(conversation);
   }
@@ -108,5 +166,9 @@ function conversation(record: CodingConversationRecord): CodingConversation {
     title: record.title,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+    ...(record.archivedAt !== undefined
+      ? { archivedAt: record.archivedAt }
+      : {}),
+    ...(record.sideSessionId ? { sideSessionId: record.sideSessionId } : {}),
   };
 }

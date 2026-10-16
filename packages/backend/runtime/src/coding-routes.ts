@@ -107,7 +107,50 @@ export function createCodingApp(host: OrchestrationHost) {
     }
   });
 
-  // Closing a side chat discards it; nothing of it is kept or listed.
+  // Stop works even when the turn's stream is not this client's (after a
+  // reload) or a proxy keeps the upstream connection open after an abort.
+  app.post("/sessions/:id/stop", async (context) => {
+    try {
+      return context.json(await host.stopCoding(context.req.param("id")));
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
+  // Opening the panel is durable even before its first request.
+  app.post("/sessions/:id/side", async (context) => {
+    try {
+      return context.json(await host.openCodingSide(context.req.param("id")));
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
+  app.post("/sessions/:id/archive", async (context) => {
+    const body = await context.req.json().catch(() => undefined);
+    if (!isRecord(body) || typeof body.archived !== "boolean")
+      return context.json({ message: "无效的归档状态。" }, 400);
+    try {
+      await host.archiveCodingConversation(
+        context.req.param("id"),
+        body.archived,
+      );
+      return context.json({ updated: true });
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
+  app.delete("/sessions/:id", async (context) => {
+    try {
+      await host.closeCodingConversation(context.req.param("id"));
+      return context.json({ updated: true });
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
+  // Only explicit closure clears the side's durable association.
   app.delete("/sessions/:id/side", async (context) => {
     try {
       return context.json(await host.closeCodingSide(context.req.param("id")));

@@ -1,0 +1,161 @@
+import React, { useLayoutEffect, useRef, useState } from "react";
+import { conversationSplit } from "./split-layout";
+
+const STORAGE_KEY = "aura.coding.side-width";
+
+function savedWidth(): number | undefined {
+  try {
+    const value = Number(localStorage.getItem(STORAGE_KEY));
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  } catch {
+    // Storage can be unavailable in private or embedded browser contexts.
+    return undefined;
+  }
+}
+
+/** A bounded, keyboard-accessible split; resizing never remounts either chat. */
+export function ConversationSplit({
+  main,
+  side,
+  sideVisible = !!side,
+}: {
+  main: React.ReactNode;
+  side?: React.ReactNode;
+  /** Hidden side chats stay mounted without reserving width or a divider. */
+  sideVisible?: boolean;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const drag = useRef<{
+    pointerId: number;
+    startX: number;
+    initial: number;
+    current: number;
+    preferred: number | undefined;
+  } | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const [preferred, setPreferred] = useState(savedWidth);
+  const { min, max, width, stacked } = conversationSplit(
+    containerWidth || 1000,
+    preferred,
+  );
+  // Measure before paint so a saved width never flashes wider than the space.
+  useLayoutEffect(() => {
+    const node = root.current;
+    if (!node) return;
+    const measure = () => setContainerWidth(node.getBoundingClientRect().width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const commit = (value?: number) => {
+    setPreferred(value);
+    try {
+      if (value === undefined) localStorage.removeItem(STORAGE_KEY);
+      else localStorage.setItem(STORAGE_KEY, String(value));
+    } catch {
+      // Resizing still works for this mount when persistence is blocked.
+    }
+  };
+  const finish = (cancel = false) => {
+    if (!drag.current) return;
+    const { current, preferred: initialPreferred } = drag.current;
+    drag.current = null;
+    root.current?.removeAttribute("data-resizing");
+    if (cancel) setPreferred(initialPreferred);
+    else commit(current);
+  };
+  return (
+    <div
+      ref={root}
+      className="coding-panes"
+      data-stacked={(sideVisible && stacked) || undefined}
+      style={
+        {
+          "--coding-side-width": `${containerWidth ? width : 0}px`,
+        } as React.CSSProperties
+      }
+    >
+      {main}
+      {side ? (
+        <>
+          {sideVisible && !stacked ? (
+            <div
+              className="coding-split-handle"
+              role="separator"
+              tabIndex={0}
+              aria-label="调整主对话与旁支对话宽度"
+              aria-orientation="vertical"
+              aria-valuemin={min}
+              aria-valuemax={max}
+              aria-valuenow={width}
+              aria-valuetext={`旁支对话 ${width} 像素`}
+              title="拖拽调整宽度 · 双击恢复默认"
+              onPointerDown={(event) => {
+                if (event.button !== 0 || drag.current) return;
+                event.preventDefault();
+                event.currentTarget.focus();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                drag.current = {
+                  pointerId: event.pointerId,
+                  startX: event.clientX,
+                  initial: width,
+                  current: width,
+                  preferred,
+                };
+                root.current?.setAttribute("data-resizing", "true");
+              }}
+              onPointerMove={(event) => {
+                if (drag.current?.pointerId !== event.pointerId) return;
+                const next = conversationSplit(
+                  containerWidth,
+                  drag.current.initial - (event.clientX - drag.current.startX),
+                ).width;
+                drag.current.current = next;
+                setPreferred(next);
+              }}
+              onPointerUp={(event) => {
+                if (drag.current?.pointerId !== event.pointerId) return;
+                finish();
+                if (event.currentTarget.hasPointerCapture(event.pointerId))
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+              }}
+              onPointerCancel={(event) => {
+                if (drag.current?.pointerId === event.pointerId) finish(true);
+              }}
+              onLostPointerCapture={(event) => {
+                if (drag.current?.pointerId === event.pointerId) finish();
+              }}
+              onDoubleClick={() => commit()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && drag.current) {
+                  const { pointerId } = drag.current;
+                  event.preventDefault();
+                  finish(true);
+                  if (event.currentTarget.hasPointerCapture(pointerId))
+                    event.currentTarget.releasePointerCapture(pointerId);
+                  return;
+                }
+                if (
+                  !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                    event.key,
+                  )
+                )
+                  return;
+                event.preventDefault();
+                const next =
+                  event.key === "Home"
+                    ? min
+                    : event.key === "End"
+                      ? max
+                      : width + (event.key === "ArrowLeft" ? 16 : -16);
+                commit(conversationSplit(containerWidth, next).width);
+              }}
+            />
+          ) : null}
+          {side}
+        </>
+      ) : null}
+    </div>
+  );
+}

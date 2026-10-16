@@ -16,21 +16,28 @@ const rendererEntry = fileURLToPath(
   new URL("./dev-renderer.ts", import.meta.url),
 );
 
-async function runtimeIsReady(): Promise<boolean> {
+async function runtimeStatus(): Promise<
+  "ready" | "starting" | "unavailable" | undefined
+> {
   try {
     const response = await fetch("http://127.0.0.1:4311/health", {
-      signal: AbortSignal.timeout(500),
+      signal: AbortSignal.timeout(1_500),
     });
-    if (!response.ok) return false;
     const body = (await response.json()) as unknown;
-    return (
+    if (!(
       typeof body === "object" &&
       body !== null &&
       "service" in body &&
       body.service === "aura-runtime"
-    );
+    ))
+      return undefined;
+    return response.ok
+      ? "ready"
+      : "status" in body && body.status === "starting"
+        ? "starting"
+        : "unavailable";
   } catch {
-    return false;
+    return undefined;
   }
 }
 
@@ -39,23 +46,32 @@ function stop(child: ChildProcess | null): void {
 }
 
 let runtime: ChildProcess | null = null;
-if (!(await runtimeIsReady())) {
+if (!(await runtimeStatus())) {
   runtime = spawn(process.execPath, ["--import", "tsx", runtimeEntry], {
     cwd: root,
     env: process.env,
     stdio: "inherit",
     windowsHide: true,
   });
-  for (let attempt = 0; attempt < 40; attempt++) {
-    if (await runtimeIsReady()) break;
-    if (runtime.exitCode !== null)
-      throw new Error(`Aura runtime exited with code ${runtime.exitCode}.`);
+}
+try {
+  const deadline = Date.now() + 130_000;
+  let status = await runtimeStatus();
+  while (status !== "ready") {
+    if (runtime && (runtime.exitCode !== null || runtime.signalCode !== null))
+      throw new Error(
+        "Aura runtime exited before DSH became ready. Check .aura/dsh/logs/aura-host.log.",
+      );
+    if (status === "unavailable" || Date.now() >= deadline)
+      throw new Error(
+        "Aura DSH is unavailable. Check .aura/dsh/logs/aura-host.log.",
+      );
     await new Promise((resolve) => setTimeout(resolve, 250));
+    status = await runtimeStatus();
   }
-  if (!(await runtimeIsReady())) {
-    stop(runtime);
-    throw new Error("Aura runtime did not become ready on port 4311.");
-  }
+} catch (error) {
+  stop(runtime);
+  throw error;
 }
 
 const surface =

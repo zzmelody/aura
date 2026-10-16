@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -28,6 +28,12 @@ import {
   provisionProfile,
 } from "./profile.ts";
 import { FlowError, jsonValue } from "./schema.ts";
+import {
+  HostDiagnosticReader,
+  HostLogger,
+  hostErrorDiagnostic,
+  hostErrorDiagnostics,
+} from "./host-diagnostics.ts";
 export { FlowError } from "./schema.ts";
 import type {
   ChatStreamEvent,
@@ -52,11 +58,26 @@ export interface InvokeFlowOptions {
   signal?: AbortSignal;
 }
 
+export interface OrchestrationHealth {
+  status: "starting" | "ready" | "unavailable" | "stopped";
+}
+
+interface HostProcess {
+  child: ChildProcessWithoutNullStreams;
+  rpc: JsonRpcLineTransport;
+  exited: Promise<void>;
+}
+
 /** One lazy long-lived DSH host, independent of browser request lifetimes. */
 export class OrchestrationHost {
   options: HostOptions;
   opening: ReturnType<OrchestrationHost["launch"]> | undefined;
   closed = false;
+  private running: HostProcess | undefined;
+  private phase: OrchestrationHealth["status"] = "unavailable";
+  private probing: Promise<OrchestrationHealth> | undefined;
+  private startupAbort: AbortController | undefined;
+  private readonly logger: HostLogger;
   /** Per-request listeners for `chat/event` notifications from the DSH host. */
   readonly chatListeners = new Map<string, (event: ChatStreamEvent) => void>();
   /** Coding turns stream over the same channel under their own ids. */
@@ -67,6 +88,34 @@ export class OrchestrationHost {
 
   constructor(options: HostOptions) {
     this.options = { ...options };
+    this.logger = new HostLogger(options.dshHome);
+  }
+
+  /** Readiness never starts DSH or waits for a cold start. Probe the current RPC listener. */
+  async health(): Promise<OrchestrationHealth> {
+    if (this.closed) return { status: "stopped" };
+    const running = this.running;
+    if (!running) return { status: this.phase };
+    this.probing ??= (async (): Promise<OrchestrationHealth> => {
+      try {
+        const result = (await running.rpc.request(
+          "ping",
+          {},
+          AbortSignal.timeout(500),
+        )) as FlowRpcResult<unknown>;
+        return {
+          status:
+            result.ok && this.running === running && !this.closed
+              ? "ready"
+              : "unavailable",
+        };
+      } catch {
+        return { status: "unavailable" };
+      }
+    })().finally(() => {
+      this.probing = undefined;
+    });
+    return this.probing;
   }
 
   /** Serves one uploaded image by content ID, for chat thumbnails. */
@@ -185,14 +234,24 @@ export class OrchestrationHost {
 
   async open() {
     if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
-    this.opening ??= this.launch().catch((error) => {
-      this.opening = undefined;
-      throw error;
-    });
+    if (!this.opening) {
+      this.phase = "starting";
+      this.opening = this.launch().catch((error: unknown) => {
+        this.opening = undefined;
+        this.phase = this.closed ? "stopped" : "unavailable";
+        if (!this.closed)
+          for (const diagnostic of hostErrorDiagnostics(error))
+            this.logger.write("startup-failed", diagnostic);
+        throw new FlowError(
+          "DSH 编排服务启动失败，请查看 .aura/dsh/logs/aura-host.log。",
+          503,
+        );
+      });
+    }
     return this.opening;
   }
 
-  async launch() {
+  async launch(): Promise<HostProcess> {
     const { root, dshHome, modelURL, codexModel } = this.options;
     const flowRoot = this.options.flowRoot ?? defaultFlowRoot;
     const actionRoot = this.options.actionRoot ?? defaultActionRoot;
@@ -211,6 +270,7 @@ export class OrchestrationHost {
       root,
       modelURL,
     );
+    if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
     const child = spawn(
       process.execPath,
       ["--expose-internals", dshBin, "--profile", "aura-flow"],
@@ -248,16 +308,28 @@ export class OrchestrationHost {
       },
     );
     const rpc = new JsonRpcLineTransport(child.stdout, child.stdin);
-    // DSH/provider logs may contain credentials; never forward raw stderr.
-    child.stderr.resume();
+    const startupAbort = new AbortController();
+    this.startupAbort = startupAbort;
+    const diagnostics = new HostDiagnosticReader(
+      (error) => this.logger.write("plugin-error", error),
+      () => startupAbort.abort(new Error("Aura plugin did not activate")),
+    );
+    // Only the allowlisted Cordis error projection reaches terminal/local logs.
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => diagnostics.push(chunk));
     let ready = false;
     const exited = new Promise<void>((resolve) => {
-      child.once("error", () => {
+      child.once("error", (error) => {
+        this.logger.write("process-error", hostErrorDiagnostic(error));
         rpc.close();
         resolve();
       });
-      child.once("exit", () => {
+      child.once("exit", (code, signal) => {
         rpc.close();
+        if (this.running?.child === child) this.running = undefined;
+        this.phase = this.closed ? "stopped" : "unavailable";
+        if (!this.closed)
+          this.logger.write(`process-exit:${code ?? signal ?? "unknown"}`);
         this.opening = undefined;
         resolve();
         // The host is meant to stay up for the runtime's lifetime. Bring back
@@ -288,7 +360,7 @@ export class OrchestrationHost {
       const result = (await rpc.request(
         "initialize",
         {},
-        AbortSignal.timeout(120_000),
+        AbortSignal.any([startupAbort.signal, AbortSignal.timeout(120_000)]),
       )) as FlowRpcResult<{ name: string; version: number }>;
       if (
         !result.ok ||
@@ -297,6 +369,10 @@ export class OrchestrationHost {
       )
         throw new Error("Invalid host handshake");
       ready = true;
+      this.startupAbort = undefined;
+      const host = { child, rpc, exited };
+      this.running = host;
+      this.phase = "ready";
       // A host can stay alive yet stop answering (its RPC listener detached),
       // and an exit-only watch never notices. Requests run concurrently, so a
       // ping is not queued behind long work; three misses in a row (about 90 s
@@ -311,23 +387,21 @@ export class OrchestrationHost {
           })
           .catch(() => {
             if (++missed < 3 || this.closed) return;
-            console.error(
-              "Aura orchestration host stopped answering; restarting it.",
-            );
+            this.logger.write("rpc-unresponsive:restarting");
             child.kill();
           });
       }, 30_000);
       liveness.unref();
       child.once("exit", () => clearInterval(liveness));
-      return { child, rpc, exited };
-    } catch {
+      return host;
+    } catch (error) {
       rpc.close();
       child.kill();
+      const killTimer = setTimeout(() => child.kill("SIGKILL"), 3_000);
       await exited;
-      throw new FlowError(
-        "DSH 编排服务启动失败，请检查 preset、依赖和 Flow 目录。",
-        503,
-      );
+      clearTimeout(killTimer);
+      this.startupAbort = undefined;
+      throw error;
     }
   }
 
@@ -466,6 +540,32 @@ export class OrchestrationHost {
     });
   }
 
+  /** Stops a conversation's running turn and resolves once it has settled. */
+  stopCoding(sessionId: string): Promise<{ stopped: boolean }> {
+    return this.request<{ stopped: boolean }>("coding/stop", { sessionId });
+  }
+
+  /** Durably opens an empty side chat, or returns the parent's existing one. */
+  openCodingSide(sessionId: string): Promise<{ sessionId: string }> {
+    return this.request<{ sessionId: string }>("coding/side/open", {
+      sessionId,
+    });
+  }
+
+  archiveCodingConversation(
+    sessionId: string,
+    archived: boolean,
+  ): Promise<void> {
+    return this.request<void>("coding/conversation/archive", {
+      sessionId,
+      archived,
+    });
+  }
+
+  closeCodingConversation(sessionId: string): Promise<void> {
+    return this.request<void>("coding/conversation/close", { sessionId });
+  }
+
   /** Discards a side chat: stops its turn and disposes its agent. */
   closeCodingSide(sessionId: string): Promise<{ closed: boolean }> {
     return this.request<{ closed: boolean }>("coding/side/close", {
@@ -547,9 +647,16 @@ export class OrchestrationHost {
 
   async close() {
     this.closed = true;
-    if (!this.opening) return;
+    this.startupAbort?.abort();
+    if (!this.opening) {
+      await this.logger.flush();
+      return;
+    }
     const host = await this.opening.catch(() => undefined);
-    if (!host) return;
+    if (!host) {
+      await this.logger.flush();
+      return;
+    }
     try {
       await host.rpc.request("shutdown", {}, AbortSignal.timeout(10_000));
     } catch {}
@@ -558,6 +665,7 @@ export class OrchestrationHost {
     const timer = setTimeout(() => host.child.kill(), 3_000);
     await host.exited;
     clearTimeout(timer);
+    await this.logger.flush();
   }
 
   /** Local-only API. Same Action/DSH execution pipeline used by ctx.action(). */

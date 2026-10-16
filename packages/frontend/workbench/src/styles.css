@@ -191,16 +191,107 @@ textarea {
     background-color 120ms ease,
     color 120ms ease;
 }
+/* Quiet, rounded scrollbars with no visible track. Keep a faint thumb at
+ * rest so overflow is discoverable, then increase contrast on interaction. */
 .workbench
   :is(
     .session-list,
     .chat-transcript,
+    .studio-scroll,
     .runtime-config,
     .runtime-results,
     .flow-code
   ) {
+  --scrollbar-thumb: color-mix(in srgb, var(--text) 18%, transparent);
   scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+.workbench
+  :is(
+    .session-list,
+    .chat-transcript,
+    .studio-scroll,
+    .runtime-config,
+    .runtime-results,
+    .flow-code
+  ):is(:hover, :focus-within) {
+  --scrollbar-thumb: color-mix(in srgb, var(--text) 32%, transparent);
+}
+/* Chromium/Electron and Safari support rounded, inset thumbs. Reset the
+ * standard properties here: non-auto values override these pseudo-elements. */
+@supports selector(::-webkit-scrollbar) {
+  .workbench
+    :is(
+      .session-list,
+      .chat-transcript,
+      .studio-scroll,
+      .runtime-config,
+      .runtime-results,
+      .flow-code
+    ) {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+  .workbench
+    :is(
+      .session-list,
+      .chat-transcript,
+      .studio-scroll,
+      .runtime-config,
+      .runtime-results,
+      .flow-code
+    )::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .workbench
+    :is(
+      .session-list,
+      .chat-transcript,
+      .studio-scroll,
+      .runtime-config,
+      .runtime-results,
+      .flow-code
+    )::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .workbench
+    :is(
+      .session-list,
+      .chat-transcript,
+      .studio-scroll,
+      .runtime-config,
+      .runtime-results,
+      .flow-code
+    )::-webkit-scrollbar-thumb {
+    min-height: 32px;
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background: var(--scrollbar-thumb);
+    background-clip: padding-box;
+  }
+  .workbench
+    :is(
+      .session-list,
+      .chat-transcript,
+      .studio-scroll,
+      .runtime-config,
+      .runtime-results,
+      .flow-code
+    )::-webkit-scrollbar-thumb:active {
+    background-color: color-mix(in srgb, var(--text) 46%, transparent);
+  }
+  .workbench
+    :is(
+      .session-list,
+      .chat-transcript,
+      .studio-scroll,
+      .runtime-config,
+      .runtime-results,
+      .flow-code
+    )::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
 .workspace-loading {
   display: flex;
@@ -3651,13 +3742,6 @@ textarea {
   height: 28px;
   border-radius: 50%;
   background: var(--soft);
-}
-.workbench .session-list {
-  scrollbar-color: transparent transparent;
-}
-.workbench .session-list:hover,
-.workbench .session-list:focus-within {
-  scrollbar-color: var(--border) transparent;
 }
 
 /* Site console: a small control room for several local projects. */

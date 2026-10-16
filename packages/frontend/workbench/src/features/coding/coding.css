@@ -17,11 +17,145 @@
   font-size: 13px;
 }
 
+/*
+ * Layout: the panes fill the studio below its toolbar, and each pane is a
+ * bounded column, so the transcript scrolls and the composer stays docked
+ * at the bottom instead of being pushed out of view by a long history.
+ */
+.coding-panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.coding-pane {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.coding-side {
+  display: flex;
+  flex: 0 0 min(var(--coding-side-width), calc(100% - 328px));
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  max-width: calc(100% - 328px);
+  overflow: hidden;
+}
+.coding-split-handle {
+  position: relative;
+  flex: 0 0 8px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+.coding-split-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--border);
+}
+.coding-split-handle:hover::after,
+.coding-split-handle:focus-visible::after,
+.coding-panes[data-resizing="true"] > .coding-split-handle::after {
+  width: 2px;
+  background: var(--secondary);
+}
+.coding-split-handle:focus-visible {
+  outline: 2px solid var(--secondary);
+  outline-offset: -2px;
+}
+.coding-panes[data-resizing="true"],
+.coding-panes[data-resizing="true"] * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+.coding-panes[data-stacked] {
+  flex-direction: column;
+}
+.coding-panes[data-stacked] > .coding-pane,
+.coding-panes[data-stacked] > .coding-side {
+  flex: 1 1 0;
+  max-width: none;
+}
+.coding-panes[data-stacked] > .coding-side {
+  border-top: 1px solid var(--border);
+}
+.coding-side[hidden] {
+  display: none;
+}
+.coding-side-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.coding-side-header > strong {
+  flex-shrink: 0;
+}
+.coding-side-header > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coding-side-handoff,
+.coding-side-open {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+
 .coding-transcript {
   display: flex;
   flex-direction: column;
   gap: 28px;
+  min-width: 0;
+  overflow-x: hidden;
   padding: 24px max(16px, calc((100% - 760px) / 2));
+}
+
+/*
+ * New conversation, after DSH's "hero" phase: the hint and the composer sit
+ * together in the vertical middle of the pane rather than the hint at the
+ * top and the composer at the bottom.
+ */
+.coding-pane[data-phase="hero"] {
+  justify-content: center;
+  padding-bottom: 8vh;
+}
+.coding-pane[data-phase="hero"] > .coding-transcript {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding-bottom: 16px;
+}
+.coding-pane[data-phase="hero"] .coding-empty {
+  margin: 0;
+}
+.coding-pane[data-phase="hero"] .chat-composer-area::before {
+  display: none;
 }
 .coding-empty {
   display: grid;
@@ -36,9 +170,12 @@
   margin: 0;
 }
 
+/* Long code and tables scroll within their own blocks, not the whole turn. */
 .coding-turn {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+  min-width: 0;
 }
 .coding-prompt {
   justify-self: end;
@@ -50,92 +187,253 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/*
+ * Execution process, after DSH Desktop's turn process + tool rows: no card,
+ * one quiet header with a hairline, then flat 24px rows in muted text that
+ * brighten on hover. Colour is kept for meaning only (failure, diff totals).
+ */
 .coding-work {
-  display: grid;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-}
-.coding-work-meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  min-width: 0;
+}
+.coding-process {
+  display: flex;
   align-items: center;
-  gap: 6px 14px;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 0 0 8px;
+  border: 0;
+  border-bottom: 0.5px solid var(--border);
+  border-radius: 0;
+  background: none;
   color: var(--muted);
-  font-size: 12px;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.1s;
 }
-.coding-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--text);
-  font-weight: 500;
+.coding-process:disabled {
+  cursor: default;
 }
-.coding-state.complete {
+.coding-process:hover:not(:disabled),
+.coding-process:focus-visible {
+  color: var(--secondary);
+}
+.coding-process-icon {
+  flex: none;
+}
+.coding-process.running .coding-process-icon,
+.coding-process.running .coding-process-state {
+  color: var(--accent);
+}
+.coding-process.complete .coding-process-icon {
   color: var(--success);
 }
-.coding-state.error,
-.coding-state.stopped {
+.coding-process.error .coding-process-icon,
+.coding-process.error .coding-process-state {
   color: var(--danger);
 }
+.coding-process.stopped .coding-process-icon,
+.coding-process.stopped .coding-process-state {
+  color: var(--secondary);
+}
+.coding-process-label {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coding-process-number {
+  font-variant-numeric: tabular-nums;
+}
+.coding-process-chevron {
+  flex: none;
+  transition: transform 0.1s;
+}
+.coding-process[data-open] .coding-process-chevron {
+  transform: rotate(180deg);
+}
+.coding-process-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+}
+
 .coding-progress {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
+  height: 24px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
+}
+.coding-progress > svg {
+  flex: none;
+  margin: 0 1px;
 }
 .coding-progress-bar {
-  flex: 1;
-  height: 6px;
+  flex: 0 1 160px;
+  height: 4px;
   overflow: hidden;
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--elevated);
 }
 .coding-progress-bar > span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--accent);
+  background: var(--muted);
   transition: width 0.3s ease;
 }
+.coding-progress > span {
+  font-variant-numeric: tabular-nums;
+}
+
 .coding-tools {
-  display: grid;
-  gap: 4px;
-  max-height: 260px;
+  display: flex;
+  flex-direction: column;
   margin: 0;
   padding: 0;
-  overflow: auto;
   list-style: none;
-  font-size: 13px;
 }
-.coding-tools li {
+.coding-tool {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.coding-tool-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 24px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 24px;
+  text-align: left;
+  transition: color 0.1s;
+}
+button.coding-tool-row {
+  cursor: pointer;
+}
+.coding-tool-row:hover,
+.coding-tool[data-open] .coding-tool-row {
   color: var(--secondary);
 }
-.coding-tools li.ok svg {
-  color: var(--success);
+.coding-tool-leading {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
 }
-.coding-tools li.failed {
-  color: var(--danger);
+.coding-tool-leading svg {
+  width: 14px;
+  height: 14px;
+  transition: opacity 0.1s;
 }
-.coding-tools span {
-  flex-shrink: 0;
+.coding-tool-chevron {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transition:
+    transform 0.1s,
+    opacity 0.1s;
 }
-.coding-tools code {
+button.coding-tool-row:hover .coding-tool-icon,
+button.coding-tool-row:focus-visible .coding-tool-icon {
+  opacity: 0;
+}
+button.coding-tool-row:hover .coding-tool-chevron,
+button.coding-tool-row:focus-visible .coding-tool-chevron {
+  opacity: 1;
+}
+.coding-tool[data-open] .coding-tool-chevron {
+  transform: rotate(90deg);
+}
+.coding-tool-title {
+  flex: none;
+}
+.coding-tool-sep {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.7;
+}
+.coding-tool-summary {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-left: auto;
-  color: var(--muted);
+}
+.coding-tool.failed .coding-tool-summary,
+.coding-tool.failed .coding-tool-title {
+  color: var(--danger);
+}
+.coding-tool-stat {
+  flex: none;
+  margin-left: 10px;
   font:
     11px "IBM Plex Mono",
     monospace;
+  white-space: nowrap;
+}
+/* Totals stay neutral until the row is hovered or opened, as in DSH. */
+.coding-tool-stat > span {
+  color: inherit;
+}
+.coding-tool-row:hover .coding-tool-stat .coding-diff-added,
+.coding-tool[data-open] .coding-tool-stat .coding-diff-added {
+  color: var(--success);
+}
+.coding-tool-row:hover .coding-tool-stat .coding-diff-removed,
+.coding-tool[data-open] .coding-tool-stat .coding-diff-removed {
+  color: var(--danger);
+}
+/* Keep the tool identity on the left and its visible outcome on the right. */
+.coding-tool-state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding-left: 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.coding-tool-state.running {
+  color: var(--accent);
+}
+.coding-tool-state.ok svg {
+  color: var(--success);
+}
+.coding-tool-state.failed {
+  color: var(--danger);
+}
+.coding-tool-state.stopped {
+  color: var(--secondary);
 }
 .coding-reply {
   line-height: 1.65;
@@ -186,7 +484,11 @@
   .coding-spin {
     animation: none;
   }
-  .coding-progress-bar > span {
+  .coding-progress-bar > span,
+  .coding-process,
+  .coding-process-chevron,
+  .coding-tool-row,
+  .coding-tool-leading svg {
     transition: none;
   }
 }
@@ -197,38 +499,19 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* File-change cards under a write or edit step. */
-.coding-tools li:has(.coding-diffs) {
-  flex-wrap: wrap;
-}
+/* File-change blocks under an expanded write or edit step (DSH DiffBlock). */
 .coding-diffs {
-  display: grid;
-  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   min-width: 0;
-  margin: 4px 0 6px 20px;
+  margin: 4px 0 6px 4px;
 }
 .coding-diff {
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--background);
-}
-.coding-diff summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  cursor: pointer;
-  font-size: 12px;
-}
-.coding-diff summary code {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text);
+  border: 0.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
 }
 .coding-diff-added {
   color: var(--success);
@@ -237,32 +520,39 @@
   color: var(--danger);
 }
 .coding-diff pre {
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr);
   max-height: 320px;
   margin: 0;
+  padding: 6px 0 12px;
   overflow: auto;
-  border-top: 1px solid var(--border);
   font:
-    12px/1.55 "IBM Plex Mono",
+    12px/1.6 "IBM Plex Mono",
     monospace;
+}
+.coding-diff-path {
+  padding: 0 16px 4px;
+  color: var(--secondary);
+  font-weight: 500;
 }
 .coding-diff-line {
   display: block;
-  padding: 0 10px;
+  padding: 0 16px;
   white-space: pre;
   color: var(--secondary);
 }
 .coding-diff-line > span {
-  display: inline-block;
-  width: 1.4em;
-  color: var(--muted);
+  user-select: none;
 }
 .coding-diff-line.add {
-  background: color-mix(in srgb, var(--success) 14%, transparent);
-  color: var(--text);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--success);
+  color: var(--success);
 }
 .coding-diff-line.remove {
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--text);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--danger);
+  color: var(--danger);
 }
 
 /* Questions the agent asks; the turn waits until one is answered. */
@@ -379,58 +669,241 @@
   font-size: 14px;
 }
 
-/* End-of-turn summary, built from the recorded steps. */
-.coding-summary {
-  display: grid;
-  gap: 10px;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
+/* End-of-turn recap, after DSH's changed-files card. */
+.coding-recap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-top: 4px;
+  overflow: hidden;
+  border: 0.5px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
+  color: var(--text);
 }
-.coding-summary h3 {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-.coding-summary h4 {
-  margin: 0 0 4px;
-  color: var(--secondary);
-  font-size: 12px;
-  font-weight: 500;
-}
-.coding-summary ul {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.coding-summary li {
+.coding-recap-header {
   display: flex;
+  box-sizing: border-box;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
-  font-size: 13px;
+  min-height: 60px;
+  padding: 8px 10px;
 }
-.coding-summary li code {
+.coding-recap-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.coding-recap-titles {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
+}
+.coding-recap-title {
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.coding-summary li.ok svg {
-  color: var(--success);
+.coding-recap-line {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.coding-summary li.failed {
-  color: var(--danger);
+.coding-recap-stat {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
 }
-.coding-summary-note {
+.coding-recap-files {
   margin: 0;
-  color: var(--danger);
+  padding: 0;
+  border-top: 0.5px solid var(--border);
+  list-style: none;
+}
+.coding-recap-file + .coding-recap-file {
+  border-top: 0.5px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.coding-recap-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 40px;
+  padding: 4px 8px 4px 14px;
+  transition: background-color 110ms ease;
+}
+.coding-recap-file-row:hover,
+.coding-recap-file[data-open] .coding-recap-file-row {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+/* Kind icon: a small tinted square, one hue per kind of file. */
+.coding-recap-file-icon {
+  --kind: var(--secondary);
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--kind) 14%, transparent);
+  color: var(--kind);
+}
+[data-kind="code"] > .coding-recap-file-row .coding-recap-file-icon {
+  --kind: #4f8fea;
+}
+[data-kind="style"] > .coding-recap-file-row .coding-recap-file-icon {
+  --kind: #d06bc4;
+}
+[data-kind="markup"] > .coding-recap-file-row .coding-recap-file-icon {
+  --kind: #e2834a;
+}
+[data-kind="config"] > .coding-recap-file-row .coding-recap-file-icon {
+  --kind: #c9a227;
+}
+[data-kind="markdown"] > .coding-recap-file-row .coding-recap-file-icon,
+[data-kind="text"] > .coding-recap-file-row .coding-recap-file-icon {
+  --kind: var(--accent);
+}
+[data-kind="image"] > .coding-recap-file-row .coding-recap-file-icon,
+[data-kind="video"] > .coding-recap-file-row .coding-recap-file-icon,
+[data-kind="audio"] > .coding-recap-file-row .coding-recap-file-icon {
+  --kind: #2fa58f;
+}
+[data-kind="data"] > .coding-recap-file-row .coding-recap-file-icon {
+  --kind: var(--success);
+}
+[data-kind="shell"] > .coding-recap-file-row .coding-recap-file-icon {
+  --kind: #7c8a99;
+}
+.coding-recap-file-name {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.coding-recap-file-name > span {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.coding-recap-file-name > small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+.coding-recap-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+  font-size: 10px;
+  line-height: 16px;
+}
+.coding-recap-counts {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  white-space: nowrap;
+}
+/* Actions stay out of the way until the row is hovered or focused. */
+.coding-recap-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  min-width: 90px;
+  justify-content: flex-end;
+  opacity: 0;
+  transition: opacity 110ms ease;
+}
+.coding-recap-file-row:hover .coding-recap-actions,
+.coding-recap-file-row:focus-within .coding-recap-actions,
+.coding-recap-file[data-open] .coding-recap-actions,
+.coding-recap-actions:has(.coding-recap-note) {
+  opacity: 1;
+}
+.coding-recap-actions .icon-control {
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+}
+.coding-recap-actions .icon-control:hover,
+.coding-recap-actions .icon-control[aria-expanded="true"] {
+  color: var(--text);
+}
+.coding-recap-note {
+  color: var(--success);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.coding-recap-diff {
+  margin: 0;
+  padding: 4px 10px 10px 50px;
+}
+@media (hover: none) {
+  .coding-recap-actions {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coding-recap-file-row,
+  .coding-recap-actions {
+    transition: none;
+  }
+}
+.coding-recap-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 10px 18px 10px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
   font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+.coding-recap-toggle:hover {
+  background: var(--soft);
+}
+.coding-recap-toggle-up {
+  transform: rotate(180deg);
 }
 
 .coding-report li code {

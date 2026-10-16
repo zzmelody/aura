@@ -12,7 +12,7 @@ export type ToolEntry = {
   name: string;
   /** The file, command or pattern the call touches, when it names one. */
   detail?: string;
-  state: "running" | "ok" | "failed";
+  state: "running" | "ok" | "failed" | "stopped";
   /** Applied hunks of a write or edit. */
   diffs?: CodingFileDiff[];
 };
@@ -130,11 +130,27 @@ export function answerTurn(
   };
 }
 
-/**
- * Rebuilds the studio's turns from replayed history. A turn that is no longer
- * running cannot still be waiting on a step, so leftover running steps are
- * shown as failed rather than spinning forever.
- */
+/** Settle live and replayed turns alike; missing results never imply success. */
+export function finishTurn(
+  turn: Turn,
+  status: Exclude<Turn["status"], "running">,
+  endedAt?: number,
+  error?: string,
+): Turn {
+  return {
+    ...turn,
+    status,
+    ...(endedAt !== undefined ? { endedAt } : {}),
+    ...(error ? { error } : {}),
+    tools: turn.tools.map((tool) =>
+      tool.state === "running"
+        ? { ...tool, state: status === "error" ? "failed" : "stopped" }
+        : tool,
+    ),
+  };
+}
+
+/** Rebuild the transcript using the same settlement rules as the live stream. */
 export function turnsFromHistory(
   sessionId: string,
   history: readonly CodingHistoryTurn[],
@@ -142,28 +158,27 @@ export function turnsFromHistory(
   return history.map((item, index) => {
     let turn = newTurn(`${sessionId}-${index}`, item.prompt, item.startedAt);
     for (const event of item.events) turn = applyTurnEvent(turn, event);
-    turn = {
-      ...turn,
-      status: item.status,
-      ...(item.endedAt !== undefined ? { endedAt: item.endedAt } : {}),
-      ...(item.error ? { error: item.error } : {}),
-    };
-    if (item.status !== "running")
-      turn = {
-        ...turn,
-        tools: turn.tools.map((tool) =>
-          tool.state === "running" ? { ...tool, state: "failed" } : tool,
-        ),
-      };
-    return turn;
+    return item.status === "running"
+      ? turn
+      : finishTurn(turn, item.status, item.endedAt, item.error);
   });
 }
 
 /** Tools that run a shell command; their detail is the command line. */
 const SHELL_TOOLS = new Set(["bash", "pwsh"]);
 
-/** What a finished turn changed and ran, for the end-of-turn summary. */
+/** Tools that only look at the project. */
+const READ_TOOLS = new Set(["read", "read_image"]);
+const SEARCH_TOOLS = new Set(["glob", "grep"]);
+
+/** What a finished turn did, changed and ran, for the end-of-turn recap. */
 export type TurnSummary = {
+  /** Every step the turn took. */
+  steps: number;
+  /** Distinct files and images read. */
+  reads: number;
+  /** File and content searches. */
+  searches: number;
   /** Files written or edited, in first-touched order, with line counts. */
   files: Array<{ path: string; added: number; removed: number }>;
   /** Shell commands, in run order, with their outcome. */
@@ -185,8 +200,13 @@ export function summarizeTurn(
 ): TurnSummary {
   const files = new Map<string, { added: number; removed: number }>();
   const commands: TurnSummary["commands"] = [];
+  const read = new Set<string>();
+  let searches = 0;
   let failedSteps = 0;
   for (const tool of turn.tools) {
+    if (READ_TOOLS.has(tool.name) && tool.state === "ok")
+      read.add(tool.detail ?? tool.callId);
+    if (SEARCH_TOOLS.has(tool.name) && tool.state === "ok") searches++;
     for (const diff of tool.diffs ?? []) {
       const counted = countLines(diff);
       const entry = files.get(diff.path) ?? { added: 0, removed: 0 };
@@ -196,11 +216,14 @@ export function summarizeTurn(
       });
     }
     if (SHELL_TOOLS.has(tool.name)) {
-      if (tool.detail && tool.state !== "running")
+      if (tool.detail && (tool.state === "ok" || tool.state === "failed"))
         commands.push({ command: tool.detail, ok: tool.state === "ok" });
     } else if (tool.state === "failed") failedSteps++;
   }
   return {
+    steps: turn.tools.length,
+    reads: read.size,
+    searches,
     files: [...files].map(([path, counts]) => ({ path, ...counts })),
     commands,
     failedSteps,
@@ -208,9 +231,29 @@ export function summarizeTurn(
   };
 }
 
-/** A summary is worth showing only when the turn changed or ran something. */
+/** A recap is worth showing once the turn took at least one step. */
 export function hasSummary(summary: TurnSummary): boolean {
-  return summary.files.length > 0 || summary.commands.length > 0;
+  return summary.steps > 0;
+}
+
+/**
+ * The "what it did" phrases of a recap line, in the order the work usually
+ * happens: look, change, verify, then anything that went wrong.
+ */
+export function recapParts(summary: TurnSummary): string[] {
+  const parts: string[] = [];
+  if (summary.reads) parts.push(`读取 ${summary.reads} 个文件`);
+  if (summary.searches) parts.push(`搜索 ${summary.searches} 次`);
+  if (summary.files.length) parts.push(`改动 ${summary.files.length} 个文件`);
+  if (summary.commands.length) {
+    const failed = summary.commands.filter((item) => !item.ok).length;
+    parts.push(
+      `运行 ${summary.commands.length} 条命令${failed ? `（${failed} 条失败）` : ""}`,
+    );
+  }
+  if (summary.failedSteps) parts.push(`${summary.failedSteps} 个步骤失败`);
+  if (summary.unanswered) parts.push(`${summary.unanswered} 个问题未回答`);
+  return parts;
 }
 
 /**

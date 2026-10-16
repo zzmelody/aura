@@ -5,6 +5,7 @@ import {
   CircleDashed,
   Clock3,
   LoaderCircle,
+  MessageCircleQuestion,
   Pause,
   Square,
 } from "lucide-react";
@@ -19,6 +20,7 @@ const icons = {
   failed: CircleAlert,
   paused: Pause,
   attention: CircleAlert,
+  waiting: MessageCircleQuestion,
 };
 
 export function SessionStatus({

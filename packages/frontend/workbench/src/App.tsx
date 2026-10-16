@@ -104,6 +104,10 @@ export default function App() {
     !studioDirty || window.confirm("工作台有未保存修改，确认离开？");
   const [workflowBrowseRevision, setWorkflowBrowseRevision] = useState(0);
   const [tab, setTab] = useState<Tab>("chat");
+  const [codingVisited, setCodingVisited] = useState(false);
+  useEffect(() => {
+    if (tab === "studio:coding") setCodingVisited(true);
+  }, [tab]);
   const [showArchived, setShowArchived] = useState(false);
   const [sessionDialog, setSessionDialog] = useState<SessionDialogRequest>();
   const navigation = useRef<Array<{ tab: Tab; sessionId: string | null }>>([
@@ -512,7 +516,7 @@ export default function App() {
                       )}
                     </div>
                   </div>
-                  {isStudio(tab) ? (
+                  {isStudio(tab) && tab !== "studio:coding" ? (
                     <div className="studio-area">
                       <React.Suspense
                         fallback={
@@ -535,34 +539,6 @@ export default function App() {
                             onDirtyChange={setStudioDirty}
                             onBack={() => navigate("chat")}
                           />
-                        ) : tab === "studio:coding" ? (
-                          <CodingStudio
-                            key={codexAuth.endpoint}
-                            endpoint={codexAuth.endpoint}
-                            provider={workspace.state.provider}
-                            workspaces={codingWorkspaces}
-                            handoff={codingHandoff}
-                            onHandoffTaken={takeHandoff}
-                            modelConfig={
-                              workspace.chatModelConfig[
-                                providerMode(workspace.state.provider)
-                              ] ?? {}
-                            }
-                            onModelConfig={(selection) =>
-                              workspace.setChatModelConfig(
-                                providerMode(workspace.state.provider),
-                                selection,
-                              )
-                            }
-                            onProvider={(provider) =>
-                              workspace.setState((s) => ({
-                                ...s,
-                                provider,
-                                endpoint: s.endpoint || "http://127.0.0.1:4311",
-                              }))
-                            }
-                            onBack={() => navigate("chat")}
-                          />
                         ) : (
                           <TopicLibrary
                             key={codexAuth.endpoint}
@@ -571,6 +547,52 @@ export default function App() {
                             onBack={() => navigate("chat")}
                           />
                         )}
+                      </React.Suspense>
+                    </div>
+                  ) : null}
+                  {codingVisited || tab === "studio:coding" ? (
+                    <div
+                      className="studio-area"
+                      style={
+                        tab === "studio:coding"
+                          ? undefined
+                          : { display: "none" }
+                      }
+                    >
+                      <React.Suspense
+                        fallback={
+                          <div className="workspace-loading">
+                            正在打开工作空间…
+                          </div>
+                        }
+                      >
+                        <CodingStudio
+                          key={codexAuth.endpoint}
+                          endpoint={codexAuth.endpoint}
+                          provider={workspace.state.provider}
+                          workspaces={codingWorkspaces}
+                          handoff={codingHandoff}
+                          onHandoffTaken={takeHandoff}
+                          modelConfig={
+                            workspace.chatModelConfig[
+                              providerMode(workspace.state.provider)
+                            ] ?? {}
+                          }
+                          onModelConfig={(selection) =>
+                            workspace.setChatModelConfig(
+                              providerMode(workspace.state.provider),
+                              selection,
+                            )
+                          }
+                          onProvider={(provider) =>
+                            workspace.setState((s) => ({
+                              ...s,
+                              provider,
+                              endpoint: s.endpoint || "http://127.0.0.1:4311",
+                            }))
+                          }
+                          onBack={() => navigate("chat")}
+                        />
                       </React.Suspense>
                     </div>
                   ) : null}

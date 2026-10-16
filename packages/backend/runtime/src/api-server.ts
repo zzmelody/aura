@@ -2,6 +2,7 @@ import {
   createFlowApp,
   FlowError,
   type OrchestrationHost,
+  type OrchestrationHealth,
 } from "@aura/orchestration";
 import { validateMessages, validateChatModelSelection } from "@aura/protocol";
 import { CHAT_IMAGE_LIMIT, type ChatEvent } from "@aura/protocol/types";
@@ -191,23 +192,38 @@ export function createApiApp({
   pluginSettings,
   pluginSettingsAccessible = true,
   services,
+  readiness = flows,
   lifecycle = { shuttingDown: false, admittedRequests: 0 },
 }: Omit<ApiServerOptions, "config" | "tripo"> & {
   tripo?: TripoPort;
   lifecycle?: ApiLifecycle;
   services?: ServiceRuns;
+  readiness?: Pick<OrchestrationHost, "health">;
 }) {
   const app = new Hono();
   app.use("*", localOriginPolicy);
 
-  app.get("/health", (context) =>
-    context.json({
-      service: "aura-runtime",
-      modes: ["dsh-demo", "codex-subscription", "lumina", "custom"],
-      keyRequired: false,
-      integrations: { tripo: tripo?.configured ?? false },
-    }),
-  );
+  app.get("/health", async (context) => {
+    context.header("Cache-Control", "no-store");
+    const dsh: OrchestrationHealth = lifecycle.shuttingDown
+      ? { status: "stopped" }
+      : ((await readiness
+          ?.health()
+          .catch(() => ({ status: "unavailable" as const }))) ?? {
+          status: "unavailable",
+        });
+    return context.json(
+      {
+        service: "aura-runtime",
+        status: dsh.status,
+        dsh,
+        modes: ["dsh-demo", "codex-subscription", "lumina", "custom"],
+        keyRequired: false,
+        integrations: { tripo: tripo?.configured ?? false },
+      },
+      dsh.status === "ready" ? 200 : 503,
+    );
+  });
   app.route("/auth/codex", createCodexAuthApp(codexAuth));
   if (tripo) app.route("/tripo", createTripoApp(tripo));
   if (flows) app.route("/flows", createFlowApp(flows));

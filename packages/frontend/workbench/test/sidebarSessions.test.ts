@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { Session } from "@aura/core/types";
 import {
   groupSidebarSessions,
+  sidebarRowStatus,
   sidebarSessionTitle,
   sidebarSessionStatus,
   sidebarSessionTime,
@@ -40,6 +41,25 @@ test("sidebar time stays compact at unit boundaries and tolerates future clocks"
   assert.equal(ago(365 * 86400), "1年前");
   assert.equal(ago(-60), "刚刚");
   assert.equal(sidebarSessionTime(Number.NaN, now), "—");
+});
+test("a row shows a status icon only when it needs notice, otherwise its time", () => {
+  assert.equal(sidebarRowStatus(undefined), undefined);
+  assert.equal(
+    sidebarRowStatus({ kind: "completed", label: "已完成" }),
+    undefined,
+  );
+  assert.equal(
+    sidebarRowStatus({ kind: "idle", label: "尚未开始" }),
+    undefined,
+  );
+  for (const kind of [
+    "running",
+    "waiting",
+    "failed",
+    "stopped",
+    "attention",
+  ] as const)
+    assert.equal(sidebarRowStatus({ kind, label: kind })?.kind, kind);
 });
 test("workflow rows identify their task while preserving custom conversation names", () => {
   assert.equal(sidebarSessionTitle(session), "Compare options for launch");

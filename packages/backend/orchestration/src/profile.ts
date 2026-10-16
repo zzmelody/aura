@@ -175,6 +175,8 @@ ${Object.entries(customProfiles(await readAiServices(root)))
   config:
     root: !!js dshHomePath('aura-flow-storages')
 - insert:
+    - id: aura-host-diagnostics
+      name: ${JSON.stringify(new URL("./diagnostics-plugin.ts", import.meta.url).href)}
     - id: aura-orchestration
       name: ${JSON.stringify(new URL("./plugin.ts", import.meta.url).href)}
     # Coding mode pauses for human decisions; this registers the

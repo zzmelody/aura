@@ -114,14 +114,8 @@ export async function startAuraRuntime(
     // Start the long-lived DSH host now rather than on the first request, so
     // its cold start (20–35 s on Windows) is not charged to whatever the user
     // opens first. A failed start is retried by the next request.
-    flows
-      .open()
-      .catch((error: unknown) =>
-        console.error(
-          "Aura orchestration host failed to start:",
-          error instanceof Error ? error.message : error,
-        ),
-      );
+    // The host records sanitized failures in terminal and local diagnostics.
+    void flows.open().catch(() => undefined);
     api = await startApiServer({
       config,
       codexAuth,
@@ -145,6 +139,9 @@ export async function startAuraRuntime(
   let closed = false;
   return {
     url: api.url,
+    async ready() {
+      await flows.open();
+    },
     async close() {
       if (closed) return;
       closed = true;

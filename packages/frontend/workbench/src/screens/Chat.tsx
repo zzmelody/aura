@@ -250,7 +250,7 @@ export function ChatScreen({
     if (flowMode) return;
     if (!canAttach) {
       setAttachError(
-        "本地演示模式不能附带图片，请在下方切换到 DSH 演示或 Codex 订阅。",
+        "本地演示模式不能附带图片，请在下方切换到 Codex 订阅或其他模式。",
       );
       return;
     }
@@ -327,7 +327,6 @@ export function ChatScreen({
   const runError = session ? workspace.workflows.errors[session.id] : "";
   const providerName = {
     offline: "本地演示",
-    dsh: "DSH 演示",
     codex: "Codex",
     lumina: "Lumina",
     custom: "自定义 API",
@@ -783,7 +782,6 @@ export function ChatScreen({
                 }
               >
                 <option value="offline">本地演示</option>
-                <option value="dsh">DSH 演示</option>
                 <option value="codex">Codex 订阅</option>
                 <option value="lumina">Lumina</option>
                 <option value="custom">自定义 API</option>
@@ -867,11 +865,7 @@ export function ChatScreen({
           </p>
         ) : null}
         {!realModel ? (
-          <p className="composer-footnote">
-            {attachments.length && workspace.state.provider === "dsh"
-              ? "演示模式 · 图片不会被模型查看"
-              : "演示模式 · 未调用真实 AI"}
-          </p>
+          <p className="composer-footnote">演示模式 · 未调用真实 AI</p>
         ) : null}
         <span className="sr-only" aria-live="polite">
           {streaming

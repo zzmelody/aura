@@ -2,12 +2,6 @@
 import { startAuraRuntime } from "@aura/runtime";
 
 const runtime = await startAuraRuntime();
-console.log(
-  `Aura runtime: ${runtime.url} (DSH demo + DSH Codex subscription + Tripo 3D)`,
-);
-// Machine-readable readiness for launchers such as a game client.
-console.log(`AURA_READY ${runtime.url}`);
-
 let closing = false;
 const launcherPid = Number(process.env.AURA_LAUNCHER_PID ?? process.ppid);
 const launcherWatch = setInterval(() => {
@@ -38,3 +32,21 @@ for (const signal of ["SIGINT", "SIGTERM"])
   process.once(signal, () => {
     void close();
   });
+
+try {
+  await runtime.ready();
+  if (!closing) {
+    console.log(`Aura runtime: ${runtime.url} (DSH ready)`);
+    // Never announce readiness while the API is up but DSH is unavailable.
+    console.log(`AURA_READY ${runtime.url}`);
+  }
+} catch {
+  const cancelled = closing;
+  await close();
+  if (!cancelled) {
+    console.error(
+      "Aura DSH startup failed; check .aura/dsh/logs/aura-host.log.",
+    );
+    process.exitCode = 1;
+  }
+}

@@ -3,6 +3,7 @@ import type {
   SessionController,
   SessionHistoryRecord,
 } from "@deepseek-ai/dsh-api-session-controller";
+import type { CodingConversationInfo } from "@aura/protocol/types";
 import { agentFailure } from "../sessions.ts";
 import type {
   CodingFileDiff,
@@ -230,6 +231,40 @@ export function historyTurns(
     current.endedAt ??= events.at(-1)?.time ?? current.startedAt;
   }
   return turns.filter((turn) => turn.prompt || turn.events.length);
+}
+
+/**
+ * Reads only the last page of a session log to find the outcome of its most
+ * recent turn. Returns `undefined` when the session has no stored events or
+ * its log is unreadable. Never throws; a single page covers the vast majority
+ * of coding conversations without walking their entire history.
+ */
+export async function lastTurnStatus(
+  controller: Pick<SessionController, "follow" | "page">,
+  sessionId: SessionId,
+  signal: AbortSignal,
+): Promise<CodingConversationInfo["lastTurnStatus"]> {
+  const events = await readSessionEvents(
+    controller,
+    sessionId,
+    signal,
+    /* maxPages */ 1,
+  );
+  if (!events) return undefined;
+  // Walk backwards: the very last turn/end tells us the outcome; if a
+  // turn/start appears before we find a turn/end the last turn is still open.
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i]!;
+    if (ev.type === "turn/end") {
+      const reason = (ev.data as { reason?: { kind?: string } } | undefined)
+        ?.reason;
+      if (reason?.kind === "completed") return "complete";
+      if (reason?.kind === "aborted") return "stopped";
+      return "error";
+    }
+    if (ev.type === "turn/start") return "running";
+  }
+  return undefined;
 }
 
 function text(content: unknown): string {

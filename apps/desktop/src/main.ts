@@ -37,12 +37,12 @@ if (development) {
   }
 }
 
-async function runtimeIsReady(): Promise<boolean> {
+async function runtimeIsRunning(): Promise<boolean> {
   try {
     const response = await fetch("http://127.0.0.1:4311/health", {
-      signal: AbortSignal.timeout(500),
+      signal: AbortSignal.timeout(1_500),
     });
-    if (!response.ok) return false;
+    // A 503 from our API means DSH is starting or unavailable, not a free port.
     const body = (await response.json()) as unknown;
     return (
       typeof body === "object" &&
@@ -55,16 +55,15 @@ async function runtimeIsReady(): Promise<boolean> {
   }
 }
 
-/** Starts the DSH runtime only when another Aura runtime is not already ready. */
+/** Reuses a live Aura API, including one whose DSH host is still starting. */
 async function ensureRuntime() {
-  if (await runtimeIsReady()) return;
+  if (await runtimeIsRunning()) return;
   ownedRuntime = await startAuraRuntime({
     root: repoRoot,
     host: "127.0.0.1",
     port: 4311,
   });
-  if (!(await runtimeIsReady()))
-    throw new Error("Aura runtime did not become ready on port 4311.");
+  await ownedRuntime.ready();
 }
 
 async function serveRenderer(): Promise<string> {

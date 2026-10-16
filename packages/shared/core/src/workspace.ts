@@ -1,8 +1,8 @@
 import type { FlowMode } from "@aura/protocol/types";
 import type { Workspace } from "./types.ts";
-/** Flow and chat mode served by a workspace provider; DSH demo and offline share demo. */
+/** Flow and chat mode served by a workspace provider; offline is the demo. */
 export function providerMode(provider: Workspace["provider"]): FlowMode {
-  return provider === "offline" || provider === "dsh" ? "demo" : provider;
+  return provider === "offline" ? "demo" : provider;
 }
 
 /** Version-one storage key; moving modules does not migrate or erase records. */

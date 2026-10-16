@@ -75,20 +75,32 @@ export function codingService(
   const active = new Set<string>();
   /** Settles when the session's in-progress turn ends, however it ends. */
   const settled = new Map<string, Promise<void>>();
-  /**
-   * Side chats forked in this process. Their agents are owned here rather
-   * than left registered, so closing one disposes it; the stop aborts a turn
-   * still running when the side chat closes.
-   */
-  const sideHandles = new Map<string, AgentHandle>();
-  const sideStops = new Map<string, AbortController>();
+  /** Agents and cancellation scopes survive navigation, not explicit closure. */
+  const handles = new Map<string, AgentHandle>();
+  const stops = new Map<string, AbortController>();
+  /** Cancels only the in-progress turn; the conversation stays usable. */
+  const turnStops = new Map<string, AbortController>();
 
   return {
     stream,
-    closeSide,
+    stop: stopTurn,
+    close: closeSession,
+    closeSide: closeSession,
     /** Whether a turn of this conversation is running right now. */
     running: (sessionId: string) => active.has(sessionId),
   };
+
+  /**
+   * Stops the running turn of one conversation, independent of whether the
+   * client's stream disconnect reached us, and waits until it has settled.
+   */
+  async function stopTurn(sessionId: string): Promise<boolean> {
+    const turn = turnStops.get(sessionId);
+    if (!turn) return false;
+    turn.abort(new FlowError("已停止生成。"));
+    await settled.get(sessionId);
+    return true;
+  }
 
   async function stream(
     turn: CodingTurn,
@@ -98,7 +110,9 @@ export function codingService(
     if (active.has(turn.sessionId))
       throw new FlowError("这段对话还有一轮在进行，请先等它结束或停止。", 409);
     active.add(turn.sessionId);
-    const turnDone = run(turn, emit, signal);
+    const own = new AbortController();
+    turnStops.set(turn.sessionId, own);
+    const turnDone = run(turn, emit, AbortSignal.any([signal, own.signal]));
     settled.set(
       turn.sessionId,
       turnDone.then(
@@ -111,35 +125,31 @@ export function codingService(
     } finally {
       active.delete(turn.sessionId);
       settled.delete(turn.sessionId);
+      if (turnStops.get(turn.sessionId) === own)
+        turnStops.delete(turn.sessionId);
     }
   }
 
-  /**
-   * Discards a side chat: stops its running turn, then disposes its agent so
-   * nothing of it stays live. The DSH log is left as DSH wrote it; Aura never
-   * indexed it, so it is not listed anywhere.
-   *
-   * @returns whether a side chat with this id was open.
-   */
-  async function closeSide(sessionId: string): Promise<boolean> {
-    const stop = sideStops.get(sessionId);
-    const handle = sideHandles.get(sessionId);
-    if (!stop && !handle) return false;
-    stop?.abort(new FlowError("旁支对话已关闭。"));
+  /** Stops and releases a conversation; durable history remains DSH-owned. */
+  async function closeSession(sessionId: string): Promise<boolean> {
+    const existed = stops.has(sessionId) || handles.has(sessionId);
+    const stop = sessionStop(sessionId);
+    stop.abort(new FlowError("对话已关闭。"));
     await settled.get(sessionId);
-    sideStops.delete(sessionId);
-    sideHandles.delete(sessionId);
+    const handle = handles.get(sessionId);
+    handles.delete(sessionId);
+    // Keep the aborted scope so an already-dispatched request cannot revive it.
     const session = ctx.sessions.get(SessionId(sessionId));
     if (session) await ctx.sessions.flush(session).catch(() => false);
     await handle?.dispose();
-    return true;
+    return existed;
   }
 
-  function sideStop(sessionId: string): AbortController {
-    let stop = sideStops.get(sessionId);
+  function sessionStop(sessionId: string): AbortController {
+    let stop = stops.get(sessionId);
     if (!stop) {
       stop = new AbortController();
-      sideStops.set(sessionId, stop);
+      stops.set(sessionId, stop);
     }
     return stop;
   }
@@ -199,8 +209,7 @@ export function codingService(
     const stop = AbortSignal.any([
       signal,
       AbortSignal.timeout(CODING_TURN_TIMEOUT_MS),
-      // Closing a side chat stops its turn too.
-      ...(turn.forkFrom ? [sideStop(turn.sessionId).signal] : []),
+      sessionStop(turn.sessionId).signal,
     ]);
     const config = await resolveChatModel(
       ctx.llm,
@@ -256,7 +265,7 @@ export function codingService(
               signal: stop,
               setup,
             });
-      if (turn.forkFrom) sideHandles.set(turn.sessionId, handle);
+      handles.set(turn.sessionId, handle);
       agent = handle.agent;
     }
     const scoped: Array<() => void> = [];
