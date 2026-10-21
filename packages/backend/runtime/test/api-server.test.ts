@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createApiApp } from "../src/api-server.ts";
+import { createCodingApp } from "../src/coding-routes.ts";
 import { TripoService, type TripoPort } from "@aura/tripo";
 import { FlowError } from "@aura/orchestration";
 import type {
@@ -377,6 +378,28 @@ test("Hono API exposes validated asynchronous Tripo tasks", async () => {
     code: "tripo_not_configured",
     message: "Tripo 尚未配置，请先在后端设置 API Key。",
   });
+});
+
+test("the stop route forwards the conversation id and reports the result", async () => {
+  const stopped: string[] = [];
+  const flows = {
+    async stopCoding(sessionId: string) {
+      stopped.push(sessionId);
+      return { stopped: sessionId === "coding-1" };
+    },
+  } as unknown as NonNullable<Parameters<typeof createApiApp>[0]["flows"]>;
+  const app = createCodingApp(flows);
+  const stop = (id: string) =>
+    app.request(`/sessions/${encodeURIComponent(id)}/stop`, {
+      method: "POST",
+    });
+  const live = await stop("coding-1");
+  assert.equal(live.status, 200);
+  assert.deepEqual(await live.json(), { stopped: true });
+  assert.deepEqual(await (await stop("coding-idle")).json(), {
+    stopped: false,
+  });
+  assert.deepEqual(stopped, ["coding-1", "coding-idle"]);
 });
 
 test("coding turns accept uploaded image IDs and reject invalid ones", async () => {

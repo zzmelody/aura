@@ -931,7 +931,8 @@ export function ConversationPane({
   /** Archived parents retain a readable transcript, but cannot accept turns. */
   readOnly?: boolean;
   placeholder: string;
-  empty: React.ReactNode;
+  /** Hint above an empty conversation; omit to show only the composer. */
+  empty?: React.ReactNode;
   footnote?: React.ReactNode;
   /** A new conversation got its id. */
   onOpen?(sessionId: string): void;
@@ -1188,9 +1189,11 @@ export function ConversationPane({
       ) : null}
       <div className="studio-scroll coding-transcript" ref={transcript}>
         {!shown.length ? (
-          <div className="coding-empty">
-            {loadingHistory ? <p>正在读取这段对话的过程记录…</p> : empty}
-          </div>
+          loadingHistory || empty ? (
+            <div className="coding-empty">
+              {loadingHistory ? <p>正在读取这段对话的过程记录…</p> : empty}
+            </div>
+          ) : null
         ) : (
           shown.map((turn) => (
             <TurnView

@@ -24,8 +24,20 @@ export type AskedQuestion = {
   answered?: CodingQuestionAnswer[];
 };
 
+/**
+ * One entry of a turn in the order the agent produced it: some text, a run of
+ * consecutive tool calls, or a question. Rendering this list replays the real
+ * flow (think, act, explain, act again) instead of all tools then all text.
+ */
+export type TimelineItem =
+  | { kind: "text"; text: string }
+  | { kind: "tools"; callIds: string[] }
+  | { kind: "question"; questionId: string };
+
 /** One request and everything the agent did to answer it. */
 export type Turn = {
+  /** Text, tool runs and questions in arrival order. */
+  timeline: TimelineItem[];
   id: string;
   prompt: string;
   /** Images sent with this request; only known for turns sent from this page. */
@@ -55,6 +67,7 @@ export function newTurn(
     id,
     prompt,
     ...(images?.length ? { images } : {}),
+    timeline: [],
     reply: "",
     tools: [],
     deliverables: [],
@@ -70,7 +83,11 @@ export function newTurn(
  */
 export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
   if (event.type === "delta")
-    return { ...turn, reply: turn.reply + event.text };
+    return {
+      ...turn,
+      reply: turn.reply + event.text,
+      timeline: appendText(turn.timeline, event.text),
+    };
   if (event.type === "progress")
     return { ...turn, progress: { done: event.done, total: event.total } };
   if (event.type === "deliverable")
@@ -86,22 +103,29 @@ export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
             ...turn.questions,
             { questionId: event.questionId, questions: event.questions },
           ],
+          timeline: [
+            ...turn.timeline,
+            { kind: "question", questionId: event.questionId },
+          ],
         };
   if (event.type === "answered")
     return answerTurn(turn, event.questionId, event.answers);
   if (event.phase === "start")
-    return {
-      ...turn,
-      tools: [
-        ...turn.tools,
-        {
-          callId: event.callId,
-          name: event.name,
-          ...(event.detail ? { detail: event.detail } : {}),
-          state: "running",
-        },
-      ],
-    };
+    return turn.tools.some((tool) => tool.callId === event.callId)
+      ? turn
+      : {
+          ...turn,
+          timeline: appendTool(turn.timeline, event.callId),
+          tools: [
+            ...turn.tools,
+            {
+              callId: event.callId,
+              name: event.name,
+              ...(event.detail ? { detail: event.detail } : {}),
+              state: "running",
+            },
+          ],
+        };
   return {
     ...turn,
     tools: turn.tools.map((tool) =>
@@ -114,6 +138,41 @@ export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
         : tool,
     ),
   };
+}
+
+/** Text streams in fragments; adjacent fragments form one paragraph block. */
+function appendText(
+  timeline: readonly TimelineItem[],
+  text: string,
+): TimelineItem[] {
+  if (!text) return [...timeline];
+  const last = timeline.at(-1);
+  return last?.kind === "text"
+    ? [...timeline.slice(0, -1), { kind: "text", text: last.text + text }]
+    : [...timeline, { kind: "text", text }];
+}
+
+/**
+ * Consecutive calls share one group, like DSH's tool run. Whitespace-only
+ * text between two calls does not split the group.
+ */
+function appendTool(
+  timeline: readonly TimelineItem[],
+  callId: string,
+): TimelineItem[] {
+  let end = timeline.length;
+  while (end > 0) {
+    const item = timeline[end - 1]!;
+    if (item.kind !== "text" || item.text.trim()) break;
+    end--;
+  }
+  const last = timeline[end - 1];
+  return last?.kind === "tools"
+    ? [
+        ...timeline.slice(0, end - 1),
+        { kind: "tools", callIds: [...last.callIds, callId] },
+      ]
+    : [...timeline, { kind: "tools", callIds: [callId] }];
 }
 
 /** Marks a question answered. */

@@ -56,6 +56,35 @@ test("a repeated question event is not shown twice", () => {
   assert.equal(turn.questions.length, 1);
 });
 
+test("the timeline retains text, grouped tools and questions in arrival order", () => {
+  const tool: TurnEvent = {
+    type: "tool",
+    phase: "start",
+    callId: "c1",
+    name: "read",
+  };
+  const steps: TurnEvent[] = [
+    { type: "delta", text: "先" },
+    { type: "delta", text: "看看" },
+    tool,
+    tool,
+    { type: "delta", text: "\n" },
+    { type: "tool", phase: "start", callId: "c2", name: "grep" },
+    events[3]!,
+    events[3]!,
+    { type: "delta", text: "完成" },
+  ];
+  const turn = steps.reduce(applyTurnEvent, newTurn("t", "", 1));
+  assert.deepEqual(turn.timeline, [
+    { kind: "text", text: "先看看" },
+    { kind: "tools", callIds: ["c1", "c2"] },
+    { kind: "question", questionId: "q1" },
+    { kind: "text", text: "完成" },
+  ]);
+  assert.equal(turn.tools.length, 2);
+  assert.equal(turn.reply, "先看看\n完成");
+});
+
 test("replayed history matches the live fold and keeps its outcome", () => {
   const history: CodingHistoryTurn[] = [
     {

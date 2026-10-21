@@ -88,7 +88,9 @@ export function SideConversation({
       <header className="coding-side-header">
         <GitBranch size={14} />
         <strong>旁支对话</strong>
-        <span>切换会话、重启后保留，主动关闭或主对话关闭、归档后丢弃</span>
+        <span title="切换会话或重启后保留；关闭旁支，或关闭、归档主对话后丢弃">
+          不打断主对话
+        </span>
         <button
           className="coding-side-handoff"
           disabled={
@@ -111,7 +113,7 @@ export function SideConversation({
           ) : (
             <Send size={13} />
           )}
-          总结并发给主对话
+          发回主对话
         </button>
         <button
           className="icon-control"
@@ -136,10 +138,7 @@ export function SideConversation({
         label="旁支对话输入框"
         sessionId={sessionId}
         forkFrom={parentId}
-        placeholder="问点别的，不会打断主对话…"
-        empty={
-          <p>旁支对话带着主对话的上下文，拥有同样的工具，可以读写这个目录。</p>
-        }
+        placeholder="基于主对话继续问，不会打断它…"
         onProvider={onProvider}
         modelConfig={modelConfig}
         onModelConfig={onModelConfig}

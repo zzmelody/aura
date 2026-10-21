@@ -217,11 +217,12 @@ export function CodingStudio({
                     : `描述你要在「${project.title}」里完成的事情。改动只会写入这个目录。`}
                 </p>
               }
-              footnote={
-                offline
-                  ? "工作空间需要连接 Aura 服务，请切换到 Codex 订阅或其他模式"
-                  : `可读写文件、运行命令 · ${project.directory}`
-              }
+              {...(offline
+                ? {
+                    footnote:
+                      "工作空间需要连接 Aura 服务，请切换到 Codex 订阅或其他模式",
+                  }
+                : {})}
               onOpen={(id) => open(project.id, id)}
               onSettled={refresh}
               onProvider={onProvider}
