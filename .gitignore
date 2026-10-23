@@ -12,6 +12,9 @@ apps/desktop/dist/
 apps/desktop/dist-host/
 apps/server/dist/
 *.log
+/el-err.txt
+/el-out.txt
+/el-res.txt
 .env
 .env.local
 *.keystore
