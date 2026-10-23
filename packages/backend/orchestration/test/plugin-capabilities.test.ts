@@ -1,21 +1,32 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import test from "node:test";
 import type { FlowRun } from "@aura/protocol/types";
 import { actionCapabilities } from "../src/actions.ts";
 import { PluginCapabilities } from "../src/plugin-capabilities.ts";
 import type { CapabilityRoot } from "../src/types.ts";
 
-const capabilityApi = pathToFileURL(
-  join(import.meta.dirname, "..", "src", "capability-api.ts"),
-).href;
+const capabilityApi = "@aura/plugin-sdk/capability";
 
 async function fixture(run: (root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "aura-plugin-capabilities-"));
   try {
+    await writeFile(join(root, "package.json"), '{"type":"module"}\n');
+    await mkdir(join(root, "node_modules/@aura"), { recursive: true });
+    await symlink(
+      join(import.meta.dirname, "../../plugin-sdk"),
+      join(root, "node_modules/@aura/plugin-sdk"),
+      "junction",
+    );
     await run(root);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -171,10 +182,68 @@ test("plugin providers open once with settings, receive the call identity and se
     await host.replace([root(providers, "veya", "1.0.0", { session: "y" })]);
     assert.deepEqual(
       (await log(dataRoot, "veya")).map((e) => e.hook),
-      ["open", "close", "open"],
+      ["open", "open", "close"],
     );
     await host.close();
     assert.equal((await log(dataRoot, "veya")).at(-1)?.hook, "close");
+  }));
+
+test("workbench pages reach only their own provider's declared page operations", () =>
+  fixture(async (dir) => {
+    const providers = join(dir, "pages", "capabilities");
+    const directory = join(providers, "archive");
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      join(directory, "archive.capability.js"),
+      `
+import { defineCapability } from ${JSON.stringify(capabilityApi)};
+export default defineCapability({
+  title: "archive",
+  open() {
+    return {
+      pageOperations: ["summary"],
+      invoke(operation, input, call) {
+        return { operation, input, runId: call.runId ?? null };
+      },
+    };
+  },
+});
+`,
+    );
+    const other = join(dir, "other", "capabilities");
+    await writeProvider(other, "secret");
+    const host = new PluginCapabilities({ dataRoot: join(dir, "data") });
+    await host.replace([root(providers, "pages"), root(other, "other")]);
+    const signal = new AbortController().signal;
+
+    assert.deepEqual(
+      await host.invokeFromPage(
+        "pages",
+        "pages/archive",
+        "summary",
+        { q: 1 },
+        signal,
+      ),
+      { operation: "summary", input: { q: 1 }, runId: null },
+    );
+    await assert.rejects(
+      host.invokeFromPage("pages", "pages/archive", "delete", null, signal),
+      /page_operation_forbidden/u,
+    );
+    await assert.rejects(
+      host.invokeFromPage("pages", "other/secret", "x", null, signal),
+      /page_capability_forbidden/u,
+    );
+    // Providers without pageOperations stay unreachable from any page.
+    await assert.rejects(
+      host.invokeFromPage("other", "other/secret", "x", null, signal),
+      /page_operation_forbidden/u,
+    );
+    await assert.rejects(
+      host.invokeFromPage("pages", "pages/missing", "x", null, signal),
+      /page_capability_unavailable/u,
+    );
+    await host.close();
   }));
 
 test("runSettled reaches only the owning plugin and a failing hook does not throw", () =>
@@ -388,3 +457,136 @@ test("Action capability narrowing forwards step and idempotency identity", async
     { runId: "r", stepId: "plugin/main/list", idempotencyKey: "k" },
   ]);
 });
+
+test("provider helpers reload after calls and Runs finish; failed edits keep the previous revision", () =>
+  fixture(async (dir) => {
+    const plugin = join(dir, "hot");
+    const providers = join(plugin, "capabilities");
+    const directory = join(providers, "archive");
+    await mkdir(directory, { recursive: true });
+    const helper = join(plugin, "shared.js");
+    const entry = join(directory, "archive.capability.js");
+    const source = `
+import { defineCapability } from "@aura/plugin-sdk/capability";
+import { version } from "../../shared.js";
+export default defineCapability({title:"archive",open(host){return {
+  pageOperations:["version"],
+  async invoke(operation,input,call){
+    if(operation==="wait") await host.invoke("fixture.wait","wait",null,call.signal);
+    return {version};
+  }
+};}});
+`;
+    await writeFile(helper, 'export const version = "one";\n');
+    await writeFile(entry, source);
+    const entered = Promise.withResolvers<void>();
+    const pending = Promise.withResolvers<null>();
+    const warnings: string[] = [];
+    const host = new PluginCapabilities({
+      dataRoot: join(dir, "data"),
+      builtins: {
+        invoke: async () => {
+          entered.resolve();
+          return pending.promise;
+        },
+      },
+      log: (_level, message) => warnings.push(message),
+    });
+    try {
+      const roots = [{ ...root(providers, "hot"), pluginRoot: plugin }];
+      await host.replace(roots);
+      const signal = new AbortController().signal;
+      const version = () =>
+        host.invokeFromPage("hot", "hot/archive", "version", null, signal);
+      const waiting = host.invoke("hot/archive", "wait", null, signal);
+      await entered.promise;
+      await writeFile(helper, 'export const version = "two";\n');
+      await host.refresh();
+      assert.deepEqual(await version(), { version: "one" });
+      pending.resolve(null);
+      assert.deepEqual(await waiting, { version: "one" });
+      const active = run("active", "hot", { status: "waiting_input" });
+      host.attachRuns(
+        () => active,
+        () => [active],
+      );
+      await host.refresh();
+      assert.deepEqual(await version(), { version: "one" });
+      active.status = "completed";
+      await host.refresh();
+      assert.deepEqual(await version(), { version: "two" });
+      await writeFile(entry, "export default { invalid syntax\n");
+      await host.refresh();
+      await host.refresh();
+      assert.deepEqual(await version(), { version: "two" });
+      assert.equal(warnings.length, 1, "a broken edit does not spam warnings");
+      await assert.rejects(host.replace(roots));
+      assert.deepEqual(await version(), { version: "two" });
+      await writeFile(entry, source);
+      await writeFile(helper, 'export const version = "three";\n');
+      await host.refresh();
+      assert.deepEqual(await version(), { version: "three" });
+    } finally {
+      await host.close();
+    }
+    await assert.rejects(host.replace([]), /plugin_providers_closed/u);
+    await host.refresh();
+  }));
+
+test("disabled providers retain private services until old Runs and direct Action leases settle", async () =>
+  fixture(async (dir) => {
+    const providers = join(dir, "providers");
+    await writeProvider(providers, "private");
+    const host = new PluginCapabilities({ dataRoot: join(dir, "data") });
+    const legacy = run("old", undefined, { status: "waiting_input" });
+    legacy.flow.id = "legacy-flow";
+    host.attachRuns(
+      () => legacy,
+      () => [legacy],
+    );
+    const descriptor = {
+      ...root(providers, "owner"),
+      pluginRoot: dir,
+      compatibility: {
+        flows: {
+          "legacy-flow": { from: ["a".repeat(64)], to: "b".repeat(64) },
+        },
+      },
+    };
+    try {
+      await host.replace([descriptor]);
+      const release = host.serviceRetention("owner")();
+      await host.replace([]);
+      await assert.rejects(
+        host.invokeFromPage(
+          "owner",
+          "owner/private",
+          "read",
+          null,
+          new AbortController().signal,
+        ),
+      );
+      const logPath = join(dir, "data/owner/log.json");
+      const logs = async () =>
+        JSON.parse(await readFile(logPath, "utf8")) as Array<{ hook: string }>;
+      assert.equal(
+        (await logs()).filter((item) => item.hook === "close").length,
+        0,
+      );
+      legacy.status = "completed";
+      await host.refresh();
+      assert.equal(
+        (await logs()).filter((item) => item.hook === "close").length,
+        0,
+      );
+      release();
+      release();
+      await host.refresh();
+      assert.equal(
+        (await logs()).filter((item) => item.hook === "close").length,
+        1,
+      );
+    } finally {
+      await host.close();
+    }
+  }));

@@ -31,6 +31,11 @@ import type {
   RuntimeConfig,
 } from "./types.ts";
 import { createPluginSettingsApp } from "./plugin-settings-routes.ts";
+import {
+  createPluginPagesApp,
+  pluginBundleFallback,
+} from "./plugin-pages-routes.ts";
+import type { PluginPageRegistry } from "./plugin-pages.ts";
 import { createTripoApp } from "./tripo-routes.ts";
 import { isRecord } from "./validation.ts";
 import { isLoopbackRuntimeHost } from "./runtime-config.ts";
@@ -47,6 +52,7 @@ interface ApiServerOptions {
   flows?: OrchestrationHost;
   pluginSettings?: AuraPluginSettingsPort;
   pluginSettingsAccessible?: boolean;
+  pluginPages?: PluginPageRegistry;
 }
 
 /** Optional list of uploaded chat image asset IDs (sha256 hex). */
@@ -191,6 +197,7 @@ export function createApiApp({
   flows,
   pluginSettings,
   pluginSettingsAccessible = true,
+  pluginPages,
   services,
   readiness = flows,
   lifecycle = { shuttingDown: false, admittedRequests: 0 },
@@ -202,6 +209,16 @@ export function createApiApp({
 }) {
   const app = new Hono();
   app.use("*", localOriginPolicy);
+  if (pluginPages) {
+    // DSH combo URLs (`/plugins/??id/client.js&rev=`) put the resource list in
+    // the query, so they are matched on the raw URL before routing.
+    const bundles = pluginBundleFallback(pluginPages);
+    app.use("/plugins/", async (context, next) => {
+      const response = bundles(context.req.raw);
+      if (response) return response;
+      await next();
+    });
+  }
 
   app.get("/health", async (context) => {
     context.header("Cache-Control", "no-store");
@@ -244,6 +261,8 @@ export function createApiApp({
       "/plugins/config",
       createPluginSettingsApp(pluginSettings, pluginSettingsAccessible),
     );
+  if (pluginPages)
+    app.route("/plugins", createPluginPagesApp(pluginPages, flows));
 
   app.get("/chat/models", async (context) => {
     const mode = context.req.query("mode") ?? "codex";
@@ -418,6 +437,7 @@ export async function startApiServer({
   flows,
   pluginSettings,
   pluginSettingsAccessible,
+  pluginPages,
 }: ApiServerOptions): Promise<ApiServerHandle> {
   const lifecycle: ApiLifecycle = {
     shuttingDown: false,
@@ -436,6 +456,7 @@ export async function startApiServer({
     services,
     pluginSettings,
     pluginSettingsAccessible,
+    pluginPages,
     lifecycle,
   });
   const { server, port } = await startHonoServer(app, config.host, config.port);

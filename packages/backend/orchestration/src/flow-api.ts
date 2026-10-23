@@ -139,6 +139,7 @@ export interface FlowRegistrationConfig {
   /** Trusted local package root, never projected into public catalog DTOs. */
   pluginRoot?: string;
   capabilities?: string[];
+  legacyRevision?: { from: string[]; to: string };
 }
 
 export interface FlowRegistrationPort {

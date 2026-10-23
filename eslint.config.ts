@@ -26,6 +26,9 @@ export default defineConfig(
   {
     name: "aura/source",
     files: sourceFiles,
+    languageOptions: {
+      parserOptions: { tsconfigRootDir: import.meta.dirname },
+    },
     extends: [js.configs.recommended, tseslint.configs.recommended],
     linterOptions: { reportUnusedDisableDirectives: "error" },
     rules: {

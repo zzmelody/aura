@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { windowsListeningPids } from "../src/site-network.ts";
+import { windowsListeningPids } from "../backend/site-network.ts";
 
 const header =
   "\r\nActive Connections\r\n\r\n  Proto  Local Address          Foreign Address        State           PID\r\n";

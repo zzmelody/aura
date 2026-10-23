@@ -1,3 +1,10 @@
+import type {
+  PluginStorage,
+  PluginWorkflows,
+  PluginTaskTool,
+  PluginServices,
+} from "./backend-api.ts";
+import type { GeneratedArtifacts } from "./artifacts/generated.ts";
 import type { FlowRun, JsonValue } from "@aura/protocol/types";
 
 /** Run identity of one capability call, supplied by the host, never by plugin input. */
@@ -26,6 +33,10 @@ export interface CapabilityHost {
   readonly dataDir: string;
   /** The plugin's `settings` from plugins.json, uninterpreted. Validate it yourself. */
   readonly settings: JsonValue | undefined;
+  readonly workspace: { readonly cwd: string };
+  readonly storage: PluginStorage;
+  readonly workflows: PluginWorkflows;
+  readonly media: GeneratedArtifacts;
   /** Read-only view of this plugin's own Flow Runs. Other plugins' Runs are invisible. */
   readonly runs: {
     get(id: string): FlowRun | undefined;
@@ -73,6 +84,27 @@ export interface ServiceAdmission {
 export interface CapabilityProvider {
   /** Local IDs of this plugin's service Flows whose requests this provider admits and projects. */
   readonly serves?: readonly string[];
+  readonly services?: PluginServices;
+  readonly chatTools?: readonly PluginTaskTool[];
+  /** Historical output adapters return candidates; the host still verifies canonical files. */
+  artifactCandidates?(
+    output: unknown,
+    producer: string,
+  ): ReadonlyArray<{ path: string; name?: string; admitted: boolean }>;
+  readonly requests?: {
+    prefixes: readonly string[];
+    handle(
+      method: string,
+      input: Record<string, unknown>,
+      signal: AbortSignal,
+    ): Promise<unknown>;
+  };
+  /**
+   * Operations this plugin's own workbench pages may call through the Aura
+   * runtime. Anything not listed is refused before `invoke` runs; page calls
+   * carry no Run identity.
+   */
+  readonly pageOperations?: readonly string[];
   /**
    * Validates a service request and returns the Flow input to start with. Must
    * be idempotent by requestId. Throw an Error whose message is a lowercase

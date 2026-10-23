@@ -1,0 +1,46 @@
+{
+  "name": "@aura-plugins/site-launcher",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "files": [
+    "aura.plugin.json",
+    "capabilities",
+    "client/dist/client.js",
+    "backend/dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/build-product-plugin.ts site-launcher",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix --max-warnings 0",
+    "check:style": "pnpm run format:check && pnpm run lint"
+  },
+  "peerDependencies": {
+    "@aura/plugin-sdk": "^1.3.0",
+    "@aura/plugin-ui": "^0.1.0",
+    "@aura/workbench": "^0.1.0",
+    "@aura/protocol": "^0.1.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "lucide-react": "1.43.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.10.1",
+    "@types/react": "~19.2.2",
+    "eslint": "10.12.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "prettier": "3.9.6",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "8.71.1",
+    "vite": "8.2.2"
+  }
+}

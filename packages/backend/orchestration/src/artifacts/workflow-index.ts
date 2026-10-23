@@ -64,6 +64,15 @@ export class WorkflowArtifactIndex {
       producer: string,
     ) => Promise<void>,
   ) => Promise<boolean>;
+  private candidates?: (
+    output: unknown,
+    producer: string,
+  ) => ReadonlyArray<{ path: string; name?: string; admitted: boolean }>;
+  setPluginCandidates(
+    resolve: NonNullable<WorkflowArtifactIndex["candidates"]>,
+  ) {
+    this.candidates = resolve;
+  }
   constructor(store: GeneratedArtifacts, cwd: string) {
     this.store = store;
     this.cwd = cwd;
@@ -208,6 +217,13 @@ export class WorkflowArtifactIndex {
     producer: string,
     historical = false,
   ): Promise<void> {
+    for (const candidate of this.candidates?.(output, producer) ?? [])
+      await this.register(
+        owner,
+        candidate.path,
+        { name: candidate.name },
+        candidate.admitted,
+      );
     const visit = async (value: unknown, depth: number): Promise<void> => {
       if (depth > 8) return;
       if (Array.isArray(value)) {
@@ -216,23 +232,6 @@ export class WorkflowArtifactIndex {
       }
       const result = object(value);
       if (!result) return;
-      if (
-        producer === "short-video-compose" &&
-        typeof result.videoPath === "string" &&
-        basename(result.videoPath) === "final.mp4"
-      ) {
-        const rel = relative(
-          resolve(this.cwd, ".aura/short-video"),
-          resolve(result.videoPath),
-        );
-        await this.register(
-          owner,
-          result.videoPath,
-          { name: "短视频.mp4" },
-          /^[-\w]+[/\\]final\.mp4$/u.test(rel),
-        );
-        return;
-      }
       if (
         ["local-image", "comfy-workflow", "local-tts", "gpt-image"].includes(
           producer,

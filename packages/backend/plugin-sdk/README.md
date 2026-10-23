@@ -1,8 +1,8 @@
 # @aura/plugin-sdk
 
 Public authoring contracts for trusted local backend plugins. External plugins
-import only `@aura/plugin-sdk/action`, `@aura/plugin-sdk/flow` and
-`@aura/plugin-sdk/capability`. The package adapts those stable contracts to Aura
+use its explicit public `action`, `flow`, `capability`, `backend`, `storage`,
+`media`, `browser` and `errors` exports. The package adapts those stable contracts to Aura
 orchestration without exposing runtime composition, credentials, DSH internals,
 or frontend code.
 
@@ -32,7 +32,7 @@ invokes only its named operations. There are two kinds:
   automatically, and no other plugin can reach them.
 
 A provider default-exports `defineCapability({ title, open(host) })`. `open`
-runs once when Aura activates the plugin and returns
+runs once for each activated provider revision and returns
 `{ invoke(operation, input, call), runSettled?(run), close?() }`.
 
 - `host.dataDir` is the plugin's private directory under
@@ -46,8 +46,15 @@ runs once when Aura activates the plugin and returns
 - `runSettled` is called once per terminal root Run of the plugin, including
   Runs that ended while Aura was down.
 
-Providers are not hot reloaded. Changing a provider, the plugin version or its
-settings reopens it on the next plugin configuration apply.
+Aura checks enabled provider sources and their static local ESM dependencies
+every second. Code changes load a new native ESM revision, including helpers,
+while published dependencies and the SDK remain shared. Automatic replacement
+waits for active calls and the plugin's nonterminal Flow Runs. Failed candidates
+leave the previous revision available. `open` should prepare resources without
+starting business operations; replacement prepares the candidate before closing
+the old providers. Durable state belongs in `host.dataDir`, not module globals.
+Plugin directory, version and settings changes still use the configuration API;
+source hot reload never rewrites `plugins.json`.
 
 ## Flow progress
 
@@ -60,3 +67,21 @@ Plugin Actions may throw `ActionFailure` for a bounded message that is safe to
 persist and show in Workflow UI. Ordinary errors remain generic. Product-facing
 messages must identify the failed stage and next action without credentials,
 private paths, signed URLs, raw provider responses, or stack traces.
+
+## Product backends (1.4)
+
+Providers own their business state and expose private services to their own
+Actions through `ctx.services`. The host supplies scoped `host.workflows`,
+leased `host.storage`, generic media/artifact primitives and workspace metadata.
+No raw Cordis context, model client or credential service is exposed.
+
+Optional provider `requests` dispatch only owned RPC prefixes; `chatTools` use
+host-owned deduplication, quotas and run cards. Binary HTTP uses a prebuilt
+`contributes.http` Hono adapter with declared mounts, scoped RPC and generic
+artifacts. `contributes.presets` registers plugin-owned presets through DSH.
+
+Historical names and IDs require explicit `compatibility` grants. A reviewed
+old-to-new dependency hash mapping permits in-memory recovery of relocated
+built-ins while preserving stored fingerprints; unknown/changed versions remain
+refused. `defineWorkflow` preserves explicit durable root sequences;
+`defineFlow` retains its original implicit plugin scope.

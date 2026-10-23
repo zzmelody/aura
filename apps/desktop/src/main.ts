@@ -60,6 +60,9 @@ async function ensureRuntime() {
   if (await runtimeIsRunning()) return;
   ownedRuntime = await startAuraRuntime({
     root: repoRoot,
+    defaultPluginsDirectory: development
+      ? resolve(repoRoot, "plugins")
+      : resolve(appDir, "dist-host/plugins"),
     host: "127.0.0.1",
     port: 4311,
   });

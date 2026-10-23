@@ -1,3 +1,4 @@
+import { compatibleRevision } from "./plugin-compatibility.ts";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type {
@@ -260,9 +261,7 @@ export class FlowEngine {
             flow.agentDefaults ?? {},
           )
         : agentDefaults(request.mode, flow.agentDefaults, flow.agentTimeoutMs);
-      const actions =
-        this.options.actions?.registry.snapshot() ??
-        new Map<string, LoadedAction>();
+      const actions = new Map(this.options.actions?.registry.snapshot() ?? []);
       const run: FlowRun = {
         id: randomUUID(),
         requestId: request.requestId,
@@ -316,10 +315,11 @@ export class FlowEngine {
     if (!caller)
       throw new FlowError("父 Flow 的固定版本不可用，无法启动子 Flow。", 409);
     const flow = this.options.registry.get(flowId);
+    const callerPlugin = caller.ownerPlugin ?? caller.plugin;
     const sameOwner =
-      Boolean(caller.plugin) && caller.plugin?.id === flow.plugin?.id;
+      Boolean(callerPlugin) && callerPlugin?.id === flow.plugin?.id;
     if (
-      caller.plugin &&
+      callerPlugin &&
       !sameOwner &&
       !caller.capabilities.includes("aura.flow.invoke")
     )
@@ -385,7 +385,10 @@ export class FlowEngine {
         return previous;
       }
       await this.options.refreshFlows();
-      const flow = this.options.registry.get(step.flowId);
+      const flow = compatibleRevision(
+        this.options.registry.get(step.flowId),
+        step,
+      );
       if (
         flow.sourceHash !== step.sourceHash ||
         !samePlugin(flow.plugin, step.plugin)
@@ -394,9 +397,11 @@ export class FlowEngine {
           `子 Flow ${step.flowId} 的固定版本已不可用，请新建运行。`,
           409,
         );
-      const actions =
-        this.options.actions?.registry.snapshot() ??
-        new Map<string, LoadedAction>();
+      const actions = new Map(this.options.actions?.registry.snapshot() ?? []);
+      for (const ref of parent.actionVersions ?? []) {
+        const action = actions.get(ref.id);
+        if (action) actions.set(ref.id, compatibleRevision(action, ref));
+      }
       const now = Date.now();
       const run: FlowRun = {
         id: randomUUID(),
@@ -499,24 +504,39 @@ export class FlowEngine {
       if (missingConfig) throw new Error("Missing pinned Agent configuration");
       let flow: LoadedFlow;
       try {
-        flow = this.options.registry.get(run.flow.id);
+        flow = compatibleRevision(
+          this.options.registry.get(run.flow.id),
+          run.flow,
+        );
       } catch (error) {
-        if (pinned && pluginDetached(run.flow.plugin)) return pinned;
+        if (
+          pinned &&
+          pluginDetached(pinned?.flow.ownerPlugin ?? run.flow.plugin)
+        )
+          return pinned;
         throw error;
       }
-      const actions =
-        this.options.actions?.registry.snapshot() ??
-        new Map<string, LoadedAction>();
+      const actions = new Map(this.options.actions?.registry.snapshot() ?? []);
+      for (const ref of run.actionVersions ?? []) {
+        const action = actions.get(ref.id);
+        if (action) actions.set(ref.id, compatibleRevision(action, ref));
+      }
       if (
         flow.sourceHash !== run.flow.sourceHash ||
         !samePlugin(flow.plugin, run.flow.plugin)
       ) {
-        if (pinned && pluginDetached(run.flow.plugin)) return pinned;
+        if (
+          pinned &&
+          pluginDetached(pinned?.flow.ownerPlugin ?? run.flow.plugin)
+        )
+          return pinned;
         throw new Error("Flow");
       }
       let usePinned = Boolean(
         pinned &&
-        run.actionVersions?.some(({ plugin }) => pluginDetached(plugin)),
+        run.actionVersions?.some(({ id, plugin }) =>
+          pluginDetached(pinned?.actions.get(id)?.ownerPlugin ?? plugin),
+        ),
       );
       for (const step of run.steps) {
         const refs =
@@ -540,7 +560,7 @@ export class FlowEngine {
             if (
               pinnedAction?.sourceHash === ref.sourceHash &&
               samePlugin(pinnedAction.plugin, ref.plugin) &&
-              pluginDetached(ref.plugin)
+              pluginDetached(pinnedAction.ownerPlugin ?? ref.plugin)
             ) {
               usePinned = true;
               continue;

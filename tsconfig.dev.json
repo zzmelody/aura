@@ -15,6 +15,11 @@
     "scripts/vite-live-reload.ts",
     "scripts/vite-live-reload-client.ts",
     "scripts/build-renderer.ts",
-    "scripts/model-viewer-assets.ts"
+    "scripts/model-viewer-assets.ts",
+    "scripts/build-plugins.ts",
+    "tests/plugin-release.test.ts",
+    "scripts/setup-product-plugins.ts",
+    "scripts/build-product-plugin.ts",
+    "tests/product-provider.test.ts"
   ]
 }

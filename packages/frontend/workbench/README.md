@@ -1,6 +1,6 @@
 # @aura/workbench
 
-领域页面、API 与样式位于 `src/features/content`、`video`、`topics`。`src/screens` 保留通用对话、工作流与设置，工作区和宿主适配留在根模块。目录职责见 [模块边界](../../../docs/development/module-boundaries.md)。
+工作台通过 DSH 页面贡献加载它们，不再硬编码业务页面。`src/screens` 保留通用对话、工作流与设置；工作区、导航兼容映射和宿主适配留在根模块。`@aura/workbench/plugin` / `transport` 提供公开的通用工作流控件、JSON/媒体传输及原生目录/预览适配，插件不导入私有源码。目录职责见 [模块边界](../../../docs/development/module-boundaries.md)。
 
 浏览器、Electron 与 Capacitor 共用的 Aura React Web 工作台，包含界面、导航、交互状态、Web Storage 和 HTTP transport。应用只提供 React DOM 运行时及少量宿主能力；本包只依赖 frontend/shared 库，不读取后端凭据，也不启动 DSH。
 

@@ -1,4 +1,3 @@
-import type { SiteHostApi } from "./site.ts";
 import type { WorkflowFileHostApi } from "./file-picker.ts";
 
 export type AuraPlatform = "web" | "desktop" | "mobile";
@@ -8,7 +7,10 @@ declare global {
     auraHost?: {
       platform: AuraPlatform;
       openExternal?(url: string): Promise<void>;
-      site?: SiteHostApi;
+      directories?: { choose(): Promise<string | null> };
+      previews?: {
+        open(url: string, id: string, title: string): Promise<void>;
+      };
       workflowFiles?: WorkflowFileHostApi;
       /** Show a project file in the system file manager; never opens it. */
       files?: { reveal(root: string, path: string): Promise<void> };

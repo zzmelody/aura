@@ -12,6 +12,7 @@ import { startApiServer } from "./api-server.ts";
 import { startDemoModel } from "./demo-model.ts";
 import { configureRuntimeNetwork } from "./network-proxy.ts";
 import { pluginSdkVersion } from "./plugin-sdk-version.ts";
+import { PluginPageRegistry } from "./plugin-pages.ts";
 import {
   isLoopbackRuntimeHost,
   resolveRuntimeConfig,
@@ -45,12 +46,18 @@ function contributions(resolution: AuraPluginResolution) {
     namespace,
     plugin,
     capabilities,
+    compatibility,
+    http,
+    presets,
   }: PluginContributionRoot) => ({
     root: path,
     pluginRoot,
     namespace,
     plugin,
     capabilities,
+    ...(compatibility ? { compatibility } : {}),
+    ...(http ? { http } : {}),
+    ...(presets ? { presets } : {}),
   });
   return {
     flowRoots: resolution.flowRoots.map(root),
@@ -71,11 +78,19 @@ export async function startAuraRuntime(
   await configureRuntimeNetwork();
   const pluginManager = await AuraPluginManager.create({
     configPath: config.pluginConfigPath,
+    defaultPluginsDirectory: config.defaultPluginsDirectory,
     auraVersion: "0.1.0",
     pluginSdkVersion,
     supportedCapabilities: ["aura.tripo.game-asset", "aura.flow.invoke"],
   });
   const plugins = pluginManager.resolution;
+  const pluginPages = new PluginPageRegistry({
+    onReloadError: () =>
+      process.stderr.write("[aura] 插件页面更新未完成，继续使用上一版。\n"),
+  });
+  // Page bundles are served by this process; a broken bundle leaves the
+  // workbench without plugin pages instead of failing runtime startup.
+  await pluginPages.replace(plugins.pageRoots).catch(() => undefined);
 
   const codexAuth = await CodexSubscriptionAuth.create({
     credentialPath: config.credentialPath,
@@ -108,9 +123,18 @@ export async function startAuraRuntime(
       tripoCredentialPath: config.tripoCredentialPath,
       tripoRegion: config.tripoRegion,
     });
-    pluginManager.setActivator((resolution) =>
-      flows!.configureContributions(contributions(resolution)),
-    );
+    let activePageRoots = plugins.pageRoots;
+    pluginManager.setActivator(async (resolution) => {
+      await pluginPages.replace(resolution.pageRoots);
+      try {
+        await flows!.configureContributions(contributions(resolution));
+      } catch (error) {
+        // Keep pages and backend contributions on the same configuration.
+        await pluginPages.replace(activePageRoots).catch(() => undefined);
+        throw error;
+      }
+      activePageRoots = resolution.pageRoots;
+    });
     // Start the long-lived DSH host now rather than on the first request, so
     // its cold start (20–35 s on Windows) is not charged to whatever the user
     // opens first. A failed start is retried by the next request.
@@ -123,12 +147,17 @@ export async function startAuraRuntime(
       flows,
       pluginSettings: pluginManager,
       pluginSettingsAccessible: isLoopbackRuntimeHost(config.host),
+      pluginPages,
       aiServices: new AiServices(config, codexAuth, tripo, async () =>
         flows?.opening ? flows.request<boolean>("ai-services/busy", {}) : false,
       ),
     });
+    pluginPages.startWatching();
   } catch (error) {
-    const cleanups: Array<Promise<void>> = [codexAuth.close()];
+    const cleanups: Array<Promise<void>> = [
+      codexAuth.close(),
+      pluginPages.close(),
+    ];
     if (api) cleanups.push(api.close());
     if (flows) cleanups.push(flows.close());
     if (demoModel) cleanups.push(demoModel.close());
@@ -145,6 +174,7 @@ export async function startAuraRuntime(
     async close() {
       if (closed) return;
       closed = true;
+      await pluginPages.close();
       // Stop flow sessions before removing their local model endpoint.
       const flowResults = await Promise.allSettled([flows.close()]);
       const results = await Promise.allSettled([

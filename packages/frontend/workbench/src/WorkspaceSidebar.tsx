@@ -1,29 +1,31 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
+  Clapperboard,
+  Newspaper,
+  Telescope,
+  PanelsTopLeft,
   Archive,
   ArchiveRestore,
-  Clapperboard,
   Clock3,
   FolderOpen,
   FolderPlus,
   Layers,
   ListFilter,
   MessageCircle,
-  Newspaper,
   PanelLeftClose,
-  PanelsTopLeft,
   Search,
   Settings2,
   SlidersHorizontal,
   SquarePen,
-  Telescope,
+  Puzzle,
   X,
 } from "lucide-react";
 import { FlowIcon } from "./FlowIcon";
 import { AuraMark } from "@aura/ui/components";
 import type { WorkspaceController } from "./useWorkspace";
 import type { Tab } from "./types";
+import type { PluginStudio } from "./usePluginPages";
 import {
   groupSidebarSessions,
   sidebarSessionTitle,
@@ -43,14 +45,14 @@ const tabs = [
   { id: "chat", label: "对话", icon: MessageCircle },
   { id: "flows", label: "工作流", icon: FlowIcon },
   { id: "history", label: "全部记录", icon: Clock3 },
-  { id: "site", label: "Site", icon: PanelsTopLeft },
 ] as const;
-/** Task studios sit beside chat and workflows; they are not workflow pages. */
-const studios = [
-  { id: "studio:content", label: "自媒体内容", icon: Newspaper },
-  { id: "studio:video", label: "视频项目", icon: Clapperboard },
-  { id: "studio:research", label: "选题库", icon: Telescope },
-] as const;
+const studioIcons: Record<string, typeof Puzzle> = {
+  Clapperboard,
+  Newspaper,
+  Telescope,
+  PanelsTopLeft,
+  MessageCircle,
+};
 
 export function WorkspaceSidebar({
   workspace,
@@ -66,6 +68,7 @@ export function WorkspaceSidebar({
   endpoint,
   codingWorkspaces,
   offline,
+  pluginStudios = [],
 }: {
   workspace: WorkspaceController;
   tab: Tab;
@@ -80,6 +83,7 @@ export function WorkspaceSidebar({
   endpoint: string;
   codingWorkspaces: CodingProjectsController;
   offline: boolean;
+  pluginStudios?: readonly PluginStudio[];
 }) {
   /** `null` creates a workspace; a record configures that one. */
   const [spaceDialog, setSpaceDialog] = useState<CodingProjectInfo | null>();
@@ -203,17 +207,20 @@ export function WorkspaceSidebar({
       </nav>
       <nav className="workspace-nav studio-nav" aria-label="工作台">
         <span className="sidebar-group-label">工作台</span>
-        {studios.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            className={tab === id ? "selected" : ""}
-            aria-current={tab === id ? "page" : undefined}
-            onClick={() => navigate(id)}
-          >
-            <Icon size={17} />
-            {label}
-          </button>
-        ))}
+        {pluginStudios.map(({ id, title, icon }) => {
+          const Icon = studioIcons[icon ?? ""] ?? Puzzle;
+          return (
+            <button
+              key={id}
+              className={tab === id ? "selected" : ""}
+              aria-current={tab === id ? "page" : undefined}
+              onClick={() => navigate(id)}
+            >
+              <Icon size={17} />
+              {title}
+            </button>
+          );
+        })}
       </nav>
       <div className="session-heading">
         <span>

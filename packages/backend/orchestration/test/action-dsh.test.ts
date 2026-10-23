@@ -57,7 +57,7 @@ export default defineAction({
 const flowSource = `
 import { defineFlow, z } from ${JSON.stringify(new URL("../src/flow-api.ts", import.meta.url).href)};
 export default defineFlow({
-  title: "Actions integration", input: z.object({ actionValue: z.string().optional() }), output: z.object({ direct: z.json(), report: z.string() }),
+  title: "Actions integration", input: z.object({ actionValue: z.string().optional(), directDelayMs:z.number().optional() }), output: z.object({ direct: z.json(), report: z.string() }),
   concurrency: 3,
   async run(ctx, input) {
     return ctx.sequence({ id: "main" }, async (flow) => {
@@ -66,7 +66,7 @@ export default defineFlow({
       return { direct: result.output, report: "completed" };
     }
     const { direct, agent } = await flow.parallel({ id: "batch", branches: {
-      direct: (branch) => branch.action({ id: "direct", action: "probe-action", input: { value: "direct", delayMs: 2000 } }),
+      direct: (branch) => branch.action({ id: "direct", action: "probe-action", input: { value: "direct", delayMs: input.directDelayMs ?? 2000 } }),
       agent: (branch) => branch.agent({ id: "allowed", label: "Allowed", preset: "researcher-v1", actions: ["probe-action"], temperature: 0.8, maxTokens: 777, prompt: "USE_ACTION" }),
       default: (branch) => branch.agent({ id: "default", label: "Default", preset: "reviewer-v1", prompt: "NO_ACTION" }),
     }});
@@ -388,12 +388,23 @@ test(
       });
       assert.ok(cold.entries.some((e) => e.kind === "tool"));
       // A finished tool effect does not make an unfinished Agent turn safe to repeat.
+      // Agent setup can take longer than the normal two-second direct Action.
+      // Keep that branch in flight until the crash instead of relying on timing.
+      const beforeCrashHash = probe(await catalog())!.sourceHash;
+      await writeFile(
+        entry,
+        actionSource.replace("timeoutMs: 3000", "timeoutMs: 60000"),
+      );
+      await eventually(
+        catalog,
+        (c) => probe(c)?.sourceHash !== beforeCrashHash,
+      );
       holdToolResult = true;
       const crash = await host.request<FlowRun>("start", {
         requestId: randomUUID(),
         flowId: "action-check",
         mode: "demo",
-        input: {},
+        input: { directDelayMs: 60000 },
       });
       await eventually(async () => Boolean(releaseToolResult), Boolean);
       const childHost = await host.open();

@@ -1,3 +1,10 @@
+import { PluginPresets } from "./plugin-presets.ts";
+import {
+  compatibilitySchema,
+  httpContributionSchema,
+} from "./plugin-compatibility.ts";
+import { PluginDomainStorage } from "./plugin-storage.ts";
+import type { PluginWorkflows } from "./backend-api.ts";
 import type {} from "@deepseek-ai/cordis-plugin-loader";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-agent-preset-registry";
@@ -37,36 +44,6 @@ import { GeneratedArtifacts } from "./artifacts/generated.ts";
 import { WorkflowArtifactIndex } from "./artifacts/workflow-index.ts";
 import { historicalArtifactReader } from "./artifacts/history.ts";
 import { ActionRuns } from "./action-runs.ts";
-import {
-  VideoLibrary,
-  videoDomainSpec,
-  type VideoDocument,
-} from "./video/library.ts";
-import { videoRequest } from "./video/routes.ts";
-import { contentRequest } from "./content/routes.ts";
-import { ContentResearch } from "@aura/content-research";
-import {
-  TopicLibrary,
-  topicDomainSpec,
-  type TopicState,
-} from "./topics/library.ts";
-import { topicRequest } from "./topics/routes.ts";
-import {
-  ContentLibrary,
-  contentDomainSpec,
-  type ContentDocument,
-} from "./content/library.ts";
-import {
-  ContentAnalyticsLibrary,
-  contentAnalyticsDomainSpec,
-} from "./content/analytics.ts";
-import { contentAnalyticsRequest } from "./content/analytics-routes.ts";
-import type {
-  ContentExperiment,
-  ContentMetricSnapshot,
-  ContentPublication,
-  ContentReview,
-} from "@aura/protocol/content-analytics";
 import { LocalAIManager } from "./local-ai/manager.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 import { configureDshNetwork } from "./dsh-network.ts";
@@ -109,6 +86,9 @@ const contributionRootSchema = z
     namespace: z.string().trim().min(1).max(64).optional(),
     plugin: pluginIdentitySchema.optional(),
     capabilities: z.array(z.string().trim().min(1)).max(32).optional(),
+    compatibility: compatibilitySchema.optional(),
+    http: httpContributionSchema.optional(),
+    presets: z.string().optional(),
   })
   .strict()
   .refine(
@@ -132,6 +112,9 @@ const capabilityRootSchema = z
     namespace: z.string().trim().min(1).max(64),
     plugin: pluginIdentitySchema,
     capabilities: z.array(z.string().trim().min(1)).max(32).optional(),
+    compatibility: compatibilitySchema.optional(),
+    http: httpContributionSchema.optional(),
+    presets: z.string().optional(),
     settings: z.json().optional(),
   })
   .strict();
@@ -151,6 +134,9 @@ function rootKey(root: ContributionRoot): string {
     root.namespace ?? null,
     root.pluginRoot ?? null,
     root.plugin ?? null,
+    root.compatibility ?? null,
+    root.http ?? null,
+    root.presets ?? null,
     [...(root.capabilities ?? [])].sort(),
   ]);
 }
@@ -432,7 +418,34 @@ export async function apply(ctx: Context) {
     ] as const);
   }
   // Built-in routes plus plugin-contributed providers (`<plugin-id>/<local-id>`).
+  const workflowPort: { current?: PluginWorkflows } = {};
   const auraCapabilities = new PluginCapabilities({
+    backend: {
+      cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
+      storage: new PluginDomainStorage(
+        ctx.storageDomain,
+        process.env.DSH_HOME ?? process.env.AURA_FLOW_CWD ?? process.cwd(),
+      ),
+      artifacts,
+      workflows: {
+        start: (input) => {
+          if (!workflowPort.current)
+            throw new Error("plugin_workflows_not_ready");
+          return workflowPort.current.start(input);
+        },
+        get: (id) => {
+          if (!workflowPort.current)
+            throw new Error("plugin_workflows_not_ready");
+          return workflowPort.current.get(id);
+        },
+        runs: {
+          entries: function* () {
+            if (workflowPort.current)
+              yield* workflowPort.current.runs.entries();
+          },
+        },
+      },
+    },
     builtins: capabilityRoutes.length
       ? new AuraCapabilityRouter(capabilityRoutes)
       : undefined,
@@ -448,7 +461,17 @@ export async function apply(ctx: Context) {
     log: (level, message, data) =>
       process.stderr.write(`${JSON.stringify({ level, message, data })}\n`),
   });
+  const pluginPresets = new PluginPresets(ctx.agentPresets);
+  await pluginPresets.replace(capabilityRootsFromEnv());
+  ctx.effect(
+    () => () => pluginPresets.close(),
+    "aura-plugin-presets.lifecycle",
+  );
   await auraCapabilities.replace(capabilityRootsFromEnv());
+  actionRegistry.setServicesResolver((id) => auraCapabilities.services(id));
+  actionRegistry.setServiceRetention((id) =>
+    auraCapabilities.serviceRetention(id),
+  );
   ctx.effect(
     () => () => auraCapabilities.close(),
     "aura-plugin-capabilities.lifecycle",
@@ -457,58 +480,15 @@ export async function apply(ctx: Context) {
     artifacts,
     process.env.AURA_FLOW_CWD ?? process.cwd(),
   );
+  artifactIndex.setPluginCandidates((output, producer) =>
+    auraCapabilities.artifactCandidates(output, producer),
+  );
   ctx.effect(() => () => artifactIndex.close(), "aura-artifacts.lifecycle");
-  const videoDomain = await ctx.storageDomain.open(videoDomainSpec);
-  const videoLibrary = new VideoLibrary(
-    videoDomain.table("projects") as unknown as Table<VideoDocument>,
-    artifacts,
-    process.env.AURA_FLOW_CWD ?? process.cwd(),
-  );
-  const contentDomain = await ctx.storageDomain.open(contentDomainSpec);
-  const contentLibrary = new ContentLibrary(
-    contentDomain.table("projects") as unknown as Table<ContentDocument>,
-    artifacts,
-    process.env.AURA_FLOW_CWD ?? process.cwd(),
-  );
-  const analyticsDomain = await ctx.storageDomain.open(
-    contentAnalyticsDomainSpec,
-  );
-  const contentAnalytics = new ContentAnalyticsLibrary(
-    analyticsDomain.table(
-      "publications",
-    ) as unknown as Table<ContentPublication>,
-    analyticsDomain.table(
-      "snapshots",
-    ) as unknown as Table<ContentMetricSnapshot>,
-    analyticsDomain.table("reviews") as unknown as Table<ContentReview>,
-    analyticsDomain.table("experiments") as unknown as Table<ContentExperiment>,
-    contentLibrary,
-  );
-  const research = new ContentResearch(
-    resolve(
-      process.env.DSH_HOME ?? process.env.AURA_FLOW_CWD ?? process.cwd(),
-      "aura-content-research",
-    ),
-  );
-  await research.initialize();
-  const topicDomain = await ctx.storageDomain.open(topicDomainSpec);
-  const topicLibrary = new TopicLibrary(
-    topicDomain.table("libraries") as unknown as Table<TopicState>,
-    research,
-    artifacts,
-  );
-  ctx.effect(() => () => research.close(), "aura-research.lifecycle");
   const actionRuntime = new ActionRuntime(
-    // Source bodies and credentials stay in backend storage; the domain stores references.
-    // Project records have their own domain and outlive run/session history.
     ctx,
     localAI,
     auraCapabilities,
     artifactIndex,
-    videoLibrary,
-    contentLibrary,
-    topicLibrary,
-    contentAnalytics,
     gptImage,
   );
 
@@ -609,10 +589,7 @@ export async function apply(ctx: Context) {
       for (const [, run] of engine.runs.entries()) yield run;
     },
   );
-  videoLibrary.attach(engine);
-  contentLibrary.attach(engine);
-  topicLibrary.attach(engine);
-  contentAnalytics.attach(engine);
+  workflowPort.current = engine;
   await actionRuns.initialize();
   artifactIndex.attach((id) => engine.get(id), historicalArtifactReader(ctx));
 
@@ -630,6 +607,7 @@ export async function apply(ctx: Context) {
     const changedPlugins = changedPluginIds(previous, source);
     try {
       await extendHmrRoots(ctx, [...source.flowRoots, ...source.actionRoots]);
+      await pluginPresets.replace(source.capabilityRoots as CapabilityRoot[]);
       await auraCapabilities.replace(
         source.capabilityRoots as CapabilityRoot[],
       );
@@ -647,6 +625,7 @@ export async function apply(ctx: Context) {
       engine.setPlugins(activePlugins, changedPlugins);
     } catch (error) {
       try {
+        await pluginPresets.replace(previous.capabilityRoots);
         await auraCapabilities.replace(previous.capabilityRoots);
         activeCapabilityRoots = previous.capabilityRoots;
         await discoveries.replace(previous.flowRoots);
@@ -695,22 +674,7 @@ export async function apply(ctx: Context) {
     {
       start: (input) => engine.start(input),
       get: (id) => engine.get(id),
-      async createVideo(name, script) {
-        const detail = (await videoRequest(videoLibrary, "create", {
-          name,
-          script,
-        })) as { project: { id: string; revisionId: string } };
-        return { id: detail.project.id, revisionId: detail.project.revisionId };
-      },
-      startVideo: (id, revisionId, requestId) =>
-        videoLibrary.start(id, {
-          revisionId,
-          requestId,
-          target: { kind: "project" },
-          mode: "reuse",
-        }),
-      startResearch: (input) =>
-        topicLibrary.start(input) as Promise<{ jobId: string; runId: string }>,
+      taskTools: () => auraCapabilities.taskTools(),
     },
     artifacts,
   );
@@ -727,42 +691,6 @@ export async function apply(ctx: Context) {
   transport.onRequest(async (method, params) => {
     try {
       if (exiting) throw new FlowError("编排服务正在关闭，请刷新。", 503);
-      if (method.startsWith("content-projects/"))
-        return {
-          ok: true,
-          data: await contentRequest(
-            contentLibrary,
-            method.slice("content-projects/".length),
-            params,
-          ),
-        };
-      if (method.startsWith("content-analytics/"))
-        return {
-          ok: true,
-          data: await contentAnalyticsRequest(
-            contentAnalytics,
-            method.slice("content-analytics/".length),
-            params,
-          ),
-        };
-      if (method.startsWith("topic-library/"))
-        return {
-          ok: true,
-          data: await topicRequest(
-            topicLibrary,
-            method.slice("topic-library/".length),
-            params,
-          ),
-        };
-      if (method.startsWith("video-projects/"))
-        return {
-          ok: true,
-          data: await videoRequest(
-            videoLibrary,
-            method.slice("video-projects/".length),
-            params,
-          ),
-        };
       const id = typeof params.id === "string" ? params.id : "";
       const stepId = typeof params.stepId === "string" ? params.stepId : "";
       let data;
@@ -873,6 +801,37 @@ export async function apply(ctx: Context) {
         case "services/view":
           data = (await auraCapabilities.view(engine.get(id))) ?? null;
           break;
+        case "plugins/page-invoke": {
+          // Controlled page boundary: a plugin page reaches only its own
+          // providers' declared page operations. Failures cross as codes.
+          const request = z
+            .object({
+              pluginId: z.string().min(1).max(64),
+              capability: z.string().min(3).max(130),
+              operation: z.string().regex(/^[a-z][a-z0-9_.-]{0,63}$/u),
+              input: z.json(),
+            })
+            .strict()
+            .parse(params);
+          data = await auraCapabilities
+            .invokeFromPage(
+              request.pluginId,
+              request.capability,
+              request.operation,
+              request.input,
+              AbortSignal.timeout(120_000),
+            )
+            .catch((error: unknown) => {
+              const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(
+                String((error as Error)?.message ?? ""),
+              )?.[0];
+              throw new FlowError(
+                code ?? "page_operation_failed",
+                code?.endsWith("_forbidden") ? 403 : 422,
+              );
+            });
+          break;
+        }
         case "services/resume": {
           const request = z
             .object({
@@ -1287,7 +1246,17 @@ export async function apply(ctx: Context) {
           setImmediate(() => void disposeAndExit());
           break;
         default:
-          throw new FlowError("未知的编排操作。", 404);
+          data = await auraCapabilities
+            .request(method, params, AbortSignal.timeout(120_000))
+            .catch((error) => {
+              if (
+                error instanceof Error &&
+                error.message === "plugin_request_unavailable"
+              )
+                throw new FlowError("未知的编排操作。", 404);
+              throw error;
+            });
+          break;
       }
       return { ok: true, data };
     } catch (error) {
@@ -1312,10 +1281,10 @@ export async function apply(ctx: Context) {
     };
     process.stdin.on("end", disconnected);
     process.stdin.on("error", disconnected);
-    const scan = setInterval(
-      () => void refreshFlows().catch(() => undefined),
-      1_000,
-    );
+    const scan = setInterval(() => {
+      void refreshFlows().catch(() => undefined);
+      void auraCapabilities.refresh().catch(() => undefined);
+    }, 1_000);
     return async () => {
       process.stdin.off("end", disconnected);
       process.stdin.off("error", disconnected);
@@ -1337,11 +1306,6 @@ export async function apply(ctx: Context) {
         transport.close();
         await domain.close();
         await actionDomain.close();
-        await videoDomain.close();
-        await contentDomain.close();
-        await analyticsDomain.close();
-        await topicDomain.close();
-        await research.close();
       } finally {
         if (unplanned) process.exit(1);
       }

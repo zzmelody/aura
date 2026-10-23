@@ -5,29 +5,12 @@ import {
   type IpcMainInvokeEvent,
   type OpenDialogOptions,
 } from "electron";
-import {
-  describeProject,
-  SiteRunner,
-  type SiteProject,
-} from "@aura/runtime/site";
-
-const STATUS_CHANNEL = "aura:site:status";
 const SITE_URL_PATTERN = /^https?:\/\//i;
 const siteWindows = new Map<string, BrowserWindow>();
-const subscribers = new Set<Electron.WebContents>();
-const runner = new SiteRunner({
-  onStatus(status) {
-    for (const contents of subscribers) {
-      if (contents.isDestroyed()) subscribers.delete(contents);
-      else contents.send(STATUS_CHANNEL, status);
-    }
-  },
-  openPreview: (url, project) => openSiteWindow(url, project),
-});
 
 async function openSiteWindow(
   url: string,
-  project?: SiteProject,
+  project?: { id: string; name: string },
 ): Promise<void> {
   const id = project?.id ?? url;
   let window = siteWindows.get(id);
@@ -67,7 +50,7 @@ async function openSiteWindow(
 
 async function chooseDirectory(
   event: IpcMainInvokeEvent,
-): Promise<SiteProject | null> {
+): Promise<string | null> {
   const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined;
   const options: OpenDialogOptions = {
     title: "选择前端项目目录",
@@ -78,36 +61,37 @@ async function chooseDirectory(
     ? await dialog.showOpenDialog(parent, options)
     : await dialog.showOpenDialog(options);
   if (result.canceled || !result.filePaths[0]) return null;
-  return describeProject(result.filePaths[0]);
+  return result.filePaths[0];
 }
 
 export function installSiteHost(): void {
-  ipcMain.handle("aura:site:choose-directory", chooseDirectory);
-  ipcMain.handle("aura:site:start", (_event, project: unknown) =>
-    runner.start(project),
+  ipcMain.handle("aura:directories:choose", chooseDirectory);
+  ipcMain.handle(
+    "aura:previews:open",
+    async (_event, url: unknown, id: unknown, name: unknown) => {
+      if (
+        typeof url !== "string" ||
+        typeof id !== "string" ||
+        typeof name !== "string" ||
+        id.length > 4096 ||
+        name.length > 256
+      )
+        throw new Error("无效的站点预览。");
+      const parsed = new URL(url);
+      if (
+        !["http:", "https:"].includes(parsed.protocol) ||
+        !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname) ||
+        parsed.username ||
+        parsed.password
+      )
+        throw new Error("预览地址必须是本机 HTTP 站点。");
+      await openSiteWindow(parsed.href, { id, name });
+    },
   );
-  ipcMain.handle("aura:site:stop", (_event, id: unknown) => {
-    if (typeof id !== "string") throw new Error("无效的 Site 项目标识。");
-    return runner.stop(id);
-  });
-  ipcMain.handle("aura:site:open", (_event, project: unknown) => {
-    if (!project || typeof project !== "object")
-      throw new Error("无效的 Site 项目。");
-    return runner.open(project as SiteProject);
-  });
-  ipcMain.handle("aura:site:status", (event) => {
-    subscribers.add(event.sender);
-    for (const status of runner.getStatuses())
-      event.sender.send(STATUS_CHANNEL, status);
-    return runner.getStatuses();
-  });
 }
 
 export async function closeSiteHost(): Promise<void> {
-  await runner.stop();
   for (const window of siteWindows.values())
     if (!window.isDestroyed()) window.close();
   siteWindows.clear();
 }
-
-export { STATUS_CHANNEL };

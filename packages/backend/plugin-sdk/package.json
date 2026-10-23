@@ -1,6 +1,6 @@
 {
   "name": "@aura/plugin-sdk",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "aura": {
@@ -11,14 +11,20 @@
     "./action": "./src/action.ts",
     "./flow": "./src/flow.ts",
     "./capability": "./src/capability.ts",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./backend": "./src/backend.ts",
+    "./media": "./src/media.ts",
+    "./storage": "./src/storage.ts",
+    "./errors": "./src/errors.ts",
+    "./browser": "./src/browser.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@aura/orchestration": "workspace:*"
+    "@aura/orchestration": "workspace:*",
+    "playwright-core": "1.58.2"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

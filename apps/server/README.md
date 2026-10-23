@@ -6,6 +6,8 @@ Aura 的独立服务端应用输出。入口只负责启动 `@aura/runtime`；�
 
 `pnpm run build:server` 从 `src/launch.ts` 生成 `dist/launch.js`。分发启动器用 `node apps/server/dist/launch.js --root=<Aura 数据目录>` 启动，固定 loopback 并默认选择空闲端口。启动器先注册 tsx，使安装在 `node_modules` 中的 TypeScript 及其 DSH 子进程可执行；构建产物不提交到 Git。
 
+构建同时将根 `plugins/` 内的产品插件按其发布资产清单放入 `dist/plugins/`（保留类别子目录），随服务端包发布。分发启动器从安装目录加载这些默认插件，`--root` 仍只指定用户数据目录；开发启动默认使用数据根的 `plugins/`。插件启停与外部插件清单继续由 `.aura/plugins.json` 覆盖，详见 [插件目录](../../plugins/README.md)。
+
 设置了 `service: true` 的 Flow 会出现在 `GET /flows/services`，其他应用可通过 `POST /flows/:flowId/invoke` 创建运行，再读取 `GET /flows/runs/:runId` 获取状态和结果。若可信局域网中的另一台设备需要访问，可在启动前设置 `$env:HOST="0.0.0.0"`；`PORT` 可覆盖默认端口。该监听方式不提供生产鉴权，不应直接暴露到公网。完整协议见 [编排包 API](../../packages/backend/orchestration/README.md#将-flow-发布为-http-服务)。
 
 `/auth/codex/*` 只投影 DSH authorization 的脱敏状态；凭据由 DSH 保存在忽略目录 `.aura/dsh/`。`/chat/codex` 使用同一个 DSH 启动函数，不能静默回退到模拟模型。服务没有生产鉴权，只能用于本机或可信局域网；正式部署还需要用户认证、稳定会话映射和限流。详见 [模型接入说明](../../docs/features/model-providers.md)。

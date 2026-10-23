@@ -1,0 +1,397 @@
+import { Context, Service } from "@deepseek-ai/cordis";
+import * as pluginUi from "@aura/plugin-ui";
+import {
+  pluginOwnerContext,
+  pluginOwnerOf,
+  validatePageDefinition,
+  type AuraPluginPageDefinition,
+  type AuraWorkbench,
+} from "@aura/plugin-ui";
+import type { JsonValue } from "@aura/protocol/types";
+import * as React from "react";
+import * as ReactDOM from "react-dom";
+import * as ReactDOMClient from "react-dom/client";
+import * as ReactJsxRuntime from "react/jsx-runtime";
+import * as workbenchTransport from "./plugin-transport.ts";
+import { PluginHostLifecycle } from "./pluginHostLifecycle.ts";
+import {
+  invokePluginPage,
+  LOADER_ID,
+  readPluginGraph,
+  watchPluginGraph,
+  type PluginPageGraph,
+} from "./pluginPages.ts";
+
+export interface RegisteredPage {
+  pluginId: string;
+  definition: AuraPluginPageDefinition;
+}
+
+export interface PluginFailure {
+  id: string;
+  message: string;
+}
+
+export interface HostHandle {
+  pages: Map<string, RegisteredPage>;
+  failures: PluginFailure[];
+  close(): Promise<void>;
+}
+
+/** Public surface of DSH's browser `ClientModuleSystem` that Aura drives. */
+interface ClientModuleSystem {
+  import(specifier: string): Promise<unknown>;
+  prefetch(id: string): Promise<void>;
+  invalidate(id: string, rev?: string): void;
+}
+
+interface ClientModulesBootstrap {
+  createClientModuleSystem(
+    target: ClientModuleLoaderTarget,
+    bootstrap: { id: string; exports: ClientModulesBootstrap },
+    options: {
+      boot: PluginPageGraph;
+      staticModules: Record<string, unknown>;
+      loadBundle?: (url: string) => Promise<void>;
+    },
+  ): ClientModuleSystem;
+  parseBootManifest(wire: unknown): unknown;
+}
+
+interface ClientBundleRegistration {
+  id: string;
+  chunk?: string;
+  factory: (require: (specifier: string) => unknown) => unknown;
+}
+
+/** DSH's `window.__ModuleLoader__` facade (queue until the system exists). */
+interface ClientModuleLoaderTarget {
+  mode: "queue" | "live";
+  pendingQueue: ClientBundleRegistration[];
+  load(registration: ClientBundleRegistration): void;
+}
+
+declare global {
+  interface Window {
+    __ModuleLoader__?: ClientModuleLoaderTarget;
+  }
+}
+
+interface ClientPlugin {
+  name?: string;
+  inject: string[];
+  apply: (ctx: Context) => void | Promise<void>;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function runtimeHref(endpoint: string, url: string): string {
+  return new URL(url, endpoint.endsWith("/") ? endpoint : `${endpoint}/`).href;
+}
+
+/** Classic same-document script, which is how DSH bundles register factories. */
+function loadScript(href: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = href;
+    script.async = false;
+    script.dataset.auraPluginBundle = "";
+    const timeout = setTimeout(() => {
+      script.remove();
+      reject(new Error("插件脚本加载超时。"));
+    }, 20_000);
+    script.onload = () => {
+      clearTimeout(timeout);
+      script.remove();
+      resolve();
+    };
+    script.onerror = () => {
+      clearTimeout(timeout);
+      script.remove();
+      reject(new Error(`插件脚本加载失败：${href}`));
+    };
+    document.head.append(script);
+  });
+}
+
+/** Accepts DSH's client face (`apply`/`inject` exports) or an ESM default. */
+export function pluginExports(value: unknown): ClientPlugin {
+  const module = value as { default?: unknown } & Partial<ClientPlugin>;
+  const candidate =
+    typeof module?.apply === "function"
+      ? module
+      : (module?.default as Partial<ClientPlugin> | undefined);
+  if (!candidate || typeof candidate.apply !== "function")
+    throw new Error("插件浏览器入口没有导出 apply(ctx)。");
+  return {
+    ...(candidate.name ? { name: candidate.name } : {}),
+    inject: [...new Set(["auraWorkbench", ...(candidate.inject ?? [])])],
+    apply: candidate.apply,
+  };
+}
+
+/** Builds the workbench slot service over one page table. */
+function workbenchPages(pages: Map<string, RegisteredPage>) {
+  return class WorkbenchPages extends Service implements AuraWorkbench {
+    constructor(ctx: Context) {
+      super(ctx, "auraWorkbench");
+    }
+
+    /** `this.ctx` is the calling plugin's context, so cleanup follows its fiber. */
+    page(definition: AuraPluginPageDefinition) {
+      const pluginId = pluginOwnerOf(this.ctx);
+      const page = validatePageDefinition(definition);
+      const id = `${pluginId}/${page.id}`;
+      if (pages.has(id)) throw new Error(`插件页面 ${id} 重复注册。`);
+      this.ctx.effect(() => {
+        pages.set(id, { pluginId, definition: page });
+        return () => {
+          pages.delete(id);
+        };
+      }, `plugin-page:${id}`);
+    }
+  };
+}
+
+/** Platform singletons seeded into DSH's module table; bundles must not ship them. */
+function staticModules(workbenchModule?: unknown): Record<string, unknown> {
+  return {
+    react: React,
+    "react/jsx-runtime": ReactJsxRuntime,
+    "react-dom": ReactDOM,
+    "react-dom/client": ReactDOMClient,
+    "@deepseek-ai/cordis": { Context, Service },
+    "@aura/plugin-ui": pluginUi,
+    "@aura/workbench/plugin": workbenchModule ?? {},
+    "@aura/workbench/transport": workbenchTransport,
+  };
+}
+
+function removeOwnedStyles(id: string) {
+  document.querySelectorAll("style[data-plugin]").forEach((element) => {
+    if (element.getAttribute("data-plugin") === id) element.remove();
+  });
+}
+
+/**
+ * Boots DSH's browser `ClientModuleSystem` against the runtime's combo route
+ * and mounts each plugin's client `apply(ctx)` in a Cordis tree that owns the
+ * workbench page slot. Aura reconciles entries itself: DSH's `ClientEntries`
+ * needs the vendored browser Cordis Loader, which DSH does not publish.
+ */
+export async function startPluginHost(
+  endpoint: string,
+  onChange: () => void,
+  workbenchModule?: unknown,
+): Promise<HostHandle> {
+  return lifecycle.start(() =>
+    bootPluginHost(endpoint, onChange, workbenchModule),
+  );
+}
+
+const lifecycle = new PluginHostLifecycle<HostHandle>();
+
+async function bootPluginHost(
+  endpoint: string,
+  onChange: () => void,
+  workbenchModule?: unknown,
+): Promise<HostHandle> {
+  if (window.__ModuleLoader__)
+    throw new Error("插件模块系统已在此页面启动，请刷新页面。");
+  const pages = new Map<string, RegisteredPage>();
+  const failures: PluginFailure[] = [];
+  const fibers = new Map<string, { dispose(): Promise<unknown> }>();
+  const revisions = new Map<string, string>();
+  const root = new Context();
+  await root.plugin(workbenchPages(pages)).await();
+
+  const facade: ClientModuleLoaderTarget = {
+    mode: "queue",
+    pendingQueue: [],
+    load(registration) {
+      this.pendingQueue.push(registration);
+    },
+  };
+  window.__ModuleLoader__ = facade;
+
+  try {
+    const graph = await readPluginGraph(endpoint, AbortSignal.timeout(20_000));
+    const loaderRow = graph.entries.find((row) => row.id === LOADER_ID);
+    if (!loaderRow) throw new Error("Aura 服务没有提供 DSH 模块加载器。");
+    await loadScript(runtimeHref(endpoint, loaderRow.url));
+    const index = facade.pendingQueue.findIndex(
+      (registration) => registration.id === LOADER_ID,
+    );
+    if (index < 0) throw new Error("DSH 模块加载器没有完成注册。");
+    const [bootstrap] = facade.pendingQueue.splice(index, 1);
+    const loader = bootstrap!.factory((specifier) => {
+      throw new Error(`DSH 模块加载器在启动前请求了 ${specifier}。`);
+    }) as ClientModulesBootstrap;
+    const modules = loader.createClientModuleSystem(
+      facade,
+      { id: bootstrap!.id, exports: loader },
+      {
+        boot: graph,
+        staticModules: staticModules(workbenchModule),
+        loadBundle: (url) => loadScript(runtimeHref(endpoint, url)),
+      },
+    );
+    /**
+     * Rows added after boot must reach the module table before import. DSH
+     * performs this refresh inside its entry reconciliation; the method is not
+     * on the typed surface, so a missing method fails loudly here.
+     */
+    const updateManifest = (next: PluginPageGraph) => {
+      const update = (
+        modules as unknown as {
+          updateManifest?: (manifest: unknown, managed: string[]) => void;
+        }
+      ).updateManifest;
+      if (typeof update !== "function")
+        throw new Error("DSH 模块系统不支持运行时更新模块图。");
+      // Aura owns these fibers and stages their replacement below. DSH must
+      // not remove the visible revision's styles while fetching its candidate.
+      update.call(modules, loader.parseBootManifest(next), [...fibers.keys()]);
+    };
+
+    const unmount = async (id: string) => {
+      const fiber = fibers.get(id);
+      fibers.delete(id);
+      revisions.delete(id);
+      if (fiber) await fiber.dispose();
+      removeOwnedStyles(id);
+    };
+
+    const mountedPlugins = new Map<string, ClientPlugin>();
+    const mount = async (id: string, rev: string, plugin: ClientPlugin) => {
+      const fiber = pluginOwnerContext(root, id).plugin(plugin);
+      fibers.set(id, fiber);
+      revisions.set(id, rev);
+      try {
+        await fiber.await();
+        mountedPlugins.set(id, plugin);
+      } catch (error) {
+        // A failed apply must not leave half-registered pages behind.
+        await unmount(id);
+        throw error;
+      }
+    };
+
+    let closed = false;
+    const reconcile = async (next: PluginPageGraph) => {
+      if (closed) return;
+      const wanted = new Map(
+        next.entries
+          .filter((row) => row.id !== LOADER_ID)
+          .map((row) => [row.id, row.rev] as const),
+      );
+      const nextFailures: PluginFailure[] = [];
+      try {
+        updateManifest(next);
+      } catch (error) {
+        failures.splice(0, failures.length, {
+          id: "host",
+          message: errorText(error),
+        });
+        onChange();
+        return;
+      }
+      for (const id of [...fibers.keys()])
+        if (!wanted.has(id)) {
+          await unmount(id);
+          mountedPlugins.delete(id);
+        }
+      for (const [id, rev] of wanted) {
+        if (closed) return;
+        if (revisions.get(id) === rev) continue;
+        const previous = mountedPlugins.get(id);
+        const previousRev = revisions.get(id);
+        try {
+          if (previousRev) modules.invalidate(id, rev);
+          // Fetch/evaluate the candidate before disposing the visible page.
+          await modules.prefetch(id);
+          const candidate = pluginExports(await modules.import(id));
+          await unmount(id);
+          try {
+            await mount(id, rev, candidate);
+          } catch (error) {
+            if (previous && previousRev) await mount(id, previousRev, previous);
+            throw error;
+          }
+        } catch (error) {
+          console.error(`[aura] plugin ${id} failed to mount`, error);
+          nextFailures.push({ id, message: errorText(error) });
+        }
+      }
+      failures.splice(0, failures.length, ...nextFailures);
+      onChange();
+    };
+
+    let queue: Promise<void> = Promise.resolve();
+    const enqueue = (next: PluginPageGraph) => {
+      queue = queue.then(() => reconcile(next)).catch(() => undefined);
+      return queue;
+    };
+
+    await enqueue(graph);
+    // Reconcile is idempotent, so the initial SSE frame is harmless.
+    const stopWatch = watchPluginGraph(endpoint, (updated) => {
+      void enqueue(updated);
+    });
+    let closing: Promise<void> | undefined;
+
+    return {
+      pages,
+      failures,
+      close() {
+        if (closing) return closing;
+        closed = true;
+        stopWatch();
+        closing = queue.then(async () => {
+          try {
+            for (const id of [...fibers.keys()]) await unmount(id);
+          } finally {
+            try {
+              await root.fiber.dispose();
+            } finally {
+              for (const id of fibers.keys()) removeOwnedStyles(id);
+              if (window.__ModuleLoader__ === facade)
+                delete window.__ModuleLoader__;
+            }
+          }
+        });
+        return closing;
+      },
+    };
+  } catch (error) {
+    try {
+      await root.fiber.dispose();
+    } finally {
+      for (const id of fibers.keys()) removeOwnedStyles(id);
+      if (window.__ModuleLoader__ === facade) delete window.__ModuleLoader__;
+    }
+    throw error;
+  }
+}
+
+export function pluginPageInvoke(
+  endpoint: string,
+  pluginId: string,
+): (
+  capabilityLocalId: string,
+  operation: string,
+  input?: JsonValue,
+  signal?: AbortSignal,
+) => Promise<JsonValue> {
+  return (capabilityLocalId, operation, input, signal) =>
+    invokePluginPage(
+      endpoint,
+      pluginId,
+      capabilityLocalId,
+      operation,
+      input ?? null,
+      signal,
+    );
+}

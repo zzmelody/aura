@@ -1,4 +1,4 @@
-import { readFile, readdir, realpath } from "node:fs/promises";
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { satisfies } from "semver";
@@ -6,6 +6,8 @@ import { z } from "zod";
 import type {
   AuraPluginConfiguration,
   AuraPluginIdentity,
+  PluginCompatibility,
+  PluginHttpContribution,
 } from "@aura/protocol/types";
 import {
   AuraPluginConfigurationError,
@@ -14,6 +16,7 @@ import {
   type PluginContributionRoot,
 } from "./types.ts";
 import { readAuraPluginConfiguration } from "./configuration.ts";
+import { resolveAuraPluginEntries } from "./directories.ts";
 import { manifestSchema, localIdPattern } from "./schemas.ts";
 async function json(path: string, label: string): Promise<unknown> {
   try {
@@ -53,6 +56,33 @@ async function contributionEntries(
   return result;
 }
 
+/**
+ * Locates the prebuilt browser bundle a page-contributing plugin declares.
+ * The file must sit inside the plugin root and stay readable; Aura never
+ * builds or transpiles plugin browser code at discovery time.
+ */
+async function validatePageBundle(
+  pluginRoot: string,
+  configuredPath: string,
+): Promise<string> {
+  let bundle: string;
+  try {
+    bundle = await realpath(resolve(pluginRoot, configuredPath));
+  } catch {
+    throw new AuraPluginConfigurationError("页面贡献的浏览器入口不存在。");
+  }
+  if (bundle === pluginRoot || !inside(pluginRoot, bundle))
+    throw new AuraPluginConfigurationError(
+      "页面贡献的浏览器入口必须位于插件根目录内。",
+    );
+  const info = await stat(bundle);
+  if (!info.isFile() || info.size === 0)
+    throw new AuraPluginConfigurationError(
+      "页面贡献的浏览器入口必须是非空文件。",
+    );
+  return bundle;
+}
+
 async function validateContributionRoot(
   pluginRoot: string,
   configuredPath: string,
@@ -89,6 +119,18 @@ async function validateContributionRoot(
   return root;
 }
 
+async function validatePresetRoot(root: string, path: string) {
+  const target = await realpath(resolve(root, path));
+  if (
+    target === root ||
+    !inside(root, target) ||
+    !(await stat(target)).isDirectory()
+  )
+    throw new AuraPluginConfigurationError(
+      "Preset root must be inside the plugin.",
+    );
+  return target;
+}
 async function validatePlugin(
   configuredPath: string,
   configDirectory: string,
@@ -100,6 +142,11 @@ async function validatePlugin(
   actionRoot?: string;
   flowRoot?: string;
   capabilityRoot?: string;
+  /** Absolute path of the built browser bundle, when the plugin contributes pages. */
+  pageBundle?: string;
+  compatibility?: PluginCompatibility;
+  http?: PluginHttpContribution;
+  presets?: string;
 }> {
   let root: string;
   try {
@@ -194,9 +241,51 @@ async function validatePlugin(
   const own = capabilityRoot
     ? (await readdir(capabilityRoot)).map((local) => `${manifest.id}/${local}`)
     : [];
+  for (const [kind, path] of [
+    ["actions", manifest.contributes.actions],
+    ["flows", manifest.contributes.flows],
+  ] as const) {
+    for (const local of Object.keys(manifest.compatibility?.[kind] ?? {})) {
+      if (
+        !path ||
+        !(
+          await stat(resolve(root, path, local)).catch(() => undefined)
+        )?.isDirectory()
+      )
+        throw new AuraPluginConfigurationError(
+          "Legacy contribution grant has no matching entry.",
+        );
+    }
+  }
+  if (
+    (manifest.contributes.http || manifest.contributes.presets) &&
+    !capabilityRoot
+  )
+    throw new AuraPluginConfigurationError(
+      "Backend HTTP/presets require an owning capability provider.",
+    );
   return {
     identity,
     pluginRoot: root,
+    ...(manifest.compatibility
+      ? { compatibility: manifest.compatibility }
+      : {}),
+    ...(manifest.contributes.http
+      ? {
+          http: {
+            entry: await validatePageBundle(
+              root,
+              manifest.contributes.http.entry,
+            ),
+            mounts: manifest.contributes.http.mounts,
+          },
+        }
+      : {}),
+    ...(manifest.contributes.presets
+      ? {
+          presets: await validatePresetRoot(root, manifest.contributes.presets),
+        }
+      : {}),
     capabilities: [...manifest.capabilities, ...own.sort()],
     ...(capabilityRoot ? { capabilityRoot } : {}),
     ...(manifest.contributes.actions
@@ -217,6 +306,14 @@ async function validatePlugin(
           ),
         }
       : {}),
+    ...(manifest.contributes.pages
+      ? {
+          pageBundle: await validatePageBundle(
+            root,
+            manifest.contributes.pages,
+          ),
+        }
+      : {}),
   };
 }
 
@@ -228,12 +325,15 @@ export async function resolveAuraPluginConfiguration(
     actionRoots: [],
     flowRoots: [],
     capabilityRoots: [],
+    pageRoots: [],
     plugins: [],
   };
 
   const seen = new Set<string>();
+  const claimed = new Set<string>();
   const directory = dirname(resolve(options.configPath));
-  for (const entry of configuration.plugins) {
+  const effective = await resolveAuraPluginEntries(configuration, options);
+  for (const entry of effective.plugins) {
     if (!entry.enabled) {
       result.plugins.push({
         name: "已禁用的本地插件",
@@ -248,6 +348,28 @@ export async function resolveAuraPluginConfiguration(
         throw new AuraPluginConfigurationError(
           `插件 ID 重复：${plugin.identity.id}。`,
         );
+      const claims = [
+        ...Object.keys(plugin.compatibility?.flows ?? {}).map(
+          (id) => `flow:${id}`,
+        ),
+        ...Object.keys(plugin.compatibility?.actions ?? {}).map(
+          (id) => `action:${id}`,
+        ),
+        ...(plugin.compatibility?.presets ?? []).map((id) => `preset:${id}`),
+        ...(plugin.compatibility?.storageDomains ?? []).map(
+          (id) => `domain:${id}`,
+        ),
+        ...(plugin.compatibility?.directories ?? []).map(
+          (id) => `directory:${id}`,
+        ),
+        ...(plugin.compatibility?.rpcPrefixes ?? []).map((id) => `rpc:${id}`),
+        ...(plugin.http?.mounts ?? []).map((id) => `http:${id}`),
+      ];
+      if (claims.some((claim) => claimed.has(claim)))
+        throw new AuraPluginConfigurationError(
+          "Plugin compatibility grant is already owned.",
+        );
+      for (const claim of claims) claimed.add(claim);
       seen.add(plugin.identity.id);
       const root = (path: string): PluginContributionRoot => ({
         path,
@@ -255,6 +377,11 @@ export async function resolveAuraPluginConfiguration(
         namespace: plugin.identity.id,
         plugin: plugin.identity,
         capabilities: [...plugin.capabilities],
+        ...(plugin.compatibility
+          ? { compatibility: plugin.compatibility }
+          : {}),
+        ...(plugin.http ? { http: plugin.http } : {}),
+        ...(plugin.presets ? { presets: plugin.presets } : {}),
       });
       if (plugin.actionRoot) result.actionRoots.push(root(plugin.actionRoot));
       if (plugin.flowRoot) result.flowRoots.push(root(plugin.flowRoot));
@@ -262,6 +389,12 @@ export async function resolveAuraPluginConfiguration(
         result.capabilityRoots.push({
           ...root(plugin.capabilityRoot),
           ...(entry.settings === undefined ? {} : { settings: entry.settings }),
+        });
+      if (plugin.pageBundle)
+        result.pageRoots.push({
+          pluginRoot: plugin.pluginRoot,
+          bundlePath: plugin.pageBundle,
+          plugin: plugin.identity,
         });
       result.plugins.push({
         ...plugin.identity,
@@ -283,7 +416,7 @@ export async function resolveAuraPluginConfiguration(
   return result;
 }
 
-/** Resolves explicitly configured trusted plugin directories without executing them. */
+/** Resolves default and explicitly configured trusted plugins without executing them. */
 export async function loadAuraPlugins(
   options: LoadAuraPluginsOptions,
 ): Promise<AuraPluginResolution> {

@@ -30,6 +30,8 @@ export interface LoadedFlow {
   agentDefaults?: FlowAgentOptions;
   plugin?: AuraPluginIdentity;
   capabilities: readonly string[];
+  legacySourceHashes?: readonly string[];
+  ownerPlugin?: AuraPluginIdentity;
   run: FlowDefinition["run"];
 }
 
@@ -77,6 +79,11 @@ export class FlowRegistry {
     // Conversion happens at registration so unsupported schemas fail before use.
     z.toJSONSchema(definition.input);
     z.toJSONSchema(definition.output);
+    if (
+      this.loaded.has(id) &&
+      this.loaded.get(id)?.plugin?.id !== config.plugin?.id
+    )
+      throw new FlowError(`Contribution ID already owned: ${id}`, 409);
     this.loaded.set(id, {
       id,
       title: definition.title,
@@ -89,6 +96,10 @@ export class FlowRegistry {
       agentTimeoutMs: definition.agentTimeoutMs,
       agentDefaults: definition.agentDefaults,
       plugin: config.plugin,
+      legacySourceHashes:
+        config.legacyRevision?.to === sourceHash
+          ? Object.freeze([...config.legacyRevision.from])
+          : undefined,
       capabilities: Object.freeze([...(config.capabilities ?? [])]),
       run: definition.run,
     });

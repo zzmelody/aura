@@ -46,3 +46,6 @@ export function defineFlow<
     },
   });
 }
+
+/** Preserves explicit root scope paths when relocating existing durable workflows. */
+export { defineFlow as defineWorkflow } from "@aura/orchestration/flow";

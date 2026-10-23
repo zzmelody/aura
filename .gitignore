@@ -18,3 +18,8 @@ apps/server/dist/
 *.jks
 .DS_Store
 .aura-site-test-*/
+examples/*/node_modules/
+plugins/**/node_modules/
+plugins/**/client/dist/
+plugins/**/runtime/
+plugins/**/__pycache__/

@@ -22,7 +22,14 @@ const allowedAppLayers = {
   desktop: new Set(["frontend", "backend", "shared"]),
   server: new Set(["backend", "shared"]),
 };
-const ignored = new Set(["node_modules", "dist", "android", "ios", ".git"]);
+const ignored = new Set([
+  "node_modules",
+  "dist",
+  "dist-host",
+  "android",
+  "ios",
+  ".git",
+]);
 const extensions = new Set([".ts", ".tsx", ".mjs", ".js", ".cjs"]);
 const directModelClients = new Set([
   "@earendil-works/pi-ai",

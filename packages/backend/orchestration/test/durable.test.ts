@@ -552,6 +552,7 @@ async function setup(
     action?: LoadedAction;
     executeAction?: NonNullable<EngineOptions["actions"]>["runtime"]["execute"];
     concurrency?: number;
+    flow?: Partial<LoadedFlow>;
   } = {},
 ) {
   const records = options.table ?? table();
@@ -567,6 +568,7 @@ async function setup(
     agentTimeoutMs: 1000,
     capabilities: [],
     run: (ctx) => ctx.sequence({ id: "main" }, run),
+    ...options.flow,
   };
   let currentAction = options.action ?? action;
   const engine = new FlowEngine({
@@ -1326,4 +1328,98 @@ test("Discovery diagnostics identify old root calls and native concurrency with 
       'export default defineFlow({ async run(ctx) { return ctx.sequence({id:"a"}, ctx => ctx.agent({})); } });',
     ),
   );
+});
+
+test("reviewed builtin relocation replays old Action fingerprints and keeps durable identities", async () => {
+  let calls = 0;
+  const workflow = async (flow: FlowScope) => {
+    await flow.action({ id: "before", action: "write", input: {} });
+    await flow.checkpoint({
+      id: "approve",
+      prompt: "Continue?",
+      schema: z.boolean(),
+    });
+    return (await flow.action({ id: "after", action: "write", input: {} }))
+      .output;
+  };
+  const first = await setup(workflow, {
+    executeAction: async () => {
+      calls++;
+      return { done: true };
+    },
+  });
+  const run = await first.engine.start(req());
+  assert.equal((await first.engine.wait(run.id)).status, "waiting_input");
+  const before = first.engine.get(run.id);
+  await first.engine.close();
+  const plugin = { id: "relocated", name: "Relocated", version: "1.0.0" };
+  const second = await setup(workflow, {
+    table: first.records,
+    flow: { sourceHash: "b".repeat(64), plugin, legacySourceHashes: [hash] },
+    action: {
+      ...action,
+      sourceHash: "c".repeat(64),
+      plugin,
+      legacySourceHashes: [hash],
+    },
+    executeAction: async (definition) => {
+      assert.equal(definition.sourceHash, hash);
+      assert.equal(definition.plugin, undefined);
+      calls++;
+      return { done: true };
+    },
+  });
+  try {
+    assert.equal(second.engine.get(run.id).status, "waiting_input");
+    await second.engine.command(
+      run.id,
+      "answer",
+      { requestId: randomUUID(), output: true },
+      "main/approve",
+    );
+    const finished = await second.engine.wait(run.id);
+    assert.equal(finished.status, "completed", finished.error);
+    assert.equal(calls, 2, "completed side effects must never replay");
+    assert.deepEqual(finished.flow, before.flow);
+    assert.deepEqual(finished.actionVersions, before.actionVersions);
+    assert.deepEqual(
+      finished.steps.map((step) => step.stepKey),
+      ["main/before", "main/approve", "main/after"],
+    );
+  } finally {
+    await second.engine.close();
+  }
+});
+
+test("unreviewed relocation is rejected before a saved checkpoint resumes", async () => {
+  const workflow = async (flow: FlowScope) =>
+    flow.checkpoint({
+      id: "approve",
+      prompt: "Continue?",
+      schema: z.boolean(),
+    });
+  const first = await setup(workflow);
+  const run = await first.engine.start(req());
+  await first.engine.wait(run.id);
+  await first.engine.close();
+  const second = await setup(workflow, {
+    table: first.records,
+    flow: {
+      sourceHash: "b".repeat(64),
+      plugin: { id: "relocated", name: "Relocated", version: "1.0.0" },
+      legacySourceHashes: ["c".repeat(64)],
+    },
+  });
+  try {
+    await second.engine.command(
+      run.id,
+      "answer",
+      { requestId: randomUUID(), output: true },
+      "main/approve",
+    );
+    assert.equal(second.engine.get(run.id).status, "interrupted");
+    assert.match(second.engine.get(run.id).error!, /revision_mismatch/u);
+  } finally {
+    await second.engine.close();
+  }
 });

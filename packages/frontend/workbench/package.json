@@ -10,7 +10,9 @@
   "exports": {
     ".": "./src/App.tsx",
     "./file-picker": "./src/file-picker.ts",
-    "./site": "./src/site.ts"
+    "./site": "./src/site.ts",
+    "./plugin": "./src/plugin-api.ts",
+    "./transport": "./src/plugin-transport.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -19,8 +21,10 @@
   "dependencies": {
     "@aura/core": "workspace:*",
     "@aura/demo": "workspace:*",
+    "@aura/plugin-ui": "workspace:*",
     "@aura/protocol": "workspace:*",
     "@aura/ui": "workspace:*",
+    "@deepseek-ai/cordis": "4.0.5-alpha.1",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/manrope": "5.3.0",
     "acorn": "8.18.0",

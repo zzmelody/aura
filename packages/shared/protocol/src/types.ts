@@ -159,6 +159,32 @@ export interface AuraPluginSettingsUpdate {
   plugins: Array<Pick<AuraPluginConfigurationEntry, "path" | "enabled">>;
 }
 
+/**
+ * One enabled plugin's prebuilt browser bundle. The bundle registers itself
+ * through DSH's lazy-CJS module loader under `module` and contributes
+ * workbench pages when the workbench applies it.
+ */
+export interface AuraPluginPageBundle {
+  plugin: AuraPluginIdentity;
+  /** Browser module ID; equals the plugin ID. */
+  module: string;
+  /** Content revision; changes whenever the built bundle changes. */
+  rev: string;
+  /** Runtime-relative DSH combo reference, e.g. `plugins/??<id>/client.js&rev=<rev>`. */
+  url: string;
+}
+
+/**
+ * Page bundles of every enabled plugin plus the DSH module loader bundle.
+ * `rev` changes whenever a bundle is added, removed or rebuilt, so an open
+ * workbench can reconcile its mounted plugins.
+ */
+export interface AuraPluginPagesState {
+  rev: string;
+  loader: { module: string; rev: string; url: string };
+  bundles: AuraPluginPageBundle[];
+}
+
 export interface FlowCatalogEntry {
   id: string;
   title: string;
@@ -608,4 +634,18 @@ export interface CodingFileDiff {
   path: string;
   oldText: string | null;
   newText: string;
+}
+
+/** Explicit grants for moving a built-in product into a trusted local plugin. */
+export interface PluginCompatibility {
+  flows?: Record<string, { from: string[]; to: string }>;
+  actions?: Record<string, { from: string[]; to: string }>;
+  presets?: string[];
+  storageDomains?: string[];
+  directories?: string[];
+  rpcPrefixes?: string[];
+}
+export interface PluginHttpContribution {
+  entry: string;
+  mounts: string[];
 }

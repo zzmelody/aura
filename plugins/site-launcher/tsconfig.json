@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "typeRoots": [
+      "../../node_modules/@types",
+      "../../packages/frontend/workbench/node_modules/@types"
+    ],
+    "jsx": "react-jsx",
+    "esModuleInterop": true
+  },
+  "include": [
+    "client/src/**/*.ts",
+    "client/src/**/*.tsx",
+    "backend/**/*.ts",
+    "capabilities/**/*.js"
+  ],
+  "exclude": ["**/dist/**"]
+}

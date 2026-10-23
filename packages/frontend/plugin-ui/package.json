@@ -1,0 +1,28 @@
+{
+  "name": "@aura/plugin-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "aura": {
+    "layer": "frontend",
+    "kind": "library"
+  },
+  "exports": {
+    ".": "./src/page.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aura/protocol": "workspace:*",
+    "@deepseek-ai/cordis": "4.0.5-alpha.1"
+  },
+  "peerDependencies": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~5.9.2"
+  }
+}

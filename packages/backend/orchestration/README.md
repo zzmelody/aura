@@ -211,6 +211,11 @@ unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算�
 
 外部插件的 manifest、信任、能力声明和根目录由 `@aura/extensions` 在进入编排宿主前校验，插件代码只通过 `@aura/plugin-sdk/action` 与 `@aura/plugin-sdk/flow` 接入。宿主不支持 manifest 请求的任一 capability 时插件整体保持不可用，不带着缺失能力部分加载。运行时可通过内部 `plugins/configure` RPC 动态替换多根发现器并扩展 HMR 监听；加载失败会恢复上一组根。插件版本与贡献 hash 随定义固定到运行记录。hash 包含贡献目录和插件根内静态 ESM 依赖闭包，共享 schema/prompt 修改也使版本变化。可信 pluginRoot 仅由 Extensions 内部传递；本地依赖越界和计算式动态 import 被拒绝。HMR 监听整个插件根，目录启停和内容更新只影响新运行。进程内已有运行继续使用固定版本；重启后原版本不存在则以 `revision_mismatch` 停止，不能使用新 helper 重放旧运行。Aura 不替插件执行安装、构建或生命周期脚本。
 
+`contributes.capabilities` 的 provider 及其静态本地 ESM 依赖也按一秒周期检测内容变化。
+宿主等待进行中的调用和该插件的活跃 Flow 结束后，准备新 provider 并切换版本；
+加载失败保留上一版。版本标签沿插件自己的本地模块图传递，SDK 和已安装依赖保持共享，
+不重新安装依赖、不写插件清单。资源与业务状态的回收仍由 provider 的 `close` 负责。
+
 ## API
 
 RPC handshake 为 v4。所有 HTTP 写操作携带 UUID `requestId`；命令身份和状态变更在同一个 Run 记录中提交。重试相同命令不会再次执行副作用，返回该 Run 的当前状态；同 requestId 不得改目标或输入。路径中的 `stepKey` 必须 URL 编码，包括 `/`。
@@ -306,3 +311,5 @@ Runtime 挂载以下 Hono 路由；JSON-RPC 只解析关联与元数据，HTTP �
 - `GET|HEAD /flows/runs/:runId/artifacts/:artifactId/thumbnail`：图片缩略图或模型海报。
 
 每次读取检查运行与产物归属；路径穿越、符号链接及内容变化均不能通过。历史迁移按运行持久化版本/指纹，可重启续跑；查看历史运行时优先处理。仅接受已知 Comfy 输出目录、匹配 Tripo manifest/task 的产物以及已登记 GLB。Agent 历史只解析结构化工具结果，不从自然语言提取路径。已删除或无结构化结果的历史日志不能恢复，缺失文件或未经来源验证的候选保留不可用状态。成功归档的文件默认保留，隐藏客户端会话不删除归档。
+
+## 产品插件后端

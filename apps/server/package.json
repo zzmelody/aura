@@ -8,17 +8,26 @@
   },
   "type": "module",
   "scripts": {
-    "build": "node ../../scripts/build-server-launch.ts",
+    "build": "node ../../scripts/build-server-launch.ts && node ../../scripts/build-plugins.ts server",
     "start": "tsx server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "pnpm run build"
   },
   "dependencies": {
     "@aura/plugin-sdk": "workspace:*",
     "@aura/runtime": "workspace:*",
-    "tsx": "4.23.13"
+    "tsx": "4.23.13",
+    "@aura/protocol": "workspace:*",
+    "hono": "4.13.7",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
     "typescript": "~5.9.2"
-  }
+  },
+  "files": [
+    "server.ts",
+    "src",
+    "dist"
+  ]
 }

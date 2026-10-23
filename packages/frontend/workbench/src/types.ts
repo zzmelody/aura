@@ -3,4 +3,10 @@ export type StudioTab =
   "studio:content" | "studio:video" | "studio:research" | "studio:coding";
 /** Navigation belongs to the client, not the shared conversation model. */
 export type Tab =
-  "chat" | "flows" | StudioTab | "history" | "site" | "settings";
+  | "chat"
+  | "flows"
+  | StudioTab
+  | `plugin:${string}`
+  | "history"
+  | "site"
+  | "settings";

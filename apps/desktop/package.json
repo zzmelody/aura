@@ -11,10 +11,11 @@
   "scripts": {
     "dev": "pnpm run build:preload && tsx ../../scripts/dev-renderer.ts desktop",
     "start": "pnpm run build && electron .",
-    "build": "pnpm run build:renderer && pnpm run build:preload",
+    "build": "pnpm run build:renderer && pnpm run build:preload && node ../../scripts/build-plugins.ts desktop",
     "build:preload": "tsx ../../scripts/build-desktop-preload.ts",
     "build:renderer": "tsx ../../scripts/build-renderer.ts desktop",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "pnpm run build"
   },
   "dependencies": {
     "@aura/runtime": "workspace:*",
@@ -25,7 +26,10 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "@google/model-viewer": "4.1.0",
-    "three": "0.172.0"
+    "three": "0.172.0",
+    "@aura/plugin-sdk": "workspace:*",
+    "@aura/protocol": "workspace:*",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
@@ -35,5 +39,10 @@
     "electron": "44.7.0",
     "typescript": "~5.9.2",
     "vite": "8.2.2"
-  }
+  },
+  "files": [
+    "src",
+    "dist",
+    "dist-host"
+  ]
 }

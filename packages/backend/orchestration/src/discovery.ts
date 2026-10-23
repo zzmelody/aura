@@ -53,6 +53,7 @@ export class CodeDiscovery {
   readonly pluginRoot?: string;
   readonly plugin?: ContributionRoot["plugin"];
   readonly capabilities?: ContributionRoot["capabilities"];
+  readonly compatibility?: ContributionRoot["compatibility"];
   private mounted = new Map<string, MountedFlow>();
   private failures = new Map<string, string>();
   private issues = new Set<string>();
@@ -72,6 +73,8 @@ export class CodeDiscovery {
     this.plugin = typeof root === "string" ? undefined : root.plugin;
     this.capabilities =
       typeof root === "string" ? undefined : root.capabilities;
+    this.compatibility =
+      typeof root === "string" ? undefined : root.compatibility;
     this.kind = kind;
   }
 
@@ -84,6 +87,7 @@ export class CodeDiscovery {
   descriptor(): ContributionRoot {
     return {
       root: this.root,
+      ...(this.compatibility ? { compatibility: this.compatibility } : {}),
       ...(this.pluginRoot ? { pluginRoot: this.pluginRoot } : {}),
       ...(this.namespace ? { namespace: this.namespace } : {}),
       ...(this.plugin ? { plugin: this.plugin } : {}),
@@ -110,7 +114,14 @@ export class CodeDiscovery {
     for (const child of entries) {
       if (!child.isDirectory()) continue;
       const localId = child.name;
-      const flowId = this.namespace ? `${this.namespace}/${localId}` : localId;
+      const legacyRevision =
+        this.compatibility?.[this.kind === "flow" ? "flows" : "actions"]?.[
+          localId
+        ];
+      const flowId =
+        this.namespace && !legacyRevision
+          ? `${this.namespace}/${localId}`
+          : localId;
       discovered.add(flowId);
       const directory = join(this.root, localId);
       if (
@@ -197,6 +208,7 @@ export class CodeDiscovery {
         directory,
         entry: expected,
         plugin: this.plugin,
+        legacyRevision,
         pluginRoot: this.pluginRoot,
         capabilities: this.capabilities,
       };

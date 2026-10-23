@@ -1,4 +1,8 @@
 import type {
+  PluginCompatibility,
+  PluginHttpContribution,
+} from "@aura/protocol/types";
+import type {
   JsonValue,
   FlowMode,
   ChatMessage,
@@ -41,6 +45,9 @@ export interface ContributionRoot {
   /** Trusted local package root, never projected into public catalog DTOs. */
   pluginRoot?: string;
   capabilities?: string[];
+  compatibility?: PluginCompatibility;
+  http?: PluginHttpContribution;
+  presets?: string;
 }
 
 /** A plugin's capability provider directory and its opaque plugins.json settings. */
@@ -51,7 +58,7 @@ export interface CapabilityRoot extends ContributionRoot {
 export interface ContributionConfiguration {
   flowRoots: ContributionRoot[];
   actionRoots: ContributionRoot[];
-  capabilityRoots: CapabilityRoot[];
+  capabilityRoots?: CapabilityRoot[];
   plugins: AuraPluginStatus[];
 }
 

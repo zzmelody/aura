@@ -51,5 +51,8 @@ export function resolveRuntimeConfig(
     pluginConfigPath: resolve(
       options.pluginConfigPath ?? join(root, ".aura", "plugins.json"),
     ),
+    defaultPluginsDirectory: resolve(
+      options.defaultPluginsDirectory ?? join(root, "plugins"),
+    ),
   };
 }

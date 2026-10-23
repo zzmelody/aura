@@ -13,8 +13,8 @@ import {
   Terminal,
   Trash2,
 } from "lucide-react";
-import { platform } from "../platform";
-import { useSiteProjects } from "../site";
+import { platform } from "@aura/workbench/plugin";
+import { useSiteProjects, type SiteHostApi } from "./site";
 import type { SiteStatus } from "@aura/protocol/types";
 
 function statusCopy(state: SiteStatus["state"]): string {
@@ -41,8 +41,8 @@ function shortPath(directory: string): string {
   return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : directory;
 }
 
-export function SiteScreen() {
-  const site = useSiteProjects();
+export function SiteScreen({ host }: { host?: SiteHostApi }) {
+  const site = useSiteProjects(host);
   const project = site.selected;
   const status = site.selectedStatus;
   const active =

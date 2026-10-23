@@ -24,7 +24,7 @@ test("distributed launcher loads TypeScript inside node_modules and forwards chi
     join(application, "server.ts"),
     `
     const marker: string = "typed-server";
-    console.log(JSON.stringify({marker, root:process.env.AURA_ROOT, host:process.env.HOST, port:process.env.PORT, loader:process.env.NODE_OPTIONS}));
+    console.log(JSON.stringify({marker, root:process.env.AURA_ROOT, plugins:process.env.AURA_BUNDLED_PLUGINS, host:process.env.HOST, port:process.env.PORT, loader:process.env.NODE_OPTIONS}));
   `,
   );
   const launcher = await buildServerLauncher(
@@ -41,6 +41,7 @@ test("distributed launcher loads TypeScript inside node_modules and forwards chi
   const state = JSON.parse(stdout) as Record<string, unknown>;
   assert.equal(state.marker, "typed-server");
   assert.equal(state.root, directory);
+  assert.equal(state.plugins, join(application, "dist/plugins"));
   assert.equal(state.host, "127.0.0.1");
   assert.equal(state.port, "0");
   assert.match(String(state.loader), /--import=.*tsx.*esm/u);

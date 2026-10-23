@@ -1,8 +1,4 @@
 import type {} from "@deepseek-ai/dsh-tools";
-import type { VideoLibrary } from "./video/library.ts";
-import type { ContentLibrary } from "./content/library.ts";
-import type { TopicLibrary } from "./topics/library.ts";
-import type { ContentAnalyticsLibrary } from "./content/analytics.ts";
 import type { GptImageClient } from "./gpt-image.ts";
 import { randomUUID } from "node:crypto";
 import type { Context } from "@deepseek-ai/cordis";
@@ -57,10 +53,6 @@ export class ActionRuntime {
   private localAI?: LocalAIClient;
   private aura?: AuraCapabilityClient;
   private artifacts?: WorkflowArtifactIndex;
-  private videoProduction?: VideoLibrary;
-  private contentProduction?: ContentLibrary;
-  private topicLibrary?: TopicLibrary;
-  private contentAnalytics?: ContentAnalyticsLibrary;
   private gptImage?: GptImageClient;
 
   constructor(
@@ -68,20 +60,12 @@ export class ActionRuntime {
     localAI?: LocalAIClient,
     aura?: AuraCapabilityClient,
     artifacts?: WorkflowArtifactIndex,
-    videoProduction?: VideoLibrary,
-    contentProduction?: ContentLibrary,
-    topicLibrary?: TopicLibrary,
-    contentAnalytics?: ContentAnalyticsLibrary,
     gptImage?: GptImageClient,
   ) {
     this.ctx = ctx;
     this.localAI = localAI;
     this.aura = aura;
     this.artifacts = artifacts;
-    this.videoProduction = videoProduction;
-    this.contentProduction = contentProduction;
-    this.topicLibrary = topicLibrary;
-    this.contentAnalytics = contentAnalytics;
     this.gptImage = gptImage;
     // Direct calls require an unscoped DSH registration. Keep these short-lived,
     // pinned definitions out of every Agent's model surface, without changing presets.
@@ -108,6 +92,8 @@ export class ActionRuntime {
     const dispose: Array<() => void> = [];
     try {
       for (const action of actions) {
+        const release = action.retainServices?.();
+        if (release) dispose.push(release);
         if (agent.ctx.tools.get(action.toolName, agent))
           throw new FlowError(`Action 与已有 DSH 工具重名：${action.id}`);
         dispose.push(
@@ -115,23 +101,7 @@ export class ActionRuntime {
             action.tool(action.toolName, {
               ...binding,
               localAI: this.localAI,
-              contentProduction:
-                action.id === "content-project"
-                  ? this.contentProduction
-                  : undefined,
-              topicLibrary: ["topic-library", "topic-collect"].includes(
-                action.id,
-              )
-                ? this.topicLibrary
-                : undefined,
-              contentAnalytics:
-                action.id === "content-review"
-                  ? this.contentAnalytics
-                  : undefined,
-              videoProduction:
-                action.id === "video-project" || action.id === "video-compose"
-                  ? this.videoProduction
-                  : undefined,
+              services: action.services,
               aura: actionCapabilities(action, this.aura, binding),
               gptImage:
                 action.id === "image-generate" ? this.gptImage : undefined,
@@ -165,32 +135,29 @@ export class ActionRuntime {
     const args = jsonValue(input, "Action 入参");
     const callId = ToolCallId(randomUUID());
     const name = `${internalPrefix}${callId.replaceAll("-", "")}`;
-    const dispose = this.ctx.tools.register(
-      action.tool(name, {
-        ...binding,
-        localAI: this.localAI,
-        contentProduction:
-          action.id === "content-project" ? this.contentProduction : undefined,
-        topicLibrary: ["topic-library", "topic-collect"].includes(action.id)
-          ? this.topicLibrary
-          : undefined,
-        contentAnalytics:
-          action.id === "content-review" ? this.contentAnalytics : undefined,
-        videoProduction:
-          action.id === "video-project" || action.id === "video-compose"
-            ? this.videoProduction
-            : undefined,
-        aura: actionCapabilities(action, this.aura, binding),
-        gptImage: action.id === "image-generate" ? this.gptImage : undefined,
-        bindCall: artifactCallBinding(
-          this.artifacts,
-          binding,
-          this.localAI,
-          actionCapabilities(action, this.aura, binding),
-          action.id === "image-generate" ? this.gptImage : undefined,
-        ),
-      }),
-    );
+    const release = action.retainServices?.();
+    let dispose: () => void;
+    try {
+      dispose = this.ctx.tools.register(
+        action.tool(name, {
+          ...binding,
+          localAI: this.localAI,
+          services: action.services,
+          aura: actionCapabilities(action, this.aura, binding),
+          gptImage: action.id === "image-generate" ? this.gptImage : undefined,
+          bindCall: artifactCallBinding(
+            this.artifacts,
+            binding,
+            this.localAI,
+            actionCapabilities(action, this.aura, binding),
+            action.id === "image-generate" ? this.gptImage : undefined,
+          ),
+        }),
+      );
+    } catch (error) {
+      release?.();
+      throw error;
+    }
     const masks: Array<() => void> = [];
     this.directMasks.set(name, masks);
     try {
@@ -217,6 +184,7 @@ export class ActionRuntime {
       dispose();
       this.directMasks.delete(name);
       for (const remove of masks) remove();
+      release?.();
     }
   }
 }

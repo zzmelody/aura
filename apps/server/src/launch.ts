@@ -1,6 +1,6 @@
 // Distribution entry for launchers that cannot pass environment variables
 // (e.g. Godot's OS.execute_with_pipe). Usage: node dist/launch.js --root=<dir>
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 
 const root = process.argv.find((arg) => arg.startsWith("--root="))?.slice(7);
@@ -9,6 +9,9 @@ if (!root) {
   process.exit(2);
 }
 process.env.AURA_ROOT = root;
+process.env.AURA_BUNDLED_PLUGINS = fileURLToPath(
+  new URL("./plugins", import.meta.url),
+);
 process.env.HOST = "127.0.0.1";
 process.env.PORT ??= "0";
 

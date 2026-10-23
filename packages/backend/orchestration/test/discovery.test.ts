@@ -263,3 +263,37 @@ test("Action discovery enforces directory ids and exactly one matching entry", a
     );
     await discovery.close();
   }));
+
+test("legacy IDs require explicit grants and recovery hashes expire when plugin code changes", async () =>
+  withRoot(async (root) => {
+    const directory = await addEntry(root, "relocated");
+    const target = await hashFlowDirectory(directory, root);
+    const registry = new FlowRegistry();
+    const mock = loaderFor(registry);
+    const plugin = { id: "example.product", name: "Product", version: "1.0.0" };
+    const discovery = new FlowDiscovery(mock.loader, registry, {
+      root,
+      pluginRoot: root,
+      namespace: plugin.id,
+      plugin,
+      compatibility: {
+        flows: { relocated: { from: ["a".repeat(64)], to: target } },
+      },
+    });
+    try {
+      await discovery.refresh();
+      assert.equal(registry.catalog()[0]?.id, "relocated");
+      assert.deepEqual(registry.get("relocated").legacySourceHashes, [
+        "a".repeat(64),
+      ]);
+      await writeFile(
+        join(directory, "relocated.flow.js"),
+        "export default {}; // changed\n",
+      );
+      await registry.register(mock.created[0], definition);
+      assert.equal(registry.get("relocated").legacySourceHashes, undefined);
+      assert.equal(registry.catalog()[0]?.id, "relocated");
+    } finally {
+      await discovery.close();
+    }
+  }));

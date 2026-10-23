@@ -5,6 +5,10 @@ Scope: trusted local backend plugins contributing Action and Flow definitions\
 Runtime format: native ESM JavaScript\
 Host implementation language: TypeScript
 
+This specifies the original backend-only v1 contract. Optional workbench pages
+are a backward-compatible host extension in [pages.md](pages.md), not a new
+requirement for existing Action/Flow plugins.
+
 ## 1. Normative language
 
 The words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are requirements for implementations and plugin authors. This document defines the target v1 contract. Before authoring a plugin, verify that the checked-out Aura version implements the required manifest schema and `@aura/plugin-sdk` version.
@@ -25,7 +29,7 @@ Aura v1 plugins extend backend orchestration only.
 
 V1 plugins are trusted local code with the same effective Node.js authority as the Aura orchestration process.
 
-- Aura MUST load a plugin only after the user or deployment configuration explicitly enables its exact directory.
+- Repository-owned plugins under the deployment's `plugins/` directory are enabled by deployment policy. Other directories MUST be explicitly enabled by user configuration. An explicit disabled entry MUST override default discovery.
 - Aura MUST NOT recursively search arbitrary drives or user directories for plugins.
 - Aura MUST resolve and validate the plugin root and contribution roots before importing code. Contribution paths MUST remain inside the resolved plugin root.
 - Aura MUST NOT run `npm install`, `pnpm install`, package lifecycle scripts, build commands, or downloads while starting or discovering a plugin.
@@ -123,6 +127,16 @@ The v1 manifest MUST NOT contain lifecycle scripts, executable entrypoints, shel
 ## 7. Runtime configuration
 
 Aura reads enabled roots from ignored backend configuration such as `<aura-root>/.aura/plugins.json`:
+
+Aura also discovers its trusted repository/release `plugins/` directory recursively,
+allowing category subdirectories and stopping at each `aura.plugin.json`. It skips
+hidden/generated/dependency directories and does not follow directory links.
+Explicit configuration overrides default entries by directory or plugin ID and
+retains plugin-owned settings, including when disabled. Discovery MUST NOT write
+user configuration. Repository plugins declare explicit relative runtime assets in
+`package.json#files`; server and desktop builds MUST stage these with prebuilt page
+bundles, excluding personal state, credentials, caches and development dependencies.
+Distribution plugin directories are independent of the user's data root.
 
 ```json
 {
@@ -378,3 +392,9 @@ Names are recommendations; prefer existing package seams when they already provi
 ## 17. Definition of done
 
 A v1 external plugin is complete when an explicitly configured local directory is validated at Aura startup, its JavaScript Actions/Flows register through public SDK contracts, its Flow appears through the existing catalog without a frontend rebuild, its calls use only allowed invocation paths and declared capability ports, failures are isolated and sanitized, updates affect only new runs, shutdown is clean, and the required tests/documentation pass.
+
+## Product backend extension (SDK 1.4)
+
+[Backend extensions](backends.md) add provider-owned business services, scoped RPC,
+Hono HTTP adapters, DSH presets and explicit durable relocation grants. These are
+additive; ordinary v1 plugins keep their IDs, implicit Flow scope and contracts.

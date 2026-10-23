@@ -13,3 +13,6 @@ apps/mobile/ios/
 pnpm-lock.yaml
 eslint-suppressions.json
 format-baseline.json
+# Generated from plugins/self-media/backend/contributions/ during plugin builds.
+plugins/self-media/flows/
+plugins/self-media/actions/

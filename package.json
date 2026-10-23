@@ -14,6 +14,10 @@
   },
   "packageManager": "pnpm@12.5.1",
   "scripts": {
+    "build:wechat-plugin": "node plugins/wechat-history/scripts/build-client.ts",
+    "watch:wechat-plugin": "node plugins/wechat-history/scripts/build-client.ts --watch",
+    "setup:wechat-plugin": "node plugins/wechat-history/scripts/link-workspace.ts",
+    "check:wechat-plugin": "pnpm run setup:wechat-plugin && pnpm run build:wechat-plugin && tsc --noEmit -p plugins/wechat-history/tsconfig.json && eslint --config plugins/wechat-history/eslint.config.ts plugins/wechat-history --max-warnings 0 && prettier plugins/wechat-history --check --ignore-path .prettierignore --ignore-path plugins/wechat-history/.prettierignore && tsx --test plugins/wechat-history/test/*.test.ts",
     "dev": "tsx scripts/run-with-runtime.ts web",
     "web": "pnpm --filter @aura/web run dev",
     "mobile": "pnpm --filter @aura/mobile run dev",
@@ -39,8 +43,12 @@
     "format:check": "node scripts/check-format.ts",
     "format:check:strict": "prettier . --check",
     "check:workspaces": "tsx scripts/check-workspaces.ts",
-    "check": "pnpm run format:check && pnpm run lint && pnpm run check:workspaces && pnpm run typecheck && pnpm run test",
-    "test:runtime": "tsx scripts/smoke-runtime.ts"
+    "check": "pnpm run check:wechat-plugin && pnpm run check:product-plugins && pnpm run format:check && pnpm run lint && pnpm run check:workspaces && pnpm run typecheck && pnpm run test",
+    "test:runtime": "tsx scripts/smoke-runtime.ts",
+    "build:plugins": "node scripts/build-plugins.ts server && node scripts/build-plugins.ts desktop",
+    "setup:product-plugins": "node scripts/setup-product-plugins.ts",
+    "build:product-plugins": "node scripts/build-product-plugin.ts self-media && node scripts/build-product-plugin.ts site-launcher",
+    "check:product-plugins": "pnpm run setup:product-plugins && pnpm run build:product-plugins && tsc --noEmit -p plugins/self-media/tsconfig.json && tsc --noEmit -p plugins/site-launcher/tsconfig.json && eslint --config plugins/self-media/eslint.config.ts plugins/self-media --max-warnings 0 && eslint --config plugins/site-launcher/eslint.config.ts plugins/site-launcher --max-warnings 0 && prettier plugins/self-media plugins/site-launcher --check && tsx --test plugins/self-media/test/*.test.ts plugins/site-launcher/test/*.test.ts && tsx --test --test-concurrency=1 plugins/self-media/test/research/*.test.ts tests/self-media/*.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -57,6 +65,10 @@
     "tsx": "4.23.13",
     "typescript": "~5.9.3",
     "typescript-eslint": "8.71.1",
-    "vite": "8.2.2"
+    "vite": "8.2.2",
+    "@aura/extensions": "workspace:*",
+    "fflate": "0.8.3",
+    "ffmpeg-static": "5.3.0",
+    "@aura/protocol": "workspace:*"
   }
 }

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeSiteProject, normalizeSiteProjects } from "../src/site.ts";
+import {
+  normalizeSiteProject,
+  normalizeSiteProjects,
+} from "../client/src/site.ts";
 
 test("site project storage keeps a complete runnable project", () => {
   assert.deepEqual(

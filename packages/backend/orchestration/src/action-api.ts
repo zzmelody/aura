@@ -1,7 +1,3 @@
-import type { VideoLibrary } from "./video/library.ts";
-import type { ContentLibrary } from "./content/library.ts";
-import type { TopicLibrary } from "./topics/library.ts";
-import type { ContentAnalyticsLibrary } from "./content/analytics.ts";
 import type { GptImageClient } from "./gpt-image.ts";
 import type { Context, Plugin } from "@deepseek-ai/cordis";
 import { HarnessError } from "@deepseek-ai/dsh-llm";
@@ -97,11 +93,8 @@ export interface ActionContext {
   readonly localAI?: LocalAIClient;
   /** Host-owned external service ports. Credentials never enter Action input. */
   readonly aura?: AuraCapabilityClient;
-  /** Host-owned project/version service for built-in production Actions. */
-  readonly videoProduction?: VideoLibrary;
-  readonly contentProduction?: ContentLibrary;
-  readonly topicLibrary?: TopicLibrary;
-  readonly contentAnalytics?: ContentAnalyticsLibrary;
+  /** Private services supplied only by this Action's owning plugin provider. */
+  readonly services?: Readonly<Record<string, unknown>>;
   /** GPT Image 2.5 via the host's Tripo account; `available` is false when unconfigured. */
   readonly gptImage?: GptImageClient;
 }
@@ -136,6 +129,7 @@ export interface ActionRegistrationConfig {
   /** Trusted local package root, never projected into public catalog DTOs. */
   pluginRoot?: string;
   capabilities?: string[];
+  legacyRevision?: { from: string[]; to: string };
 }
 
 export interface ActionRegistration {

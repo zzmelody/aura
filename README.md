@@ -98,7 +98,6 @@ packages/
     orchestration/ @aura/orchestration：Flow、Action、领域业务与产物
     extensions/ @aura/extensions：插件配置、发现与激活回滚
     plugin-sdk/ @aura/plugin-sdk：外部插件公共契约
-    content-research/ @aura/content-research：研究来源、缓存与预算
     tripo/     @aura/tripo：3D 服务、任务与后端凭据
   shared/
     protocol/  @aura/protocol：请求、流事件与脱敏授权状态

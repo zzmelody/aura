@@ -19,14 +19,14 @@ import {
   localSiteUrl,
   portAvailable,
   siteOwnsPort,
-} from "../src/site-network.ts";
+} from "../backend/site-network.ts";
 import {
   describeProject,
   siteDirectCommand,
   sitePortFlags,
   siteScriptArgs,
-} from "../src/site-project.ts";
-import { SiteRunner, type SiteStatus } from "../src/site-runner.ts";
+} from "../backend/site-project.ts";
+import { SiteRunner, type SiteStatus } from "../backend/site-runner.ts";
 
 async function server(t: TestContext, hostname = "127.0.0.1", port = 0) {
   const app = new Hono().get("*", (c) => c.text("foreign service"));
@@ -55,10 +55,7 @@ async function fixture(t: TestContext, script: string) {
     join(import.meta.dirname, "../.aura-site-test-"),
   );
   const workspace = JSON.parse(
-    await readFile(
-      new URL("../../../../package.json", import.meta.url),
-      "utf8",
-    ),
+    await readFile(new URL("../../../package.json", import.meta.url), "utf8"),
   ) as { packageManager: string };
   t.after(() => rm(directory, { recursive: true, force: true }));
   await writeFile(

@@ -1,14 +1,10 @@
+import { PluginHttpRegistry } from "./plugin-http.ts";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { artifactResponse, type ArtifactFile } from "./artifacts/http.ts";
 import { GeneratedArtifacts } from "./artifacts/generated.ts";
-import { videoRoutes } from "./video/routes.ts";
-import { contentRoutes } from "./content/routes.ts";
-import { topicRoutes } from "./topics/routes.ts";
-import { contentAnalyticsRoutes } from "./content/analytics-routes.ts";
-import { storeContentBytes } from "./content/media.ts";
 import { ActionFailure } from "./action-api.ts";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
 import type {
@@ -86,9 +82,34 @@ export class OrchestrationHost {
     (event: CodingStreamEvent) => void
   >();
 
+  private pluginHttpRegistry: PluginHttpRegistry;
+  private pluginHttpReady: Promise<void> | undefined;
+  private createPluginHttp() {
+    return new PluginHttpRegistry({
+      request: (method, input, signal) =>
+        this.request(method, input as object | undefined, signal),
+      artifacts: new GeneratedArtifacts(
+        join(this.options.dshHome, "aura-generated-assets"),
+      ),
+      artifactContent: (descriptor, request) =>
+        artifactResponse(
+          join(this.options.dshHome, "aura-generated-assets"),
+          descriptor,
+          request,
+          false,
+        ),
+    });
+  }
+  async pluginHttp(request: Request) {
+    await (this.pluginHttpReady ??= this.pluginHttpRegistry.replace(
+      this.options.capabilityRoots ?? [],
+    ));
+    return this.pluginHttpRegistry.fetch(request);
+  }
   constructor(options: HostOptions) {
     this.options = { ...options };
     this.logger = new HostLogger(options.dshHome);
+    this.pluginHttpRegistry = this.createPluginHttp();
   }
 
   /** Readiness never starts DSH or waits for a cold start. Probe the current RPC listener. */
@@ -166,69 +187,6 @@ export class OrchestrationHost {
       descriptor,
       request,
       thumbnail,
-    );
-  }
-
-  async videoAssetContent(id: string, assetId: string, request: Request) {
-    const descriptor = await this.request<ArtifactFile>(
-      "video-projects/asset",
-      { id, assetId },
-      request.signal,
-    );
-    return artifactResponse(
-      join(this.options.dshHome, "aura-generated-assets"),
-      descriptor,
-      request,
-      false,
-    );
-  }
-
-  async uploadContentAsset(
-    bytes: Uint8Array,
-    name: string,
-    mime: string,
-    signal: AbortSignal,
-  ) {
-    if (bytes.length > (mime === "video/mp4" ? 200 : 32) * 1024 * 1024)
-      throw new FlowError("素材超过上传大小限制。", 413);
-    const asset = await storeContentBytes(
-      new GeneratedArtifacts(
-        join(this.options.dshHome, "aura-generated-assets"),
-      ),
-      bytes,
-      name,
-      signal,
-    );
-    if (asset.mimeType !== mime || !["image", "video"].includes(asset.kind))
-      throw new FlowError("素材内容与声明格式不匹配。", 415);
-    return { ...asset, uploaded: true };
-  }
-
-  async contentAssetContent(id: string, assetId: string, request: Request) {
-    const descriptor = await this.request<ArtifactFile>(
-      "content-projects/asset",
-      { id, assetId },
-      request.signal,
-    );
-    return artifactResponse(
-      join(this.options.dshHome, "aura-generated-assets"),
-      descriptor,
-      request,
-      false,
-    );
-  }
-
-  async topicAssetContent(id: string, assetId: string, request: Request) {
-    const descriptor = await this.request<ArtifactFile>(
-      "topic-library/asset",
-      { id, assetId },
-      request.signal,
-    );
-    return artifactResponse(
-      join(this.options.dshHome, "aura-generated-assets"),
-      descriptor,
-      request,
-      false,
     );
   }
 
@@ -625,10 +583,25 @@ export class OrchestrationHost {
     const next = {
       flowRoots: [{ root: flowRoot }, ...configuration.flowRoots],
       actionRoots: [{ root: actionRoot }, ...configuration.actionRoots],
-      capabilityRoots: configuration.capabilityRoots,
+      capabilityRoots: configuration.capabilityRoots ?? [],
       plugins: configuration.plugins,
     };
-    await this.request("plugins/configure", next, AbortSignal.timeout(60_000));
+    const candidate = this.createPluginHttp();
+    await candidate.replace(next.capabilityRoots);
+    try {
+      await this.request(
+        "plugins/configure",
+        next,
+        AbortSignal.timeout(60_000),
+      );
+    } catch (error) {
+      await candidate.close();
+      throw error;
+    }
+    const previous = this.pluginHttpRegistry;
+    this.pluginHttpRegistry = candidate;
+    this.pluginHttpReady = Promise.resolve();
+    await previous.close();
     this.options.flowRoots = configuration.flowRoots.map((root) => ({
       ...root,
       ...(root.plugin ? { plugin: { ...root.plugin } } : {}),
@@ -637,9 +610,7 @@ export class OrchestrationHost {
       ...root,
       ...(root.plugin ? { plugin: { ...root.plugin } } : {}),
     }));
-    this.options.capabilityRoots = structuredClone(
-      configuration.capabilityRoots,
-    );
+    this.options.capabilityRoots = structuredClone(next.capabilityRoots);
     this.options.plugins = configuration.plugins.map((plugin) => ({
       ...plugin,
     }));
@@ -716,13 +687,7 @@ export function createFlowApp(
     Partial<
       Pick<
         OrchestrationHost,
-        | "artifactContent"
-        | "uploadImage"
-        | "imageAssetContent"
-        | "videoAssetContent"
-        | "uploadContentAsset"
-        | "contentAssetContent"
-        | "topicAssetContent"
+        "artifactContent" | "uploadImage" | "imageAssetContent" | "pluginHttp"
       >
     >,
 ) {
@@ -735,18 +700,9 @@ export function createFlowApp(
   app.use("*", (context, next) =>
     bodyLimit({
       maxSize:
-        context.req.method === "POST" &&
-        /(?:^|\/)content-projects\/[^/]+\/assets$/.test(context.req.path)
-          ? 200 * 1024 * 1024
-          : /(?:^|\/)content-projects(?:\/|$)/.test(context.req.path)
-            ? 2 * 1024 * 1024
-            : context.req.method === "POST" &&
-                (context.req.path === "/assets/images" ||
-                  /^\/video-projects\/[^/]+\/images$/.test(context.req.path))
-              ? 32 * 1024 * 1024
-              : context.req.path.startsWith("/video-projects")
-                ? 2 * 1024 * 1024
-                : 256 * 1_024,
+        context.req.method === "POST" && context.req.path === "/assets/images"
+          ? 32 * 1024 * 1024
+          : 256 * 1024,
       onError: (context) => context.json({ message: "Flow 请求过大。" }, 413),
     })(context, next),
   );
@@ -786,11 +742,6 @@ export function createFlowApp(
       throw error;
     }
   });
-
-  app.route("/video-projects", videoRoutes(host));
-  app.route("/content-projects", contentRoutes(host));
-  app.route("/topic-library", topicRoutes(host));
-  app.route("/content-analytics", contentAnalyticsRoutes(host));
 
   app.get("/catalog", async (context) =>
     context.json(await host.request("catalog")),

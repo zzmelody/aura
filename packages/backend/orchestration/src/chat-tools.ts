@@ -1,16 +1,7 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
-import {
-  DEFAULT_RESEARCH_REQUEST,
-  type ResearchRequest,
-} from "@aura/protocol/research";
-import {
-  VIDEO_VOICES,
-  VIDEO_RESOLUTIONS,
-  DEFAULT_VIDEO_RESOLUTION,
-  type VideoScript,
-  type VideoResolution,
-} from "@aura/protocol/video";
+import { VIDEO_VOICES } from "@aura/protocol/video";
+import type { PluginTaskTool } from "./backend-api.ts";
 import type {
   ChatWorkflowStart,
   FlowMode,
@@ -29,20 +20,7 @@ export interface ChatToolHost {
     mode: FlowMode;
   }): Promise<FlowRun>;
   get(id: string): FlowRun;
-  createVideo(
-    name: string,
-    script: VideoScript,
-  ): Promise<{ id: string; revisionId: string }>;
-  startVideo(
-    id: string,
-    revisionId: string,
-    requestId: string,
-  ): Promise<{ runId: string }>;
-  startResearch(input: {
-    requestId: string;
-    request: ResearchRequest;
-    mode: FlowMode;
-  }): Promise<{ jobId: string; runId: string }>;
+  taskTools?(): readonly PluginTaskTool[];
 }
 
 export interface ChatToolScope {
@@ -209,147 +187,6 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
       }),
   });
 
-  const video = compileTool({
-    name: "aura_multi_shot_video",
-    description:
-      "运行 Aura「多镜头剧情视频」工作流：按镜头清单新建视频项目并生成整片。用户明确要求把一段故事做成视频时调用。每个镜头旁白不超过 36 字，最多 20 个镜头。",
-    parameters: {
-      resolution: {
-        type: "string",
-        enum: [...VIDEO_RESOLUTIONS],
-        default: DEFAULT_VIDEO_RESOLUTION,
-        description:
-          "竖屏分辨率，默认 720p 高清；只有用户明确要求低分辨率快速预览时选 360p。",
-      },
-      name: {
-        type: "string",
-        required: true,
-        description: "视频项目名称，1–120 字。",
-      },
-      shots: {
-        type: "array",
-        required: true,
-        description: "按时间顺序排列的镜头。",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            title: { type: "string", required: true },
-            narration: {
-              type: "string",
-              required: true,
-              description: "旁白，最多 36 字。",
-            },
-            visualPrompt: {
-              type: "string",
-              required: true,
-              description: "画面与镜头运动提示词。",
-            },
-            speaker: { type: "string", enum: [...VIDEO_VOICES] },
-          },
-        },
-      },
-    },
-    output,
-    timeoutMs: waitMs + 15_000,
-    execute: (
-      args: {
-        name: string;
-        resolution?: VideoResolution;
-        shots: Array<{
-          title: string;
-          narration: string;
-          visualPrompt: string;
-          speaker?: string;
-        }>;
-      },
-      exec: { callId: string; signal: AbortSignal },
-    ) =>
-      once(exec.callId, exec.signal, async (requestId) => {
-        if (!args.shots.length || args.shots.length > 20)
-          throw new FlowError("视频需要 1–20 个镜头。");
-        const resolution = args.resolution ?? DEFAULT_VIDEO_RESOLUTION;
-        const script: VideoScript = {
-          schemaVersion: 1,
-          resolution,
-          scenes: [
-            {
-              id: randomUUID(),
-              title: args.name.slice(0, 120),
-              shots: args.shots.map((shot) => ({
-                id: randomUUID(),
-                title: shot.title.slice(0, 120),
-                narration: shot.narration,
-                speaker: shot.speaker ?? "Vivian",
-                visualPrompt: shot.visualPrompt,
-                firstFrame: { kind: "none" },
-                lastFrame: { kind: "none" },
-              })),
-            },
-          ],
-        };
-        const project = await host.createVideo(args.name, script);
-        const { runId } = await host.startVideo(
-          project.id,
-          project.revisionId,
-          requestId,
-        );
-        return {
-          runId,
-          flowId: "multi-shot-video",
-          title: "多镜头剧情视频",
-          input: {
-            name: args.name,
-            shots: args.shots.length,
-            resolution,
-          },
-        };
-      }),
-  });
-
-  const research = compileTool({
-    name: "aura_topic_research",
-    description:
-      "运行 Aura「跨平台选题发现」工作流：按研究方向检索公开来源并把选题存入选题库。需要联网模型（Codex）模式。用户明确要求找选题、做选题调研时调用。",
-    parameters: {
-      direction: {
-        type: "string",
-        required: true,
-        description: "研究方向，一两句话。",
-      },
-      audience: { type: "string", description: "目标受众。" },
-      days: {
-        type: "integer",
-        description: "回看天数，1–30，默认 7。",
-      },
-    },
-    output,
-    timeoutMs: waitMs + 15_000,
-    execute: (
-      args: { direction: string; audience?: string; days?: number },
-      exec: { callId: string; signal: AbortSignal },
-    ) =>
-      once(exec.callId, exec.signal, async (requestId) => {
-        const request: ResearchRequest = {
-          ...DEFAULT_RESEARCH_REQUEST,
-          direction: args.direction,
-          ...(args.audience ? { audience: args.audience } : {}),
-          ...(args.days ? { days: Math.min(30, Math.max(1, args.days)) } : {}),
-        };
-        const { runId } = await host.startResearch({
-          requestId,
-          request,
-          mode: scope.mode,
-        });
-        return {
-          runId,
-          flowId: "topic-discovery",
-          title: "跨平台选题发现",
-          input: { direction: request.direction, days: request.days },
-        };
-      }),
-  });
-
   const image = compileTool({
     name: "aura_image",
     description:
@@ -390,5 +227,29 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
       }),
   });
 
-  return [tts, image, video, research];
+  const names = new Set(["aura_tts", "aura_image"]);
+  const plugins = (host.taskTools?.() ?? []).map((tool) => {
+    if (names.has(tool.name))
+      throw new FlowError("Chat tool name already owned.", 409);
+    names.add(tool.name);
+    return compileTool({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      output,
+      timeoutMs: waitMs + 15_000,
+      execute: (
+        args: Record<string, unknown>,
+        exec: { callId: string; signal: AbortSignal },
+      ) =>
+        once(exec.callId, exec.signal, (requestId) =>
+          tool.start(args, {
+            requestId,
+            mode: scope.mode,
+            signal: exec.signal,
+          }),
+        ),
+    });
+  });
+  return [tts, image, ...plugins];
 }

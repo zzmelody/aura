@@ -1,7 +1,10 @@
 /** Standalone server application output for the reusable Aura backend runtime. */
 import { startAuraRuntime } from "@aura/runtime";
 
-const runtime = await startAuraRuntime();
+const bundledPlugins = process.env.AURA_BUNDLED_PLUGINS;
+const runtime = await startAuraRuntime({
+  ...(bundledPlugins ? { defaultPluginsDirectory: bundledPlugins } : {}),
+});
 let closing = false;
 const launcherPid = Number(process.env.AURA_LAUNCHER_PID ?? process.ppid);
 const launcherWatch = setInterval(() => {

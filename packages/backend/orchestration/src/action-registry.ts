@@ -16,7 +16,11 @@ export interface LoadedAction extends ActionRegistration {
   outputSchema: JsonValue;
   toolName: string;
   plugin?: AuraPluginIdentity;
+  services?: Readonly<Record<string, unknown>>;
+  retainServices?: () => () => void;
   capabilities: readonly string[];
+  legacySourceHashes?: readonly string[];
+  ownerPlugin?: AuraPluginIdentity;
 }
 
 function toolName(id: string): string {
@@ -31,6 +35,25 @@ export class ActionRegistry {
   private loaded = new Map<string, LoadedAction>();
   private problems = new Map<string, string>();
   private warnings = new Map<string, string>();
+  private services: (pluginId: string) => Readonly<Record<string, unknown>> =
+    () => ({});
+  private retain: (pluginId: string) => () => () => void = () => () => () =>
+    undefined;
+  setServiceRetention(resolve: (pluginId: string) => () => () => void) {
+    this.retain = resolve;
+  }
+  setServicesResolver(
+    resolve: (pluginId: string) => Readonly<Record<string, unknown>>,
+  ) {
+    this.services = resolve;
+  }
+  private bind(action: LoadedAction): LoadedAction {
+    return {
+      ...action,
+      services: action.plugin ? this.services(action.plugin.id) : undefined,
+      retainServices: action.plugin ? this.retain(action.plugin.id) : undefined,
+    };
+  }
 
   async register(
     config: ActionRegistrationConfig,
@@ -63,6 +86,11 @@ export class ActionRegistry {
       config.directory,
       config.pluginRoot,
     );
+    if (
+      this.loaded.has(id) &&
+      this.loaded.get(id)?.plugin?.id !== config.plugin?.id
+    )
+      throw new FlowError(`Contribution ID already owned: ${id}`, 409);
     this.loaded.set(id, {
       ...definition,
       id,
@@ -73,6 +101,10 @@ export class ActionRegistry {
       outputSchema,
       toolName: dshToolName,
       plugin: config.plugin,
+      legacySourceHashes:
+        config.legacyRevision?.to === sourceHash
+          ? Object.freeze([...config.legacyRevision.from])
+          : undefined,
       capabilities: Object.freeze([...(config.capabilities ?? [])]),
     });
     this.problems.delete(id);
@@ -80,7 +112,9 @@ export class ActionRegistry {
   }
 
   snapshot(): ReadonlyMap<string, LoadedAction> {
-    return new Map(this.loaded);
+    return new Map(
+      [...this.loaded].map(([id, action]) => [id, this.bind(action)]),
+    );
   }
   get(id: string): LoadedAction {
     const action = this.loaded.get(id);
@@ -89,7 +123,7 @@ export class ActionRegistry {
         this.problems.get(id) ?? `Action 不存在：${id}`,
         this.problems.has(id) ? 422 : 404,
       );
-    return action;
+    return this.bind(action);
   }
   sourceHash(id: string) {
     return this.loaded.get(id)?.sourceHash;

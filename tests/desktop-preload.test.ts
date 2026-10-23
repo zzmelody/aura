@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,36 +8,21 @@ import { buildDesktopPreload } from "../scripts/build-desktop-preload.ts";
 
 interface PreloadHost {
   platform: "desktop";
-  site: {
-    chooseDirectory(): Promise<unknown>;
-    onStatus(callback: (...args: unknown[]) => void): () => void;
-    start(project: object): Promise<unknown>;
-    stop(directory: string): Promise<unknown>;
-    open(project: object): Promise<unknown>;
-  };
+  directories: { choose(): Promise<string | null> };
+  previews: { open(url: string, id: string, title: string): Promise<void> };
   files: { reveal(root: string, path: string): Promise<unknown> };
 }
 
-test("built desktop preload runs with sandbox CommonJS and exposes working Site IPC", async (t) => {
+test("built desktop preload exposes native dialogs/previews without owning site processes", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "aura-preload-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const output = await buildDesktopPreload(join(directory, "preload.cjs"));
-  const events = new EventEmitter();
   const requests: unknown[][] = [];
   let host: PreloadHost | undefined;
-  const project = { directory: "/tmp/site" };
   const ipcRenderer = {
-    on: events.on.bind(events),
-    removeListener: events.removeListener.bind(events),
     invoke: async (...args: unknown[]) => {
       requests.push(args);
-      if (args[0] === "aura:site:choose-directory") return project;
-      if (args[0] === "aura:site:status")
-        events.emit(
-          "aura:site:status",
-          { sender: "private" },
-          { state: "idle" },
-        );
+      if (args[0] === "aura:directories:choose") return "/tmp/site";
     },
   };
   // Like a sandboxed preload: no import/Node loader, only Electron's limited require.
@@ -64,27 +48,15 @@ test("built desktop preload runs with sandbox CommonJS and exposes working Site 
   });
   assert.ok(host);
   assert.equal(host.platform, "desktop");
-  assert.equal(await host.site.chooseDirectory(), project);
-  const received: unknown[] = [];
-  const unsubscribe = host.site.onStatus((...args: unknown[]) =>
-    received.push(args),
-  );
-  assert.deepEqual(received, [[{ state: "idle" }]]);
-  unsubscribe();
-  events.emit("aura:site:status", {}, { state: "running" });
-  assert.equal(received.length, 1);
-  await host.site.start(project);
-  await host.site.stop("/tmp/site");
-  await host.site.open(project);
+  assert.equal(await host.directories.choose(), "/tmp/site");
+  assert.equal("site" in host, false);
+  await host.previews.open("http://127.0.0.1:5000/", "/tmp/site", "Site");
   // Coding deliverables are revealed through their own channel, with the
   // project root so the main process can confine the path.
   await host.files.reveal("/tmp/project", "src/a.ts");
   assert.deepEqual(requests, [
-    ["aura:site:choose-directory"],
-    ["aura:site:status"],
-    ["aura:site:start", project],
-    ["aura:site:stop", "/tmp/site"],
-    ["aura:site:open", project],
+    ["aura:directories:choose"],
+    ["aura:previews:open", "http://127.0.0.1:5000/", "/tmp/site", "Site"],
     ["aura:files:reveal", "/tmp/project", "src/a.ts"],
   ]);
 });

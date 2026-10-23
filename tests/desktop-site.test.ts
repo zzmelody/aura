@@ -9,7 +9,7 @@ import { serve } from "@hono/node-server";
 import {
   SiteRunner,
   describeProject,
-} from "../packages/backend/runtime/src/site-runner.ts";
+} from "../plugins/site-launcher/backend/site-runner.ts";
 
 test(
   "real Vite overrides an occupied explicit port and stops without touching the foreign service",

@@ -38,6 +38,12 @@ test("runtime configuration resolves paths and validates network settings", () =
   );
   assert.equal(config.tripoRegion, "global");
   assert.equal(config.pluginConfigPath, resolve(root, ".aura", "plugins.json"));
+  assert.equal(config.defaultPluginsDirectory, resolve(root, "plugins"));
+  assert.equal(
+    resolveRuntimeConfig({ root, defaultPluginsDirectory: "installed/plugins" })
+      .defaultPluginsDirectory,
+    resolve("installed/plugins"),
+  );
   assert.equal(formatHttpUrl(config.host, config.port), "http://[::1]:4321");
   assert.equal(isLoopbackRuntimeHost("::1"), true);
   assert.equal(isLoopbackRuntimeHost("[::1]"), true);

@@ -1,6 +1,6 @@
 ---
 name: aura-plugin-development
-description: Design, create, or review backend-only Aura plugins that contribute external ESM JavaScript Actions and Flows, including manifests, discovery, host capabilities, lifecycle, and validation. Use for Aura plugin-system work or external Aura Action/Flow packages; do not use for Codex plugins or frontend extensions.
+description: Design, create, or review Aura plugins with ESM backend Actions, Flows and capability providers, and optional workbench pages through the public UI SDK. Use for Aura plugin-system work, not Codex plugins.
 ---
 
 # Aura Plugin Development
@@ -14,10 +14,11 @@ Build Aura's trusted local plugin system and its Action/Flow plugins without cou
 3. Determine whether the task concerns:
    - host infrastructure inside Aura; implement this in backend TypeScript, or
    - an external plugin; author runtime contributions as native ESM JavaScript.
-4. Keep v1 backend-only. Do not add or modify React, browser, Electron renderer, or Capacitor UI merely to register a plugin. External Flows should surface through the existing catalog and schema-driven UI.
-5. Preserve the trust boundary. Treat v1 plugins as explicitly enabled trusted local Node.js code. Never describe manifest capabilities as a security sandbox, expose OAuth/API credentials, or auto-install plugin dependencies during Aura startup.
-6. Use public plugin SDK contracts. Do not make external plugins import private Aura source paths, application workspaces, `@aura/runtime`, or DSH/pi-ai internals.
-7. Validate the narrow plugin or backend package first. For Aura repository changes, update focused tests and documentation, then run the repository check required by `AGENTS.md`.
+4. Preserve the original backend-only v1 contract: Action/Flow plugins use the existing catalog and schema-driven UI. When workbench pages are requested, read [the page extension](references/pages.md), verify the host implements it, and use its public browser SDK separately from backend code.
+5. For product business backends, read [the backend extension](references/backends.md) and use the public storage/workflow/media ports, private provider services, HTTP adapters and explicit compatibility grants. Keep product implementation in its plugin, not a host facade.
+6. Preserve the trust boundary. Treat plugins as trusted local Node.js code: repository-owned `plugins/` is deployment-enabled by default; other directories require explicit configuration. Never describe manifest capabilities as a security sandbox, expose OAuth/API credentials, or auto-install plugin dependencies during Aura startup.
+7. Use public plugin SDK contracts. Do not make external plugins import private Aura source paths, application workspaces, `@aura/runtime`, or DSH/pi-ai internals.
+8. Validate the narrow plugin or backend package first. For Aura repository changes, update focused tests and documentation, then run the repository check required by `AGENTS.md`.
 
 ## JavaScript code style
 
@@ -27,6 +28,7 @@ Use the plugin's Prettier configuration for formatting and ESLint for quality ch
 
 ## Authoring defaults
 
+- In Aura, put non-foundational product plugins in independent directories under root `plugins/` (category subdirectories are allowed), not `examples/`. Declare explicit runtime assets in `package.json#files` for server/desktop distribution; keep account data, keys, caches and development dependencies out of releases. Follow root `AGENTS.md` for discovery, overrides and packaging.
 - Use `aura.plugin.json` plus `package.json` with `"type": "module"`.
 - Use exact entry names `<id>.action.js` and `<id>.flow.js` under their contribution directories.
 - Prefer `// @ts-check` and the declarations exported by `@aura/plugin-sdk`; TypeScript authoring is optional and must compile to ESM JavaScript before Aura loads it.

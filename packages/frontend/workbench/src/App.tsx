@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   useColorScheme,
@@ -30,7 +36,6 @@ import { ModelServiceBadge } from "./ModelServiceBadge";
 import { HistoryScreen } from "./screens/Home";
 import { ChatScreen } from "./screens/Chat";
 import { SettingsScreen } from "./screens/Settings";
-import { SiteScreen } from "./screens/Site";
 import { Workflows } from "./screens/Workflows";
 import { useFlowCatalog } from "./flowCatalog";
 import { flowContext, useFlowDraft } from "./flowDraft";
@@ -46,23 +51,12 @@ import { sidebarSessionStatus, sidebarSessionTitle } from "./sidebarSessions";
 import { platform } from "./platform";
 import { useCodingProjects } from "./features/coding/useCodingProjects";
 import type { CodingHandoff } from "./features/coding/CodingStudio";
+import { usePluginPages } from "./usePluginPages";
+import { isPluginTab } from "./pluginPages";
+import { PluginPageBoundary } from "./PluginPageBoundary";
+import { migratedStudioTab } from "./studio-navigation.ts";
 import "./workspace-chrome.css";
 
-const VideoProjects = React.lazy(() =>
-  import("./features/video/VideoProjects").then((module) => ({
-    default: module.VideoProjects,
-  })),
-);
-const ContentProjects = React.lazy(() =>
-  import("./features/content/ContentProjects").then((module) => ({
-    default: module.ContentProjects,
-  })),
-);
-const TopicLibrary = React.lazy(() =>
-  import("./features/topics/TopicLibrary").then((module) => ({
-    default: module.TopicLibrary,
-  })),
-);
 const CodingStudio = React.lazy(() =>
   import("./features/coding/CodingStudio").then((module) => ({
     default: module.CodingStudio,
@@ -79,7 +73,8 @@ const tabTitles: Record<Tab, string> = {
   site: "Site",
   settings: "设置",
 };
-const isStudio = (tab: Tab): tab is StudioTab => tab.startsWith("studio:");
+const isStudio = (tab: Tab): tab is StudioTab | `plugin:${string}` =>
+  tab.startsWith("studio:") || isPluginTab(tab);
 
 const WorkflowChat = React.lazy(() =>
   import("./screens/WorkflowChat").then((module) => ({
@@ -96,6 +91,7 @@ export default function App() {
     codexAuth.endpoint,
     workspace.ready && workspace.state.provider !== "offline",
   );
+  const pluginPages = usePluginPages(codexAuth.endpoint, workspace.ready);
   const [workflowDetail, setWorkflowDetail] = useState(false);
   const [codingHandoff, setCodingHandoff] = useState<CodingHandoff>();
   const takeHandoff = useCallback(() => setCodingHandoff(undefined), []);
@@ -138,7 +134,26 @@ export default function App() {
       : workspace.state.theme === "dark";
   const colors = dark ? palettes.dark : palettes.light;
   const reduced = systemReduced || workspace.state.reduceMotion;
-  const documentTitle = `Aura · ${tab === "chat" && workspace.active ? sidebarSessionTitle(workspace.active) : tabTitles[tab]}`;
+  const pluginStudio = isPluginTab(tab)
+    ? pluginPages.studios.find((studio) => studio.id === tab)
+    : undefined;
+  const pagePluginId = pluginStudio?.pluginId;
+  const createPageInvoke = pluginPages.invoke;
+  const invokePluginPage = useMemo(
+    () =>
+      pagePluginId
+        ? createPageInvoke(codexAuth.endpoint, pagePluginId)
+        : undefined,
+    [codexAuth.endpoint, pagePluginId, createPageInvoke],
+  );
+  const currentTitle =
+    tab === "chat" && workspace.active
+      ? sidebarSessionTitle(workspace.active)
+      : (pluginStudio?.title ??
+        (tab in tabTitles
+          ? tabTitles[tab as keyof typeof tabTitles]
+          : "工作台"));
+  const documentTitle = `Aura · ${currentTitle}`;
   useEffect(() => {
     const media = matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setSystemReduced(media.matches);
@@ -195,7 +210,8 @@ export default function App() {
     wide ? setCollapsed((value) => !value) : setSidebarOpen((value) => !value);
   const toggleTheme = () =>
     workspace.setState((s) => ({ ...s, theme: dark ? "light" : "dark" }));
-  const navigate = (next: Tab) => {
+  const navigate = (requested: Tab) => {
+    const next = migratedStudioTab(requested);
     if (next === tab && isStudio(next)) return;
     if (!canLeaveStudio()) return;
     setStudioDirty(false);
@@ -241,6 +257,7 @@ export default function App() {
       endpoint={codexAuth.endpoint}
       codingWorkspaces={codingWorkspaces}
       offline={workspace.state.provider === "offline"}
+      pluginStudios={pluginPages.studios}
     />
   );
   const showChat =
@@ -324,18 +341,12 @@ export default function App() {
                       ) : (
                         <FolderOpen size={16} />
                       )}
-                      <strong
-                        title={
-                          tab === "chat" && workspace.active
-                            ? sidebarSessionTitle(workspace.active)
-                            : tabTitles[tab]
-                        }
-                      >
+                      <strong title={currentTitle}>
                         {tab === "chat"
                           ? workspace.active
                             ? sidebarSessionTitle(workspace.active)
                             : "新对话"
-                          : tabTitles[tab]}
+                          : currentTitle}
                       </strong>
                       {tab === "chat" && workspace.active?.archivedAt ? (
                         <span className="header-archived">已归档</span>
@@ -521,32 +532,32 @@ export default function App() {
                       <React.Suspense
                         fallback={
                           <div className="workspace-loading">
-                            正在打开{tabTitles[tab]}…
+                            正在打开{currentTitle}…
                           </div>
                         }
                       >
-                        {tab === "studio:content" ? (
-                          <ContentProjects
-                            key={codexAuth.endpoint}
-                            endpoint={codexAuth.endpoint}
-                            onDirtyChange={setStudioDirty}
-                            onBack={() => navigate("chat")}
-                          />
-                        ) : tab === "studio:video" ? (
-                          <VideoProjects
-                            key={codexAuth.endpoint}
-                            endpoint={codexAuth.endpoint}
-                            onDirtyChange={setStudioDirty}
-                            onBack={() => navigate("chat")}
-                          />
-                        ) : (
-                          <TopicLibrary
-                            key={codexAuth.endpoint}
-                            endpoint={codexAuth.endpoint}
-                            onDirtyChange={setStudioDirty}
-                            onBack={() => navigate("chat")}
-                          />
-                        )}
+                        {isPluginTab(tab) ? (
+                          pluginStudio ? (
+                            <PluginPageBoundary
+                              key={pluginStudio.id}
+                              label={pluginStudio.title}
+                              renderPage={() =>
+                                pluginStudio.page.definition.render({
+                                  endpoint: codexAuth.endpoint,
+                                  pluginId: pluginStudio.pluginId,
+                                  invoke: invokePluginPage!,
+                                  onDirtyChange: setStudioDirty,
+                                  onBack: () => navigate("chat"),
+                                })
+                              }
+                            />
+                          ) : (
+                            <div className="workspace-loading">
+                              {pluginPages.failures[0]?.message ??
+                                "插件工作台尚未就绪。"}
+                            </div>
+                          )
+                        ) : null}
                       </React.Suspense>
                     </div>
                   ) : null}
@@ -611,7 +622,6 @@ export default function App() {
                       systemReduced={systemReduced}
                     />
                   ) : null}
-                  {tab === "site" ? <SiteScreen /> : null}
                   <footer className="workspace-status">
                     <span>
                       <span

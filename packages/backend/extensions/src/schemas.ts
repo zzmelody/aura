@@ -37,6 +37,23 @@ export const settingsUpdateSchema = z
   })
   .strict();
 
+const revisionSchema = z
+  .object({
+    from: z.array(z.string().regex(/^[a-f0-9]{64}$/u)).min(1),
+    to: z.string().regex(/^[a-f0-9]{64}$/u),
+  })
+  .strict();
+const legacyIds = z.record(z.string().regex(localIdPattern), revisionSchema);
+export const compatibilitySchema = z
+  .object({
+    flows: legacyIds.optional(),
+    actions: legacyIds.optional(),
+    presets: z.array(z.string()).optional(),
+    storageDomains: z.array(z.string().regex(/^[a-z][a-z0-9_]*$/u)).optional(),
+    directories: z.array(z.string().regex(/^[a-z][a-z0-9_-]*$/u)).optional(),
+    rpcPrefixes: z.array(z.string().regex(/^[a-z][a-z0-9-]*\/$/u)).optional(),
+  })
+  .strict();
 export const manifestSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -57,11 +74,26 @@ export const manifestSchema = z
         actions: z.string().trim().min(1).optional(),
         flows: z.string().trim().min(1).optional(),
         capabilities: z.string().trim().min(1).optional(),
+        /** Built browser bundle entry (lazy-CJS), e.g. ./client/dist/client.js. */
+        pages: z.string().trim().min(1).optional(),
+        presets: z.string().trim().min(1).optional(),
+        http: z
+          .object({
+            entry: z.string().min(1),
+            mounts: z
+              .array(z.string().regex(/^\/flows\/[a-z][a-z0-9-]*$/u))
+              .min(1),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .refine((value) =>
-        Boolean(value.actions || value.flows || value.capabilities),
+        Boolean(
+          value.actions || value.flows || value.capabilities || value.pages,
+        ),
       ),
+    compatibility: compatibilitySchema.optional(),
     capabilities: z.array(z.string().trim().min(1)).default([]),
   })
   .strict();

@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import type {
   AuraPluginConfiguration,
   AuraPluginSettingsState,
@@ -13,6 +13,7 @@ import {
   writeAuraPluginConfiguration,
 } from "./configuration.ts";
 import { resolveAuraPluginConfiguration } from "./discovery.ts";
+import { resolveAuraPluginEntries } from "./directories.ts";
 import { settingsUpdateSchema } from "./schemas.ts";
 function signature(value: unknown): string {
   return JSON.stringify(value);
@@ -60,9 +61,13 @@ export class AuraPluginManager {
       configuration,
       this.#options,
     );
+    const effective = await resolveAuraPluginEntries(
+      configuration,
+      this.#options,
+    );
     return {
       configPath: resolve(this.#options.configPath),
-      plugins: configuration.plugins.map((entry, index) => ({
+      plugins: effective.plugins.map((entry, index) => ({
         ...entry,
         status: preview.plugins[index] ?? {
           name: "本地 Aura 插件",
@@ -93,13 +98,20 @@ export class AuraPluginManager {
       );
     // The settings UI edits paths only; keep each path's plugin-owned settings.
     const stored = await readAuraPluginConfiguration(this.#options.configPath);
+    const effective = await resolveAuraPluginEntries(stored, this.#options);
+    const configurationDirectory = dirname(resolve(this.#options.configPath));
     const settingsByPath = new Map(
-      stored.plugins.map((entry) => [entry.path, entry.settings]),
+      effective.plugins.map((entry) => [
+        resolve(configurationDirectory, entry.path),
+        entry.settings,
+      ]),
     );
     const configuration: AuraPluginConfiguration = {
       version: 1,
       plugins: parsed.data.plugins.map((entry) => {
-        const settings = settingsByPath.get(entry.path);
+        const settings = settingsByPath.get(
+          resolve(configurationDirectory, entry.path),
+        );
         return {
           path: entry.path,
           enabled: entry.enabled,

@@ -203,3 +203,23 @@ test("workspace gate rejects mjs package sources", async (t) => {
   const errors = (await checkWorkspaces(root)).join("\n");
   assert.match(errors, /\.mjs sources are forbidden/);
 });
+
+test("workspace gate excludes desktop distribution plugins from application source checks", async (t) => {
+  const root = await fixture(t);
+  const app = join(root, "apps/desktop");
+  await mkdir(join(app, "dist-host/plugins/example"), { recursive: true });
+  await writeFile(
+    join(app, "package.json"),
+    JSON.stringify({
+      name: "@aura/desktop",
+      private: true,
+      version: "0.1.0",
+      aura: { kind: "app", platform: "desktop" },
+    }),
+  );
+  await writeFile(
+    join(app, "dist-host/plugins/example/provider.js"),
+    'import "@aura/third-party-plugin-peer";',
+  );
+  assert.deepEqual(await checkWorkspaces(root), []);
+});

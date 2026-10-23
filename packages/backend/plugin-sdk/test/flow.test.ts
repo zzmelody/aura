@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { defineFlow, z } from "../src/flow.ts";
+import { defineFlow, defineWorkflow, z } from "../src/flow.ts";
 import { ActionFailure, auraCapability } from "../src/action.ts";
 import type { ActionContext } from "../src/action.ts";
 import type {
@@ -102,4 +102,44 @@ test("public Action failures are bounded product-facing errors", () => {
   assert.equal(error.code, "ACTION_FAILURE");
   assert.equal(error.message, "生成左视图 超时。");
   assert.throws(() => new ActionFailure("\n\t"), /message is required/u);
+});
+
+test("relocated workflows preserve explicit root sequence paths", async () => {
+  let definition: InternalDefinition | undefined;
+  const plugin = defineWorkflow({
+    title: "Relocated",
+    input: z.object({}),
+    output: z.json(),
+    run: (ctx) => ctx.sequence({ id: "original" }, () => ({ done: true })),
+  });
+  const context = {
+    auraFlowRegistry: {
+      register: async (
+        _config: FlowRegistrationConfig,
+        value: InternalDefinition,
+      ) => {
+        definition = value;
+      },
+    },
+  } as unknown as Parameters<NonNullable<typeof plugin.apply>>[0];
+  await plugin.apply!(context, {
+    flowId: "original",
+    directory: "directory",
+    entry: "entry.flow.js",
+  });
+  const paths: string[] = [];
+  const result = await definition!.run(
+    {
+      runId: "run",
+      mode: "demo",
+      signal: new AbortController().signal,
+      sequence: async (options, run) => {
+        paths.push(options.id);
+        return run({} as FlowScope);
+      },
+    },
+    {},
+  );
+  assert.deepEqual(paths, ["original"]);
+  assert.deepEqual(result, { done: true });
 });
