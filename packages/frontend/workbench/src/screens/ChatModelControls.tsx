@@ -190,7 +190,7 @@ export function ChatModelControls({
                           role="menuitemradio"
                           aria-checked={checked}
                           className="chat-model-menu-item"
-                          onClick={() =>
+                          onClick={() => {
                             onChange(
                               selectChatModel(
                                 catalog,
@@ -199,8 +199,9 @@ export function ChatModelControls({
                                   ? ""
                                   : entry.id,
                               ),
-                            )
-                          }
+                            );
+                            setOpen(false);
+                          }}
                         >
                           <span>{entry.name}</span>
                           {entry.id === catalog.defaultModel ? (
@@ -233,7 +234,7 @@ export function ChatModelControls({
                           role="menuitemradio"
                           aria-checked={checked}
                           className="chat-model-menu-effort"
-                          onClick={() =>
+                          onClick={() => {
                             onChange({
                               ...(selection.model
                                 ? { model: selection.model }
@@ -241,8 +242,9 @@ export function ChatModelControls({
                               ...(entry.id === model.defaultReasoningEffort
                                 ? {}
                                 : { reasoningEffort: entry.id }),
-                            })
-                          }
+                            });
+                            setOpen(false);
+                          }}
                         >
                           {effortName(entry)}
                         </button>
