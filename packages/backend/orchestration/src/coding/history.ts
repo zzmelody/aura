@@ -11,7 +11,11 @@ import type {
   CodingQuestionAnswer,
   CodingStreamEvent,
 } from "../types.ts";
-import { projectCodingEvent, toolResult } from "./activity.ts";
+import {
+  messageText as text,
+  projectCodingEvent,
+  toolResult,
+} from "./activity.ts";
 import {
   approvalAnswer,
   approvalQuestion,
@@ -145,8 +149,15 @@ export function historyTurns(
     if (!current) continue;
     if (event.type === "user/message") {
       const source = (data as { source?: { kind?: unknown } }).source;
-      if (source?.kind === "user" && !current.prompt)
+      // The turn's opening request, then any steering the user sent into it
+      // while it ran. `rpcId` identifies the live request but means nothing
+      // on replay, so position inside the turn stands in for it: the shared
+      // projector applies the same rule to the live stream.
+      if (source?.kind === "user" && !current.prompt) {
         current.prompt = text((data as { content?: unknown }).content);
+        continue;
+      }
+      projectCodingEvent(event, emit, created, () => false);
       continue;
     }
     if (event.type === "assistant/message") {
@@ -265,21 +276,6 @@ export async function lastTurnStatus(
     if (ev.type === "turn/start") return "running";
   }
   return undefined;
-}
-
-function text(content: unknown): string {
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter(
-      (part): part is { type: "text"; text: string } =>
-        typeof part === "object" &&
-        part !== null &&
-        (part as { type?: unknown }).type === "text" &&
-        typeof (part as { text?: unknown }).text === "string",
-    )
-    .map((part) => part.text)
-    .join("")
-    .trim();
 }
 
 function questionArgs(raw: unknown): unknown[] {

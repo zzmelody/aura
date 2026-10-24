@@ -216,6 +216,8 @@ function parseCodingEvent(
     return { type: "progress", done: event.done, total: event.total };
   if (event.type === "deliverable" && typeof event.path === "string")
     return { type: "deliverable", path: event.path };
+  if (event.type === "steer" && typeof event.text === "string" && event.text)
+    return { type: "steer", text: event.text };
   if (
     event.type === "question" &&
     typeof event.questionId === "string" &&
@@ -347,6 +349,24 @@ export const stopCodingTurn = (endpoint: string, sessionId: string) =>
     endpoint,
     `/sessions/${encodeURIComponent(sessionId)}/stop`,
     "POST",
+  );
+
+/**
+ * Sends guidance into the turn already running. It joins that turn, so what
+ * the model does with it arrives on the turn's own stream rather than here;
+ * `steered` is false when the turn ended before the guidance landed.
+ */
+export const steerCodingTurn = (
+  endpoint: string,
+  sessionId: string,
+  prompt: string,
+  images?: string[],
+) =>
+  codingApi<{ steered: boolean }>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/steer`,
+    "POST",
+    { prompt, ...(images?.length ? { images } : {}) },
   );
 
 export const openSideChat = (endpoint: string, parentId: string) =>

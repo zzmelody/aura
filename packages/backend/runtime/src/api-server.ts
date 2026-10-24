@@ -5,7 +5,7 @@ import {
   type OrchestrationHealth,
 } from "@aura/orchestration";
 import { validateMessages, validateChatModelSelection } from "@aura/protocol";
-import { CHAT_IMAGE_LIMIT, type ChatEvent } from "@aura/protocol/types";
+import type { ChatEvent } from "@aura/protocol/types";
 import type { TripoPort } from "@aura/tripo";
 import { Hono } from "hono";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -37,7 +37,7 @@ import {
 } from "./plugin-pages-routes.ts";
 import type { PluginPageRegistry } from "./plugin-pages.ts";
 import { createTripoApp } from "./tripo-routes.ts";
-import { isRecord } from "./validation.ts";
+import { isRecord, validCodingImages } from "./validation.ts";
 import { isLoopbackRuntimeHost } from "./runtime-config.ts";
 import { createAiServicesApp } from "./ai-services-routes.ts";
 import { createServiceApp, ServiceRuns } from "./service-routes.ts";
@@ -53,16 +53,6 @@ interface ApiServerOptions {
   pluginSettings?: AuraPluginSettingsPort;
   pluginSettingsAccessible?: boolean;
   pluginPages?: PluginPageRegistry;
-}
-
-/** Optional list of uploaded chat image asset IDs (sha256 hex). */
-function validCodingImages(value: unknown): boolean {
-  return (
-    value === undefined ||
-    (Array.isArray(value) &&
-      value.length <= CHAT_IMAGE_LIMIT &&
-      value.every((id) => typeof id === "string" && /^[a-f0-9]{64}$/u.test(id)))
-  );
 }
 
 /** Atomically publishes a 0600 loopback descriptor that local clients read. */

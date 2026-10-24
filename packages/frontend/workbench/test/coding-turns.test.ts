@@ -85,6 +85,23 @@ test("the timeline retains text, grouped tools and questions in arrival order", 
   assert.equal(turn.reply, "先看看\n完成");
 });
 
+test("steering is its own entry and does not merge the reply around it", () => {
+  const turn = (
+    [
+      { type: "delta", text: "先看看" },
+      { type: "steer", text: "改用 map" },
+      { type: "delta", text: "改好了" },
+    ] satisfies TurnEvent[]
+  ).reduce(applyTurnEvent, newTurn("t", "写个函数", 1));
+  assert.deepEqual(turn.timeline, [
+    { kind: "text", text: "先看看" },
+    { kind: "steer", text: "改用 map" },
+    { kind: "text", text: "改好了" },
+  ]);
+  // The reply is the turn's whole text; the bubble renders from the timeline.
+  assert.equal(turn.reply, "先看看改好了");
+});
+
 test("replayed history matches the live fold and keeps its outcome", () => {
   const history: CodingHistoryTurn[] = [
     {

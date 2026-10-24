@@ -57,6 +57,7 @@ import {
   codingTurn,
   conversationHistory,
   answerQuestion,
+  steerCodingTurn,
   stopCodingTurn,
 } from "./api";
 import { diffLines, diffStats } from "./diff";
@@ -452,6 +453,13 @@ function DeliverableItem({
   );
 }
 
+/** The guidance entries of a turn, in the order the user sent them. */
+function steerings(turn: Turn): string[] {
+  return turn.timeline.flatMap((item) =>
+    item.kind === "steer" ? [item.text] : [],
+  );
+}
+
 function TurnView({
   turn,
   now,
@@ -585,6 +593,16 @@ function TurnView({
           live={running}
           onAnswer={(answers) => onAnswer(asked.questionId, answers)}
         />
+      ))}
+      {/*
+       * Guidance sent into this turn while it ran, after the prompt it
+       * redirected. The reply below is the whole turn's text, including what
+       * the model said once it took the guidance.
+       */}
+      {steerings(turn).map((text, index) => (
+        <div key={`${index}-${text}`} className="coding-prompt coding-steer">
+          {text}
+        </div>
       ))}
       {turn.reply ? (
         <div className="coding-reply">
@@ -965,6 +983,7 @@ export function ConversationPane({
    */
   const controllers = useRef(new Map<string, AbortController>());
   const [stopping, setStopping] = useState(false);
+  const [steering, setSteering] = useState(false);
   const transcript = useRef<HTMLDivElement>(null);
 
   const shown = sessionId ? (turns[sessionId] ?? noTurns) : noTurns;
@@ -1072,6 +1091,45 @@ export function ConversationPane({
       updateTurn(id, turnId, (turn) => answerTurn(turn, questionId, answers));
     };
 
+  /**
+   * Sends guidance into the running turn. DSH joins it to that turn, which
+   * picks it up at its next step boundary, so the model changes course with
+   * its work so far intact. The guidance and whatever the model does with it
+   * arrive on the turn's own stream, which is why nothing is added to the
+   * transcript here.
+   */
+  const steer = async (text: string, attached: ChatImage[]) => {
+    // An image-only message is allowed, as it is for a turn.
+    if (!sessionId || steering || (!text.trim() && !attached.length))
+      return false;
+    setSteering(true);
+    setError("");
+    try {
+      const { steered } = await steerCodingTurn(
+        endpoint,
+        sessionId,
+        text,
+        attached.map((image) => image.assetId),
+      );
+      if (!steered) {
+        // The turn ended between the keystroke and the request; the text is
+        // still in the composer, so sending it again starts a new turn.
+        setError("这一轮已经结束了，直接发送就好。");
+        return false;
+      }
+      setDraft("");
+      images.clear();
+      return true;
+    } catch (reason) {
+      setError(
+        `发送失败：${reason instanceof Error ? reason.message : String(reason)}`,
+      );
+      return false;
+    } finally {
+      setSteering(false);
+    }
+  };
+
   const send: ConversationSend = async (
     text = draft,
     attached = images.ready,
@@ -1155,6 +1213,14 @@ export function ConversationPane({
     }
     return latest;
   };
+
+  /**
+   * What the composer does with the draft: a turn in progress takes it as
+   * guidance, anything else starts a turn. Only the composer routes this way;
+   * `send` stays the new-turn path its programmatic callers expect.
+   */
+  const submit = () =>
+    running ? steer(draft, images.ready) : send().then(Boolean);
 
   // The host and the hand-off read the latest `send` through refs, so typing
   // does not re-run their effects.
@@ -1294,7 +1360,7 @@ export function ConversationPane({
                 !event.nativeEvent.isComposing
               ) {
                 event.preventDefault();
-                void send();
+                void submit();
               }
             }}
           />
@@ -1349,26 +1415,38 @@ export function ConversationPane({
                 onChange={onModelConfig}
               />
             ) : null}
+            {/*
+             * Stop is its own control while a turn runs, so the send button
+             * stays send: text typed during a turn steers it instead of
+             * waiting for it to finish.
+             */}
+            {running ? (
+              <button
+                type="button"
+                className="icon-control composer-stop"
+                aria-label={stopping ? "正在停止" : "停止生成"}
+                title={stopping ? "正在停止" : "停止生成"}
+                disabled={offline || readOnly || stopping}
+                onClick={() => void stop()}
+              >
+                <Square size={13} fill="currentColor" />
+              </button>
+            ) : null}
             <button
               className="send-button"
-              aria-label={
-                running ? (stopping ? "正在停止" : "停止生成") : "发送消息"
-              }
+              aria-label={running ? "发送引导" : "发送消息"}
+              title={running ? "发送引导（模型会在下一步读到）" : undefined}
               disabled={
                 offline ||
                 loadingHistory ||
                 readOnly ||
-                (running
-                  ? stopping
-                  : (!draft.trim() && !images.ready.length) || images.uploading)
+                steering ||
+                (!draft.trim() && !images.ready.length) ||
+                images.uploading
               }
-              onClick={() => (running ? void stop() : void send())}
+              onClick={() => void submit()}
             >
-              {running ? (
-                <Square size={14} fill="currentColor" />
-              ) : (
-                <ArrowUp size={18} />
-              )}
+              <ArrowUp size={18} />
             </button>
           </div>
         </div>

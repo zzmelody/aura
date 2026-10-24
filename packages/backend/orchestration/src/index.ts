@@ -503,6 +503,23 @@ export class OrchestrationHost {
     return this.request<{ stopped: boolean }>("coding/stop", { sessionId });
   }
 
+  /**
+   * Steers a conversation's running turn: the guidance joins the turn in
+   * progress, whose own stream keeps carrying what the model does with it.
+   * Reports `steered: false` when nothing is running to receive it.
+   */
+  steerCoding(
+    sessionId: string,
+    prompt: string,
+    images?: string[],
+  ): Promise<{ steered: boolean }> {
+    return this.request<{ steered: boolean }>("coding/steer", {
+      sessionId,
+      prompt,
+      ...(images?.length ? { images } : {}),
+    });
+  }
+
   /** Durably opens an empty side chat, or returns the parent's existing one. */
   openCodingSide(sessionId: string): Promise<{ sessionId: string }> {
     return this.request<{ sessionId: string }>("coding/side/open", {

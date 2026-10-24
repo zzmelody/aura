@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { OrchestrationHost } from "@aura/orchestration";
 import { FlowError } from "@aura/orchestration";
+import { isRecord, validCodingImages } from "./validation.ts";
 
 /**
  * Project management and coding turns for coding mode. The host owns the
@@ -117,6 +118,33 @@ export function createCodingApp(host: OrchestrationHost) {
     }
   });
 
+  // Guidance for a turn already running. Its events stay on the request that
+  // started the turn, so this answers with admission alone; a conversation
+  // with nothing running reports `steered: false` rather than starting a turn.
+  app.post("/sessions/:id/steer", async (context) => {
+    const body = await context.req.json().catch(() => undefined);
+    if (
+      !isRecord(body) ||
+      typeof body.prompt !== "string" ||
+      body.prompt.length > 80_000 ||
+      !validCodingImages(body.images) ||
+      // An image-only message is allowed; an empty one is not.
+      (!body.prompt.trim() && !(body.images as string[] | undefined)?.length)
+    )
+      return context.json({ message: "无效的引导内容。" }, 400);
+    try {
+      return context.json(
+        await host.steerCoding(
+          context.req.param("id"),
+          body.prompt,
+          body.images as string[] | undefined,
+        ),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
   // Opening the panel is durable even before its first request.
   app.post("/sessions/:id/side", async (context) => {
     try {
@@ -168,10 +196,6 @@ export function createCodingApp(host: OrchestrationHost) {
   });
 
   return app;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function failure(

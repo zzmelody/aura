@@ -1028,6 +1028,34 @@ export async function apply(ctx: Context) {
           data = { stopped: await coding.stop(params.sessionId) };
           break;
         }
+        case "coding/steer": {
+          const steer = z
+            .object({
+              sessionId: z.string().trim().min(1).max(200),
+              prompt: z.string().max(80_000),
+              images: z
+                .array(z.string().regex(/^[a-f0-9]{64}$/u))
+                .max(CHAT_IMAGE_LIMIT)
+                .optional(),
+            })
+            .safeParse(params);
+          if (
+            !steer.success ||
+            // An image-only message is fine; an empty one is not.
+            (!steer.data.prompt.trim() && !steer.data.images?.length)
+          )
+            throw new FlowError("无效的引导内容。", 400);
+          // Like stop, this reaches only conversations with a coding turn
+          // running in this process, never an arbitrary DSH session.
+          data = {
+            steered: await coding.steer(
+              steer.data.sessionId,
+              steer.data.prompt,
+              steer.data.images ?? [],
+            ),
+          };
+          break;
+        }
         case "coding/side/open": {
           if (typeof params.sessionId !== "string")
             throw new FlowError("无效的主对话。", 400);

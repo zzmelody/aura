@@ -188,6 +188,21 @@
   overflow-wrap: anywhere;
 }
 /*
+ * Guidance sent into a turn already running. Same bubble as the prompt, with
+ * a leading marker so the transcript shows it redirected the turn rather than
+ * started one.
+ */
+.coding-steer {
+  position: relative;
+  padding-left: 22px;
+}
+.coding-steer::before {
+  content: "↳";
+  position: absolute;
+  left: 9px;
+  color: var(--muted);
+}
+/*
  * Execution process, after DSH Desktop's turn process + tool rows: no card,
  * one quiet header with a hairline, then flat 24px rows in muted text that
  * brighten on hover. Colour is kept for meaning only (failure, diff totals).

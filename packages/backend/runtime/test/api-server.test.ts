@@ -402,6 +402,58 @@ test("the stop route forwards the conversation id and reports the result", async
   assert.deepEqual(stopped, ["coding-1", "coding-idle"]);
 });
 
+test("the steer route validates its content and reports admission", async () => {
+  const sent: Array<{ sessionId: string; prompt: string; images?: string[] }> =
+    [];
+  const flows = {
+    async steerCoding(sessionId: string, prompt: string, images?: string[]) {
+      sent.push({ sessionId, prompt, ...(images ? { images } : {}) });
+      return { steered: sessionId === "coding-1" };
+    },
+  } as unknown as NonNullable<Parameters<typeof createApiApp>[0]["flows"]>;
+  const app = createCodingApp(flows);
+  const id = "a".repeat(64);
+  const steer = (session: string, body: Record<string, unknown>) =>
+    app.request(`/sessions/${encodeURIComponent(session)}/steer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  const live = await steer("coding-1", { prompt: "改用 map" });
+  assert.equal(live.status, 200);
+  assert.deepEqual(await live.json(), { steered: true });
+  // A turn that ended first is reported, not treated as an error.
+  assert.deepEqual(await (await steer("coding-idle", { prompt: "x" })).json(), {
+    steered: false,
+  });
+  // An image-only message is allowed, as it is for a turn.
+  const imageOnly = await steer("coding-1", { prompt: "", images: [id] });
+  assert.equal(imageOnly.status, 200);
+  assert.deepEqual(sent, [
+    { sessionId: "coding-1", prompt: "改用 map" },
+    { sessionId: "coding-idle", prompt: "x" },
+    { sessionId: "coding-1", prompt: "", images: [id] },
+  ]);
+
+  for (const invalid of [
+    {},
+    { prompt: "" },
+    { prompt: "  " },
+    { prompt: "", images: [] },
+    { prompt: 7 },
+    { prompt: "x", images: ["../secret.png"] },
+    { prompt: "x", images: "a".repeat(64) },
+    { prompt: "x", images: Array(5).fill(id) },
+  ])
+    assert.equal(
+      (await steer("coding-1", invalid)).status,
+      400,
+      `accepted ${JSON.stringify(invalid)}`,
+    );
+  assert.equal(sent.length, 3, "invalid requests never reach the host");
+});
+
 test("coding turns accept uploaded image IDs and reject invalid ones", async () => {
   const turns: Array<{ prompt: string; images?: string[] }> = [];
   const app = createApiApp({

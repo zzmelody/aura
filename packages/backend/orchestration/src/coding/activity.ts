@@ -3,15 +3,31 @@ import type { CodingFileDiff, CodingStreamEvent } from "../types.ts";
 /**
  * Projects one DSH session event into the coding activity stream. Live turns
  * and replayed history both go through here, so they show the same steps.
+ *
+ * @param ownPrompt - whether a user message is the request that opened this
+ *   turn. Every other user message inside it is steering the user sent while
+ *   the turn ran, which shows as its own transcript entry. Omitting the test
+ *   projects no user message at all, as callers that track prompts themselves
+ *   require.
  */
 export function projectCodingEvent(
   event: { type: string; data?: unknown },
   emit: (event: CodingStreamEvent) => void,
   created: Map<string, CodingFileDiff>,
+  ownPrompt?: (message: Record<string, unknown>) => boolean,
 ) {
   const data = (event as { data?: unknown }).data;
   if (typeof data !== "object" || data === null) return;
   const fields = data as Record<string, unknown>;
+  if (event.type === "user/message" && ownPrompt && !ownPrompt(fields)) {
+    // Only what the user actually typed: injected context, model-selection
+    // notices and other producers carry their own source kind.
+    const source = fields.source as { kind?: unknown } | undefined;
+    if (source?.kind !== "user") return;
+    const text = messageText(fields.content);
+    if (text) emit({ type: "steer", text });
+    return;
+  }
   if (event.type === "tool/call") {
     const { callId, name } = fields;
     if (typeof callId === "string" && typeof name === "string") {
@@ -62,6 +78,22 @@ export function projectCodingEvent(
       if (typeof path === "string") emit({ type: "deliverable", path });
     }
   }
+}
+
+/** The text blocks of one message's content, joined and trimmed. */
+export function messageText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter(
+      (part): part is { type: "text"; text: string } =>
+        typeof part === "object" &&
+        part !== null &&
+        (part as { type?: unknown }).type === "text" &&
+        typeof (part as { text?: unknown }).text === "string",
+    )
+    .map((part) => part.text)
+    .join("")
+    .trim();
 }
 
 /**

@@ -51,6 +51,11 @@ export const codingTools = [
 const shellTools = ["bash", "pwsh"] as const;
 
 const CODING_TURN_TIMEOUT_MS = 30 * 60_000;
+/**
+ * Upper bound on one steering admission. Steering only has to reach the
+ * running agent's inbox, so it never waits out the turn it is steering.
+ */
+const CODING_STEER_TIMEOUT_MS = 30_000;
 
 export interface CodingSessionKey {
   /** Aura-owned coding session id; one DSH session per project conversation. */
@@ -84,6 +89,7 @@ export function codingService(
   return {
     stream,
     stop: stopTurn,
+    steer: steerTurn,
     close: closeSession,
     closeSide: closeSession,
     /** Whether a turn of this conversation is running right now. */
@@ -100,6 +106,68 @@ export function codingService(
     turn.abort(new FlowError("已停止生成。"));
     await settled.get(sessionId);
     return true;
+  }
+
+  /**
+   * Steers the running turn: the text joins the turn DSH is already running,
+   * which consumes it at its next step boundary, so the model changes course
+   * without losing the work it has done. The turn's own events keep streaming
+   * on the request that started it, which is why this resolves as soon as the
+   * agent accepted the message rather than waiting for the reply.
+   *
+   * Only a conversation with a turn running in this process can be steered,
+   * so another DSH session (a Flow agent, an ordinary chat) cannot be reached
+   * through its id, and a finished conversation reports `false` instead of
+   * silently starting a turn nobody is streaming.
+   */
+  async function steerTurn(
+    sessionId: string,
+    prompt: string,
+    imageIds: readonly string[] = [],
+  ): Promise<boolean> {
+    const turn = turnStops.get(sessionId);
+    if (!turn || !active.has(sessionId)) return false;
+    // Bound to the turn being steered: steering can never outlive it.
+    const stop = AbortSignal.any([
+      turn.signal,
+      sessionStop(sessionId).signal,
+      AbortSignal.timeout(CODING_STEER_TIMEOUT_MS),
+    ]);
+    const content = [
+      { type: "text" as const, text: prompt.trim() || "请查看我附上的图片。" },
+      ...(await promptImages(imageIds, stop)),
+    ];
+    await controller.prompt(
+      {
+        sessionId: SessionId(sessionId),
+        requestId: randomUUID() as SessionRequestId,
+        mode: "steer",
+        content,
+      },
+      stop,
+    );
+    return true;
+  }
+
+  /**
+   * Uploaded images as prompt content. They are re-read by content ID, so a
+   * client can only reference pictures it uploaded, never arbitrary paths.
+   */
+  async function promptImages(
+    imageIds: readonly string[],
+    signal: AbortSignal,
+  ) {
+    const pictures = [];
+    for (const [index, id] of imageIds.entries()) {
+      const image = await images.readImage(id, signal);
+      pictures.push({
+        type: "image" as const,
+        mediaType: image.mediaType,
+        data: image.bytes.toString("base64"),
+        name: `图${index + 1}`,
+      });
+    }
+    return pictures;
   }
 
   async function stream(
@@ -326,10 +394,18 @@ export function codingService(
       // New-file content from `write` calls, keyed by call id until the
       // result arrives (DSH attaches no hunks for a file that did not exist).
       const created = new Map<string, CodingFileDiff>();
+      // This request's own prompt, told apart from the steering the user sends
+      // while the turn runs: both are user messages inside the same turn, and
+      // only the latter belongs in the transcript as its own entry. A message
+      // seen before ours has no turn of this request to belong to either.
+      const ownPrompt = (message: Record<string, unknown>) =>
+        matched === undefined ||
+        (message.source as { rpcId?: unknown } | undefined)?.rpcId ===
+          requestId;
       disposers.push(
         ctx.on("session/event", (session, event) => {
           if (session.id !== sessionId) return;
-          projectCodingEvent(event, emit, created);
+          projectCodingEvent(event, emit, created, ownPrompt);
           if (event.type === "turn/start") turnNumber = event.data.turn;
           if (
             event.type === "user/message" &&
@@ -377,18 +453,7 @@ export function codingService(
       stop.addEventListener("abort", onAbort, { once: true });
       try {
         stop.throwIfAborted();
-        // Uploaded images are re-read by content ID, so a client can only
-        // reference pictures it uploaded, never arbitrary paths.
-        const pictures = [];
-        for (const [index, id] of (turn.images ?? []).entries()) {
-          const image = await images.readImage(id, stop);
-          pictures.push({
-            type: "image" as const,
-            mediaType: image.mediaType,
-            data: image.bytes.toString("base64"),
-            name: `图${index + 1}`,
-          });
-        }
+        const pictures = await promptImages(turn.images ?? [], stop);
         await controller.prompt(
           {
             sessionId,

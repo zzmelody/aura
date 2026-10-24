@@ -32,7 +32,9 @@ export type AskedQuestion = {
 export type TimelineItem =
   | { kind: "text"; text: string }
   | { kind: "tools"; callIds: string[] }
-  | { kind: "question"; questionId: string };
+  | { kind: "question"; questionId: string }
+  /** Guidance the user sent while this turn was running. */
+  | { kind: "steer"; text: string };
 
 /** One request and everything the agent did to answer it. */
 export type Turn = {
@@ -110,6 +112,13 @@ export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
         };
   if (event.type === "answered")
     return answerTurn(turn, event.questionId, event.answers);
+  if (event.type === "steer")
+    return {
+      ...turn,
+      // Guidance is its own entry, so the reply text before and after it stay
+      // separate paragraphs instead of merging across the interruption.
+      timeline: [...turn.timeline, { kind: "steer", text: event.text }],
+    };
   if (event.phase === "start")
     return turn.tools.some((tool) => tool.callId === event.callId)
       ? turn
