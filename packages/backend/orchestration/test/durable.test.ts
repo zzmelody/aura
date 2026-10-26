@@ -18,6 +18,7 @@ import { agentConfig, agentDefaults } from "../src/agent-config.ts";
 import {
   agentOptionsSchema,
   agentRequestSchema,
+  stepSchema,
   FlowError,
 } from "../src/schema.ts";
 
@@ -110,6 +111,105 @@ test("Agent options validate bounds and inherit step > Flow > runtime defaults",
   assert.throws(
     () => agentDefaults("codex", { maxTokens: 4096 }),
     /AGENT_OPTION_UNSUPPORTED/,
+  );
+});
+
+test("plugin Agent presets execute and survive persistence and restart without replaying completed calls", async () => {
+  const presets = [
+    "wechat-history/persona-analyst",
+    "melody.tools/persona-chat",
+  ];
+  const calls: string[] = [];
+  const workflow = async (flow: FlowScope) => {
+    const profile = await flow.agent({
+      ...agent("profile"),
+      preset: presets[0]!,
+    });
+    await flow.checkpoint({
+      id: "wait",
+      prompt: "Continue?",
+      schema: z.boolean(),
+    });
+    const reply = await flow.agent({ ...agent("reply"), preset: presets[1]! });
+    return { profile: profile.output, reply: reply.output };
+  };
+  const sessions: Partial<EngineOptions["sessions"]> = {
+    execute: async (step) => {
+      calls.push(step.preset);
+      return step.id;
+    },
+  };
+  const first = await setup(workflow, { presets, sessions });
+  let second: Awaited<ReturnType<typeof setup>> | undefined;
+  try {
+    const run = await first.engine.start(req());
+    const waiting = await first.engine.wait(run.id);
+    assert.equal(waiting.status, "waiting_input", waiting.error);
+    await first.engine.close();
+    const restored = table();
+    await restored.put(run.id, JSON.parse(JSON.stringify(waiting)));
+    second = await setup(workflow, { table: restored, presets, sessions });
+    await second.engine.command(
+      run.id,
+      "answer",
+      { requestId: randomUUID(), output: true },
+      "main/wait",
+    );
+    const completed = await second.engine.wait(run.id);
+    assert.equal(completed.status, "completed", completed.error);
+    assert.deepEqual(completed.output, { profile: "profile", reply: "reply" });
+    assert.deepEqual(calls, presets);
+    assert.deepEqual(
+      runSchema
+        .parse(JSON.parse(JSON.stringify(completed)))
+        .steps.filter((step) => step.kind === "agent")
+        .map((step) => step.preset),
+      presets,
+    );
+  } finally {
+    await first.engine.close();
+    await second?.engine.close();
+  }
+});
+
+test("Agent preset IDs retain legacy compatibility and reject malformed namespaces", () => {
+  const request = agent("profile");
+  const saved = {
+    id: "profile",
+    label: "Profile",
+    kind: "agent",
+    status: "completed",
+    sessionId: randomUUID(),
+  };
+  for (const preset of ["Researcher_v1", "wechat-history/persona-analyst"]) {
+    assert.equal(
+      agentRequestSchema.safeParse({ ...request, preset }).success,
+      true,
+    );
+    assert.equal(stepSchema.safeParse({ ...saved, preset }).success, true);
+  }
+  for (const preset of [
+    "../analyst",
+    "plugin/../analyst",
+    "plugin/",
+    "/analyst",
+    "plugin/analyst/extra",
+    "plugin\\analyst",
+  ]) {
+    assert.equal(
+      agentRequestSchema.safeParse({ ...request, preset }).success,
+      false,
+      preset,
+    );
+    assert.equal(
+      stepSchema.safeParse({ ...saved, preset }).success,
+      false,
+      preset,
+    );
+  }
+  assert.equal(
+    agentRequestSchema.safeParse({ ...request, id: "plugin/step" }).success,
+    false,
   );
 });
 
@@ -552,6 +652,7 @@ async function setup(
     action?: LoadedAction;
     executeAction?: NonNullable<EngineOptions["actions"]>["runtime"]["execute"];
     concurrency?: number;
+    presets?: string[];
     flow?: Partial<LoadedFlow>;
   } = {},
 ) {
@@ -575,9 +676,13 @@ async function setup(
     domain: { table: () => records },
     registry: { get: () => loaded, catalog: () => [] },
     refreshFlows: async () => {},
-    presets: async () => [
-      { id: "test", name: "test", description: "", unavailable: false },
-    ],
+    presets: async () =>
+      (options.presets ?? ["test"]).map((id) => ({
+        id,
+        name: id,
+        description: "",
+        unavailable: false,
+      })),
     sessions: {
       execute: async (step) => step.id,
       history: async (step) => ({

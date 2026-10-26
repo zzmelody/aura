@@ -88,7 +88,7 @@ export const agentRequestSchema = z
     ...agentOptionFields,
     id: flowIdSchema,
     label: z.string().trim().min(1).max(100),
-    preset: flowIdSchema,
+    preset: contributionIdSchema,
     prompt: text,
     images: z.array(flowImageSchema).max(4).optional(),
     actions: z.array(contributionIdSchema).max(64).default([]),
@@ -165,7 +165,7 @@ export const stepSchema = z.union([
   z.object({
     ...stepBase,
     kind: z.literal("agent").default("agent"),
-    preset: flowIdSchema,
+    preset: contributionIdSchema,
     sessionId: z.uuid(),
     requestId: z.uuid().optional(),
     actions: z.array(actionRefSchema).optional(),
