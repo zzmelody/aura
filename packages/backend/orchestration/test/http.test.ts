@@ -3,6 +3,28 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { createFlowApp, type OrchestrationHost } from "../src/index.ts";
 import { FlowError } from "../src/schema.ts";
+import { Hono } from "hono";
+
+test("mounted plugin binary routes retain their own upload limits and precede generic Flow routing", async () => {
+  const flows = createFlowApp({
+    request: async <T>() => ({ flows: [] }) as T,
+    pluginHttp: async (request) => {
+      if (new URL(request.url).pathname !== "/flows/example/assets") return;
+      return new Response(String((await request.arrayBuffer()).byteLength), {
+        status: 201,
+      });
+    },
+  });
+  const app = new Hono().route("/flows", flows);
+  const response = await app.request("/flows/example/assets", {
+    method: "POST",
+    body: new Uint8Array(300 * 1024),
+  });
+  assert.equal(response.status, 201);
+  assert.equal(await response.text(), String(300 * 1024));
+  assert.equal((await app.request("/flows/catalog")).status, 200);
+  assert.equal((await app.request("/flows/missing")).status, 404);
+});
 
 test("Hono boundary delegates flow operations, bounds bodies and hides internal errors", async () => {
   const calls: Array<{ method: string; params: object }> = [];

@@ -41,7 +41,9 @@ test(
       assert.equal(moved.title, "演示空间");
       const projects = await host.projects();
       assert.deepEqual(
-        projects.map((item) => item.directory),
+        projects
+          .filter((item) => !item.isDefault)
+          .map((item) => item.directory),
         [await realpath(second)],
       );
 
@@ -54,7 +56,7 @@ test(
       await assert.rejects(host.relocateProject(moved.id, first), {
         message: /另一个工作空间/u,
       });
-      assert.equal((await host.projects()).length, 2);
+      assert.equal((await host.projects()).length, 3);
 
       // Conversations outside any workspace get a built-in directory.
       assert.ok(
@@ -67,7 +69,10 @@ test(
         host.relocateProject(other.id, join(root, "missing")),
       );
       await assert.rejects(host.relocateProject(other.id, "relative/dir"));
-      assert.equal((await host.projects()).length, 2);
+      assert.equal((await host.projects()).length, 3);
+      const builtIn = (await host.projects()).find((item) => item.isDefault)!;
+      await assert.rejects(host.removeProject(builtIn.id));
+      await assert.rejects(host.relocateProject(builtIn.id, first));
     } finally {
       await host.close();
       await rm(root, { recursive: true, force: true });

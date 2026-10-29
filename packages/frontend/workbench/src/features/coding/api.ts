@@ -1,5 +1,6 @@
 import type {
   ChatModelSelection,
+  ChatMessage,
   CodingActivity,
   CodingConversationInfo,
   CodingFileDiff,
@@ -123,12 +124,15 @@ export async function* codingTurn(
   endpoint: string,
   turn: {
     sessionId: string;
-    projectId: string;
+    projectId?: string;
     prompt: string;
     /** Uploaded chat image asset IDs. */
     images?: string[];
     /** Set on a side chat: the conversation it branches from. */
     forkFrom?: string;
+    branchFrom?: string;
+    history?: ChatMessage[];
+    context?: string;
     mode: FlowMode;
     modelConfig?: ChatModelSelection;
   },
@@ -184,6 +188,20 @@ export async function* codingTurn(
 function parseCodingEvent(
   event: Record<string, unknown>,
 ): CodingChunk | undefined {
+  if (
+    event.type === "workflow" &&
+    typeof event.runId === "string" &&
+    typeof event.flowId === "string" &&
+    typeof event.title === "string"
+  )
+    return {
+      type: "workflow",
+      runId: event.runId,
+      flowId: event.flowId,
+      title: event.title,
+      inputPreview:
+        typeof event.inputPreview === "string" ? event.inputPreview : "",
+    };
   if (event.type === "delta" && typeof event.text === "string")
     return { type: "delta", text: event.text };
   if (
@@ -289,6 +307,19 @@ export const closeSideChat = (endpoint: string, sessionId: string) =>
     endpoint,
     `/sessions/${encodeURIComponent(sessionId)}/side`,
     "DELETE",
+  );
+
+export const saveConversationModel = (
+  endpoint: string,
+  sessionId: string,
+  mode: FlowMode,
+  selection: ChatModelSelection,
+) =>
+  codingApi<{ updated: true }>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/model`,
+    "POST",
+    { mode, selection },
   );
 
 /** Sends the user's answer to a question the agent is waiting on. */

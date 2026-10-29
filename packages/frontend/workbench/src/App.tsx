@@ -26,7 +26,6 @@ import "@fontsource/ibm-plex-mono/latin-400.css";
 import "./styles.css";
 import "./shell.css";
 import "./workflow-output.css";
-import { providerMode } from "@aura/core";
 import { ThemeContext } from "@aura/ui/components";
 import { palettes } from "@aura/ui/theme";
 import { useWorkspace } from "./useWorkspace";
@@ -50,6 +49,7 @@ import { ToastProvider } from "./toast";
 import { sidebarSessionStatus, sidebarSessionTitle } from "./sidebarSessions";
 import { platform } from "./platform";
 import { useCodingProjects } from "./features/coding/useCodingProjects";
+import { isActiveStatus } from "./features/coding/conversationStatus";
 import type { CodingHandoff } from "./features/coding/CodingStudio";
 import { usePluginPages } from "./usePluginPages";
 import { isPluginTab } from "./pluginPages";
@@ -92,6 +92,12 @@ export default function App() {
     workspace.ready && workspace.state.provider !== "offline",
   );
   const pluginPages = usePluginPages(codexAuth.endpoint, workspace.ready);
+  const runningCount = new Set([
+    ...workspace.runningIds,
+    ...Object.entries(codingWorkspaces.statuses)
+      .filter(([, status]) => isActiveStatus(status))
+      .map(([id]) => id),
+  ]).size;
   const [workflowDetail, setWorkflowDetail] = useState(false);
   const [codingHandoff, setCodingHandoff] = useState<CodingHandoff>();
   const takeHandoff = useCallback(() => setCodingHandoff(undefined), []);
@@ -100,10 +106,6 @@ export default function App() {
     !studioDirty || window.confirm("工作台有未保存修改，确认离开？");
   const [workflowBrowseRevision, setWorkflowBrowseRevision] = useState(0);
   const [tab, setTab] = useState<Tab>("chat");
-  const [codingVisited, setCodingVisited] = useState(false);
-  useEffect(() => {
-    if (tab === "studio:coding") setCodingVisited(true);
-  }, [tab]);
   const [showArchived, setShowArchived] = useState(false);
   const [sessionDialog, setSessionDialog] = useState<SessionDialogRequest>();
   const navigation = useRef<Array<{ tab: Tab; sessionId: string | null }>>([
@@ -153,6 +155,11 @@ export default function App() {
         (tab in tabTitles
           ? tabTitles[tab as keyof typeof tabTitles]
           : "工作台"));
+  const activeConversation = codingWorkspaces.selectedId
+    ? codingWorkspaces.conversations[codingWorkspaces.selectedId]?.find(
+        (item) => item.id === codingWorkspaces.conversationId,
+      )
+    : undefined;
   const documentTitle = `Aura · ${currentTitle}`;
   useEffect(() => {
     const media = matchMedia("(prefers-reduced-motion: reduce)");
@@ -227,16 +234,26 @@ export default function App() {
     if (!canLeaveStudio()) return;
     setStudioDirty(false);
     workspace.newChat();
+    codingWorkspaces.newChat();
+    setCodingHandoff(prompt ? { id: crypto.randomUUID(), prompt } : undefined);
     remember("chat", null);
     setTab("chat");
     setAssistantOpen(false);
     setSidebarOpen(false);
-    if (prompt) void workspace.send(prompt);
+    if (prompt && workspace.state.provider === "offline")
+      void workspace.send(prompt);
   };
   const open = (id: string) => {
     if (!canLeaveStudio()) return;
     setStudioDirty(false);
     workspace.openChat(id);
+    const imported = Object.values(codingWorkspaces.conversations)
+      .flat()
+      .find((item) => item.id === `legacy-${id}`);
+    if (imported) {
+      codingWorkspaces.open(imported.projectId, imported.id);
+      workspace.newChat();
+    } else codingWorkspaces.newChat();
     remember("chat", id);
     setTab("chat");
     setAssistantOpen(false);
@@ -262,6 +279,7 @@ export default function App() {
   );
   const showChat =
     tab === "chat" ||
+    tab === "studio:coding" ||
     (tab === "flows" &&
       workflowDetail &&
       assistantOpen &&
@@ -345,7 +363,7 @@ export default function App() {
                         {tab === "chat"
                           ? workspace.active
                             ? sidebarSessionTitle(workspace.active)
-                            : "新对话"
+                            : (activeConversation?.title ?? "新对话")
                           : currentTitle}
                       </strong>
                       {tab === "chat" && workspace.active?.archivedAt ? (
@@ -410,7 +428,11 @@ export default function App() {
                   ) : null}
                   <div
                     className={`workspace-deck${tab === "flows" && showChat && split ? " split" : ""}`}
-                    hidden={tab !== "flows" && tab !== "chat"}
+                    hidden={
+                      tab !== "flows" &&
+                      tab !== "chat" &&
+                      tab !== "studio:coding"
+                    }
                   >
                     <div
                       className="flow-area"
@@ -470,7 +492,81 @@ export default function App() {
                           </div>
                         </div>
                       ) : null}
-                      {workspace.active?.workflow ? (
+                      {workspace.state.provider !== "offline" ? (
+                        <div
+                          className="studio-area"
+                          style={
+                            workspace.active?.workflow && tab === "chat"
+                              ? { display: "none" }
+                              : undefined
+                          }
+                        >
+                          <React.Suspense
+                            fallback={
+                              <div className="workspace-loading">
+                                正在打开对话…
+                              </div>
+                            }
+                          >
+                            <CodingStudio
+                              key={codexAuth.endpoint}
+                              endpoint={codexAuth.endpoint}
+                              provider={workspace.state.provider}
+                              workspaces={codingWorkspaces}
+                              handoff={codingHandoff}
+                              onHandoffTaken={takeHandoff}
+                              legacy={
+                                tab === "chat" &&
+                                workspace.active &&
+                                !workspace.active.workflow
+                                  ? workspace.active
+                                  : undefined
+                              }
+                              onOpened={() => {
+                                workspace.setDraft("");
+                                workspace.newChat();
+                              }}
+                              context={
+                                tab === "flows"
+                                  ? flowContext(flowDraft.code)
+                                  : undefined
+                              }
+                              initialDraft={
+                                tab === "flows" ? workspace.draft : undefined
+                              }
+                              onApplyFlow={
+                                tab === "flows"
+                                  ? (code) => {
+                                      flowDraft.update(code);
+                                      setEditorRevision((value) => value + 1);
+                                      if (!split) setAssistantOpen(false);
+                                    }
+                                  : undefined
+                              }
+                              flows={catalogState.catalog?.flows}
+                              flowsLoading={
+                                !catalogState.catalog && !catalogState.error
+                              }
+                              onRunFlow={(flow) => {
+                                const id = workspace.newWorkflowChat(
+                                  flow,
+                                  codexAuth.endpoint,
+                                );
+                                remember("chat", id);
+                                setTab("chat");
+                              }}
+                              onProvider={(provider) =>
+                                workspace.setState((current) => ({
+                                  ...current,
+                                  provider,
+                                }))
+                              }
+                              onBack={() => navigate("chat")}
+                            />
+                          </React.Suspense>
+                        </div>
+                      ) : null}
+                      {workspace.active?.workflow && tab === "chat" ? (
                         <React.Suspense
                           fallback={
                             <div className="workspace-loading">
@@ -489,28 +585,9 @@ export default function App() {
                             )}
                           />
                         </React.Suspense>
-                      ) : (
+                      ) : workspace.state.provider === "offline" ? (
                         <ChatScreen
                           workspace={workspace}
-                          flowMode={tab === "flows"}
-                          flows={catalogState.catalog?.flows}
-                          flowsLoading={
-                            !catalogState.catalog && !catalogState.error
-                          }
-                          onOpenStudio={navigate}
-                          workspaces={
-                            tab === "chat" ? codingWorkspaces : undefined
-                          }
-                          onWorkspaceTask={(projectId, prompt, images) => {
-                            codingWorkspaces.open(projectId);
-                            setCodingHandoff({
-                              id: crypto.randomUUID(),
-                              projectId,
-                              prompt,
-                              ...(images.length ? { images } : {}),
-                            });
-                            navigate("studio:coding");
-                          }}
                           context={
                             tab === "flows"
                               ? flowContext(flowDraft.code)
@@ -524,7 +601,7 @@ export default function App() {
                             if (!split) setAssistantOpen(false);
                           }}
                         />
-                      )}
+                      ) : null}
                     </div>
                   </div>
                   {isStudio(tab) && tab !== "studio:coding" ? (
@@ -561,58 +638,18 @@ export default function App() {
                       </React.Suspense>
                     </div>
                   ) : null}
-                  {codingVisited || tab === "studio:coding" ? (
-                    <div
-                      className="studio-area"
-                      style={
-                        tab === "studio:coding"
-                          ? undefined
-                          : { display: "none" }
-                      }
-                    >
-                      <React.Suspense
-                        fallback={
-                          <div className="workspace-loading">
-                            正在打开工作空间…
-                          </div>
-                        }
-                      >
-                        <CodingStudio
-                          key={codexAuth.endpoint}
-                          endpoint={codexAuth.endpoint}
-                          provider={workspace.state.provider}
-                          workspaces={codingWorkspaces}
-                          handoff={codingHandoff}
-                          onHandoffTaken={takeHandoff}
-                          modelConfig={
-                            workspace.chatModelConfig[
-                              providerMode(workspace.state.provider)
-                            ] ?? {}
-                          }
-                          onModelConfig={(selection) =>
-                            workspace.setChatModelConfig(
-                              providerMode(workspace.state.provider),
-                              selection,
-                            )
-                          }
-                          onProvider={(provider) =>
-                            workspace.setState((s) => ({
-                              ...s,
-                              provider,
-                              endpoint: s.endpoint || "http://127.0.0.1:4311",
-                            }))
-                          }
-                          onBack={() => navigate("chat")}
-                        />
-                      </React.Suspense>
-                    </div>
-                  ) : null}
                   {tab === "history" ? (
                     <HistoryScreen
                       workspace={workspace}
                       start={start}
                       open={open}
                       onDialog={setSessionDialog}
+                      conversations={codingWorkspaces}
+                      openConversation={(projectId, id) => {
+                        codingWorkspaces.open(projectId, id);
+                        workspace.newChat();
+                        navigate("studio:coding");
+                      }}
                     />
                   ) : null}
                   {tab === "settings" ? (
@@ -625,10 +662,10 @@ export default function App() {
                   <footer className="workspace-status">
                     <span>
                       <span
-                        className={`session-status${workspace.runningIds.length ? " running" : ""}`}
+                        className={`session-status${runningCount ? " running" : ""}`}
                       />
-                      {workspace.runningIds.length
-                        ? `${workspace.runningIds.length} 个会话生成中`
+                      {runningCount
+                        ? `${runningCount} 个会话生成中`
                         : "工作区就绪"}
                     </span>
                     <span>

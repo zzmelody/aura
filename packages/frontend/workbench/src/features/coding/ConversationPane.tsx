@@ -1,4 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { legacyConversationTurns } from "@aura/protocol/conversations";
+import { extractFlowCode } from "../../flowDraft";
+import { slashQuery } from "../../flowPicker";
+import { NestedFlowRun } from "../../screens/WorkflowRun";
+import { ConversationFlows } from "./ConversationFlows";
+import { handlePickerKey } from "../../screens/FlowPicker";
+import { filterFlows } from "../../flowPicker";
 import {
   ArrowUp,
   ChevronDown,
@@ -44,6 +51,8 @@ import { providerMode } from "@aura/core";
 import type { Workspace } from "@aura/core/types";
 import type {
   ChatModelSelection,
+  ChatMessage,
+  FlowCatalogEntry,
   CodingFileDiff,
   CodingQuestionAnswer,
 } from "@aura/protocol/types";
@@ -466,6 +475,7 @@ function TurnView({
   directory,
   endpoint,
   onAnswer,
+  onApplyFlow,
 }: {
   turn: Turn;
   now: number;
@@ -474,6 +484,7 @@ function TurnView({
   /** Project directory; deliverable paths resolve against it. */
   directory: string;
   onAnswer(questionId: string, answers: CodingQuestionAnswer[]): Promise<void>;
+  onApplyFlow?(code: string): void;
 }) {
   const elapsed = (turn.endedAt ?? now) - turn.startedAt;
   const running = turn.status === "running";
@@ -521,70 +532,72 @@ function TurnView({
           ))}
         </div>
       ) : null}
-      <div className="coding-work" aria-live="polite">
-        <button
-          type="button"
-          className={`coding-process ${turn.status}`}
-          aria-expanded={hasSteps ? open : undefined}
-          disabled={!hasSteps}
-          data-open={(hasSteps && open) || undefined}
-          onClick={() => setToggled(!open)}
-        >
-          <StateIcon
-            size={15}
-            className={`coding-process-icon${running && !waiting ? " coding-spin" : ""}`}
-            aria-hidden="true"
-          />
-          <span className="coding-process-label">
-            <span className="coding-process-state">{stateLabel}</span>
-            <span className="coding-process-number">
-              {" "}
-              · {duration(elapsed)}
-            </span>
-            {turn.tools.length ? ` · ${turn.tools.length} 次操作` : ""}
-          </span>
-          {hasSteps ? (
-            <ChevronDown
-              size={14}
-              className="coding-process-chevron"
+      {running || hasSteps || turn.status !== "complete" ? (
+        <div className="coding-work" aria-live="polite">
+          <button
+            type="button"
+            className={`coding-process ${turn.status}`}
+            aria-expanded={hasSteps ? open : undefined}
+            disabled={!hasSteps}
+            data-open={(hasSteps && open) || undefined}
+            onClick={() => setToggled(!open)}
+          >
+            <StateIcon
+              size={15}
+              className={`coding-process-icon${running && !waiting ? " coding-spin" : ""}`}
               aria-hidden="true"
             />
-          ) : null}
-        </button>
-        {hasSteps && open ? (
-          <div className="coding-process-body">
-            {turn.progress && turn.progress.total > 0 ? (
-              <div className="coding-progress">
-                <ListTodo size={14} aria-hidden="true" />
-                <div
-                  className="coding-progress-bar"
-                  role="progressbar"
-                  aria-label="任务进度"
-                  aria-valuemin={0}
-                  aria-valuemax={turn.progress.total}
-                  aria-valuenow={turn.progress.done}
-                >
-                  <span
-                    style={{
-                      width: `${(turn.progress.done / turn.progress.total) * 100}%`,
-                    }}
-                  />
+            <span className="coding-process-label">
+              <span className="coding-process-state">{stateLabel}</span>
+              <span className="coding-process-number">
+                {" "}
+                · {duration(elapsed)}
+              </span>
+              {turn.tools.length ? ` · ${turn.tools.length} 次操作` : ""}
+            </span>
+            {hasSteps ? (
+              <ChevronDown
+                size={14}
+                className="coding-process-chevron"
+                aria-hidden="true"
+              />
+            ) : null}
+          </button>
+          {hasSteps && open ? (
+            <div className="coding-process-body">
+              {turn.progress && turn.progress.total > 0 ? (
+                <div className="coding-progress">
+                  <ListTodo size={14} aria-hidden="true" />
+                  <div
+                    className="coding-progress-bar"
+                    role="progressbar"
+                    aria-label="任务进度"
+                    aria-valuemin={0}
+                    aria-valuemax={turn.progress.total}
+                    aria-valuenow={turn.progress.done}
+                  >
+                    <span
+                      style={{
+                        width: `${(turn.progress.done / turn.progress.total) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <span>
+                    {turn.progress.done}/{turn.progress.total} 项任务
+                  </span>
                 </div>
-                <span>
-                  {turn.progress.done}/{turn.progress.total} 项任务
-                </span>
-              </div>
-            ) : null}
-            {turn.tools.length ? (
-              <ol className="coding-tools" aria-label="操作记录">
-                {turn.tools.map((tool) => (
-                  <ToolRow key={tool.callId} tool={tool} />
-                ))}
-              </ol>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+              ) : null}
+              {turn.tools.length ? (
+                <ol className="coding-tools" aria-label="操作记录">
+                  {turn.tools.map((tool) => (
+                    <ToolRow key={tool.callId} tool={tool} />
+                  ))}
+                </ol>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {/* Questions come before the reply: the agent asked, then answered. */}
       {turn.questions.map((asked) => (
         <QuestionCard
@@ -608,6 +621,19 @@ function TurnView({
         <div className="coding-reply">
           <WorkflowRichText text={turn.reply} />
         </div>
+      ) : null}
+      {turn.workflows?.map((run) => (
+        <NestedFlowRun key={run.runId} endpoint={endpoint} runId={run.runId} />
+      ))}
+      {onApplyFlow &&
+      turn.status === "complete" &&
+      extractFlowCode(turn.reply) ? (
+        <button
+          className="tool-button"
+          onClick={() => onApplyFlow(extractFlowCode(turn.reply)!)}
+        >
+          放入工作流编辑器
+        </button>
       ) : null}
       {turn.error ? (
         <p className="coding-error" role="alert">
@@ -921,6 +947,16 @@ export function ConversationPane({
   label,
   sessionId,
   forkFrom,
+  branchFrom,
+  history,
+  historyTime = 0,
+  context,
+  initialDraft,
+  onApplyFlow,
+  flows,
+  flowsLoading = false,
+  onRunFlow,
+  composerExtra,
   readOnly = false,
   placeholder,
   empty,
@@ -946,6 +982,16 @@ export function ConversationPane({
   sessionId?: string;
   /** The parent whose context seeds the side chat's first turn only. */
   forkFrom?: string;
+  branchFrom?: string;
+  history?: ChatMessage[];
+  historyTime?: number;
+  context?: string;
+  initialDraft?: string;
+  onApplyFlow?(code: string): void;
+  flows?: FlowCatalogEntry[];
+  flowsLoading?: boolean;
+  onRunFlow?(flow: FlowCatalogEntry): void;
+  composerExtra?: React.ReactNode;
   /** Archived parents retain a readable transcript, but cannot accept turns. */
   readOnly?: boolean;
   placeholder: string;
@@ -969,6 +1015,7 @@ export function ConversationPane({
 }) {
   const [turns, setTurns] = useState<Record<string, Turn[]>>({});
   const [draft, setDraft] = useState("");
+  const [flowActive, setFlowActive] = useState(0);
   const [error, setError] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -986,11 +1033,23 @@ export function ConversationPane({
   const [steering, setSteering] = useState(false);
   const transcript = useRef<HTMLDivElement>(null);
 
-  const shown = sessionId ? (turns[sessionId] ?? noTurns) : noTurns;
+  const imported = useMemo(
+    () =>
+      history && sessionId
+        ? turnsFromHistory(
+            `import:${sessionId}`,
+            legacyConversationTurns(history, historyTime),
+          )
+        : noTurns,
+    [history, historyTime, sessionId],
+  );
+  const shown = sessionId ? (turns[sessionId] ?? imported) : noTurns;
   const running = shown.some((turn) => turn.status === "running");
   const now = useTicker(running);
   const offline = provider === "offline";
   const mode = providerMode(provider);
+  const slash = onRunFlow ? slashQuery(draft) : undefined;
+  useEffect(() => setDraft(initialDraft ?? ""), [initialDraft, sessionId]);
 
   useEffect(() => onRunning?.(running), [running, onRunning]);
   useEffect(() => onTurns?.(shown), [shown, onTurns]);
@@ -1010,7 +1069,12 @@ export function ConversationPane({
           // A turn sent while history was loading wins over the snapshot.
           current[id]?.length
             ? current
-            : { ...current, [id]: turnsFromHistory(id, history.turns) },
+            : {
+                ...current,
+                [id]: history.turns.length
+                  ? turnsFromHistory(id, history.turns)
+                  : imported,
+              },
         );
       })
       .catch((reason: unknown) => {
@@ -1026,7 +1090,7 @@ export function ConversationPane({
         if (!abort.signal.aborted) setLoadingHistory(false);
       });
     return () => abort.abort();
-  }, [endpoint, sessionId, forkFrom]);
+  }, [endpoint, sessionId, forkFrom, imported]);
 
   // Stop in-flight turns when the pane unmounts.
   useEffect(() => {
@@ -1150,7 +1214,7 @@ export function ConversationPane({
     // A brand-new conversation has no stored log to read back.
     if (!sessionId) loaded.current.add(id);
     const turnId = newId();
-    if (!sessionId) onOpen?.(id);
+    onOpen?.(id);
     setDraft("");
     setError("");
     images.clear();
@@ -1162,7 +1226,7 @@ export function ConversationPane({
     };
     setTurns((current) => ({
       ...current,
-      [id]: [...(current[id] ?? []), latest],
+      [id]: [...(current[id] ?? (id === sessionId ? imported : [])), latest],
     }));
     const abort = new AbortController();
     controllers.current.set(id, abort);
@@ -1179,6 +1243,9 @@ export function ConversationPane({
             ? { images: attached.map((image) => image.assetId) }
             : {}),
           ...(forkFrom ? { forkFrom } : {}),
+          ...(branchFrom ? { branchFrom } : {}),
+          ...(history ? { history } : {}),
+          ...(context ? { context } : {}),
           mode,
           modelConfig,
         },
@@ -1269,6 +1336,7 @@ export function ConversationPane({
               directory={directory}
               endpoint={endpoint}
               onAnswer={answer(sessionId!, turn.id)}
+              onApplyFlow={onApplyFlow}
             />
           ))
         )}
@@ -1352,8 +1420,27 @@ export function ConversationPane({
             maxLength={80_000}
             value={draft}
             disabled={offline}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setFlowActive(0);
+            }}
             onKeyDown={(event) => {
+              if (
+                slash !== undefined &&
+                onRunFlow &&
+                handlePickerKey(
+                  event,
+                  filterFlows(flows ?? [], slash),
+                  flowActive,
+                  setFlowActive,
+                  (flow) => {
+                    setDraft("");
+                    onRunFlow(flow);
+                  },
+                  () => setDraft(""),
+                )
+              )
+                return;
               if (
                 event.key === "Enter" &&
                 !event.shiftKey &&
@@ -1406,6 +1493,19 @@ export function ConversationPane({
               </select>
             </label>
             <span className="composer-spacer" />
+            {onRunFlow ? (
+              <ConversationFlows
+                keyboardActive={flowActive}
+                onKeyboardActive={setFlowActive}
+                flows={flows ?? []}
+                query={slash}
+                loading={flowsLoading}
+                onPick={onRunFlow}
+                onClose={() => {
+                  if (slash !== undefined) setDraft("");
+                }}
+              />
+            ) : null}
             {!offline ? (
               <ChatModelControls
                 endpoint={endpoint}
@@ -1442,7 +1542,8 @@ export function ConversationPane({
                 readOnly ||
                 steering ||
                 (!draft.trim() && !images.ready.length) ||
-                images.uploading
+                images.uploading ||
+                slash !== undefined
               }
               onClick={() => void submit()}
             >
@@ -1456,6 +1557,7 @@ export function ConversationPane({
           </p>
         ) : null}
         {footnote ? <p className="composer-footnote">{footnote}</p> : null}
+        {composerExtra}
       </div>
     </div>
   );

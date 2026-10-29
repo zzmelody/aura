@@ -17,6 +17,7 @@ import type { LoadedAction } from "../src/action-registry.ts";
 import { ActionRegistry } from "../src/action-registry.ts";
 import { ActionRuns } from "../src/action-runs.ts";
 import type { ActionRuntime } from "../src/actions.ts";
+import { FLOW_TIMEOUT_MS } from "../src/timeouts.ts";
 
 function table<T>(): Table<T> {
   const records = new Map<string, T>();
@@ -145,6 +146,54 @@ const request = (input: unknown = { task: "测试任务" }) => ({
   flowId: "test-flow",
   input,
   mode: "demo" as const,
+});
+
+test("all Flows enforce a 360 minute execution window and settle active attempts", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let aborted = false;
+  const { engine } = await fixture({
+    loaded: flow(async (ctx) => {
+      const result = await ctx.agent({
+        id: "long",
+        label: "Long call",
+        preset: "researcher-v1",
+        prompt: "work",
+      });
+      return { report: result.output };
+    }),
+    execute: async ({ signal }) => {
+      started();
+      return new Promise<string>((_resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () => {
+            aborted = true;
+            reject(signal.reason);
+          },
+          { once: true },
+        );
+      });
+    },
+  });
+  try {
+    const run = await engine.start(request());
+    await ready;
+    t.mock.timers.tick(FLOW_TIMEOUT_MS - 1);
+    assert.equal(aborted, false);
+    t.mock.timers.tick(1);
+    const result = await engine.wait(run.id);
+    assert.equal(result.status, "failed");
+    assert.match(result.error ?? "", /FLOW_TIMEOUT.*360/u);
+    assert.equal(aborted, true);
+    assert.equal(result.steps[0].status, "failed");
+    assert.equal(result.steps[0].attempts?.[0].status, "failed");
+  } finally {
+    await engine.close();
+  }
 });
 
 test("Action steps and Agents share admission, ids, version snapshots and failure tracking", async () => {

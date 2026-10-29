@@ -48,7 +48,12 @@ const agentOptionFields = {
     .optional(),
   maxTokens: z.number().int().min(1).max(1_000_000).optional(),
   temperature: z.number().min(0).max(2).optional(),
-  timeoutMs: z.number().int().min(1_000).max(600_000).optional(),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(1_000)
+    .max(30 * 60_000)
+    .optional(),
 };
 export const agentOptionsSchema = z.object(agentOptionFields).strict();
 export const agentConfigSchema = z

@@ -239,7 +239,7 @@ export function Workflows({
                   aria-label={`运行工作流：${flow.title}`}
                   title="运行工作流"
                   onClick={() =>
-                    flow.id === "multi-shot-video"
+                    flow.id === "self-media/video"
                       ? onOpenStudio("studio:video")
                       : onRun(flow)
                   }

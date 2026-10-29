@@ -8,6 +8,7 @@ import { jsonValue } from "../schema.ts";
 import type { ComfyWorkflowInput } from "./api.ts";
 import type { LaunchSpec } from "./process.ts";
 import { readJSON, request } from "./http.ts";
+import { videoBindingName } from "./media.ts";
 
 const limit = 256 * 1024;
 const nodeId = z
@@ -52,7 +53,22 @@ const inputSchema = z
           })
           .strict(),
       )
-      .max(8)
+      .max(9)
+      .default([]),
+    videoBindings: z
+      .array(
+        z
+          .object({
+            nodeId,
+            assetId: z.string().regex(/^[a-f0-9]{64}$/u),
+            start: z.number().min(0).max(36000),
+            duration: z.number().min(0.2).max(15),
+            width: z.number().int().min(32).max(2048),
+            height: z.number().int().min(32).max(2048),
+          })
+          .strict(),
+      )
+      .max(3)
       .default([]),
     outputNodeIds: z.array(nodeId).min(1).max(64).optional(),
   })
@@ -148,6 +164,18 @@ export async function prepareWorkflow(
     boundNodes.add(binding.nodeId);
     node.inputs.image = `${binding.assetId}${binding.resize ? `-${binding.resize.width}x${binding.resize.height}` : ""}.png`;
   }
+  for (const binding of parsed.videoBindings) {
+    const node = graph[binding.nodeId];
+    if (
+      !node ||
+      node.class_type !== "LoadVideo" ||
+      !Object.hasOwn(node.inputs, "file") ||
+      boundNodes.has(binding.nodeId)
+    )
+      throw new Error("视频绑定必须指向唯一的 LoadVideo.file 节点。");
+    boundNodes.add(binding.nodeId);
+    node.inputs.file = videoBindingName(binding);
+  }
   const outputNodeIds = parsed.outputNodeIds
     ? [...new Set(parsed.outputNodeIds)]
     : undefined;
@@ -166,6 +194,7 @@ export async function prepareWorkflow(
     outputNodeIds,
     workflowHash,
     imageBindings: parsed.imageBindings,
+    videoBindings: parsed.videoBindings,
   };
 }
 

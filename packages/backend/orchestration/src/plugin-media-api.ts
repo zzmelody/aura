@@ -9,3 +9,4 @@ export { artifactResponse, type ArtifactFile } from "./artifacts/http.ts";
 export { wavDuration } from "./wav.ts";
 export { default as sharp } from "sharp";
 export { default as ffmpegPath } from "ffmpeg-static";
+export { probeVideo } from "./local-ai/media.ts";

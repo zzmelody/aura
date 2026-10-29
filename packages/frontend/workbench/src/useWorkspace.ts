@@ -1,11 +1,9 @@
-import { providerMode } from "@aura/core";
 import { useEffect, useRef, useState } from "react";
 import { initialState, restoreState, STORAGE_KEY } from "@aura/core";
-import { reply, type ReplyChunk } from "./transport";
+import { streamDemo } from "@aura/demo";
 import type { ChatImage, Message, Session, Workspace } from "@aura/core/types";
 import type {
   FlowCatalogEntry,
-  ChatModelSelection,
   FlowMode,
   JsonValue,
 } from "@aura/protocol/types";
@@ -28,10 +26,6 @@ export function useWorkspace() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [runningIds, setRunningIds] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [newChatConfig, setNewChatConfig] = useState<
-    NonNullable<Session["modelConfig"]>
-  >({});
-  const newChatConfigRef = useRef(newChatConfig);
   const controllers = useRef(new Map<string, AbortController>());
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
@@ -96,65 +90,13 @@ export function useWorkspace() {
       ),
     }));
   }
-  /**
-   * Places a tool-started run before the streaming reply. A summary poll may
-   * already have imported the run as its own workflow session; fold it back.
-   */
-  function attachChatRun(
-    sessionId: string,
-    beforeId: string,
-    run: Extract<ReplyChunk, { type: "workflow" }>,
-  ) {
-    const endpoint = workflows.endpoint;
-    const imported = `workflow:${workflowRunKey(endpoint, run.runId)}`;
-    setState((s) => ({
-      ...s,
-      sessions: s.sessions
-        .filter((session) => session.id !== imported)
-        .map((session) => {
-          if (
-            session.id !== sessionId ||
-            session.messages.some(
-              (message) => message.workflowRunId === run.runId,
-            )
-          )
-            return session;
-          const at = session.messages.findIndex((m) => m.id === beforeId);
-          const records: Message[] = [
-            {
-              id: `${run.runId}:input`,
-              role: "user",
-              text: run.inputPreview,
-              status: "complete",
-            },
-            {
-              id: `${run.runId}:output`,
-              role: "assistant",
-              text: "正在运行",
-              status: "streaming",
-              workflowRunId: run.runId,
-              workflowPhase: "queued",
-              workflow: { id: run.flowId, title: run.title, endpoint },
-            },
-          ];
-          const messages =
-            at < 0
-              ? [...session.messages, ...records]
-              : [
-                  ...session.messages.slice(0, at),
-                  ...records,
-                  ...session.messages.slice(at),
-                ];
-          return { ...session, messages: messages.slice(-200) };
-        }),
-    }));
-  }
   async function send(
     text: string,
     retryLast = false,
     context?: string,
     images: ChatImage[] = [],
   ) {
+    if (stateRef.current.provider !== "offline") return;
     if ((!text.trim() && !images.length) || text.length > 4000) return;
     const current = stateRef.current;
     if (
@@ -179,9 +121,6 @@ export function useWorkspace() {
       status: "streaming",
     };
     const previous = current.sessions.find((s) => s.id === sessionId);
-    const modelConfig = previous
-      ? previous.modelConfig
-      : newChatConfigRef.current;
     const stored = previous?.messages ?? [];
     const history = retryLast
       ? stored.slice(0, -1).slice(-199)
@@ -192,7 +131,6 @@ export function useWorkspace() {
       title: previous?.title ?? (text.trim() || "图片对话").slice(0, 28),
       updatedAt: Date.now(),
       messages: [...history, assistant],
-      ...(modelConfig ? { modelConfig } : {}),
     };
     setState((s) => ({
       ...s,
@@ -209,7 +147,7 @@ export function useWorkspace() {
     setRunningIds([...controllers.current.keys()]);
     let accumulated = "";
     try {
-      for await (const chunk of reply(
+      for await (const chunk of streamDemo(
         [
           ...(context
             ? [
@@ -222,17 +160,9 @@ export function useWorkspace() {
               ]
             : []),
           ...chatHistory(history.filter((m) => m.status !== "error")),
-        ],
-        current.provider,
-        current.endpoint,
-        sessionId,
-        abort.signal,
-        modelConfig?.[providerMode(current.provider)],
+        ].map(({ role, text }) => ({ role, text })),
+        { signal: abort.signal },
       )) {
-        if (typeof chunk !== "string") {
-          attachChatRun(sessionId, assistant.id, chunk);
-          continue;
-        }
         accumulated += chunk;
         updateMessage(sessionId, assistant.id, { text: accumulated });
       }
@@ -260,28 +190,6 @@ export function useWorkspace() {
     ready,
     saveError,
     active,
-    chatModelConfig: active ? (active.modelConfig ?? {}) : newChatConfig,
-    setChatModelConfig: (mode: FlowMode, selection: ChatModelSelection) => {
-      const sessionId = activeIdRef.current;
-      if (!sessionId) {
-        const next = { ...newChatConfigRef.current, [mode]: selection };
-        newChatConfigRef.current = next;
-        setNewChatConfig(next);
-        return;
-      }
-      if (controllers.current.has(sessionId)) return;
-      setState((current) => ({
-        ...current,
-        sessions: current.sessions.map((session) =>
-          session.id === sessionId && !session.workflow
-            ? {
-                ...session,
-                modelConfig: { ...session.modelConfig, [mode]: selection },
-              }
-            : session,
-        ),
-      }));
-    },
     busy:
       (activeId !== null && allRunningIds.includes(activeId)) ||
       Boolean(
@@ -307,7 +215,6 @@ export function useWorkspace() {
         title: flow.title,
         updatedAt: Date.now(),
         messages: [],
-        modelConfig: newChatConfigRef.current,
       };
       activeIdRef.current = seed.id;
       setActiveId(seed.id);
@@ -358,8 +265,6 @@ export function useWorkspace() {
       if (activeId) controllers.current.get(activeId)?.abort();
     },
     newChat: () => {
-      newChatConfigRef.current = {};
-      setNewChatConfig({});
       activeIdRef.current = null;
       setActiveId(null);
     },
@@ -405,8 +310,6 @@ export function useWorkspace() {
         if (value === activeId) {
           activeIdRef.current = null;
           setActiveId(null);
-          newChatConfigRef.current = {};
-          setNewChatConfig({});
         }
         setDrafts((current) => {
           const next = { ...current };

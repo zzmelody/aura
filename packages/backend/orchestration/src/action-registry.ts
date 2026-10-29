@@ -77,9 +77,9 @@ export class ActionRegistry {
     if (
       !Number.isInteger(tool.timeoutMs) ||
       tool.timeoutMs! < 1 ||
-      tool.timeoutMs! > 600_000
+      tool.timeoutMs! > 30 * 60_000
     )
-      throw new FlowError("Action timeoutMs 必须在 1 到 600000 毫秒之间。");
+      throw new FlowError("Action timeoutMs 必须在 1 到 1800000 毫秒之间。");
     const inputSchema = jsonValue(tool.parameters, "Action input schema");
     const outputSchema = jsonValue(tool.output.schema, "Action output schema");
     const sourceHash = await hashFlowDirectory(

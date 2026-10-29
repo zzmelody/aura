@@ -40,6 +40,7 @@ import { useToast } from "./toast";
 import type { CodingProjectInfo } from "@aura/protocol/types";
 import type { CodingProjectsController } from "./features/coding/useCodingProjects";
 import { WorkspaceDialog } from "./features/coding/WorkspaceDialog";
+import { isActiveStatus } from "./features/coding/conversationStatus";
 
 const tabs = [
   { id: "chat", label: "对话", icon: MessageCircle },
@@ -120,8 +121,14 @@ export function WorkspaceSidebar({
     if (searchOpen) search.current?.focus();
   }, [searchOpen]);
   const running = new Set(workspace.runningIds);
+  const remoteIds = new Set(
+    Object.values(codingWorkspaces.conversations)
+      .flat()
+      .map((item) => item.id),
+  );
   const filtered = workspace.state.sessions.filter(
     (session) =>
+      (offline || !remoteIds.has(`legacy-${session.id}`)) &&
       Boolean(session.archivedAt) === showArchived &&
       (!onlyRunning || running.has(session.id)) &&
       `${session.title} ${session.workflow?.title ?? ""} ${sidebarSessionTitle(session)} ${session.messages.at(-1)?.text ?? ""}`
@@ -131,20 +138,20 @@ export function WorkspaceSidebar({
   const groups = groupSidebarSessions(filtered);
   // Workspace folders use the same archive view as ordinary conversations.
   const needle = query.trim().toLowerCase();
-  const spaceFolders = onlyRunning
-    ? []
-    : codingWorkspaces.projects.flatMap((space) => {
-        const all = (codingWorkspaces.conversations[space.id] ?? []).filter(
-          (item) => (item.archivedAt !== undefined) === showArchived,
-        );
-        if (showArchived && !all.length) return [];
-        if (!needle || space.title.toLowerCase().includes(needle))
-          return [{ space, conversations: all }];
-        const matched = all.filter((item) =>
-          item.title.toLowerCase().includes(needle),
-        );
-        return matched.length ? [{ space, conversations: matched }] : [];
-      });
+  const spaceFolders = codingWorkspaces.projects.flatMap((space) => {
+    const all = (codingWorkspaces.conversations[space.id] ?? []).filter(
+      (item) =>
+        (item.archivedAt !== undefined) === showArchived &&
+        (!onlyRunning || isActiveStatus(codingWorkspaces.statuses[item.id])),
+    );
+    if ((showArchived || onlyRunning) && !all.length) return [];
+    if (!needle || space.title.toLowerCase().includes(needle))
+      return [{ space, conversations: all }];
+    const matched = all.filter((item) =>
+      item.title.toLowerCase().includes(needle),
+    );
+    return matched.length ? [{ space, conversations: matched }] : [];
+  });
   const toggleFolder = (key: string) =>
     setClosed((value) => {
       const next = new Set(value);
@@ -153,6 +160,7 @@ export function WorkspaceSidebar({
       return next;
     });
   const openSpace = (projectId: string, conversationId?: string) => {
+    workspace.newChat();
     codingWorkspaces.open(projectId, conversationId);
     navigate("studio:coding");
   };
@@ -335,7 +343,8 @@ export function WorkspaceSidebar({
                 <div className="session-folder-items">
                   {conversations.map((item) => {
                     const selected =
-                      tab === "studio:coding" &&
+                      (tab === "studio:coding" ||
+                        (tab === "chat" && !workspace.active)) &&
                       codingWorkspaces.conversationId === item.id;
                     const status = codingWorkspaces.statuses[item.id];
                     const badge = sidebarRowStatus(status);

@@ -66,6 +66,7 @@ export interface ChatPort {
   ): Promise<ChatModelCatalog>;
   chat(
     turn: {
+      sessionId?: string;
       messages: ChatMessage[];
       mode: ChatRoute["mode"];
     } & ChatModelSelection,

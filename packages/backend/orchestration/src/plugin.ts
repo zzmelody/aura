@@ -48,7 +48,10 @@ import { LocalAIManager } from "./local-ai/manager.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 import { configureDshNetwork } from "./dsh-network.ts";
 import { chatService } from "./chat.ts";
+import type { ChatToolHost } from "./chat-tools.ts";
 import { codingService } from "./coding/session.ts";
+import { conversationService } from "./coding/conversations.ts";
+import { legacyConversationTurns } from "@aura/protocol/conversations";
 import {
   historyTurns,
   lastTurnStatus,
@@ -57,6 +60,8 @@ import {
 import {
   CodingConversationIndex,
   codingDomainSpec,
+  conversationMessageSchema,
+  conversationModelSchema,
   type CodingConversationRecord,
 } from "./coding/index-record.ts";
 import { CodingProjects } from "./coding/projects.ts";
@@ -503,6 +508,7 @@ export async function apply(ctx: Context) {
     ) as unknown as Table<CodingConversationRecord>,
   );
   const codingProjects = new CodingProjects(ctx, codingConversations);
+  await codingProjects.defaultProject();
   let reconfiguration: Promise<unknown> = Promise.resolve();
   const refreshFlows = async () => {
     await reconfiguration;
@@ -572,7 +578,16 @@ export async function apply(ctx: Context) {
       cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
     },
     plugins: pluginStatuses(),
-    onRootSettled: (run) => auraCapabilities.runSettled(run),
+    onRootSettled: async (run) => {
+      const cancelJobs = async (id: string) => {
+        await localAI.jobs.cancelOwner(id);
+        for (const step of engine.runs.get(id)?.steps ?? [])
+          if (step.kind === "flow" && step.childRunId)
+            await cancelJobs(step.childRunId);
+      };
+      await cancelJobs(run.id);
+      await auraCapabilities.runSettled(run);
+    },
     presets: async () =>
       (await ctx.agentPresets.list()).map(
         ({ id, name, description, broken }) => ({
@@ -667,21 +682,22 @@ export async function apply(ctx: Context) {
     }
   };
 
-  // Chat tools reach only run admission, video project creation and topic
-  // research; streamed deltas travel back as notifications keyed by chatId.
-  const chat = chatService(
-    ctx,
-    {
-      start: (input) => engine.start(input),
-      get: (id) => engine.get(id),
-      taskTools: () => auraCapabilities.taskTools(),
-    },
-    artifacts,
-  );
+  // Conversation tools use generic workflow admission and plugin contributions.
+  const workflowTools: ChatToolHost = {
+    start: (input) => engine.start(input),
+    get: (id) => engine.get(id),
+    taskTools: () => auraCapabilities.taskTools(),
+  };
   const chats = new Map<string, AbortController>();
   const rejectedChatModels = new RejectedChatModels();
   const codingAnswers = new CodingQuestions();
-  const coding = codingService(ctx, codingAnswers, artifacts);
+  const coding = codingService(ctx, codingAnswers, artifacts, workflowTools);
+  const conversations = conversationService(
+    codingProjects,
+    codingConversations,
+    coding,
+  );
+  const chat = chatService(conversations);
 
   transport.onNotification((method, params) => {
     if (method === "chat/cancel" && typeof params.chatId === "string")
@@ -896,6 +912,7 @@ export async function apply(ctx: Context) {
           const chatId = typeof params.chatId === "string" ? params.chatId : "";
           const turn = z
             .object({
+              sessionId: z.string().trim().min(1).max(200).optional(),
               messages: z
                 .array(
                   z.object({
@@ -946,13 +963,16 @@ export async function apply(ctx: Context) {
           const turn = z
             .object({
               sessionId: z.string().trim().min(1).max(200),
-              projectId: z.string().trim().min(1).max(200),
+              projectId: z.string().trim().min(1).max(200).optional(),
               prompt: z.string().max(80_000),
               images: z
                 .array(z.string().regex(/^[a-f0-9]{64}$/u))
                 .max(CHAT_IMAGE_LIMIT)
                 .optional(),
               forkFrom: z.string().trim().min(1).max(200).optional(),
+              branchFrom: z.string().trim().min(1).max(200).optional(),
+              history: z.array(conversationMessageSchema).max(200).optional(),
+              context: z.string().max(40_000).optional(),
               mode: chatModeSchema,
               model: z.string().trim().min(1).max(200).optional(),
               reasoningEffort: z.string().trim().min(1).max(80).optional(),
@@ -966,55 +986,17 @@ export async function apply(ctx: Context) {
             (!turn.data.prompt.trim() && !turn.data.images?.length)
           )
             throw new FlowError("无效的编码请求。", 400);
-          const side = turn.data.forkFrom;
-          if (side !== undefined) {
-            // A side chat may only branch from an indexed conversation of the
-            // same project, and may not reuse an indexed id as its own.
-            const parent = codingConversations.get(side);
-            if (
-              !parent ||
-              parent.archivedAt !== undefined ||
-              parent.projectId !== turn.data.projectId ||
-              parent.sideSessionId !== turn.data.sessionId
-            )
-              throw new FlowError("旁支已关闭，或主对话不存在、已归档。", 404);
-            // The `side-` prefix keeps a side chat from adopting some other
-            // live agent (a Flow step's, a chat's) by guessing its id.
-            if (
-              !turn.data.sessionId.startsWith("side-") ||
-              codingConversations.get(turn.data.sessionId)
-            )
-              throw new FlowError("旁支对话需要独立的会话 ID。", 400);
-          }
-          // The registry owns the directory, so the sandbox root always comes
-          // from the project record rather than a client-supplied path.
-          const directory = codingProjects.directory(turn.data.projectId);
           const abort = new AbortController();
           chats.set(chatId, abort);
           try {
-            // Side chats are retained by their parent's index, never listed alone.
-            if (side === undefined)
-              await codingConversations.open(
-                turn.data.sessionId,
-                turn.data.projectId,
-                turn.data.prompt,
-              );
-            data = await coding.stream(
+            data = await conversations.stream(
               {
                 ...turn.data,
-                project: directory,
                 defaults: await resolveModeDefaults(turn.data.mode),
               },
               (event) => transport.notify("chat/event", { chatId, event }),
               abort.signal,
             );
-            // Attach only once the session exists: the registry validates a
-            // session's stored header, which the first turn just created.
-            if (side === undefined)
-              await codingProjects.attach(
-                turn.data.projectId,
-                turn.data.sessionId,
-              );
           } finally {
             chats.delete(chatId);
           }
@@ -1024,7 +1006,7 @@ export async function apply(ctx: Context) {
           if (typeof params.sessionId !== "string")
             throw new FlowError("无效的对话。", 400);
           // Only coding turns are registered here, so another DSH session
-          // (a Flow agent, an ordinary chat) cannot be stopped by its id.
+          // (for example a Flow agent) cannot be stopped by its id.
           data = { stopped: await coding.stop(params.sessionId) };
           break;
         }
@@ -1100,7 +1082,24 @@ export async function apply(ctx: Context) {
         case "action/start":
           data = await actionRuns.start(params);
           break;
+        case "coding/model": {
+          const request = z
+            .object({
+              sessionId: z.string().min(1).max(200),
+              mode: chatModeSchema,
+              selection: conversationModelSchema,
+            })
+            .parse(params);
+          await conversations.selectModel(
+            request.sessionId,
+            request.mode,
+            request.selection,
+          );
+          data = { updated: true };
+          break;
+        }
         case "coding/projects":
+          await codingProjects.defaultProject();
           data = codingProjects.list();
           break;
         case "coding/projects/create": {
@@ -1215,15 +1214,22 @@ export async function apply(ctx: Context) {
             signal,
           );
           // The inherited context is for the model, not duplicate UI history.
+          const record = codingConversations.get(params.sessionId);
           const own =
-            side && events
+            (side || record?.sourceSessionId) && events
               ? await ctx.sessionController.inspect(sessionId, signal)
               : undefined;
           const running = coding.running(params.sessionId);
-          const turns = historyTurns(
-            own ? own.events.slice(own.inheritedEventCount) : (events ?? []),
-            running,
-          );
+          const turns = [
+            ...legacyConversationTurns(
+              record?.history ?? [],
+              record?.createdAt ?? 0,
+            ),
+            ...historyTurns(
+              own ? own.events.slice(own.inheritedEventCount) : (events ?? []),
+              running,
+            ),
+          ];
           // Questions still waiting carry the ids an answer must quote.
           const open = codingAnswers.open(params.sessionId);
           const last = turns.at(-1);

@@ -2,6 +2,66 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { initialState, restoreState, validateEndpoint } from "@aura/core";
 
+test("retired video history is cleared for its endpoint while ordinary and remote chats survive", () => {
+  const endpoint = "http://127.0.0.1:4311";
+  const message = {
+    id: "m",
+    role: "assistant",
+    text: "hello",
+    status: "complete",
+  };
+  const state = restoreState({
+    version: 1,
+    endpoint,
+    sessions: [
+      {
+        id: "video",
+        title: "old video",
+        updatedAt: 1,
+        workflow: { id: "multi-shot-video", title: "old", endpoint },
+        messages: [{ ...message, workflowRunId: "old-run" }],
+      },
+      {
+        id: "chat",
+        title: "chat",
+        updatedAt: 1,
+        messages: [
+          message,
+          {
+            ...message,
+            id: "card",
+            workflow: { id: "short-video", title: "old", endpoint },
+            workflowRunId: "old-short",
+          },
+        ],
+      },
+      {
+        id: "remote",
+        title: "remote",
+        updatedAt: 1,
+        workflow: {
+          id: "short-video",
+          title: "old",
+          endpoint: "http://example.com:4311",
+        },
+        messages: [message],
+      },
+    ],
+    hiddenWorkflowRuns: [
+      `${endpoint}/old-run`,
+      "http://example.com:4311/old-run",
+    ],
+  });
+  assert.deepEqual(
+    state.sessions.map((s) => s.id),
+    ["chat", "remote"],
+  );
+  assert.equal(state.sessions[0].messages.length, 1);
+  assert.deepEqual(state.hiddenWorkflowRuns, [
+    "http://example.com:4311/old-run",
+  ]);
+});
+
 test("archive metadata and sidebar width restore without dropping history", () => {
   const message = {
     id: "m",
@@ -235,7 +295,7 @@ test("ordinary conversations keep workflow runs referenced per message", () => {
         title: "plain",
         updatedAt: 1,
         pendingWorkflow: {
-          id: "short-video",
+          id: "image",
           title: "短视频",
           endpoint: "http://127.0.0.1:4311",
           pending: { requestId: "r", input: { text: "x" }, mode: "demo" },
@@ -250,7 +310,7 @@ test("ordinary conversations keep workflow runs referenced per message", () => {
             workflowRunId: "run",
             workflowPhase: "running",
             workflow: {
-              id: "short-video",
+              id: "image",
               title: "短视频",
               endpoint: "http://127.0.0.1:4311",
             },
@@ -271,7 +331,7 @@ test("ordinary conversations keep workflow runs referenced per message", () => {
   assert.equal(session.pendingWorkflow?.pending.requestId, "r");
   assert.equal(session.messages[1].workflowRunId, "run");
   assert.equal(session.messages[1].workflowPhase, "running");
-  assert.equal(session.messages[1].workflow?.id, "short-video");
+  assert.equal(session.messages[1].workflow?.id, "image");
   assert.equal(session.messages[2].workflowRunId, undefined);
 });
 

@@ -34,6 +34,12 @@ export default defineAction({
       description:
         '受管图片绑定，例如 [{"nodeId":"16","assetId":"64位SHA-256"}]；目标必须为已有 LoadImage.image 节点。',
     },
+    videoBindings: {
+      type: "array",
+      items: { type: "object", additionalProperties: true },
+      description:
+        "受管视频到 LoadVideo.file 的绑定，含 assetId、start、duration、width、height。",
+    },
     outputNodeIds: {
       type: "array",
       items: { type: "string" },
@@ -55,15 +61,23 @@ export default defineAction({
     },
     render: (_input, value) => [{ type: "text", text: JSON.stringify(value) }],
   },
-  timeoutMs: 600_000,
+  timeoutMs: 1800000,
   isConcurrencySafe: () => true,
   async execute(ctx, input) {
     // DSH's open-object DSL cannot express the nested node-id -> inputs map.
     // The backend validates its JSON values and exact shape before starting ComfyUI.
-    const { overrides, imageBindings, ...rest } = input;
+    const { overrides, imageBindings, videoBindings, ...rest } = input;
     return localAI(ctx).comfyWorkflow(
       {
         ...rest,
+        ...(videoBindings === undefined
+          ? {}
+          : {
+              videoBindings:
+                /** @type {import("@aura/orchestration/local-ai").ComfyWorkflowInput["videoBindings"]} */ (
+                  videoBindings
+                ),
+            }),
         ...(overrides === undefined
           ? {}
           : {

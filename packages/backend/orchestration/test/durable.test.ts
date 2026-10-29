@@ -94,7 +94,7 @@ test("Agent options validate bounds and inherit step > Flow > runtime defaults",
     { temperature: -1 },
     { temperature: 2.1 },
     { timeoutMs: 999 },
-    { timeoutMs: 600_001 },
+    { timeoutMs: 1_800_001 },
     { provider: "custom" },
     { apiKey: "secret" },
   ])

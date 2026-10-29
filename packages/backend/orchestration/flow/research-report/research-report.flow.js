@@ -11,8 +11,8 @@ export default defineFlow({
     report: z.string(),
   }),
   concurrency: 2,
-  agentTimeoutMs: 180_000,
-  agentDefaults: { timeoutMs: 180_000 },
+  agentTimeoutMs: 1800000,
+  agentDefaults: { timeoutMs: 1800000 },
 
   async run(ctx, input) {
     return ctx.sequence({ id: "main" }, async (flow) => {
@@ -51,7 +51,7 @@ export default defineFlow({
         label: "最终报告",
         preset: "coordinator-v1",
         reasoningEffort: ctx.mode === "codex" ? "high" : "off",
-        timeoutMs: 240_000,
+        timeoutMs: 1800000,
         prompt: agentPrompt({
           task: input.task,
           nodeId: "coordinator",

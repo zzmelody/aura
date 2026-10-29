@@ -1,4 +1,5 @@
 import { LUMINA_DEFAULT_MODEL, LUMINA_PROVIDER } from "@aura/dsh-auth";
+import { CALL_TIMEOUT_MS } from "./timeouts.ts";
 import type {
   FlowAgentConfig,
   FlowAgentOptions,
@@ -15,7 +16,7 @@ import {
 export function agentDefaults(
   mode: FlowMode,
   overrides: FlowAgentOptions = {},
-  timeoutMs = 180_000,
+  timeoutMs = CALL_TIMEOUT_MS,
   codexModel = process.env.AURA_CODEX_MODEL || "gpt-6.1-sol",
 ): FlowAgentConfig {
   if (mode === "custom") throw new FlowError("自定义模型尚未配置。", 422);

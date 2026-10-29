@@ -59,6 +59,32 @@ export function projectCodingEvent(
         ok: !result.isError,
         ...(diffs.length ? { diffs } : {}),
       });
+      try {
+        const value = JSON.parse(messageText(result.content)) as {
+          workflow?: {
+            runId?: unknown;
+            flowId?: unknown;
+            title?: unknown;
+            inputPreview?: unknown;
+          };
+        };
+        const run = value?.workflow;
+        if (
+          typeof run?.runId === "string" &&
+          typeof run.flowId === "string" &&
+          typeof run.title === "string"
+        )
+          emit({
+            type: "workflow",
+            runId: run.runId,
+            flowId: run.flowId,
+            title: run.title,
+            inputPreview:
+              typeof run.inputPreview === "string" ? run.inputPreview : "",
+          });
+      } catch {
+        // Most tools return plain text, not a workflow reference.
+      }
     }
   }
   if (event.type === "todo/write") {

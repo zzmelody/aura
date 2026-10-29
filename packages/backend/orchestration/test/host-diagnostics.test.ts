@@ -95,7 +95,13 @@ test(
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), "aura-import-failure-"));
     const home = join(root, ".aura", "dsh");
-    t.after(() => rm(root, { recursive: true, force: true }));
+    let stop = async () => {};
+    t.after(async () => {
+      // Windows cannot remove a live DSH process's watched files. One hook
+      // ensures a failed removal never prevents the child from being stopped.
+      await stop();
+      await rm(root, { recursive: true, force: true });
+    });
     await provisionProfile(home, undefined, undefined, root);
     const broken = join(root, "broken.ts");
     await writeFile(
@@ -128,10 +134,10 @@ test(
     const exited = new Promise<void>((resolve) =>
       child.once("exit", () => resolve()),
     );
-    t.after(async () => {
+    stop = async () => {
       child.kill("SIGKILL");
       await exited;
-    });
+    };
     child.stdout.resume();
     const records: HostErrorDiagnostic[] = [];
     const logger = new HostLogger(home);

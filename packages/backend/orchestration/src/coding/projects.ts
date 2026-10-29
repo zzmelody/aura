@@ -22,6 +22,7 @@ import type { CodingConversationIndex } from "./index-record.ts";
 export class CodingProjects {
   private readonly ctx: Context;
   private readonly conversations: CodingConversationIndex;
+  private defaultId?: string;
 
   constructor(ctx: Context, conversations: CodingConversationIndex) {
     this.ctx = ctx;
@@ -30,7 +31,24 @@ export class CodingProjects {
 
   /** Ordered projects, newest first, as the registry stores them. */
   list(): CodingProject[] {
-    return this.ctx.workspaceRegistry.list().map(project);
+    return this.ctx.workspaceRegistry.list().map((entry) => ({
+      ...project(entry),
+      ...(entry.id === this.defaultId ? { isDefault: true as const } : {}),
+    }));
+  }
+
+  /** The runtime creates this directory; clients never supply its path. */
+  async defaultProject(): Promise<CodingProject> {
+    if (!this.defaultId) {
+      const directory = process.env.AURA_DEFAULT_WORKSPACE;
+      if (!directory) throw new FlowError("默认工作目录未配置。", 503);
+      const entry = await this.create(directory, "默认工作空间");
+      this.defaultId = entry.id;
+    }
+    return {
+      ...this.list().find((entry) => entry.id === this.defaultId)!,
+      isDefault: true,
+    };
   }
 
   /**
@@ -60,6 +78,8 @@ export class CodingProjects {
    * directory is added back.
    */
   async relocate(id: string, directory: string): Promise<CodingProject> {
+    if (id === this.defaultId)
+      throw new FlowError("默认工作空间不能更换目录。", 400);
     const current = this.require(id);
     const path = await this.requireDirectory(directory);
     const taken = new Set(
@@ -78,6 +98,8 @@ export class CodingProjects {
    * log are left untouched, matching the registry's contract.
    */
   async remove(id: string): Promise<boolean> {
+    if (id === this.defaultId)
+      throw new FlowError("默认工作空间不能移除。", 400);
     return this.ctx.workspaceRegistry.delete(workspaceId(id));
   }
 

@@ -69,7 +69,7 @@ export function demoToolCall(
       },
     };
   if (
-    tools.has("aura_multi_shot_video") &&
+    tools.has("aura_video") &&
     /(做成|生成|制作).{0,12}(视频|短片|影片)/u.test(text)
   ) {
     const story = subject(text);
@@ -79,7 +79,7 @@ export function demoToolCall(
       .filter(Boolean)
       .slice(0, 4);
     return {
-      name: "aura_multi_shot_video",
+      name: "aura_video",
       arguments: {
         name: story.slice(0, 20) || "对话生成的视频",
         shots: (sentences.length ? sentences : [story]).map((line, index) => ({

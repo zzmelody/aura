@@ -46,7 +46,7 @@ const preview = (value: unknown) => {
   return text.length > 140 ? `${text.slice(0, 137)}…` : text;
 };
 
-const summary = (run: FlowRun): JsonValue => {
+const summary = (run: FlowRun): Record<string, JsonValue> => {
   if (executable(run.status))
     return {
       status: run.status,
@@ -72,7 +72,7 @@ const compileTool = defineTool as unknown as (
 ) => ToolDefinition;
 
 /**
- * The three chat-invocable workflows. Every tool starts at most one durable
+ * Turn-scoped workflow tools. Every tool starts at most one durable
  * run per model call ID, waits briefly, then hands progress to the run card.
  */
 export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
@@ -113,13 +113,14 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
         starts++;
         try {
           const started = await task(requestIdFor(callId));
-          scope.started({
+          const workflow = {
             flowId: started.flowId,
             title: started.title,
             runId: started.runId,
             inputPreview: preview(started.input),
-          });
-          return await settle(started.runId, signal);
+          };
+          scope.started(workflow);
+          return { ...(await settle(started.runId, signal)), workflow };
         } catch (error) {
           starts--;
           return {

@@ -72,6 +72,18 @@ export function restoreState(value: unknown): Workspace {
   if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.sessions))
     return initialState();
   const sessions: Session[] = [];
+  const endpoint =
+    validateEndpoint(
+      typeof value.endpoint === "string" ? value.endpoint : "",
+    ) || "http://127.0.0.1:4311";
+  const retiredVideoIds = new Set([
+    "short-video",
+    "multi-shot-video",
+    "video-shot",
+  ]);
+  const retired = (ref: WorkflowRef | undefined) =>
+    Boolean(ref && ref.endpoint === endpoint && retiredVideoIds.has(ref.id));
+  const removedRuns = new Set<string>();
   for (const s of value.sessions) {
     if (sessions.length === 100) break;
     if (
@@ -84,7 +96,16 @@ export function restoreState(value: unknown): Workspace {
       continue;
     const messages: Message[] = [];
     const workflow = restoreBinding(s.workflow);
-    const pendingBinding = restoreBinding(s.pendingWorkflow);
+    if (retired(workflow)) {
+      for (const message of s.messages)
+        if (isRecord(message) && typeof message.workflowRunId === "string")
+          removedRuns.add(message.workflowRunId);
+      continue;
+    }
+    const restoredPending = restoreBinding(s.pendingWorkflow);
+    const pendingBinding = retired(restoredPending)
+      ? undefined
+      : restoredPending;
     const pendingWorkflow =
       !workflow && pendingBinding?.pending
         ? { ...pendingBinding, pending: pendingBinding.pending }
@@ -98,6 +119,11 @@ export function restoreState(value: unknown): Workspace {
       )
         continue;
       const ref = restoreRef(m.workflow);
+      if (retired(ref)) {
+        if (typeof m.workflowRunId === "string")
+          removedRuns.add(m.workflowRunId);
+        continue;
+      }
       messages.push({
         id: m.id,
         role: m.role,
@@ -183,6 +209,10 @@ export function restoreState(value: unknown): Workspace {
       ? {
           hiddenWorkflowRuns: value.hiddenWorkflowRuns
             .filter((item): item is string => typeof item === "string")
+            .filter(
+              (item) =>
+                ![...removedRuns].some((id) => item === `${endpoint}/${id}`),
+            )
             .slice(-500),
         }
       : {}),

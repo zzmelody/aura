@@ -117,6 +117,14 @@ if (id === "self-media") {
     if (basename(path) === "service.d.ts")
       ts.sys.writeFile(resolve(root, "backend/dist/service.d.ts"), source);
   });
+  // Contributions are a complete generated tree; removed sources must not remain discoverable.
+  for (const kind of ["flows", "actions"]) {
+    const target = resolve(root, kind);
+    if (dirname(target) !== root)
+      throw new Error("Invalid generated contribution root.");
+    await rm(target, { recursive: true, force: true });
+    await mkdir(target, { recursive: true });
+  }
   for (const [kind, singular] of [
     ["flows", "flow"],
     ["actions", "action"],

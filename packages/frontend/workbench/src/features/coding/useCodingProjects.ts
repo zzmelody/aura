@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CodingConversationInfo,
   CodingProjectInfo,
+  ChatModelSelection,
+  FlowMode,
 } from "@aura/protocol/types";
 import type { SessionStatus } from "../../sidebarSessions";
 import {
@@ -11,6 +13,7 @@ import {
   listConversations,
   listProjects,
   openSideChat,
+  saveConversationModel,
 } from "./api";
 import { conversationInfoStatus, isActiveStatus } from "./conversationStatus";
 
@@ -26,6 +29,14 @@ export type CodingProjectsController = {
   selectedId?: string;
   /** The open conversation; undefined starts a new one in the workspace. */
   conversationId?: string;
+  branchFrom?: string;
+  continueIn(projectId: string): void;
+  newChat(): void;
+  selectModel(
+    sessionId: string,
+    mode: FlowMode,
+    selection: ChatModelSelection,
+  ): Promise<void>;
   select(id: string | undefined): void;
   /** Opens a conversation, or a new one when `conversationId` is omitted. */
   open(projectId: string, conversationId?: string): void;
@@ -62,6 +73,7 @@ export function useCodingProjects(
   const [selection, setSelection] = useState<{
     projectId?: string;
     conversationId?: string;
+    branchFrom?: string;
   }>({});
   const [error, setError] = useState("");
   /**
@@ -130,7 +142,9 @@ export function useCodingProjects(
       setSelection((current) =>
         current.projectId && list.some((item) => item.id === current.projectId)
           ? current
-          : { projectId: list[0]?.id },
+          : {
+              projectId: list.find((item) => item.isDefault)?.id ?? list[0]?.id,
+            },
       );
       // A workspace whose conversations fail to load still shows as a folder.
       await Promise.all(
@@ -243,6 +257,44 @@ export function useCodingProjects(
     conversations,
     selectedId: selection.projectId,
     conversationId: selection.conversationId,
+    branchFrom: selection.branchFrom,
+    continueIn: (projectId) =>
+      setSelection((current) =>
+        current.projectId === projectId
+          ? current
+          : {
+              projectId,
+              ...(current.conversationId
+                ? { branchFrom: current.conversationId }
+                : {}),
+            },
+      ),
+    newChat: () =>
+      setSelection({ projectId: projects.find((item) => item.isDefault)?.id }),
+    selectModel: (sessionId, mode, selection) => {
+      const parent = Object.values(conversations)
+        .flat()
+        .find(
+          (item) => item.id === sessionId || item.sideSessionId === sessionId,
+        );
+      if (!parent)
+        return Promise.reject(new Error("对话尚未保存，请稍后再试。"));
+      const field = parent.id === sessionId ? "modelConfig" : "sideModelConfig";
+      setConversations((current) => ({
+        ...current,
+        [parent.projectId]: (current[parent.projectId] ?? []).map((item) =>
+          item.id === parent.id
+            ? { ...item, [field]: { ...item[field], [mode]: selection } }
+            : item,
+        ),
+      }));
+      return mutate(parent.projectId, () =>
+        saveConversationModel(endpoint, sessionId, mode, selection),
+      ).catch(async (error: unknown) => {
+        await refreshConversations(parent.projectId).catch(() => {});
+        throw error;
+      });
+    },
     select,
     open,
     refresh,

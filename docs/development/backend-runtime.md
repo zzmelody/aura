@@ -49,7 +49,7 @@ HTTP 层只依赖 `CodexAuthPort`、`ChatPort` 与 `TripoPort`，组合根再注
 
 ## 4. 请求与授权流程
 
-对话请求由 Hono 完成路由、body limit 与 JSON 解析，再通过共享协议校验输入；随后交给长驻的 `aura-flow` 编排宿主（`OrchestrationHost.chat`），在其中为本次请求创建短期 DSH session（preset `chat-v1`）。用户消息可带最多 4 个已上传图片的内容 ID；Codex 模式下编排宿主按 ID 读取并校验哈希后，把最近的最多 4 张作为图片内容交给模型，演示模式只传文字标记。图片经 `POST /flows/assets/images` 上传，`GET /flows/assets/images/:id` 只按内容 ID 返回已上传图片。响应使用 Hono streaming helper 输出 NDJSON，事件为 `delta`、`workflow`（含 flowId、标题、runId、参数摘要）、`error`、`done`；宿主把流式事件作为 `chat/event` JSON-RPC 通知回传，客户端断开会发送 `chat/cancel`，180 秒超时兜底。内部演示模型使用 Hono SSE helper 提供 OpenAI-compatible 流。
+对话请求由 Hono 完成路由、body limit 与 JSON 解析，再通过共享协议校验输入；随后交给长驻的 `aura-flow` 编排宿主（`OrchestrationHost.chat`），在其中复用持久化 DSH session（preset `coder-v1`）；旧 `/chat/*` 请求仅做协议转换。用户消息可带最多 4 个已上传图片的内容 ID；Codex 模式下编排宿主按 ID 读取并校验哈希后，把最近的最多 4 张作为图片内容交给模型，演示模式只传文字标记。图片经 `POST /flows/assets/images` 上传，`GET /flows/assets/images/:id` 只按内容 ID 返回已上传图片。响应使用 Hono streaming helper 输出 NDJSON，事件为 `delta`、`workflow`（含 flowId、标题、runId、参数摘要）、`error`、`done`；宿主把流式事件作为 `chat/event` JSON-RPC 通知回传，客户端断开会发送 `chat/cancel`，180 秒超时兜底。内部演示模型使用 Hono SSE helper 提供 OpenAI-compatible 流。
 
 Codex 登录由用户交互触发。HTTP 路由只转发 DSH notice、manual prompt 和脱敏状态；OAuth grant 由 DSH credentials service 写入 `.aura/dsh/.credentials.yaml`。Runtime、前端响应和日志均不得读取或输出 access token、refresh token 或 API key。
 
@@ -85,3 +85,9 @@ Runtime 以 Node.js 24 为最低运行环境，workspace 直接导出 `.ts` 源�
 变更至少执行 Runtime 与授权包的类型检查和单元测试，再执行根 `pnpm run check`。涉及进程、profile 或流协议时还必须执行 `pnpm run test:runtime`；涉及桌面嵌入时验证 Electron 启动与退出后的端口回收。
 
 当前对话复用编排宿主的 DSH 进程，每次请求创建短期 session；Flow 的步骤 session 与 durable Run 则保持稳定映射与恢复记录。后续公网部署仍需要用户身份、配额和服务端权威对话历史。模块职责与全部包边界见 [模块边界](module-boundaries.md)，本轮结果见 [当前验证](../verification.md)。
+
+### 统一对话与控制边界
+
+首页和项目对话均通过 `/coding/turn` 使用同一驱动；未传 `projectId` 时由后端选择运行时预建的默认工作空间。自然语言不经过额外意图分类；当前请求和上下文由同一 Agent 处理。停止、引导、回答、显式工作流启动和目录选择仍走明确的控制接口，宿主负责输入校验、目录和权限边界。
+
+会话索引在原 `aura_coding_conversations` v1 记录上增加可选模型配置、导入历史和来源 ID，已有记录无需重写。旧历史仅在无 DSH 日志时进入首轮上下文，后端重放会隐藏上下文封装、保留用户原请求；导入不伪造工具调用。跨项目 `branchFrom` 校验来源后以 DSH seed fork，继承已完成上下文，自己的时间线只显示分叉后的轮次。`forkFrom` 继续专用于受父记录约束的旁支，两者不能同时传入。模型选择在后端保存、每轮固定，Flow 的模型配置独立。

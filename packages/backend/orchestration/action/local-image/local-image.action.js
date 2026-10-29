@@ -47,7 +47,7 @@ export default defineAction({
     },
     render: (_input, value) => [{ type: "text", text: JSON.stringify(value) }],
   },
-  timeoutMs: 600_000,
+  timeoutMs: 1800000,
   isConcurrencySafe: () => true,
   async execute(ctx, input) {
     return localAI(ctx).image(input, ctx.signal);

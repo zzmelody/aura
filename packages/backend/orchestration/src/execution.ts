@@ -41,6 +41,7 @@ import {
 } from "./durable.ts";
 import { runScoped } from "./scopes.ts";
 import { agentConfig } from "./agent-config.ts";
+import { FLOW_TIMEOUT_MS } from "./timeouts.ts";
 
 interface ExecutionOptions {
   get(): FlowRun;
@@ -97,6 +98,13 @@ export class FlowExecution {
     this.suspension = new Suspension("paused");
     this.admissionAbort.abort(this.suspension);
   }
+  expire() {
+    this.fatalError = new FlowError(
+      `FLOW_TIMEOUT: 工作流执行超过 ${FLOW_TIMEOUT_MS / 60_000} 分钟。`,
+    );
+    this.abort.abort(this.fatalError);
+    this.admissionAbort.abort(this.fatalError);
+  }
   private suspend(phase: Suspension["phase"]): never {
     this.suspension = new Suspension(phase);
     this.admissionAbort.abort(this.suspension);
@@ -127,8 +135,10 @@ export class FlowExecution {
   ): Promise<{ key: string; step: FlowStep; recovered: boolean }> {
     this.boundary();
     const key = [...path, draft.id].join("/");
-    if (this.visited.size >= 64)
-      throw new FlowError("单次 Flow 最多执行 64 个 durable 步骤。");
+    if (this.visited.size >= (this.options.flow.stepLimit ?? 64))
+      throw new FlowError(
+        `单次 Flow 最多执行 ${this.options.flow.stepLimit ?? 64} 个 durable 步骤。`,
+      );
     if (this.visited.has(key))
       throw new FlowError(`Flow 步骤 ID 不能重复：${key}`);
     this.visited.add(key);
@@ -564,6 +574,7 @@ export class FlowExecution {
         startedAt: current.startedAt ?? Date.now(),
         error: undefined,
       }))) as FlowChildStep;
+      this.boundary();
       const result = await this.options.flows.run(child.id);
       this.boundary();
       if (result.status === "completed") {
@@ -737,6 +748,7 @@ export class FlowExecution {
             : run.steps.some((step) => step.status === "unknown")
               ? "needs_attention"
               : (suspension?.phase ?? "failed");
+      const timedOut = this.fatalError?.message.startsWith("FLOW_TIMEOUT:");
       await this.options.update((current) => ({
         ...current,
         status,
@@ -757,16 +769,18 @@ export class FlowExecution {
                 : "Flow 代码执行失败，请检查后端日志。"
               : undefined,
         steps: current.steps.map((step) =>
-          status === "cancelled" && ["running", "queued"].includes(step.status)
+          (status === "cancelled" || timedOut) &&
+          ["running", "queued"].includes(step.status)
             ? {
                 ...step,
-                status: "cancelled",
+                status: timedOut ? "failed" : "cancelled",
+                error: timedOut ? this.fatalError?.message : step.error,
                 finishedAt: Date.now(),
                 attempts: step.attempts?.map((attempt) =>
                   attempt.status === "running"
                     ? {
                         ...attempt,
-                        status: "cancelled",
+                        status: timedOut ? "failed" : "cancelled",
                         finishedAt: Date.now(),
                       }
                     : attempt,

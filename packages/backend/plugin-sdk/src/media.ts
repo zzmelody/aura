@@ -8,5 +8,6 @@ export {
   wavDuration,
   sharp,
   ffmpegPath,
+  probeVideo,
 } from "@aura/orchestration/plugin-media";
 export type { ArtifactFile } from "@aura/orchestration/plugin-media";

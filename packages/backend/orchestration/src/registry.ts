@@ -16,6 +16,7 @@ import {
   agentOptionsSchema,
 } from "./schema.ts";
 import { validateFlowSource } from "./flow-diagnostics.ts";
+import { CALL_TIMEOUT_MS } from "./timeouts.ts";
 
 export interface LoadedFlow {
   id: string;
@@ -26,6 +27,7 @@ export interface LoadedFlow {
   inputSchema: z.ZodType;
   outputSchema: z.ZodType;
   concurrency: number;
+  stepLimit?: number;
   agentTimeoutMs: number;
   agentDefaults?: FlowAgentOptions;
   plugin?: AuraPluginIdentity;
@@ -47,7 +49,13 @@ const definitionSchema = z
       error: "output 必须是 Zod schema",
     }),
     concurrency: z.number().int().min(1).max(4).default(2),
-    agentTimeoutMs: z.number().int().min(1_000).max(600_000).default(180_000),
+    stepLimit: z.number().int().min(1).max(4096).default(64),
+    agentTimeoutMs: z
+      .number()
+      .int()
+      .min(1_000)
+      .max(CALL_TIMEOUT_MS)
+      .default(CALL_TIMEOUT_MS),
     agentDefaults: agentOptionsSchema.optional(),
     run: z.custom<FlowDefinition["run"]>(
       (value) => typeof value === "function",
@@ -93,6 +101,7 @@ export class FlowRegistry {
       inputSchema: definition.input,
       outputSchema: definition.output,
       concurrency: definition.concurrency,
+      stepLimit: definition.stepLimit,
       agentTimeoutMs: definition.agentTimeoutMs,
       agentDefaults: definition.agentDefaults,
       plugin: config.plugin,

@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import { conversationPrompt } from "@aura/protocol/conversations";
+import { chatImages } from "../chat-images.ts";
+import { chatTools, type ChatToolHost } from "../chat-tools.ts";
 import type { Context } from "@deepseek-ai/cordis";
 import {
   buildForkSeed,
@@ -65,15 +68,15 @@ export interface CodingSessionKey {
 }
 
 /**
- * One coding conversation: a persistent DSH session bound to a project
- * directory. Unlike the one-shot chat path, the session outlives a single
- * turn so the todo list, plan mode, and tool history accumulate across
- * follow-up requests, and the JSONL log stays readable afterwards.
+ * The shared conversation driver: a persistent DSH session bound to a
+ * directory. Todo, plan mode and tool history accumulate across turns;
+ * the JSONL log remains readable after navigation and host restart.
  */
 export function codingService(
   ctx: Context,
   questions: CodingQuestions,
   images: Pick<GeneratedArtifacts, "readImage">,
+  workflows: ChatToolHost,
 ) {
   const controller = ctx.sessionController;
   /** Sessions with a turn in progress in this process. */
@@ -116,7 +119,7 @@ export function codingService(
    * agent accepted the message rather than waiting for the reply.
    *
    * Only a conversation with a turn running in this process can be steered,
-   * so another DSH session (a Flow agent, an ordinary chat) cannot be reached
+   * so another DSH session (for example a Flow agent) cannot be reached
    * through its id, and a finished conversation reports `false` instead of
    * silently starting a turn nobody is streaming.
    */
@@ -339,9 +342,39 @@ export function codingService(
     const scoped: Array<() => void> = [];
     const disposers: Array<() => void> = [];
     try {
+      // Reused agents must apply this turn's selection to every model request.
+      scoped.push(
+        agent.ctx.on("agent/request", async (_payload, next) => {
+          await next();
+          return {
+            provider: config.provider,
+            model: config.model,
+            ...(config.reasoningEffort === undefined
+              ? {}
+              : { reasoningEffort: config.reasoningEffort }),
+            ...(config.maxTokens === undefined
+              ? {}
+              : { maxTokens: config.maxTokens }),
+          };
+        }),
+      );
+      // Record the pending choice without changing the deployment default.
+      agent.session.append("model/selection", {
+        provider: config.provider,
+        model: config.model,
+        ...(config.reasoningEffort === undefined
+          ? {}
+          : { reasoningEffort: config.reasoningEffort }),
+      });
       // Scoped restrictions are lifted when this turn ends, so every turn,
       // including follow-ups on a live agent, re-applies the allow-list.
       scoped.push(...mountCodingTools(agent));
+      for (const tool of chatTools(workflows, {
+        mode: turn.mode,
+        signal: stop,
+        started: (run) => emit({ type: "workflow", ...run }),
+      }))
+        scoped.push(agent.ctx.tools.register(tool));
       // Answer this agent's `ask_user_question` calls through the client:
       // the question goes out on the turn stream and the call waits until
       // the user answers or the turn stops. Agent-scoped, so it never claims
@@ -453,7 +486,22 @@ export function codingService(
       stop.addEventListener("abort", onAbort, { once: true });
       try {
         stop.throwIfAborted();
-        const pictures = await promptImages(turn.images ?? [], stop);
+        const imported =
+          !live && !stored && !turn.forkFrom && turn.history?.length
+            ? await chatImages(
+                {
+                  mode: turn.mode,
+                  messages: [
+                    ...turn.history,
+                    { role: "user", text: turn.prompt, images: turn.images },
+                  ],
+                },
+                images,
+                stop,
+              )
+            : undefined;
+        const pictures =
+          imported?.parts ?? (await promptImages(turn.images ?? [], stop));
         await controller.prompt(
           {
             sessionId,
@@ -463,7 +511,11 @@ export function codingService(
               // DSH needs a text part; an image-only request gets a short cue.
               {
                 type: "text",
-                text: turn.prompt.trim() || "请查看我附上的图片。",
+                text: conversationPrompt(
+                  turn.prompt.trim() || "请查看我附上的图片。",
+                  imported?.history.slice(0, -1),
+                  turn.context,
+                ),
               },
               ...pictures,
             ],

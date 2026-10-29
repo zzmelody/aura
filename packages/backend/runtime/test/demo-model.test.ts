@@ -1,6 +1,30 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { startDemoModel } from "../src/demo-model.ts";
+import { createDemoModelApp, startDemoModel } from "../src/demo-model.ts";
+import { conversationPrompt } from "@aura/protocol/conversations";
+
+test("persistent conversation prompts retain demo workflow tool selection", async () => {
+  const app = createDemoModelApp();
+  for (const content of [
+    "帮我配音：你好",
+    conversationPrompt("帮我配音：你好", [
+      { role: "assistant", text: "旧回复" },
+    ]),
+  ]) {
+    const response = await app.request("/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [{ role: "user", content }],
+        tools: [
+          { type: "function", function: { name: "aura_tts", parameters: {} } },
+        ],
+      }),
+    });
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /aura_tts/);
+  }
+});
 
 test("demo model accepts Aura history through its private OpenAI-compatible route", async (t) => {
   const model = await startDemoModel();
@@ -71,11 +95,9 @@ test("demo model accepts an ordinary Flow agent prompt", async (t) => {
 test("demo chat model selects offered workflow tools deterministically", async () => {
   const { demoToolCall, demoToolReply } =
     await import("../src/demo-chat-tools.ts");
-  const tools = [
-    "aura_tts",
-    "aura_multi_shot_video",
-    "aura_topic_research",
-  ].map((name) => ({ type: "function", function: { name, parameters: {} } }));
+  const tools = ["aura_tts", "aura_video", "aura_topic_research"].map(
+    (name) => ({ type: "function", function: { name, parameters: {} } }),
+  );
   const call = (text: string, offered = tools) =>
     demoToolCall({ tools: offered, messages: [] }, [{ role: "user", text }]);
   assert.deepEqual(call("帮我配音：今天下雨了"), {
@@ -83,7 +105,7 @@ test("demo chat model selects offered workflow tools deterministically", async (
     arguments: { text: "今天下雨了" },
   });
   const video = call("把这个故事做成视频：清晨出发。黄昏归来。");
-  assert.equal(video?.name, "aura_multi_shot_video");
+  assert.equal(video?.name, "aura_video");
   assert.equal((video?.arguments.shots as unknown[]).length, 2);
   assert.equal(call("找几个 AI 游戏的选题")?.name, "aura_topic_research");
   assert.equal(call("今天天气怎么样"), undefined);

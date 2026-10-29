@@ -7,6 +7,8 @@ export interface MediaResult {
   files: string[];
   seed: number;
   imageAssetId?: string;
+  videoPath?: string;
+  segments?: Array<{ index: number; frames: number; videoPath: string }>;
 }
 export type ComfyServiceId = "qwen-image" | "minimax-h3";
 export interface ComfyWorkflowInput {
@@ -22,6 +24,14 @@ export interface ComfyWorkflowInput {
     nodeId: string;
     assetId: string;
     resize?: { width: number; height: number };
+  }>;
+  videoBindings?: Array<{
+    nodeId: string;
+    assetId: string;
+    start: number;
+    duration: number;
+    width: number;
+    height: number;
   }>;
   /** Filter returned UI outputs, not which nodes execute. Omit to return all outputs. */
   outputNodeIds?: string[];
@@ -60,6 +70,23 @@ export interface VideoInput {
   height?: number;
   frames?: number;
   seed?: number;
+  referenceVideo?: {
+    assetId: string;
+    start: number;
+    duration: number;
+    role: string;
+    audio: boolean;
+  };
+  referenceImages?: string[];
+}
+export interface VideoJob {
+  id: string;
+  owner: string;
+  state:
+    "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+  progress: { segment: number; total: number };
+  result?: MediaResult;
+  error?: string;
 }
 export interface TTSInput {
   text: string;
@@ -83,6 +110,11 @@ export interface LocalAIClient {
   ): Promise<ServiceStatus>;
   image(input: ImageInput, signal: AbortSignal): Promise<MediaResult>;
   video(input: VideoInput, signal: AbortSignal): Promise<MediaResult>;
+  videoJob(
+    operation: "submit" | "wait" | "cancel",
+    request: { id: string; owner: string; input?: VideoInput },
+    signal: AbortSignal,
+  ): Promise<VideoJob>;
   tts(input: TTSInput, signal: AbortSignal): Promise<MediaResult>;
   comfyWorkflow(
     input: ComfyWorkflowInput,

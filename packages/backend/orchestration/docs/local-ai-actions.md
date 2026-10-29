@@ -1,11 +1,11 @@
 # 本地图片、视频和语音 Actions
 
-这是五个独立的 Action，不包含新的 Aura Flow。未来的 Flow、指定 Agent 和本地后端调用复用相同 Action；生命周期管理在 `src/local-ai/`，不放进 Flow 或前端。`comfy-workflow` 执行的是 **ComfyUI 自己的 workflow**。
+这是独立的媒体 Actions，不包含新的 Aura Flow。未来的 Flow、指定 Agent 和本地后端调用复用相同 Action；生命周期管理在 `src/local-ai/`，不放进 Flow 或前端。`comfy-workflow` 执行的是 **ComfyUI 自己的 workflow**。
 
 | Action ID          | 用途                                                      | 部署 / 默认端口                                  |
 | ------------------ | --------------------------------------------------------- | ------------------------------------------------ |
 | `local-image`      | Qwen-Image-2512 文生图，返回 PNG 路径及图片资产 ID        | `D:/workflow/AI/qwenimage/ComfyUI` / 8190        |
-| `local-video`      | MiniMax H3 文生视频或首末帧图生视频（含音频）             | `D:/workflow/AI/minimaxh3/ComfyUI` / 8188        |
+| `local-video`      | MiniMax H3 文生、首末帧、视频与角色图片参考生成           | `D:/workflow/AI/minimaxh3/ComfyUI` / 8188        |
 | `local-tts`        | Qwen3-TTS 预设音色、声音设计、参考音频克隆，返回 WAV 路径 | `D:/workflow/AI/qwen3tts` / 8000                 |
 | `local-ai-service` | 查看、启动、停止上面三个服务                              | 服务 ID：`qwen-image`、`minimax-h3`、`qwen3-tts` |
 | `comfy-workflow`   | 执行自定义 ComfyUI API workflow，返回动态输出和文件       | 选择 `qwen-image` 或 `minimax-h3`                |
@@ -83,11 +83,9 @@ const status = await host.invokeAction("local-ai-service", {
 
 ### 视频分辨率
 
-`local-video` 的宽高支持 256–1312、32 的倍数，总像素不超过 736×1312；默认仍为 608×352。竖屏高清镜头使用 736×1312，横屏可交换宽高。原始画面由模型按请求尺寸生成，不会在失败后自动降为低分辨率。单次 Action 的 10 分钟期限仍生效，显存不足或生成超时会报告失败。
+`local-video` 的宽高支持 256–1312、32 的倍数，总像素不超过 736×1312；默认 608×352。`frames` 接受 12–720 个目标帧，固定 24fps。内部按模型帧数网格补齐，导出时精确裁回目标帧数。连续镜头可分段生成，后续段以此前末帧延续。
 
-单镜头 Flow 和多镜头项目均支持 `360p` / `720p`。新建多镜头项目（包括编辑器、HTTP API 和对话工具 `aura_multi_shot_video`）默认 720p，即使调用方未传分辨率也会在首个剧本版本中明确保存 `resolution: "720p"`；360p 仅在显式选择快速预览时使用。单镜头 Flow 的默认值仍为 360p。多镜头项目的分辨率随剧本版本保存，生成与恢复使用任务快照中的档位。切换分辨率后「保存并生成整片」会重新生成尺寸变化的图片和原始镜头，旁白可继续复用；「仅重新合成」会拒绝与新档位不匹配的旧素材。已有项目没有分辨率字段的历史剧本仍沿用 360p；查看旧成片不会把它变成高清，需要选择 720p 保存新版本后重新生成。
-
-720p 的原始视频为 736×1312，导出为 720×1280，字幕同步等比例绘制。更高分辨率增加显存占用和生成耗时；这不是本机所有镜头都能稳定生成的保证，建议先验证一个镜头。当前未开放 1080p 档位。
+长视频应调用 `local-video-job` 的 submit / wait / cancel：排队最多 60 分钟，每个模型分段执行最多 30 分钟，单次 wait 最多 60 秒。`local-video` 直接 Action 仍受调用方 Action 超时约束。
 
 ### 自定义 ComfyUI workflow
 
@@ -127,7 +125,7 @@ const result = await ctx.action({
 ### 预置生成 Action
 
 - 图片：`prompt` 必填；`negative` 可选；宽高默认 1024，范围 256–1536、16 的倍数，总像素不超过 1328×1328；`steps` 1–50、默认 30；`cfg` 1–10、默认 4。
-- 视频：`prompt` 必填；可选 `firstFrameAssetId` 和 `lastFrameAssetId` 指定受管图片资产，省略两者时仍为文生视频。图片先按目标画幅 cover 裁切，接入 MiniMax H3 的首末帧输入。默认 608×352，宽高 256–608、32 的倍数，总像素不超过 608×352；`frames` 为 22、39、56、73、90、107、124，默认 39；固定 24 fps、8 步 Turbo。更复杂的引导图节点请用 `comfy-workflow`。
+- 视频：`prompt` 必填；可选首末帧 `firstFrameAssetId` / `lastFrameAssetId`，或 `referenceVideo: {assetId, start, duration, role, audio}` 加 `referenceImages`（最多 8 张）。两种参考模式互斥。视频参考时长 0.5–15 秒，默认不参考原声。FL2V 使用 8 步 Turbo，R2V 使用专用 Ref2VA 模型及 4 步 Turbo LoRA。
 - TTS：`text` 必填；`mode` 默认 `custom-voice`，可改 `voice-design` 或 `voice-clone`；预设音色默认 `Vivian`，可用音色和语言由 Action Schema 列出；`instruct` 描述预设音色的情绪或语速。
 - 声音设计：`mode: "voice-design"`，另传 `voiceDescription`。
 - 声音克隆：`mode: "voice-clone"`，另传 `referenceAudio` 的本地绝对路径（不超过 30 MiB）和 `referenceText`；只提取音色时可省略参考文字并设 `xVectorOnly: true`。参考文件只读，不会删除。
@@ -137,7 +135,7 @@ const result = await ctx.action({
 
 ## 资源所有权
 
-- 三种模型共享单个 GPU 队列；Flow 并行、Agent 工具和直接调用都进入该队列，避免在 16GB 显卡上同时装载多个模型。队列等待也计入 Action 的 10 分钟超时。
+- 三种模型共享单个 GPU 队列；Flow 并行、Agent 工具和直接调用都进入该队列，避免在 16GB 显卡上同时装载多个模型。普通 Action 的等待计入其超时；持久视频作业使用独立的排队与分段执行期限。
 - 生成成功、失败、取消或超时后，均停止本次持有的服务进程树并等待退出，再释放 GPU。TTS 的 HTTP 断开不能终止 Python 推理线程，因此不是只取消 fetch。
 - 单独 start 的服务最多空闲 60 秒；TTS 生成可以复用它，结束后仍回收。ComfyUI 执行使用每次独立的输出和临时目录，因此会重启受管实例应用该目录配置，不复用显式 start 的实例；通常直接调用生成 Action 即可。切换模型前先停止原来由 Aura 启动的服务。
 - ComfyUI 完成后先将所选保存/预览产物移至本次任务的 `artifacts/`，停止进程后删除本次 `comfy-output/`、`comfy-temp/`。失败则删除整个本次任务目录；已有成功产物、workflow 源文件和模型部署目录不动。
@@ -175,3 +173,16 @@ $env:AURA_TEST_COMFY_WORKFLOW = "1"
 pnpm --filter @aura/orchestration exec tsx --test test/comfy-live.test.ts
 Remove-Item Env:AURA_TEST_COMFY_WORKFLOW
 ```
+
+## 统一视频与长任务
+
+宿主 `local-video-job` 以 submit/wait/cancel 调用持久化视频任务，短 Action 等待
+最多 60 秒，推理每段最多 30 分钟，GPU 排队期限独立为 60 分钟。失败或宿主
+中断不自动重复未知推理；显式重试可复用同输入、同模型修订的完成分段。
+
+视频目标帧数为 12–720（24fps），执行器内部按模板分段和对齐。传
+`referenceVideo: {assetId,start,duration,role,audio}` 及可选 `referenceImages`
+使用 H3 Ref2VA / Turbo 4 步；首末帧模式仍为 FL2V Turbo 8 步。参考视频与
+首末帧模式互斥。ComfyUI 原生视频输入使用 `videoBindings` 绑定到 `LoadVideo.file`，
+每个绑定包含受管 MP4 的 ID、截取起点/时长和参考包围框。实际图与绑定在启动前
+固定并参与 hash，输入仍暂存在每个任务独立的目录，不接管外部运行的 ComfyUI。

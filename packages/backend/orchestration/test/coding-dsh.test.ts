@@ -13,6 +13,7 @@ import type { CodingStreamEvent } from "../src/types.ts";
 const nodeMajor = Number(process.versions.node.split(".")[0]);
 
 interface ModelRequest {
+  model: string;
   messages: Array<{ role: string; content: unknown }>;
   tools?: Array<{ function: { name: string } }>;
 }
@@ -210,6 +211,7 @@ test(
 
       // A follow-up turn reuses the session; the first request stays the title.
       seenTools.length = 0;
+      assert.equal(requests.at(-1)!.model, "deepseek-v4-flash");
       await host.request<{ model: string }>(
         "coding",
         {
@@ -218,10 +220,15 @@ test(
           projectId: created.id,
           prompt: "继续",
           mode: "demo",
-          model: "deepseek-v4-flash",
+          model: "deepseek-v4-pro",
           reasoningEffort: "off",
         },
         AbortSignal.timeout(150_000),
+      );
+      assert.equal(requests.at(-1)!.model, "deepseek-v4-pro");
+      assert.ok(
+        JSON.stringify(requests.at(-1)!.messages).includes("WRITE_FILE"),
+        "switching a live agent's model preserves conversation history",
       );
       // The live agent keeps its allow-list on later turns, not only the first:
       // coding tools stay visible and excluded ones do not leak back in.
@@ -232,7 +239,13 @@ test(
           `follow-up turn should expose ${expected}; saw ${[...followUpTools].join(", ")}`,
         );
       // Nothing outside the allow-list (e.g. read_image) may leak back in.
-      const allowed = new Set<string>([...codingTools, "bash", "pwsh"]);
+      const allowed = new Set<string>([
+        ...codingTools,
+        "bash",
+        "pwsh",
+        "aura_tts",
+        "aura_image",
+      ]);
       for (const name of followUpTools)
         assert.ok(
           allowed.has(name),
@@ -263,11 +276,102 @@ test(
         chatTools.has("aura_tts"),
         `ordinary chat should expose its workflow tools; saw ${[...chatTools].join(", ")}`,
       );
-      for (const name of ["read", "write", "edit", "bash", "glob"])
+      for (const name of ["read", "write", "edit", "glob"])
         assert.ok(
-          !chatTools.has(name),
-          `ordinary chat must not expose ${name}; saw ${[...chatTools].join(", ")}`,
+          chatTools.has(name),
+          `the legacy chat adapter shares ${name}; saw ${[...chatTools].join(", ")}`,
         );
+      assert.ok(chatTools.has("bash") || chatTools.has("pwsh"));
+
+      // The legacy wire format and the new composer share one durable session.
+      await host.chat(
+        {
+          sessionId: "chat-unified",
+          mode: "demo",
+          model: "deepseek-v4-flash",
+          messages: [
+            { role: "user", text: "IMPORTED_DISCUSSION" },
+            { role: "assistant", text: "这是之前讨论的方案。" },
+            { role: "user", text: "先讨论，不执行。" },
+          ],
+        },
+        () => {},
+        AbortSignal.timeout(60_000),
+      );
+      const builtIn = (await host.projects()).find((item) => item.isDefault)!;
+      assert.ok(builtIn);
+      assert.equal((await host.codingHistory("chat-unified")).turns.length, 2);
+      await host.selectConversationModel("chat-unified", "demo", {
+        model: "deepseek-v4-pro",
+      });
+      await host.coding(
+        {
+          sessionId: "chat-unified",
+          mode: "demo",
+          prompt: "WRITE_FILE 按刚才的方案实现",
+        },
+        () => {},
+        AbortSignal.timeout(60_000),
+      );
+      assert.equal(requests.at(-1)!.model, "deepseek-v4-pro");
+      assert.match(
+        JSON.stringify(requests.at(-1)!.messages),
+        /IMPORTED_DISCUSSION/u,
+      );
+      assert.equal(
+        await readFile(join(builtIn.directory, "notes.txt"), "utf8"),
+        "written by the coding agent\n",
+      );
+      assert.deepEqual(
+        (await host.codingHistory("chat-unified")).turns.map(
+          (item) => item.prompt,
+        ),
+        [
+          "IMPORTED_DISCUSSION",
+          "先讨论，不执行。",
+          "WRITE_FILE 按刚才的方案实现",
+        ],
+      );
+      await host.coding(
+        {
+          sessionId: "coding-project-continuation",
+          projectId: created.id,
+          branchFrom: "chat-unified",
+          mode: "demo",
+          prompt: "换到这个项目继续讨论",
+        },
+        () => {},
+        AbortSignal.timeout(60_000),
+      );
+      assert.match(
+        JSON.stringify(requests.at(-1)!.messages),
+        /IMPORTED_DISCUSSION/u,
+      );
+      assert.equal(requests.at(-1)!.model, "deepseek-v4-pro");
+      assert.deepEqual(
+        (await host.codingHistory("coding-project-continuation")).turns.map(
+          (item) => item.prompt,
+        ),
+        ["换到这个项目继续讨论"],
+      );
+      assert.equal(
+        (await host.conversations(created.id)).find(
+          (item) => item.id === "coding-project-continuation",
+        )?.sourceSessionId,
+        "chat-unified",
+      );
+      await assert.rejects(
+        host.coding(
+          {
+            sessionId: "chat-unified",
+            projectId: created.id,
+            mode: "demo",
+            prompt: "不能原地更换目录",
+          },
+          () => {},
+          AbortSignal.timeout(60_000),
+        ),
+      );
 
       // History replays the conversation from the stored log: both turns,
       // with the write step, its diff and the reply.
@@ -319,6 +423,23 @@ test(
       // the stored session instead of starting a new one.
       await host.close();
       host = new OrchestrationHost(options);
+      assert.equal(
+        (await host.conversations(builtIn.id)).find(
+          (item) => item.id === "chat-unified",
+        )?.modelConfig?.demo?.model,
+        "deepseek-v4-pro",
+      );
+      await host.coding(
+        { sessionId: "chat-unified", mode: "demo", prompt: "重启后继续讨论" },
+        () => {},
+        AbortSignal.timeout(60_000),
+      );
+      assert.equal(requests.at(-1)!.model, "deepseek-v4-pro");
+      assert.match(
+        JSON.stringify(requests.at(-1)!.messages),
+        /IMPORTED_DISCUSSION/u,
+      );
+      assert.equal((await host.codingHistory("chat-unified")).turns.length, 4);
       await checkHistory(2);
       seenTools.length = 0;
       await host.coding(
@@ -341,6 +462,7 @@ test(
       );
       // The model saw the earlier turns, so it kept its context.
       const resumedRequest = requests.at(-1)!;
+      assert.equal(resumedRequest.model, "deepseek-v4-flash");
       assert.ok(
         JSON.stringify(resumedRequest.messages).includes("WRITE_FILE"),
         "a resumed session sends the earlier conversation to the model",

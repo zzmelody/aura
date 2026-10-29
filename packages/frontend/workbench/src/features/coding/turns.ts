@@ -1,5 +1,6 @@
 import type {
   CodingActivity,
+  ChatWorkflowStart,
   CodingFileDiff,
   CodingHistoryTurn,
   CodingQuestionAnswer,
@@ -50,6 +51,7 @@ export type Turn = {
   deliverables: string[];
   /** Questions the agent asked during this turn, answered or still open. */
   questions: AskedQuestion[];
+  workflows?: ChatWorkflowStart[];
   status: "running" | "complete" | "stopped" | "error";
   error?: string;
   startedAt: number;
@@ -84,6 +86,10 @@ export function newTurn(
  * through here, so a reloaded transcript looks exactly like the live one.
  */
 export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
+  if (event.type === "workflow")
+    return turn.workflows?.some((run) => run.runId === event.runId)
+      ? turn
+      : { ...turn, workflows: [...(turn.workflows ?? []), event] };
   if (event.type === "delta")
     return {
       ...turn,

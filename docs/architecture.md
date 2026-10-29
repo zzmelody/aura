@@ -17,7 +17,7 @@ Codex：客户端 → Aura runtime → DSH SDK profile → dsh-llm-pi-ai → ope
 
 `@aura/dsh-auth` 是 Aura 对 DSH authorization/credentials seam 的后端适配层。包名描述稳定职责，不绑定当前供应商；其中 `CodexSubscriptionAuth` 组合 DSH 的 `dsh-credentials-local`、`dsh-authorization`、`dsh-llm` 和 `dsh-llm-pi-ai` 服务。它只把 notice、设备码、手动回调提示和最终状态投影到客户端；浏览器回调监听使用与 OpenAI redirect URI 一致的 `localhost`。OAuth grant 由 DSH 写入 `.aura/dsh/.credentials.yaml`，不会进入 HTTP 响应、前端存储或日志。
 
-`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、Tripo 路由、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 不是 LLM provider，由 `@aura/tripo` 使用官方 v3 SDK 提交异步 3D 任务；Key 只从后端环境或已忽略的 `.aura/tripo/` 读取。图片生成由 `image-generate` Action 统一：已登录 Codex 时优先经订阅后端（`chatgpt.com/backend-api/codex/responses` 的 `image_generation` 工具）生成，复用对话的同一份 DSH 授权与令牌刷新，消耗 Codex 订阅额度而非按张计费，具体图片模型由 Codex 决定；每次调用只发一个请求，失败或结果未知时不重试也不改用其他引擎。未登录时改用本机 Qwen-Image；`image` 工作流与对话工具 `aura_image` 都经由它。插件可以贡献自己的 capability provider（见 `@aura/plugin-sdk/capability`），领域专用的外部工具由插件自己的 provider 调用，不进 Aura。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](development/backend-runtime.md)。
+对话与流程共用长驻的 `aura-flow` DSH profile：所有在线对话共用持久化的 `coder-v1` DSH session，具备文件、搜索、命令、规划、提问及工作流工具。未选项目时使用后端配置的默认工作目录；讨论、调研与执行由同一 Agent 根据当前请求和上下文衔接，没有额外分类模型或聊天/工作模式开关。工具启动的工作流继续显示运行卡片。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、Tripo 路由、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 不是 LLM provider，由 `@aura/tripo` 使用官方 v3 SDK 提交异步 3D 任务；Key 只从后端环境或已忽略的 `.aura/tripo/` 读取。图片生成由 `image-generate` Action 统一：已登录 Codex 时优先经订阅后端（`chatgpt.com/backend-api/codex/responses` 的 `image_generation` 工具）生成，复用对话的同一份 DSH 授权与令牌刷新，消耗 Codex 订阅额度而非按张计费，具体图片模型由 Codex 决定；每次调用只发一个请求，失败或结果未知时不重试也不改用其他引擎。未登录时改用本机 Qwen-Image；`image` 工作流与对话工具 `aura_image` 都经由它。插件可以贡献自己的 capability provider（见 `@aura/plugin-sdk/capability`），领域专用的外部工具由插件自己的 provider 调用，不进 Aura。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](development/backend-runtime.md)。
 
 ## Monorepo
 
@@ -82,13 +82,11 @@ Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Sessi
 
 本地媒体模型以同包 `local-image`、`local-video`、`local-tts` Action 接入已有 ComfyUI / Qwen3-TTS HTTP 服务，`local-ai-service` 负责状态与显式启停。`orchestration/src/local-ai/` 是这三套受信任 Windows 部署的后端适配：复用 DSH subprocess，并用其公开 Win32 bindings 补充 Job 崩溃回收及跨宿主 GPU lease。模型进程由后端插件持有，不属于热加载 Action fiber；详情见 [本地模型 Actions](../packages/backend/orchestration/docs/local-ai-actions.md)。这条媒体工具链不替代 Agent 的 DSH 模型路由。
 
-内置 `short-video` Flow 先生成 TTS 并由 `short-video-audio` 检查 WAV 时长，再按需通过 `local-image` 生成首末帧或使用工作流表单已上传的受管图片资产，最后调用 `local-video` 和使用固定 FFmpeg 二进制的 `short-video-compose` 合成旁白与烧录字幕。
-
 「工作流」首页用卡片展示用途与可用状态，点击卡片按需通过 `/flows/:flowId/source` 读取已注册入口源码，在卡片下方静态解析节点；编辑入口进入流程图/代码详情。画布与节点支持拖拽，位置只影响当前预览，不修改代码。注册时保留源码快照，热加载失败时预览与运行均继续使用最后可用版本；接口按目录 ID 查注册表，不接受文件路径，不返回辅助文件或凭据。源码预览不具备发布或修改后端代码的能力。
 
 运行入口创建带 `workflow` 绑定的工作区会话，输入、结果和步骤记录都在会话内查看。绑定保存工作流 ID、标题、服务 origin 和输入 Schema，每个结果引用原有后端 run ID；不会把工作流输入提交到普通 `/chat` 链路。同一会话支持多次独立运行，后台轮询同步状态，原有服务端运行记录自动进入历史列表。前端按 run ID 将原有输入/结果消息配成对话轮次，不改变存储格式；用户输入右对齐，工作流步骤、状态和结果在中间输出区随轮询连续更新。富文本及结构化数据由 workbench 的浏览器组件渲染，Markdown 依赖随工作流会话按需加载。执行表单作为对话流末尾的内联编辑块按需展开，确认接收后收起，不阻塞历史浏览和页面滚动。标量 Schema 字段使用结构化控件，字符串枚举数组使用多选控件并遵守 `minItems` / `maxItems`；其他复杂嵌套输入仍回退为 JSON。待确认提交保留 requestId，网络失败后重试复用同一请求；本地删除会话记录隐藏 run ID，避免轮询重新导入。工作流回复提供暂停/继续、checkpoint 输入、未知结果处理、attempt 历史和恢复记录；图是代码的只读静态投影，运行记录另行展示实际执行路径。
 
-普通联网对话复用长驻编排宿主的 DSH 进程，每次请求创建短期 session；客户端历史作为带标记的输入交给 DSH，响应结束或连接断开后清理 session。这保留了 DSH agent loop、provider、事件与取消链路。Flow 则保存稳定的步骤到 DSH session 映射及 durable Run；普通对话历史仍由客户端保存。
+在线会话的生命周期、目录绑定和模型配置由后端持有，前端首页与工作空间共用 `ConversationPane` 和会话控制器。`coding/conversations.ts` 负责身份、目录、来源及配置准入；`coding/session.ts` 只负责 DSH 驱动、工具和事件；HTTP 边界只校验和转发。`/chat/*` 保留为旧协议适配，不再创建短期聊天 Agent。旧浏览器聊天在继续时以稳定的 `legacy-<id>` 导入一次，原始记录保留，后续请求不重复回灌历史。跨项目延续通过 DSH fork 新建带来源关系的会话，不修改已有 session 的 cwd。Flow 的 durable Run、步骤配置和存储保持独立。
 
 Codex 默认模型是 `gpt-6.1-sol`，推理档位为 `xhigh`（Extra high），传输为 SSE。`@aura/dsh-auth` 用公开 DSH 模型配置补充当前目录缺少的型号，并保留原有目录；授权组合与编排 profile 共享这份 provider 配置。部署可以通过 `AURA_CODEX_MODEL` 选择目录中存在的其他模型，Flow 还可按 Agent 覆盖；未知模型或不支持的思考档位报错，不回退到演示。当前锁定 Codex 适配器不向上游转发 `maxTokens`，不能把配置值当成实际输出硬上限，因此 Flow 在 Codex 模式拒绝此选项。Demo 链路支持 token 参数透传，默认 4096。温度由具体模型决定是否接受，未设置时沿用供应商默认；Agent 的 `timeoutMs` 独立限制每次 attempt 时长。
 

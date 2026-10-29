@@ -1,4 +1,5 @@
 import type { SessionId } from "@deepseek-ai/dsh-session";
+import { conversationPromptText } from "@aura/protocol/conversations";
 import type {
   SessionController,
   SessionHistoryRecord,
@@ -154,7 +155,9 @@ export function historyTurns(
       // on replay, so position inside the turn stands in for it: the shared
       // projector applies the same rule to the live stream.
       if (source?.kind === "user" && !current.prompt) {
-        current.prompt = text((data as { content?: unknown }).content);
+        current.prompt = conversationPromptText(
+          text((data as { content?: unknown }).content),
+        );
         continue;
       }
       projectCodingEvent(event, emit, created, () => false);

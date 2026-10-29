@@ -174,7 +174,7 @@ export function defineAction<
           const options = {
             ...definition,
             name,
-            timeoutMs: definition.timeoutMs ?? 30_000,
+            timeoutMs: definition.timeoutMs ?? 30 * 60_000,
             async execute(input: InferArgs<S>, exec: ToolRunContext) {
               jsonValue(input, "Action 入参");
               const { bindCall, ...contextBinding } = binding;

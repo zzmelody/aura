@@ -404,6 +404,9 @@ export interface FlowHistory {
 
 /** POST /chat body; credentials are configured on the server, never here. */
 export type ChatModelSelection = { model?: string; reasoningEffort?: string };
+export type ConversationModelConfig = Partial<
+  Record<FlowMode, ChatModelSelection>
+>;
 export type ChatModelInfo = {
   id: string;
   name: string;
@@ -541,6 +544,8 @@ export interface CodingProjectInfo {
   /** Canonical absolute directory; becomes the session's sandbox write root. */
   directory: string;
   title: string;
+  /** Runtime-owned directory used when no project is selected. */
+  isDefault?: true;
   /** `missing-dir` flags a directory that was moved or removed after creation. */
   status?: "ok" | "missing-dir";
 }
@@ -555,6 +560,10 @@ export interface CodingConversationInfo {
   archivedAt?: number;
   /** The open side chat, retained until explicitly closed or its parent ends. */
   sideSessionId?: string;
+  modelConfig?: ConversationModelConfig;
+  sideModelConfig?: ConversationModelConfig;
+  /** Source of an explicit continuation in a different project. */
+  sourceSessionId?: string;
   /**
    * Outcome of the last stored turn, omitted when the conversation has no
    * turns or its session log is not readable. The frontend uses this to show
@@ -567,6 +576,7 @@ export interface CodingConversationInfo {
 
 /** One entry in the coding activity stream. */
 export type CodingActivity =
+  | ({ type: "workflow" } & ChatWorkflowStart)
   | {
       type: "tool";
       phase: "start";

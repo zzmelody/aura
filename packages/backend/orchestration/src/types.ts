@@ -7,6 +7,7 @@ import type {
   FlowMode,
   ChatMessage,
   ChatWorkflowStart,
+  ConversationModelConfig,
 } from "@aura/protocol/types";
 import type { FlowImageReference } from "./flow-api.ts";
 import type {
@@ -122,6 +123,7 @@ export interface EngineOptions {
 
 /** One chat request handled by the long-lived DSH host. */
 export interface ChatTurn {
+  sessionId?: string;
   messages: ChatMessage[];
   mode: FlowMode;
   /** Session-local overrides; never inherited by chat workflow tools. */
@@ -139,7 +141,7 @@ export interface CodingTurn {
   /** Aura-owned id of the coding conversation, stable across turns. */
   sessionId: string;
   /** Project the conversation belongs to; the backend resolves its directory. */
-  projectId: string;
+  projectId?: string;
   /**
    * Absolute project directory the sandbox confines writes to. Filled in by the
    * backend from the project record, never taken from a client.
@@ -153,6 +155,10 @@ export interface CodingTurn {
    * turn forks that conversation's log; a side chat is never indexed.
    */
   forkFrom?: string;
+  branchFrom?: string;
+  /** Imported once, only when the conversation has no stored DSH log. */
+  history?: ChatMessage[];
+  context?: string;
   mode: FlowMode;
   model?: string;
   reasoningEffort?: string;
@@ -166,6 +172,7 @@ export interface CodingTurn {
  * the agent declared, rather than only its final answer.
  */
 export type CodingStreamEvent =
+  | ({ type: "workflow" } & ChatWorkflowStart)
   | { type: "delta"; text: string }
   | {
       type: "tool";
@@ -244,6 +251,7 @@ export interface CodingProject {
   /** Canonical absolute path; the workspace registry's uniqueness canon. */
   directory: string;
   title: string;
+  isDefault?: true;
 }
 
 /** A coding conversation as listed for one project. */
@@ -255,6 +263,9 @@ export interface CodingConversation {
   updatedAt: number;
   archivedAt?: number;
   sideSessionId?: string;
+  modelConfig?: ConversationModelConfig;
+  sideModelConfig?: ConversationModelConfig;
+  sourceSessionId?: string;
   /** Outcome of the last stored turn; omitted when the session has no turns. */
   lastTurnStatus?: "running" | "complete" | "stopped" | "error";
   /** Set while the running turn waits for the user to answer a question. */

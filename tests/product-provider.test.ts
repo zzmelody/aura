@@ -97,7 +97,12 @@ test("default product providers honor page ownership and close independently", a
   const address = socket.address();
   assert.ok(address && typeof address !== "string");
   await new Promise<void>((resolvePort) => socket.close(() => resolvePort()));
-  await writeFile(join(project, "server.js"), "setInterval(() => {}, 1000);\n");
+  await writeFile(
+    join(project, "server.js"),
+    'import { serve } from "@hono/node-server";\n' +
+      'import { Hono } from "hono";\n' +
+      'serve({ fetch: new Hono().fetch, hostname: "127.0.0.1", port: Number(process.env.PORT) });\n',
+  );
   assert.ok(
     described && typeof described === "object" && !Array.isArray(described),
   );

@@ -38,6 +38,7 @@ export function artifactCallBinding(
             comfyWorkflow: async (...args) =>
               capture(await localAI.comfyWorkflow(...args), "comfy-workflow"),
             video: (...args) => localAI.video(...args),
+            videoJob: (...args) => localAI.videoJob(...args),
             tts: async (...args) =>
               capture(await localAI.tts(...args), "local-tts"),
           }

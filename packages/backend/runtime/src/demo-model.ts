@@ -2,6 +2,7 @@ import { streamDemo } from "@aura/demo";
 import { flowDemoReply } from "@aura/orchestration/demo";
 import { validateMessages } from "@aura/protocol";
 import type { ChatMessage } from "@aura/protocol/types";
+import { conversationPromptText } from "@aura/protocol/conversations";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
@@ -52,7 +53,18 @@ function extractHistory(request: unknown): ChatMessage[] {
       break;
     }
   }
-  if (!payload) throw new Error("Missing Aura history payload.");
+  if (!payload)
+    return request.messages.flatMap((message): ChatMessage[] => {
+      if (
+        !isRecord(message) ||
+        (message.role !== "user" && message.role !== "assistant")
+      )
+        return [];
+      const text = contentText(message.content);
+      return text && !text.startsWith("Current runtime context.")
+        ? [{ role: message.role, text: conversationPromptText(text) }]
+        : [];
+    });
 
   const parsed = JSON.parse(payload) as unknown;
   if (!isRecord(parsed) || !validateMessages(parsed.messages))
@@ -76,7 +88,19 @@ export function createDemoModelApp() {
       let toolCall: DemoToolCall | undefined;
       try {
         body = (await context.req.json()) as unknown;
-        flowOutput = flowDemoReply(isRecord(body) ? body.messages : undefined);
+        const conversational =
+          isRecord(body) &&
+          Array.isArray(body.tools) &&
+          body.tools.some(
+            (tool: unknown) =>
+              isRecord(tool) &&
+              isRecord(tool.function) &&
+              (tool.function.name === "aura_tts" ||
+                tool.function.name === "aura_image"),
+          );
+        flowOutput = conversational
+          ? undefined
+          : flowDemoReply(isRecord(body) ? body.messages : undefined);
         messages = flowOutput === undefined ? extractHistory(body) : [];
         if (flowOutput === undefined) {
           toolCall = demoToolCall(body, messages);

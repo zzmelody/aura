@@ -3,6 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import type { OrchestrationHost } from "@aura/orchestration";
 import { FlowError } from "@aura/orchestration";
 import { isRecord, validCodingImages } from "./validation.ts";
+import { validateChatModelSelection } from "@aura/protocol";
 
 /**
  * Project management and coding turns for coding mode. The host owns the
@@ -146,6 +147,27 @@ export function createCodingApp(host: OrchestrationHost) {
   });
 
   // Opening the panel is durable even before its first request.
+  app.post("/sessions/:id/model", async (context) => {
+    const body: unknown = await context.req.json().catch(() => undefined);
+    if (
+      !isRecord(body) ||
+      !["demo", "codex", "lumina", "custom"].includes(String(body.mode)) ||
+      !validateChatModelSelection(body.selection)
+    )
+      return context.json({ message: "无效的模型配置。" }, 400);
+    try {
+      return context.json(
+        await host.selectConversationModel(
+          context.req.param("id"),
+          body.mode as "demo" | "codex" | "lumina" | "custom",
+          body.selection,
+        ),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
   app.post("/sessions/:id/side", async (context) => {
     try {
       return context.json(await host.openCodingSide(context.req.param("id")));
@@ -199,13 +221,23 @@ export function createCodingApp(host: OrchestrationHost) {
 }
 
 function failure(
-  context: { json: (body: unknown, status: 400 | 404 | 500) => Response },
+  context: {
+    json: (body: unknown, status: 400 | 404 | 409 | 500 | 503) => Response;
+  },
   error: unknown,
 ) {
   if (error instanceof FlowError)
     return context.json(
       { message: error.message },
-      error.status === 404 ? 404 : error.status === 400 ? 400 : 500,
+      error.status === 404
+        ? 404
+        : error.status === 400
+          ? 400
+          : error.status === 409
+            ? 409
+            : error.status === 503
+              ? 503
+              : 500,
     );
   return context.json({ message: "编码项目操作失败。" }, 500);
 }

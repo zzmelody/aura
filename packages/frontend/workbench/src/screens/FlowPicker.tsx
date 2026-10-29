@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef } from "react";
 import { Search } from "lucide-react";
 import { FlowIcon } from "../FlowIcon";
+import { useAnchoredPopover } from "../useAnchoredPopover";
 import type { FlowCatalogEntry } from "@aura/protocol/types";
 
 /** Searchable popover above the composer; the textarea keeps keyboard focus. */
@@ -14,6 +15,7 @@ export function FlowPicker({
   onActive,
   onPick,
   onClose,
+  anchor,
 }: {
   flows: FlowCatalogEntry[];
   query: string;
@@ -25,10 +27,13 @@ export function FlowPicker({
   onActive(index: number): void;
   onPick(flow: FlowCatalogEntry): void;
   onClose(): void;
+  anchor: React.RefObject<HTMLElement | null>;
 }) {
   const id = useId();
   const list = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  useAnchoredPopover(true, anchor, popup);
   useEffect(() => {
     if (searchable) search.current?.focus();
   }, [searchable]);
@@ -38,7 +43,21 @@ export function FlowPicker({
       ?.scrollIntoView({ block: "nearest" });
   }, [active]);
   return (
-    <div className="flow-picker" role="dialog" aria-label="选择工作流">
+    <div
+      ref={popup}
+      popover="manual"
+      className="flow-picker"
+      role="dialog"
+      aria-label="选择工作流"
+      style={{
+        position: "fixed",
+        inset: "auto",
+        margin: 0,
+        width: "480px",
+        maxWidth: "calc(100vw - 16px)",
+        overflow: "auto",
+      }}
+    >
       {searchable ? (
         <label className="flow-picker-search">
           <Search size={14} />

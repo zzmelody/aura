@@ -1,3 +1,4 @@
+import { useAnchoredPopover } from "../useAnchoredPopover";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronDown, RotateCcw } from "lucide-react";
 import type {
@@ -40,7 +41,9 @@ export function ChatModelControls({
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const menuId = useId();
+  useAnchoredPopover(open, trigger, menu);
   useEffect(() => {
     const abort = new AbortController();
     setResult(undefined);
@@ -154,6 +157,8 @@ export function ChatModelControls({
       </button>
       {open ? (
         <div
+          ref={menu}
+          popover="manual"
           id={menuId}
           className="chat-model-menu"
           role="menu"

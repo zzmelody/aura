@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 import { access, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import {
   basename,
@@ -23,6 +23,8 @@ import type {
   ComfyWorkflowInput,
   ComfyWorkflowResult,
 } from "./api.ts";
+import { videoInputSchema as videoSchema } from "./video-input.ts";
+import { referenceGraph } from "./reference-graph.ts";
 import { imageGraph, videoGraph } from "./graphs.ts";
 import {
   comfyDirectories,
@@ -30,6 +32,10 @@ import {
   isolateComfyLaunch,
   prepareWorkflow,
 } from "./comfy.ts";
+import { VideoJobs } from "./video-jobs.ts";
+import { CALL_TIMEOUT_MS } from "../timeouts.ts";
+import { renderVideo } from "./video-render.ts";
+import { stageVideoBinding } from "./media.ts";
 import { jsonValue } from "../schema.ts";
 import {
   portOccupied,
@@ -61,32 +67,6 @@ const imageSchema = z
   .refine(
     (v) => v.width * v.height <= 1328 * 1328,
     "图片总像素不能超过 1328×1328。",
-  );
-const videoSchema = z
-  .object({
-    prompt,
-    firstFrameAssetId: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/u)
-      .optional(),
-    lastFrameAssetId: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/u)
-      .optional(),
-    seed,
-    width: z.number().int().min(256).max(1312).multipleOf(32).default(608),
-    height: z.number().int().min(256).max(1312).multipleOf(32).default(352),
-    frames: z
-      .number()
-      .int()
-      .min(22)
-      .max(124)
-      .default(39)
-      .refine((v) => (v - 5) % 17 === 0, "帧数必须为 17k+5。"),
-  })
-  .refine(
-    (v) => v.width * v.height <= 736 * 1312,
-    "视频总像素不能超过 736×1312。",
   );
 const ttsSchema = z
   .object({
@@ -203,6 +183,8 @@ export function deployments(root: string, outputs: string): Deployment[] {
           "--port",
           "8188",
           "--reserve-vram",
+          "7.0",
+          "--vram-headroom",
           "1.0",
           "--cache-none",
           "--fast-disk",
@@ -268,6 +250,7 @@ export class LocalAIManager implements LocalAIClient {
   private spawn: (spec: LaunchSpec) => OwnedProcess | Promise<OwnedProcess>;
   private cwd: string;
   private assets?: GeneratedArtifacts;
+  readonly jobs: VideoJobs;
 
   constructor(
     subprocess: SubprocessRuntime,
@@ -287,16 +270,35 @@ export class LocalAIManager implements LocalAIClient {
         this.outputs,
       );
     this.spawn = options.launch ?? ((spec) => launchOwned(subprocess, spec));
+    this.jobs = new VideoJobs(
+      join(cwd, ".aura/local-ai/video-jobs"),
+      (input, signal, id, report) =>
+        renderVideo(videoSchema.parse(input), signal, {
+          outputs: this.outputs,
+          assets: this.assets,
+          execute: this.comfyWorkflow.bind(this),
+          id,
+          report,
+        }),
+      createHash("sha256")
+        .update(
+          [renderVideo, referenceGraph, videoGraph, stageVideoBinding]
+            .map((fn) => fn.toString())
+            .join("\n"),
+        )
+        .digest("hex"),
+    );
   }
 
   private async exclusive<T>(
     signal: AbortSignal,
     work: (signal: AbortSignal) => Promise<T>,
+    executionMs = CALL_TIMEOUT_MS,
   ): Promise<T> {
+    const active = AbortSignal.any([signal, this.lifecycle.signal]);
     const combined = AbortSignal.any([
-      signal,
-      this.lifecycle.signal,
-      AbortSignal.timeout(600_000),
+      active,
+      AbortSignal.timeout(60 * 60_000),
     ]);
     combined.throwIfAborted();
     const previous = this.tail;
@@ -313,7 +315,9 @@ export class LocalAIManager implements LocalAIClient {
     try {
       await Promise.race([previous, cancelled]);
       combined.throwIfAborted();
-      return await work(combined);
+      return await work(
+        AbortSignal.any([active, AbortSignal.timeout(executionMs)]),
+      );
     } finally {
       combined.removeEventListener("abort", aborted);
       release();
@@ -461,56 +465,62 @@ export class LocalAIManager implements LocalAIClient {
     work: (entry: Deployment, dir: string, signal: AbortSignal) => Promise<T>,
     isolatedComfy = false,
     setup?: (directory: string, signal: AbortSignal) => Promise<void>,
+    executionMs = 600_000,
   ) {
-    return this.exclusive(signal, async (signal) => {
-      clearTimeout(this.idle);
-      let directory: string | undefined;
-      let success = false;
-      try {
-        await mkdir(this.outputs, { recursive: true, mode: 0o700 });
-        directory = await mkdtemp(join(this.outputs, "job-"));
-        let override: Deployment | undefined;
-        if (isolatedComfy) {
-          const entry = this.entry(id);
-          const dirs = comfyDirectories(directory);
-          await mkdir(dirs.input, { recursive: true });
-          await mkdir(dirs.output, { recursive: true });
-          await mkdir(dirs.temporary, { recursive: true });
-          override = {
-            ...entry,
-            launch: isolateComfyLaunch(entry.launch, directory),
-          };
-        }
-        await setup?.(directory, signal);
-        const entry = await this.ensure(id, signal, override);
-        const result = await work(entry, directory, signal);
-        signal.throwIfAborted();
-        success = true;
-        return result;
-      } finally {
-        // Disconnecting TTS HTTP alone does not cancel its Python inference thread.
-        // Always stop the owned process tree, including on success, before releasing GPU.
-        await this.stop();
-        if (
-          directory &&
-          relative(this.outputs, directory) === basename(directory)
-        ) {
-          if (!success) await rm(directory, { recursive: true, force: true });
-          else if (isolatedComfy) {
+    return this.exclusive(
+      signal,
+      async (signal) => {
+        clearTimeout(this.idle);
+        let directory: string | undefined;
+        let success = false;
+        try {
+          await mkdir(this.outputs, { recursive: true, mode: 0o700 });
+          directory = await mkdtemp(join(this.outputs, "job-"));
+          let override: Deployment | undefined;
+          if (isolatedComfy) {
+            const entry = this.entry(id);
             const dirs = comfyDirectories(directory);
-            // Only task-local ComfyUI directories inside our mkdtemp job are disposable.
-            await rm(dirs.input, { recursive: true, force: true });
-            await rm(dirs.output, { recursive: true, force: true });
-            await rm(dirs.temporary, { recursive: true, force: true });
+            await mkdir(dirs.input, { recursive: true });
+            await mkdir(dirs.output, { recursive: true });
+            await mkdir(dirs.temporary, { recursive: true });
+            override = {
+              ...entry,
+              launch: isolateComfyLaunch(entry.launch, directory),
+            };
+          }
+          await setup?.(directory, signal);
+          const entry = await this.ensure(id, signal, override);
+          const result = await work(entry, directory, signal);
+          signal.throwIfAborted();
+          success = true;
+          return result;
+        } finally {
+          // Disconnecting TTS HTTP alone does not cancel its Python inference thread.
+          // Always stop the owned process tree, including on success, before releasing GPU.
+          await this.stop();
+          if (
+            directory &&
+            relative(this.outputs, directory) === basename(directory)
+          ) {
+            if (!success) await rm(directory, { recursive: true, force: true });
+            else if (isolatedComfy) {
+              const dirs = comfyDirectories(directory);
+              // Only task-local ComfyUI directories inside our mkdtemp job are disposable.
+              await rm(dirs.input, { recursive: true, force: true });
+              await rm(dirs.output, { recursive: true, force: true });
+              await rm(dirs.temporary, { recursive: true, force: true });
+            }
           }
         }
-      }
-    });
+      },
+      executionMs,
+    );
   }
 
   async comfyWorkflow(
     input: ComfyWorkflowInput,
     signal: AbortSignal,
+    executionMs = 600_000,
   ): Promise<ComfyWorkflowResult> {
     const prepared = await prepareWorkflow(input, this.cwd, signal);
     return this.generate(
@@ -534,7 +544,7 @@ export class LocalAIManager implements LocalAIClient {
         return result;
       },
       true,
-      prepared.imageBindings.length
+      prepared.imageBindings.length || prepared.videoBindings.length
         ? async (directory, signal) => {
             if (!this.assets) throw new Error("图片资产服务不可用。");
             const inputDirectory = comfyDirectories(directory).input;
@@ -545,8 +555,16 @@ export class LocalAIManager implements LocalAIClient {
                 signal,
                 binding.resize,
               );
+            for (const binding of prepared.videoBindings)
+              await stageVideoBinding(
+                this.assets,
+                inputDirectory,
+                binding,
+                signal,
+              );
           }
         : undefined,
+      executionMs,
     );
   }
 
@@ -578,36 +596,18 @@ export class LocalAIManager implements LocalAIClient {
     };
   }
   async video(input: VideoInput, signal: AbortSignal): Promise<MediaResult> {
-    const parsed = videoSchema.parse(input);
-    const result = await this.comfyWorkflow(
-      {
-        service: "minimax-h3",
-        workflow: videoGraph(parsed, "video"),
-        imageBindings: [
-          ...(parsed.firstFrameAssetId
-            ? [
-                {
-                  nodeId: "16",
-                  assetId: parsed.firstFrameAssetId,
-                  resize: { width: parsed.width, height: parsed.height },
-                },
-              ]
-            : []),
-          ...(parsed.lastFrameAssetId
-            ? [
-                {
-                  nodeId: "17",
-                  assetId: parsed.lastFrameAssetId,
-                  resize: { width: parsed.width, height: parsed.height },
-                },
-              ]
-            : []),
-        ],
-        outputNodeIds: ["15"],
-      },
-      signal,
-    );
-    return { service: result.service, seed: parsed.seed, files: result.files };
+    return renderVideo(videoSchema.parse(input), signal, {
+      outputs: this.outputs,
+      assets: this.assets,
+      execute: this.comfyWorkflow.bind(this),
+    });
+  }
+  videoJob(
+    operation: "submit" | "wait" | "cancel",
+    request: Parameters<LocalAIClient["videoJob"]>[1],
+    signal: AbortSignal,
+  ) {
+    return this.jobs.call(operation, request, signal);
   }
   async tts(input: TTSInput, signal: AbortSignal): Promise<MediaResult> {
     const parsed = ttsSchema.parse(input);
@@ -668,6 +668,7 @@ export class LocalAIManager implements LocalAIClient {
     });
   }
   async close() {
+    await this.jobs.close();
     this.lifecycle.abort(new Error("Aura 本地 AI 管理器已关闭。"));
     clearTimeout(this.idle);
     await this.tail;

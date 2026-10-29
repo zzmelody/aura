@@ -443,8 +443,8 @@ export function WorkflowRunResult({
   const composition = videoCompositionResult(output);
   const videoRun = Boolean(
     composition ||
-    cached?.flow.id === "multi-shot-video" ||
-    message.workflow?.id === "multi-shot-video",
+    cached?.flow.id === "self-media/video" ||
+    message.workflow?.id === "self-media/video",
   );
   const problem =
     cached?.error ?? (phase === "failed" && !cached ? message.text : undefined);

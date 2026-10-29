@@ -92,7 +92,7 @@ export function sidebarSessionStatus(
 export function sidebarSessionTitle(session: Session): string {
   if (!session.workflow || session.title !== session.workflow.title)
     return session.title;
-  if (session.workflow.id === "multi-shot-video") return "剧情视频制作";
+  if (session.workflow.id === "self-media/video") return "视频生成";
   let text =
     session.messages.find((message) => message.role === "user")?.text.trim() ??
     "";

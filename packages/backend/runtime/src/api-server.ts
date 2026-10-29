@@ -4,10 +4,15 @@ import {
   type OrchestrationHost,
   type OrchestrationHealth,
 } from "@aura/orchestration";
-import { validateMessages, validateChatModelSelection } from "@aura/protocol";
+import {
+  validateMessages,
+  validateConversationHistory,
+  validateChatModelSelection,
+} from "@aura/protocol";
 import type { ChatEvent } from "@aura/protocol/types";
 import type { TripoPort } from "@aura/tripo";
 import { Hono } from "hono";
+import type { ChatMessage } from "@aura/protocol/types";
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -140,7 +145,12 @@ function registerChatRoute(
             if (!chat) throw new Error("Chat host is unavailable.");
             const target = route();
             const { model } = await chat.chat(
-              { messages, ...target, ...(body.modelConfig ?? {}) },
+              {
+                sessionId: body.sessionId as string,
+                messages,
+                ...target,
+                ...(body.modelConfig ?? {}),
+              },
               emit,
               disconnected.signal,
             );
@@ -320,9 +330,17 @@ export function createApiApp({
       if (
         !isRecord(body) ||
         typeof body.sessionId !== "string" ||
-        typeof body.projectId !== "string" ||
+        (body.projectId !== undefined && typeof body.projectId !== "string") ||
         typeof body.prompt !== "string" ||
         body.prompt.length > 80_000 ||
+        (body.context !== undefined &&
+          (typeof body.context !== "string" || body.context.length > 40_000)) ||
+        (body.history !== undefined &&
+          !validateConversationHistory(body.history)) ||
+        (body.branchFrom !== undefined &&
+          (typeof body.branchFrom !== "string" ||
+            !body.branchFrom.trim() ||
+            body.branchFrom.length > 200)) ||
         !validCodingImages(body.images) ||
         (body.forkFrom !== undefined &&
           (typeof body.forkFrom !== "string" ||
@@ -365,6 +383,15 @@ export function createApiApp({
             {
               sessionId: body.sessionId as string,
               projectId: body.projectId as string,
+              ...(Array.isArray(body.history)
+                ? { history: body.history as ChatMessage[] }
+                : {}),
+              ...(typeof body.context === "string"
+                ? { context: body.context }
+                : {}),
+              ...(typeof body.branchFrom === "string"
+                ? { branchFrom: body.branchFrom }
+                : {}),
               prompt: body.prompt as string,
               ...((body.images as string[] | undefined)?.length
                 ? { images: body.images as string[] }

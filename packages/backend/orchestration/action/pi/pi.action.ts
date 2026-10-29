@@ -581,9 +581,13 @@ async function runPi(
   let stderr = "";
   let timedOut = false;
   let child: ChildProcess | undefined;
-  const timeoutMs = input.timeoutMs ?? 600_000;
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 600_000)
-    throw new Error("timeoutMs 必须为 1 到 600000 毫秒。");
+  const timeoutMs = input.timeoutMs ?? 1_800_000;
+  if (
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs < 1 ||
+    timeoutMs > 1_800_000
+  )
+    throw new Error("timeoutMs 必须为 1 到 1800000 毫秒。");
 
   const consume = (chunk: string) => {
     pending += chunk;
@@ -770,7 +774,7 @@ export default defineAction({
     },
     timeoutMs: {
       type: "integer",
-      description: "本次 Pi 最大运行时间，1–600000 毫秒，默认 600000。",
+      description: "本次 Pi 最大运行时间，1–1800000 毫秒，默认 1800000。",
     },
     isolated: {
       type: "boolean",
@@ -851,7 +855,7 @@ export default defineAction({
     render: (_input, value) => [{ type: "text", text: JSON.stringify(value) }],
   },
   recovery: "manual",
-  timeoutMs: 600_000,
+  timeoutMs: 1800000,
   isConcurrencySafe: () => false,
   async execute(ctx, input) {
     ctx.signal.throwIfAborted();

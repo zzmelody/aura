@@ -14,7 +14,8 @@
     "./video": "./src/video.ts",
     "./content": "./src/content.ts",
     "./content-analytics": "./src/content-analytics.ts",
-    "./models": "./src/models.ts"
+    "./models": "./src/models.ts",
+    "./conversations": "./src/conversations.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

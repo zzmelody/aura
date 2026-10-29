@@ -3,16 +3,42 @@ import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import { z } from "zod";
 import { FlowError } from "../schema.ts";
 import type { CodingConversation, Table } from "../types.ts";
+import type {
+  ChatMessage,
+  ChatModelSelection,
+  FlowMode,
+} from "@aura/protocol/types";
 
 /**
  * DSH's session header carries no title and no activity timestamp, so the
  * conversation list a client renders comes from Aura's own index. It stores
- * only presentation facts; the session log itself remains DSH's.
+ * durable conversation metadata, model choices and optional legacy import
+ * context; the execution log itself remains DSH's.
  */
 export interface CodingConversationRecord extends CodingConversation {
   /** A tombstone prevents delayed requests from reopening a closed parent. */
   closedAt?: number;
+  history?: ChatMessage[];
 }
+
+export const conversationMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  text: z.string().max(80_000),
+  images: z
+    .array(z.string().regex(/^[a-f0-9]{64}$/u))
+    .max(4)
+    .optional(),
+});
+export const conversationModelSchema = z
+  .object({
+    model: z.string().trim().min(1).max(200).optional(),
+    reasoningEffort: z.string().trim().min(1).max(80).optional(),
+  })
+  .strict();
+const modelConfigSchema = z.partialRecord(
+  z.enum(["demo", "codex", "lumina", "custom"]),
+  conversationModelSchema,
+);
 
 const recordSchema = z.object({
   id: z.string(),
@@ -23,6 +49,10 @@ const recordSchema = z.object({
   archivedAt: z.number().optional(),
   closedAt: z.number().optional(),
   sideSessionId: z.string().startsWith("side-").optional(),
+  sourceSessionId: z.string().optional(),
+  history: z.array(conversationMessageSchema).max(200).optional(),
+  modelConfig: modelConfigSchema.optional(),
+  sideModelConfig: modelConfigSchema.optional(),
 });
 
 export const codingDomainSpec = defineDomain({
@@ -49,6 +79,7 @@ export class CodingConversationIndex {
     id: string,
     projectId: string,
     prompt: string,
+    seed: { history?: ChatMessage[]; sourceSessionId?: string } = {},
   ): Promise<CodingConversationRecord> {
     if (id.startsWith("side-"))
       throw new FlowError("旁支对话不能作为主对话打开。", 400);
@@ -67,6 +98,7 @@ export class CodingConversationIndex {
       title: prompt.replace(/\s+/gu, " ").trim().slice(0, 80) || "新的对话",
       createdAt: now,
       updatedAt: now,
+      ...seed,
     };
     await this.table.put(id, record);
     return record;
@@ -87,6 +119,24 @@ export class CodingConversationIndex {
   get(id: string): CodingConversationRecord | undefined {
     const record = this.table.get(id);
     return record?.closedAt === undefined ? record : undefined;
+  }
+
+  modelConfig(id: string) {
+    return id.startsWith("side-")
+      ? this.sideParent(id)?.sideModelConfig
+      : this.get(id)?.modelConfig;
+  }
+
+  async selectModel(id: string, mode: FlowMode, selection: ChatModelSelection) {
+    const side = id.startsWith("side-");
+    const parent = side ? this.sideParent(id) : this.get(id);
+    if (!parent || parent.archivedAt !== undefined)
+      throw new FlowError("对话不存在或已归档。", 404);
+    const field = side ? "sideModelConfig" : "modelConfig";
+    await this.table.update(parent.id, (current) => ({
+      ...current,
+      [field]: { ...current[field], [mode]: selection },
+    }));
   }
 
   /** Allocates even an empty panel durably; repeated opens reuse its identity. */
@@ -118,7 +168,11 @@ export class CodingConversationIndex {
     if (!parent) return false;
     await this.table.update(parent.id, (current) => {
       if (current.sideSessionId !== sessionId) return current;
-      const { sideSessionId: _side, ...rest } = current;
+      const {
+        sideSessionId: _side,
+        sideModelConfig: _sideModelConfig,
+        ...rest
+      } = current;
       return rest;
     });
     return true;
@@ -128,7 +182,12 @@ export class CodingConversationIndex {
   async archive(id: string, archived: boolean): Promise<void> {
     if (!this.get(id)) throw new FlowError("对话不存在或已关闭。", 404);
     await this.table.update(id, (current) => {
-      const { archivedAt: _archived, sideSessionId: _side, ...rest } = current;
+      const {
+        archivedAt: _archived,
+        sideSessionId: _side,
+        sideModelConfig: _sideModelConfig,
+        ...rest
+      } = current;
       return archived ? { ...rest, archivedAt: Date.now() } : rest;
     });
   }
@@ -136,7 +195,11 @@ export class CodingConversationIndex {
   async close(id: string): Promise<void> {
     if (!this.get(id)) return;
     await this.table.update(id, (current) => {
-      const { sideSessionId: _side, ...rest } = current;
+      const {
+        sideSessionId: _side,
+        sideModelConfig: _sideModelConfig,
+        ...rest
+      } = current;
       return { ...rest, closedAt: Date.now() };
     });
   }
@@ -170,5 +233,12 @@ function conversation(record: CodingConversationRecord): CodingConversation {
       ? { archivedAt: record.archivedAt }
       : {}),
     ...(record.sideSessionId ? { sideSessionId: record.sideSessionId } : {}),
+    ...(record.modelConfig ? { modelConfig: record.modelConfig } : {}),
+    ...(record.sideModelConfig
+      ? { sideModelConfig: record.sideModelConfig }
+      : {}),
+    ...(record.sourceSessionId
+      ? { sourceSessionId: record.sourceSessionId }
+      : {}),
   };
 }

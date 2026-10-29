@@ -22,6 +22,33 @@ export function validateChatModelSelection(
 }
 
 /** Checks untrusted HTTP history, including the final prompt's length. */
+export function validateConversationHistory(
+  value: unknown,
+): value is ChatMessage[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 200 &&
+    value.every((message: unknown) => {
+      if (!message || typeof message !== "object") return false;
+      const item = message as Record<string, unknown>;
+      return (
+        (item.role === "user" || item.role === "assistant") &&
+        typeof item.text === "string" &&
+        item.text.length <= 80_000 &&
+        (item.images === undefined ||
+          (item.role === "user" &&
+            Array.isArray(item.images) &&
+            item.images.length <= CHAT_IMAGE_LIMIT &&
+            item.images.every(
+              (id: unknown) =>
+                typeof id === "string" && /^[a-f0-9]{64}$/u.test(id),
+            )))
+      );
+    })
+  );
+}
+
+/** Checks a legacy chat request, including the final prompt's length. */
 export function validateMessages(value: unknown): value is ChatMessage[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > 200)
     return false;

@@ -10,9 +10,11 @@ DSH SDK 的 `session.event` 现在以 `assistant/message` 提供完整助手消�
 
 ### 会话内切换
 
-聊天输入区提供「模型」与「思考」选择器。`GET /chat/models?mode=codex|demo` 从实际执行聊天的 DSH 宿主读取可用模型及各自档位，不依赖前端硬编码列表。选择按会话、模式分别保存在原有工作区记录中，新会话默认继承运行时设置；生成中禁用切换，后续消息使用新选择。切换模型时保留兼容的显式档位，不兼容则改为新模型默认；已有配置失效时显示错误，不静默换模型。
+首页与项目工作空间使用同一套持久化对话。模型选择按会话、服务模式保存在后端会话索引中，主对话与旁支独立；新旁支和跨项目延续默认继承来源选择。`POST /coding/sessions/:id/model` 更新已存在会话的选择，生成中拒绝修改；草稿配置在首轮请求中保存。每轮执行固定当前配置，通过 DSH 的 `model/selection` 与 scoped `agent/request` 应用到实际请求，后续轮次和重启恢复均有效，不修改部署默认值或工作流 Agent 的配置。
 
-`POST /chat` 和 `POST /chat/codex` 接受可选的 `modelConfig: { model?, reasoningEffort? }`，不接受 provider、endpoint 或凭据。后端通过 DSH 精确能力校验后，在新建聊天 Agent 的会话事件中记录选择，仍由 DSH Session Controller 接收 prompt、取消和持久化。聊天不调用会写入全局默认值的 `selectModel()`；结束后释放自己持有的 DSH Agent handle。选择不会传给手动或工具启动的 Flow，`defineFlow.agentDefaults`、步骤覆盖和持久化运行配置完全独立。
+`GET /chat/models?mode=codex|demo|lumina|custom` 从实际执行的 DSH 宿主读取模型能力。切换模型时保留兼容档位，不兼容则使用新模型默认值。已有配置失效时明确报错，不静默换模型。模型与工作流菜单共用顶层弹出层定位，按可用空间限制高度，避免被分栏裁切。
+
+`POST /chat` 和 `POST /chat/codex` 接受可选的 `modelConfig: { model?, reasoningEffort? }`，不接受 provider、endpoint 或凭据。后端通过 DSH 精确能力校验后，在对应持久化 Agent 的会话事件中记录选择，仍由 DSH Session Controller 接收 prompt、取消和持久化。聊天不调用会写入全局默认值的 `selectModel()`；每轮结束后保留 Agent，显式关闭才释放 handle。选择不会传给手动或工具启动的 Flow，`defineFlow.agentDefaults`、步骤覆盖和持久化运行配置完全独立。
 
 当前实现保留 DSH 作为执行层。ChatGPT 订阅登录不是一个通用 API Key；Aura 使用 DSH `dsh-llm-pi-ai` 已提供的 `openai-codex` OAuth flow：
 

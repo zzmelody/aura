@@ -20,6 +20,7 @@ import { LocalAIManager, type Deployment } from "../src/local-ai/manager.ts";
 import { imageGraph, videoGraph, type Graph } from "../src/local-ai/graphs.ts";
 import { readJSON, saveAudio } from "../src/local-ai/http.ts";
 import { prepareWorkflow } from "../src/local-ai/comfy.ts";
+import { mediaCommand } from "../src/local-ai/media.ts";
 
 const signal = () => new AbortController().signal;
 async function closeServer(server: ServerType) {
@@ -147,21 +148,49 @@ async function fixture(withAssets = false) {
           const path = join(target, subfolder, filename);
           await beforePromptWrite?.();
           await mkdir(dirname(path), { recursive: true });
-          await writeFile(
-            path,
-            withAssets && node.class_type === "SaveImage"
-              ? await sharp({
-                  create: {
-                    width: 8,
-                    height: 8,
-                    channels: 3,
-                    background: "red",
-                  },
-                })
-                  .png()
-                  .toBuffer()
-              : "fixture-artifact",
-          );
+          if (node.class_type === "SaveVideo") {
+            const frames = Number(lastGraph?.["6"]?.inputs.length ?? 39);
+            await mediaCommand(
+              [
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:s=64x64:r=24",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=32000",
+                "-t",
+                String(frames / 24),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                path,
+              ],
+              signal(),
+            );
+          } else
+            await writeFile(
+              path,
+              withAssets && node.class_type === "SaveImage"
+                ? await sharp({
+                    create: {
+                      width: 8,
+                      height: 8,
+                      channels: 3,
+                      background: "red",
+                    },
+                  })
+                    .png()
+                    .toBuffer()
+                : "fixture-artifact",
+            );
           uiOutputs[nodeId] = {
             images: [
               {
@@ -474,7 +503,7 @@ test("validation, startup failure, generation failure and output escape leave no
       f.manager.image({ prompt: "x", width: 1536, height: 1536 }, signal()),
     );
     await assert.rejects(
-      f.manager.video({ prompt: "x", frames: 40 }, signal()),
+      f.manager.video({ prompt: "x", frames: 721 }, signal()),
     );
     await assert.rejects(
       f.manager.video({ prompt: "x", width: 720, height: 1280 }, signal()),

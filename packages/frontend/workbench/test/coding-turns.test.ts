@@ -37,6 +37,25 @@ const events: TurnEvent[] = [
   { type: "delta", text: "完成" },
 ];
 
+test("workflow references are replayable and duplicate live notifications do not duplicate cards", () => {
+  const event = {
+    type: "workflow" as const,
+    runId: "run",
+    flowId: "test/flow",
+    title: "测试工作流",
+    inputPreview: "{}",
+  };
+  const turn = applyTurnEvent(
+    applyTurnEvent(newTurn("t", "运行", 1), event),
+    event,
+  );
+  assert.equal(turn.workflows?.length, 1);
+  const replayed = turnsFromHistory("session", [
+    { prompt: "运行", startedAt: 1, status: "complete", events: [event] },
+  ]);
+  assert.deepEqual(replayed[0]!.workflows, turn.workflows);
+});
+
 test("events fold into tools, progress, questions, deliverables and reply", () => {
   const turn = events.reduce(applyTurnEvent, newTurn("t", "写个函数", 1));
   assert.equal(turn.reply, "完成");

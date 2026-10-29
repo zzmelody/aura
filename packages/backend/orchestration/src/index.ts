@@ -10,6 +10,7 @@ import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
 import type {
   ActionRun,
   ChatModelCatalog,
+  ChatModelSelection,
   FlowCatalog,
   FlowMode,
   FlowRun,
@@ -558,6 +559,14 @@ export class OrchestrationHost {
     );
   }
 
+  selectConversationModel(
+    sessionId: string,
+    mode: FlowMode,
+    selection: ChatModelSelection,
+  ) {
+    return this.request("coding/model", { sessionId, mode, selection });
+  }
+
   conversations(projectId: string): Promise<CodingConversation[]> {
     return this.request<CodingConversation[]>("coding/conversations", {
       projectId,
@@ -712,6 +721,8 @@ export function createFlowApp(
 
   app.use("*", async (context, next) => {
     context.header("Cache-Control", "no-store");
+    const plugin = await host.pluginHttp?.(context.req.raw);
+    if (plugin) return plugin;
     await next();
   });
   app.use("*", (context, next) =>

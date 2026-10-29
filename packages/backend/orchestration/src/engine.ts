@@ -32,6 +32,7 @@ import { FlowExecution } from "./execution.ts";
 import { FlowScheduler } from "./scheduler.ts";
 import { recoverRun } from "./recovery.ts";
 import { agentDefaults, agentConfig } from "./agent-config.ts";
+import { FLOW_TIMEOUT_MS } from "./timeouts.ts";
 
 const MAX_NESTED_FLOW_DEPTH = 8;
 
@@ -611,9 +612,17 @@ export class FlowEngine {
       report: (value) => this.report(id, value),
     });
     this.running.set(id, execution);
+    const expireTree = (runId: string) => {
+      this.running.get(runId)?.expire();
+      for (const childId of this.childRunIds(this.get(runId)))
+        expireTree(childId);
+    };
+    const deadline = setTimeout(() => expireTree(id), FLOW_TIMEOUT_MS);
+    deadline.unref();
     try {
       await execution.run();
     } finally {
+      clearTimeout(deadline);
       this.running.delete(id);
       if (terminal(this.get(id).status)) this.revisions.delete(id);
       this.scheduler.notify();

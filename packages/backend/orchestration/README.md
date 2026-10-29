@@ -96,7 +96,7 @@ export default defineFlow({
   title: "分别配置 Agent",
   input: z.object({ task: z.string() }),
   output: z.object({ report: z.string() }),
-  agentDefaults: { timeoutMs: 180_000 },
+  agentDefaults: { timeoutMs: 1_800_000 },
   async run(ctx, input) {
     return ctx.sequence({ id: "main" }, async (flow) => {
       const research = await flow.agent({
@@ -114,7 +114,7 @@ export default defineFlow({
         preset: "reviewer-v1",
         prompt: research.output,
         reasoningEffort: ctx.mode === "codex" ? "high" : "off",
-        timeoutMs: 240_000,
+        timeoutMs: 1_800_000,
       });
       return { report: review.output };
     });
@@ -128,11 +128,13 @@ export default defineFlow({
 | `reasoningEffort` | DSH 对所选模型支持的准确档位；Codex 默认 `xhigh`（Extra high），Demo profile 仅支持 `off`。不做静默降档或别名转换                                                                     |
 | `temperature`     | 0–2；不设置时交给供应商默认。透传到 DSH，请求是否接受该参数由具体模型决定                                                                                                             |
 | `maxTokens`       | 1–1,000,000 的整数，具体模型还可能有更低限制。Demo 默认 4096。**当前锁定版本的 Codex 适配器不转发此字段，因此 Codex 模式显式设置会报 `AGENT_OPTION_UNSUPPORTED`，不承诺伪造的硬上限** |
-| `timeoutMs`       | 1,000–600,000 的整数；默认 180,000。限制每次 Agent attempt 的总时长，不是整个 Run 或单次模型请求的时长                                                                                |
+| `timeoutMs`       | 1,000–1,800,000 的整数；默认 1,800,000。限制每次 Agent attempt 的总时长，不是整个 Run 或单次模型请求的时长                                                                            |
 
 不开放脚本级 `provider`、API key、base URL 或任意 provider 参数；凭据和路由仍在后端 DSH profile 中管理。选择 `preset` 用于角色/工具环境，不能覆盖本次已固定的模型参数。模型配置的元数据校验在创建 Agent attempt 前执行；不支持的模型或思考档位给出明确错误，不自动换模型。
 
 Run 入队前保存已合并的 `agentDefaults`，每个 Agent step 在调用前保存 `config` 并纳入 `requestHash`。重试、人工重试及重启都使用同一配置；即使环境默认模型变化，尚未访问的后续 Agent 也继承原 Run 默认值。脚本在重放中显式改变步骤参数会触发 `FLOW_REPLAY_MISMATCH`。底层供应商自身的模型实现和未设置的采样默认值不在 Aura 可冻结的范围内。
+
+所有 Flow 每次连续执行最长 360 分钟，包括嵌套调用和步骤重试；到期会中止运行及活动子流程，记录 `FLOW_TIMEOUT`。暂停和等待人工输入期间不计时，恢复后重新开始执行窗口。单次 Agent / Action 调用默认及最大为 30 分钟，底层普通 HTTP 请求与服务启动探测仍保留各自的短期限。
 
 Graph 节点详情展示的是参数声明/表达式，不执行它们；展开运行步骤可以查看真正存档的 provider、模型、思考强度、温度、token 配置与超时。
 
@@ -170,7 +172,7 @@ Action `recovery` 默认为 `manual`。只有显式 `idempotent` 的直接 Actio
 
 外部插件可以通过 `@aura/plugin-sdk/action` 的 `auraCapability(ctx, id)` 使用 manifest 已声明且宿主支持的领域能力，或本插件 `contributes.capabilities` 贡献的 provider。能力实现由长驻宿主或插件 provider 持有，Action 只收到固定操作及 JSON 结果，不接触凭据、任意 URL 或进程句柄。
 
-Flow Agent 使用 fail-closed 工具白名单：固定为原生工具呈现并屏蔽 DSH、preset 及 profile 的全部继承工具，只把 `flow.agent({actions:["text-stats"],...})` 显式声明的 Action 注册到当前 Agent scope；未声明时模型工具集合为空。profile 对已知内置工具的禁用继续作为纵深防护，未来新增的 DSH 默认工具也不会自动进入 Flow Agent 上下文。Action 名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。Action 超时默认 30 秒、最大 10 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
+Flow Agent 使用 fail-closed 工具白名单：固定为原生工具呈现并屏蔽 DSH、preset 及 profile 的全部继承工具，只把 `flow.agent({actions:["text-stats"],...})` 显式声明的 Action 注册到当前 Agent scope；未声明时模型工具集合为空。profile 对已知内置工具的禁用继续作为纵深防护，未来新增的 DSH 默认工具也不会自动进入 Flow Agent 上下文。Action 名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。全部内置和仓库插件的 Action 超时统一为 30 分钟，最大也为 30 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
 
 ## 队列、恢复与人工处理
 

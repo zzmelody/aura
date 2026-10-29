@@ -230,7 +230,7 @@ export default defineAction({
     },
     render: (_input, value) => [{ type: "text", text: JSON.stringify(value) }],
   },
-  timeoutMs: 5_000,
+  timeoutMs: 1800000,
   async execute(ctx, input) {
     return manageKeepAwake(ctx, input.operation);
   },

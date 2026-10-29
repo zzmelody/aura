@@ -122,6 +122,8 @@ export interface FlowDefinition<
   input: InputSchema;
   output: OutputSchema;
   concurrency?: number;
+  /** Explicit bounded budget for workflows with many durable media waits. */
+  stepLimit?: number;
   agentTimeoutMs?: number;
   /** Individual agent() options override these defaults. */
   agentDefaults?: FlowAgentOptions;

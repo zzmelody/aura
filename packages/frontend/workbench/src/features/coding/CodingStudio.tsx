@@ -1,7 +1,13 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { ArrowLeft, FolderPlus, GitBranch, LoaderCircle } from "lucide-react";
-import type { ChatImage, Workspace } from "@aura/core/types";
-import type { ChatModelSelection } from "@aura/protocol/types";
+import type { ChatImage, Session, Workspace } from "@aura/core/types";
+import { providerMode } from "@aura/core";
+import type {
+  ChatModelSelection,
+  FlowMode,
+  FlowCatalogEntry,
+} from "@aura/protocol/types";
+import { chatHistory } from "../../workflowSessions";
 import { ConversationPane, type ConversationSend } from "./ConversationPane";
 import { ConversationSplit } from "./ConversationSplit";
 import { SideConversation } from "./SideConversation";
@@ -13,10 +19,11 @@ import "./coding.css";
 
 export type CodingHandoff = {
   id: string;
-  projectId: string;
+  projectId?: string;
   prompt: string;
   /** Images already uploaded on the chat page. */
   images?: ChatImage[];
+  modelConfig?: ChatModelSelection;
 };
 
 /** The selected workspace conversation and its durable, per-parent side chat. */
@@ -26,10 +33,16 @@ export function CodingStudio({
   workspaces,
   handoff,
   onHandoffTaken,
-  modelConfig,
-  onModelConfig,
   onProvider,
   onBack,
+  legacy,
+  onOpened,
+  context,
+  initialDraft,
+  onApplyFlow,
+  flows,
+  flowsLoading,
+  onRunFlow,
 }: {
   endpoint: string;
   provider: Workspace["provider"];
@@ -38,22 +51,48 @@ export function CodingStudio({
   /** A first request started from the chat page in a chosen workspace. */
   handoff?: CodingHandoff;
   onHandoffTaken?(): void;
-  /** Model and effort for the current mode, shared with the chat page. */
-  modelConfig: ChatModelSelection;
-  onModelConfig(selection: ChatModelSelection): void;
   onProvider(provider: Workspace["provider"]): void;
   onBack(): void;
+  legacy?: Session;
+  onOpened?(): void;
+  context?: string;
+  initialDraft?: string;
+  onApplyFlow?(code: string): void;
+  flows?: FlowCatalogEntry[];
+  flowsLoading?: boolean;
+  onRunFlow?(flow: FlowCatalogEntry): void;
 }) {
   const {
     projects,
     selectedId: projectId,
-    conversationId,
+    conversationId: selectedConversationId,
     open,
     refreshConversations,
   } = workspaces;
+  const conversationId = legacy
+    ? `legacy-${legacy.id}`
+    : selectedConversationId;
+  const history = useMemo(
+    () =>
+      legacy
+        ? chatHistory(
+            legacy.messages.filter((message) => message.status !== "error"),
+          ).map(({ role, text, images }) => ({
+            role,
+            text,
+            ...(images?.length
+              ? { images: images.map((image) => image.assetId) }
+              : {}),
+          }))
+        : undefined,
+    [legacy],
+  );
   const [creating, setCreating] = useState(false);
   const [openingSide, setOpeningSide] = useState(false);
   const [mainRunning, setMainRunning] = useState(false);
+  const [modelConfigs, setModelConfigs] = useState<
+    Record<string, Partial<Record<FlowMode, ChatModelSelection>>>
+  >({});
   const mainSend = useRef<ConversationSend | undefined>(undefined);
   const selection = useRef({ conversationId, mainRunning });
   selection.current = { conversationId, mainRunning };
@@ -82,7 +121,36 @@ export function CodingStudio({
     if (project) void refreshConversations(project.id).catch(() => {});
   }, [project, refreshConversations]);
   const initialSend =
-    handoff && project?.id === handoff.projectId ? handoff : undefined;
+    handoff &&
+    project &&
+    (!handoff.projectId || project.id === handoff.projectId)
+      ? handoff
+      : undefined;
+  const mode = providerMode(provider);
+  const source = Object.values(workspaces.conversations)
+    .flat()
+    .find(
+      (item) =>
+        item.id === (workspaces.branchFrom ?? conversation?.sourceSessionId),
+    );
+  const configKey = conversationId ?? `draft:${projectId}`;
+  const modelConfig =
+    initialSend?.modelConfig ??
+    conversation?.modelConfig?.[mode] ??
+    modelConfigs[configKey]?.[mode] ??
+    legacy?.modelConfig?.[mode] ??
+    source?.modelConfig?.[mode] ??
+    {};
+  const changeModel = (key: string, selection: ChatModelSelection) => {
+    if (key === conversation?.id || key.startsWith("side-")) {
+      void workspaces.selectModel(key, mode, selection).catch(() => {});
+      return;
+    }
+    setModelConfigs((current) => ({
+      ...current,
+      [key]: { ...current[key], [mode]: selection },
+    }));
+  };
 
   const openSide = async () => {
     if (!conversation || openingSide) return;
@@ -122,8 +190,12 @@ export function CodingStudio({
               sessionId={sessionId}
               visible={sessionId === sideId}
               mainRunning={mainRunning}
-              modelConfig={modelConfig}
-              onModelConfig={onModelConfig}
+              modelConfig={
+                parent.sideModelConfig?.[mode] ??
+                parent.modelConfig?.[mode] ??
+                {}
+              }
+              onModelConfig={(selection) => changeModel(sessionId, selection)}
               onProvider={onProvider}
               onSendBack={sendBack}
               onClose={() => workspaces.closeSide(space.id, sessionId)}
@@ -152,10 +224,10 @@ export function CodingStudio({
               ? conversation
                 ? conversation.title
                 : `${project.title} · 新对话`
-              : "工作空间"}
+              : "对话"}
           </strong>
           <span title={project?.directory}>
-            {project ? project.directory : "在左侧选择或新建一个工作空间"}
+            {project ? project.directory : "正在读取工作空间…"}
           </span>
         </div>
         {project &&
@@ -184,6 +256,11 @@ export function CodingStudio({
           {workspaces.error}
         </p>
       ) : null}
+      {workspaces.branchFrom ? (
+        <p className="coding-notice">
+          将继承来源对话的上下文，在「{project?.title}」中继续。
+        </p>
+      ) : null}
       {!project ? (
         <div className="studio-scroll coding-transcript">
           <div className="coding-empty">
@@ -200,22 +277,50 @@ export function CodingStudio({
         <ConversationSplit
           main={
             <ConversationPane
-              // A new workspace or conversation starts a fresh transcript.
-              key={project.id}
               endpoint={endpoint}
               provider={provider}
               projectId={project.id}
               directory={project.directory}
               label="工作空间请求输入框"
               {...(conversationId ? { sessionId: conversationId } : {})}
-              readOnly={conversation?.archivedAt !== undefined}
-              placeholder={`在「${project.title}」中描述要完成的事情…`}
-              empty={
-                <p>
-                  {conversationId
-                    ? "这段对话还没有记录，可以继续发送新的请求。"
-                    : `描述你要在「${project.title}」里完成的事情。改动只会写入这个目录。`}
-                </p>
+              readOnly={
+                conversation?.archivedAt !== undefined ||
+                legacy?.archivedAt !== undefined
+              }
+              placeholder={
+                project.isDefault
+                  ? "描述你想讨论或完成的事情…"
+                  : `在「${project.title}」中描述要完成的事情…`
+              }
+              branchFrom={workspaces.branchFrom}
+              history={history}
+              historyTime={legacy?.updatedAt}
+              context={context}
+              initialDraft={initialDraft}
+              onApplyFlow={onApplyFlow}
+              flows={flows}
+              flowsLoading={flowsLoading}
+              onRunFlow={onRunFlow}
+              composerExtra={
+                <div className="composer-workspace">
+                  <label className="provider-select composer-workspace-select">
+                    <select
+                      aria-label="选择工作空间"
+                      value={project.id}
+                      disabled={mainRunning}
+                      onChange={(event) => {
+                        if (legacy) workspaces.select(event.target.value);
+                        else workspaces.continueIn(event.target.value);
+                      }}
+                    >
+                      {projects.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
               }
               {...(offline
                 ? {
@@ -223,11 +328,23 @@ export function CodingStudio({
                       "工作空间需要连接 Aura 服务，请切换到 Codex 订阅或其他模式",
                   }
                 : {})}
-              onOpen={(id) => open(project.id, id)}
+              onOpen={(id) => {
+                if (id !== configKey)
+                  setModelConfigs((current) => {
+                    const next = {
+                      ...current,
+                      [id]: { ...current[configKey], [mode]: modelConfig },
+                    };
+                    delete next[configKey];
+                    return next;
+                  });
+                open(project.id, id);
+                onOpened?.();
+              }}
               onSettled={refresh}
               onProvider={onProvider}
               modelConfig={modelConfig}
-              onModelConfig={onModelConfig}
+              onModelConfig={(selection) => changeModel(configKey, selection)}
               {...(initialSend ? { initialSend } : {})}
               {...(onHandoffTaken
                 ? { onInitialSendTaken: onHandoffTaken }

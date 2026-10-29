@@ -20,6 +20,8 @@ export default defineAction({
       type: "string",
       description: "可选的末帧图片资产 ID（64 位 SHA-256）。",
     },
+    referenceVideo: { type: "object", additionalProperties: true },
+    referenceImages: { type: "array", items: { type: "string" } },
     width: {
       type: "integer",
       default: 608,
@@ -33,8 +35,7 @@ export default defineAction({
     frames: {
       type: "integer",
       default: 39,
-      enum: [22, 39, 56, 73, 90, 107, 124],
-      description: "帧数 17k+5；124 帧约 5 秒。",
+      description: "目标帧数，12–720，24fps，内部自动分段和对齐。",
     },
     seed: { type: "integer", description: "0–2147483647；省略则随机。" },
   },
@@ -46,13 +47,21 @@ export default defineAction({
         service: { type: "string", required: true },
         seed: { type: "integer", required: true },
         files: { type: "array", items: { type: "string" }, required: true },
+        videoPath: { type: "string" },
+        segments: {
+          type: "array",
+          items: { type: "object", additionalProperties: true },
+        },
       },
     },
     render: (_input, value) => [{ type: "text", text: JSON.stringify(value) }],
   },
-  timeoutMs: 600_000,
+  timeoutMs: 1800000,
   isConcurrencySafe: () => true,
   async execute(ctx, input) {
-    return localAI(ctx).video(input, ctx.signal);
+    return localAI(ctx).video(
+      /** @type {import("@aura/orchestration/local-ai").VideoInput} */ (input),
+      ctx.signal,
+    );
   },
 });
