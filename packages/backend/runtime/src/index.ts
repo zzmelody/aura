@@ -11,7 +11,7 @@ import { createTripoService } from "@aura/tripo";
 import { startApiServer } from "./api-server.ts";
 import { startDemoModel } from "./demo-model.ts";
 import { configureRuntimeNetwork } from "./network-proxy.ts";
-import { pluginSdkVersion } from "./plugin-sdk-version.ts";
+import { pluginSdkPackage, pluginSdkVersion } from "./plugin-sdk-version.ts";
 import { PluginPageRegistry } from "./plugin-pages.ts";
 import {
   isLoopbackRuntimeHost,
@@ -122,6 +122,7 @@ export async function startAuraRuntime(
       ...contributions(plugins),
       tripoCredentialPath: config.tripoCredentialPath,
       tripoRegion: config.tripoRegion,
+      pluginSdkPackage,
     });
     let activePageRoots = plugins.pageRoots;
     pluginManager.setActivator(async (resolution) => {

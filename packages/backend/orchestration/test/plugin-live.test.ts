@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, join, resolve } from "node:path";
@@ -8,6 +8,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import type { FlowCatalog, FlowRun } from "@aura/protocol/types";
 import { OrchestrationHost } from "../src/index.ts";
+
+const pluginSdkPackage = fileURLToPath(
+  new URL("../../plugin-sdk/package.json", import.meta.url),
+);
 
 const nodeMajor = Number(process.versions.node.split(".")[0]);
 
@@ -50,13 +54,7 @@ test(
       mkdir(flowDirectory, { recursive: true }),
       mkdir(actionDirectory, { recursive: true }),
       mkdir(join(pluginRoot, "lib"), { recursive: true }),
-      mkdir(join(pluginRoot, "node_modules", "@aura"), { recursive: true }),
     ]);
-    await symlink(
-      fileURLToPath(new URL("../../plugin-sdk", import.meta.url)),
-      join(pluginRoot, "node_modules", "@aura", "plugin-sdk"),
-      "junction",
-    );
     const helper = join(pluginRoot, "lib", "helper.js");
     await writeFile(helper, 'export const version = "v1";\n');
     // Real plugin Action identity must survive checkpoint resume. Agent tool refs
@@ -119,6 +117,7 @@ export default defineFlow({
       actionRoot,
       dshHome: join(root, "dsh"),
       modelURL: "http://127.0.0.1:1/v1",
+      pluginSdkPackage,
     });
 
     try {
@@ -246,6 +245,7 @@ export default defineFlow({
         actionRoot,
         dshHome: join(root, "dsh"),
         modelURL: "http://127.0.0.1:1/v1",
+        pluginSdkPackage,
         ...configuration,
       });
       try {

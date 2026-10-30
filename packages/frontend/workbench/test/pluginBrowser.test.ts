@@ -14,13 +14,13 @@ test("real DSH browser bundle mounts a React page, cleans styles and recovers fr
   const loaderId = "@deepseek-ai/dsh-client-modules";
   const loader = await readFile(require.resolve(`${loaderId}/client`), "utf8");
   const client = await readFile(
-    new URL("plugins/wechat-history/client/dist/client.js", workspace),
+    new URL("plugins/site-launcher/client/dist/client.js", workspace),
     "utf8",
   );
   const endpoint = "http://fixture.invalid";
   const sources = new Map([
     [`${endpoint}/loader.js?rev=loader1`, loader],
-    [`${endpoint}/wechat.js?rev=page1`, client],
+    [`${endpoint}/site.js?rev=page1`, client],
   ]);
   const entries = [
     {
@@ -30,8 +30,8 @@ test("real DSH browser bundle mounts a React page, cleans styles and recovers fr
       immediately: true,
     },
     {
-      id: "wechat-history",
-      url: "wechat.js?rev=page1",
+      id: "site-launcher",
+      url: "site.js?rev=page1",
       rev: "page1",
       external: ["react", "react/jsx-runtime", "@aura/plugin-ui"],
     },
@@ -132,25 +132,28 @@ test("real DSH browser bundle mounts a React page, cleans styles and recovers fr
     }
   });
   let revisions = 0;
-  const first = await startPluginHost(endpoint, () => revisions++);
+  const first = await startPluginHost(endpoint, () => revisions++, {
+    // Workbench widgets the site page imports; supplied by the renderer.
+    platform: () => "web",
+    siteDialogsAvailable: () => false,
+  });
   t.after(() => first.close());
   assert.deepEqual(first.failures, []);
-  const page = first.pages.get("wechat-history/history");
+  const page = first.pages.get("site-launcher/sites");
   assert.ok(page, "the compiled client registered its workbench page");
   assert.equal(styles.size, 1);
   assert.equal(watchers, 1);
   const html = renderToStaticMarkup(
     page.definition.render({
       endpoint,
-      pluginId: "wechat-history",
+      pluginId: "site-launcher",
       invoke: async () => null,
       onBack: () => undefined,
       onDirtyChange: () => undefined,
     }),
   );
-  assert.match(html, /微信聊天/u);
-  assert.match(html, /搜索聊天记录/u);
-  assert.match(html, /打开时自动同步/u);
+  assert.match(html, /Site/u);
+  assert.match(html, /本地站点/u);
   const update = async (url: string, rev: string) => {
     const revisionUrl = `${url}?rev=${rev}`;
     const previous = revisions;
@@ -164,7 +167,7 @@ test("real DSH browser bundle mounts a React page, cleans styles and recovers fr
           phase: "application",
           url: revisionUrl,
           rev,
-          entries: ["wechat-history"],
+          entries: ["site-launcher"],
         },
       ],
     };
@@ -178,18 +181,18 @@ test("real DSH browser bundle mounts a React page, cleans styles and recovers fr
     assert.ok(revisions > previous, "the SSE graph was not reconciled");
   };
   sources.set(
-    `${endpoint}/wechat2.js?rev=page2`,
-    client.replaceAll("微信聊天", "微信聊天更新版"),
+    `${endpoint}/site2.js?rev=page2`,
+    client.replace('title: "Site"', 'title: "Site Updated"'),
   );
-  await update("wechat2.js", "page2");
-  const updated = first.pages.get("wechat-history/history");
+  await update("site2.js", "page2");
+  const updated = first.pages.get("site-launcher/sites");
   assert.ok(updated);
   assert.notEqual(updated.definition, page.definition);
   assert.equal(styles.size, 1);
   const errors = t.mock.method(console, "error", () => undefined);
   await update("missing.js", "page3");
   assert.equal(
-    first.pages.get("wechat-history/history")?.definition,
+    first.pages.get("site-launcher/sites")?.definition,
     updated.definition,
   );
   assert.equal(
@@ -197,7 +200,7 @@ test("real DSH browser bundle mounts a React page, cleans styles and recovers fr
     1,
     "failed downloads keep the existing style and page",
   );
-  assert.equal(first.failures[0]?.id, "wechat-history");
+  assert.equal(first.failures[0]?.id, "site-launcher");
   const failedApply = client.replace(
     "return module.exports;",
     `module.exports.apply = (ctx) => { throw new Error("fixture apply failure"); }; return module.exports;`,
@@ -205,7 +208,7 @@ test("real DSH browser bundle mounts a React page, cleans styles and recovers fr
   sources.set(`${endpoint}/failed-apply.js?rev=page4`, failedApply);
   await update("failed-apply.js", "page4");
   assert.equal(
-    first.pages.get("wechat-history/history")?.definition.title,
+    first.pages.get("site-launcher/sites")?.definition.title,
     updated.definition.title,
   );
   assert.equal(
@@ -213,8 +216,8 @@ test("real DSH browser bundle mounts a React page, cleans styles and recovers fr
     1,
     "failed apply restores the previous plugin fiber",
   );
-  sources.set(`${endpoint}/wechat3.js?rev=page5`, client);
-  await update("wechat3.js", "page5");
+  sources.set(`${endpoint}/site3.js?rev=page5`, client);
+  await update("site3.js", "page5");
   assert.equal(first.failures.length, 0);
   assert.equal(first.pages.size, 1);
   assert.equal(styles.size, 1);

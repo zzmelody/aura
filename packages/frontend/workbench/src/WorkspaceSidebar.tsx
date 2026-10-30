@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ChartCandlestick,
   ChevronDown,
   Clapperboard,
   Newspaper,
@@ -48,6 +49,7 @@ const tabs = [
   { id: "history", label: "全部记录", icon: Clock3 },
 ] as const;
 const studioIcons: Record<string, typeof Puzzle> = {
+  ChartCandlestick,
   Clapperboard,
   Newspaper,
   Telescope,

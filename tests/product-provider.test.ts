@@ -1,4 +1,4 @@
-import { memoryBackend } from "./self-media/plugin-fixture.ts";
+import { memoryBackend } from "./plugin-backend-fixture.ts";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -17,10 +17,12 @@ test("default product providers honor page ownership and close independently", a
     auraVersion: "0.1.0",
     pluginSdkVersion: "1.4.0",
   });
-  const products = resolution.plugins.filter((plugin) =>
-    ["self-media", "site-launcher"].includes(plugin.id ?? ""),
+  // Only site-launcher ships with Aura; other plugins load from explicit paths.
+  assert.deepEqual(
+    resolution.plugins.map((plugin) => plugin.id),
+    ["site-launcher"],
   );
-  assert.equal(products.length, 2);
+  const products = resolution.plugins;
   assert.ok(
     products.every((plugin) => plugin.available),
     JSON.stringify(products),
@@ -57,15 +59,10 @@ test("default product providers honor page ownership and close independently", a
     operation: string,
     input: JsonValue = {},
   ) => providers.invokeFromPage(pluginId, capability, operation, input, signal);
-  assert.deepEqual(
-    await pageInvoke("self-media", "self-media/studio", "request", {
-      path: "/content-projects",
-      method: "GET",
-    }),
-    { status: 200, data: [] },
-  );
+  // A page may call only its own plugin's providers.
   await assert.rejects(
-    pageInvoke("site-launcher", "self-media/studio", "request"),
+    pageInvoke("another-plugin", "site-launcher/runner", "status"),
+    /page_capability_forbidden/u,
   );
   const project = join(directory, "project");
   await mkdir(project);

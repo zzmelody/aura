@@ -1,4 +1,5 @@
 import { PluginPresets } from "./plugin-presets.ts";
+import { installHostPluginSdkResolutionFromEnv } from "./plugin-sdk-resolution.ts";
 import {
   compatibilitySchema,
   httpContributionSchema,
@@ -338,6 +339,8 @@ const actionSpec = defineDomain({
 });
 
 export async function apply(ctx: Context) {
+  // Before any Action, Flow or provider module loads.
+  installHostPluginSdkResolutionFromEnv();
   // Electron's bundled Node does not inherit the parent's global dispatcher.
   // Set it inside DSH as well, using only the backend proxy environment.
   configureDshNetwork();

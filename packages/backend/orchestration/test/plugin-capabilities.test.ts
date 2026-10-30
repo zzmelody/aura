@@ -1,32 +1,25 @@
 import assert from "node:assert/strict";
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { FlowRun } from "@aura/protocol/types";
 import { actionCapabilities } from "../src/actions.ts";
 import { PluginCapabilities } from "../src/plugin-capabilities.ts";
+import { installHostPluginSdkResolution } from "../src/plugin-sdk-resolution.ts";
 import type { CapabilityRoot } from "../src/types.ts";
 
 const capabilityApi = "@aura/plugin-sdk/capability";
+
+// Plugins carry no SDK; the host resolves it, as the runtime does.
+installHostPluginSdkResolution(
+  join(import.meta.dirname, "../../plugin-sdk/package.json"),
+);
 
 async function fixture(run: (root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "aura-plugin-capabilities-"));
   try {
     await writeFile(join(root, "package.json"), '{"type":"module"}\n');
-    await mkdir(join(root, "node_modules/@aura"), { recursive: true });
-    await symlink(
-      join(import.meta.dirname, "../../plugin-sdk"),
-      join(root, "node_modules/@aura/plugin-sdk"),
-      "junction",
-    );
     await run(root);
   } finally {
     await rm(root, { recursive: true, force: true });

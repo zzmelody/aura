@@ -10,3 +10,7 @@ if (typeof manifest.version !== "string" || !manifest.version)
 
 /** Keep plugin compatibility checks pinned to the SDK package actually loaded. */
 export const pluginSdkVersion = manifest.version;
+
+/** The host SDK every plugin resolves `@aura/plugin-sdk` to. */
+export const pluginSdkPackage =
+  require.resolve("@aura/plugin-sdk/package.json");

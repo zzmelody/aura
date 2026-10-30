@@ -1,4 +1,9 @@
 import { PluginHttpRegistry } from "./plugin-http.ts";
+import {
+  defaultPluginSdkPackage,
+  installHostPluginSdkResolution,
+  PLUGIN_SDK_ENV,
+} from "./plugin-sdk-resolution.ts";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, stat } from "node:fs/promises";
@@ -108,6 +113,9 @@ export class OrchestrationHost {
     return this.pluginHttpRegistry.fetch(request);
   }
   constructor(options: HostOptions) {
+    // Plugin HTTP contributions load in this process.
+    options.pluginSdkPackage ??= defaultPluginSdkPackage();
+    installHostPluginSdkResolution(options.pluginSdkPackage);
     this.options = { ...options };
     this.logger = new HostLogger(options.dshHome);
     this.pluginHttpRegistry = this.createPluginHttp();
@@ -252,6 +260,7 @@ export class OrchestrationHost {
           AURA_CAPABILITY_ROOTS: JSON.stringify(
             this.options.capabilityRoots ?? [],
           ),
+          [PLUGIN_SDK_ENV]: this.options.pluginSdkPackage,
           ...(this.options.tripoCredentialPath
             ? {
                 AURA_TRIPO_CREDENTIAL_PATH: this.options.tripoCredentialPath,

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 /** Explicit development linking; never imported by application startup. */
-for (const id of ["self-media", "site-launcher"]) {
+for (const id of ["site-launcher"]) {
   for (const [name, directory] of [
     ["hono", "packages/backend/orchestration/node_modules/hono"],
     ["zod", "packages/backend/orchestration/node_modules/zod"],

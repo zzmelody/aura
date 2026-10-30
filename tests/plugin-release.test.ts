@@ -1,20 +1,10 @@
 import assert from "node:assert/strict";
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  realpath,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
 import { loadAuraPlugins } from "@aura/extensions";
 import { buildPlugins } from "../scripts/build-plugins.ts";
-import { PluginCapabilities } from "../packages/backend/orchestration/src/plugin-capabilities.ts";
-import { memoryBackend } from "./self-media/plugin-fixture.ts";
 
 test("release plugins preserve nested layout and load without source plugin directories", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "aura-plugin-release-"));
@@ -62,13 +52,12 @@ test("release plugins preserve nested layout and load without source plugin dire
   ]) {
     await assert.rejects(readFile(join(installed, file)), { code: "ENOENT" });
   }
-  await mkdir(join(root, "installed", "node_modules", "@aura"), {
-    recursive: true,
-  });
-  await symlink(
-    resolve("packages/backend/plugin-sdk"),
-    join(root, "installed", "node_modules", "@aura", "plugin-sdk"),
-    process.platform === "win32" ? "junction" : "dir",
+  // Released plugins carry no SDK; the host provides it at load time.
+  await assert.rejects(
+    readFile(
+      join(installed, "node_modules", "@aura", "plugin-sdk", "package.json"),
+    ),
+    { code: "ENOENT" },
   );
   const resolution = await loadAuraPlugins({
     configPath: join(root, "user-data", "plugins.json"),
@@ -98,76 +87,4 @@ test("release rejects undeclared files and output inside source", async (t) => {
   );
   await assert.rejects(buildPlugins(root, `${root}-output`, false), /outside/u);
   t.after(() => rm(`${root}-output`, { recursive: true, force: true }));
-});
-
-test("staged self-media backend loads from release assets through public runtime peers", async () => {
-  const root = await mkdtemp(join(tmpdir(), "aura-product-release-"));
-  const install = join(root, "installed");
-  const providers = new PluginCapabilities({
-    dataRoot: join(root, "state"),
-    backend: memoryBackend(root),
-  });
-  try {
-    await buildPlugins(resolve("plugins"), join(install, "plugins"), false);
-    for (const [name, target] of [
-      ["@aura/plugin-sdk", "packages/backend/plugin-sdk"],
-      ["@aura/protocol", "packages/shared/protocol"],
-      ["hono", "apps/server/node_modules/hono"],
-      ["zod", "apps/server/node_modules/zod"],
-    ]) {
-      const link = join(install, "node_modules", name);
-      await mkdir(join(link, ".."), { recursive: true });
-      await symlink(
-        await realpath(resolve(target)),
-        link,
-        process.platform === "win32" ? "junction" : "dir",
-      );
-    }
-    const resolution = await loadAuraPlugins({
-      configPath: join(root, "plugins.json"),
-      defaultPluginsDirectory: join(install, "plugins"),
-      auraVersion: "0.1.0",
-      pluginSdkVersion: "1.4.0",
-    });
-    const plugin = resolution.plugins.find((item) => item.id === "self-media");
-    assert.ok(plugin?.available, JSON.stringify(resolution.plugins));
-    const entry = resolution.capabilityRoots.find(
-      (item) => item.plugin.id === "self-media",
-    )!;
-    const { path, ...metadata } = entry;
-    await providers.replace([{ ...metadata, root: path }]);
-    assert.deepEqual(
-      await providers.invokeFromPage(
-        "self-media",
-        "self-media/studio",
-        "request",
-        { path: "/content-projects", method: "GET" },
-        new AbortController().signal,
-      ),
-      { status: 200, data: [] },
-    );
-    assert.ok(entry.http?.entry.startsWith(join(install, "plugins")));
-    assert.equal(
-      await readFile(
-        join(
-          install,
-          "plugins/self-media/presets/content-editor-v1/preset.yml",
-        ),
-        "utf8",
-      ).then((value) => Boolean(value)),
-      true,
-    );
-    await assert.rejects(
-      readFile(join(install, "plugins/self-media/backend/service.ts")),
-      { code: "ENOENT" },
-    );
-  } finally {
-    await providers.close();
-    await rm(root, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 100,
-    });
-  }
 });

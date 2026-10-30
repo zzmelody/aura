@@ -72,7 +72,7 @@ old IDs. Disabling unregisters new selection while DSH retains live Agent
 revisions. Neither HTTP nor presets activate without an owning provider.
 
 Flow Agent calls reference a plugin preset as `<plugin-id>/<preset-directory>`,
-for example `example-plugin/analyst`. Both Agent request validation and
+for example a plugin preset such as `example-plugin/analyst`. Both Agent request validation and
 persisted Agent steps accept this namespaced ID, including after host restart.
 Existing unqualified preset IDs remain compatible; durable step IDs still use
 their original unqualified format.

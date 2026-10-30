@@ -37,6 +37,11 @@ export interface HostOptions {
   plugins?: AuraPluginStatus[];
   tripoCredentialPath?: string;
   tripoRegion?: "global" | "china";
+  /**
+   * Host `@aura/plugin-sdk/package.json`; plugins resolve the SDK from here.
+   * Defaults to the SDK this package resolves.
+   */
+  pluginSdkPackage?: string;
 }
 
 export interface ContributionRoot {

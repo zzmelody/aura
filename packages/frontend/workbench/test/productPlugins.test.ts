@@ -21,7 +21,7 @@ test("legacy workbench shortcuts resolve to product plugin pages", () => {
   assert.equal(migratedStudioTab("studio:coding"), "studio:coding");
 });
 
-test("built product bundles mount four pages through DSH and dispose their styles", async (t) => {
+test("built product bundle mounts its page through DSH and disposes its styles", async (t) => {
   const workspace = new URL("../../../../", import.meta.url);
   const require = createRequire(
     new URL("packages/backend/runtime/package.json", workspace),
@@ -33,7 +33,7 @@ test("built product bundles mount four pages through DSH and dispose their style
       await readFile(require.resolve(`${loaderId}/client`), "utf8"),
     ],
   ]);
-  for (const id of ["self-media", "site-launcher"])
+  for (const id of ["site-launcher"])
     sources.set(
       `http://fixture.invalid/${id}.js`,
       await readFile(
@@ -43,7 +43,7 @@ test("built product bundles mount four pages through DSH and dispose their style
     );
   const entries = [
     { id: loaderId, url: "loader.js", rev: "loader1", immediately: true },
-    ...["self-media", "site-launcher"].map((id) => ({
+    ...["site-launcher"].map((id) => ({
       id,
       url: `${id}.js`,
       rev: "v1",
@@ -149,13 +149,8 @@ test("built product bundles mount four pages through DSH and dispose their style
   );
   t.after(() => host.close());
   assert.deepEqual(host.failures, []);
-  assert.deepEqual([...host.pages.keys()].sort(), [
-    "self-media/content",
-    "self-media/topics",
-    "self-media/video",
-    "site-launcher/sites",
-  ]);
-  assert.equal(styles.size, 2);
+  assert.deepEqual([...host.pages.keys()].sort(), ["site-launcher/sites"]);
+  assert.equal(styles.size, 1);
   for (const [id, page] of host.pages) {
     const html = renderToStaticMarkup(
       page.definition.render({

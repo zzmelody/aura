@@ -1,5 +1,4 @@
 import { readFile, readdir, realpath, stat } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { satisfies } from "semver";
 import { z } from "zod";
@@ -196,34 +195,8 @@ async function validatePlugin(
       `插件请求了未提供的能力：${unsupported.join(", ")}。`,
     );
 
-  const pluginRequire = createRequire(resolve(root, "package.json"));
-  let sdkPackage: string;
-  try {
-    sdkPackage = pluginRequire.resolve("@aura/plugin-sdk/package.json");
-    if (manifest.contributes.actions)
-      pluginRequire.resolve("@aura/plugin-sdk/action");
-    if (manifest.contributes.flows)
-      pluginRequire.resolve("@aura/plugin-sdk/flow");
-    if (manifest.contributes.capabilities)
-      pluginRequire.resolve("@aura/plugin-sdk/capability");
-  } catch {
-    throw new AuraPluginConfigurationError(
-      "插件依赖 @aura/plugin-sdk 未安装或不可解析。",
-    );
-  }
-  const resolvedSdk = z
-    .object({ version: z.string() })
-    .passthrough()
-    .safeParse(await json(sdkPackage, "@aura/plugin-sdk/package.json"));
-  if (
-    !resolvedSdk.success ||
-    !satisfies(resolvedSdk.data.version, manifest.engines.pluginSdk, {
-      includePrerelease: true,
-    })
-  )
-    throw new AuraPluginConfigurationError(
-      "插件实际解析到的 Plugin SDK 版本不兼容。",
-    );
+  // `@aura/plugin-sdk` is provided by the host at load time; plugins never
+  // install it. The `engines.pluginSdk` check above is the whole contract.
 
   const identity = {
     id: manifest.id,

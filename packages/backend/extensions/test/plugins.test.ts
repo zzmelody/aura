@@ -61,25 +61,6 @@ async function writePlugin(
     join(plugin, "flows", "report", "report.flow.js"),
     "export default {};\n",
   );
-  const sdk = join(plugin, "node_modules", "@aura", "plugin-sdk");
-  await mkdir(sdk, { recursive: true });
-  await writeFile(
-    join(sdk, "package.json"),
-    JSON.stringify({
-      name: "@aura/plugin-sdk",
-      version: "1.0.0",
-      type: "module",
-      exports: {
-        "./action": "./action.js",
-        "./flow": "./flow.js",
-        "./capability": "./capability.js",
-        "./package.json": "./package.json",
-      },
-    }),
-  );
-  await writeFile(join(sdk, "action.js"), "export {};\n");
-  await writeFile(join(sdk, "flow.js"), "export {};\n");
-  await writeFile(join(sdk, "capability.js"), "export {};\n");
   return plugin;
 }
 
@@ -153,40 +134,6 @@ test("explicit plugin ID overrides defaults, preserving disabled state and setti
     assert.deepEqual((await manager.settings()).plugins[0]?.settings, {
       retained: true,
     });
-  }));
-
-test("legacy WeChat location maps to the installed plugin without rewriting user config", async () =>
-  fixture(async (root) => {
-    const plugin = await writePlugin(join(root, "plugins"), "wechat-history");
-    const config = join(root, ".aura", "plugins.json");
-    await mkdir(dirname(config), { recursive: true });
-    const original = JSON.stringify({
-      version: 1,
-      plugins: [
-        {
-          path: join(root, "examples", "wechat-history"),
-          enabled: true,
-          trust: "local",
-          settings: { toolRoot: "existing-reader" },
-        },
-      ],
-    });
-    await writeFile(config, original);
-    const manager = await AuraPluginManager.create({
-      ...options(config),
-      defaultPluginsDirectory: join(root, "plugins"),
-    });
-    assert.equal(manager.resolution.plugins.length, 1);
-    assert.equal(manager.resolution.plugins[0]?.available, true);
-    assert.equal((await manager.settings()).plugins[0]?.path, plugin);
-    assert.equal(await readFile(config, "utf8"), original);
-    await manager.updateSettings({
-      plugins: [{ path: plugin, enabled: true }],
-    });
-    assert.deepEqual(
-      (await readAuraPluginConfiguration(config)).plugins[0]?.settings,
-      { toolRoot: "existing-reader" },
-    );
   }));
 
 test("duplicate default plugin IDs are reported instead of silently overriding", async () =>
@@ -444,17 +391,6 @@ test("page-only plugins contribute a built browser bundle", async () =>
     await writeFile(
       join(plugin, "client", "client.js"),
       "window.__ModuleLoader__.load({id:'example.pages',factory(){return {}}});\n",
-    );
-    const sdk = join(plugin, "node_modules", "@aura", "plugin-sdk");
-    await mkdir(sdk, { recursive: true });
-    await writeFile(
-      join(sdk, "package.json"),
-      JSON.stringify({
-        name: "@aura/plugin-sdk",
-        version: "1.0.0",
-        type: "module",
-        exports: { "./package.json": "./package.json" },
-      }),
     );
     const config = join(root, "plugins.json");
     await writeFile(

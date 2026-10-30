@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { AuraPluginConfiguration } from "@aura/protocol/types";
 import type { LoadAuraPluginsOptions } from "./types.ts";
@@ -70,24 +70,7 @@ export async function resolveAuraPluginEntries(
   const paths = new Set<string>();
   const ids = new Set<string>();
   for (const entry of configuration.plugins) {
-    let path = resolve(dirname(options.configPath), entry.path);
-    // One-time relocation compatibility: preserve old settings, including disabled state.
-    const oldWechat = resolve(directory, "../examples/wechat-history");
-    const newWechat = resolve(directory, "wechat-history");
-    const configuredOldWechat = resolve(
-      dirname(options.configPath),
-      "../examples/wechat-history",
-    );
-    if (
-      (path === oldWechat || path === configuredOldWechat) &&
-      defaults.includes(newWechat)
-    ) {
-      const exists = await stat(path).then(
-        () => true,
-        () => false,
-      );
-      if (!exists) path = newWechat;
-    }
+    const path = resolve(dirname(options.configPath), entry.path);
     configured.push({ ...entry, path });
     paths.add(path);
     const id = await pluginId(path);
