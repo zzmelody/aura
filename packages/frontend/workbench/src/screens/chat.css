@@ -217,21 +217,6 @@
   flex: 1;
   min-width: 8px;
 }
-.chat-screen .composer-count {
-  margin-left: 0;
-}
-.chat-screen .composer-flow-button {
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text);
-}
-.chat-screen .composer-flow-button:hover:not(:disabled),
-.chat-screen .composer-flow-button.open {
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-}
 .chat-screen .provider-select select {
   height: 32px;
   padding: 0 8px;
@@ -269,10 +254,6 @@
   height: 56px;
   border-radius: 12px;
 }
-.chat-screen .composer-flow-chip,
-.chat-screen .composer-context {
-  padding: 0 4px 8px;
-}
 .chat-screen .composer-attach-error {
   margin: 8px 8px 0;
 }
@@ -288,53 +269,6 @@
 /* "+" menu: images and workflows behind one entry point. */
 .composer-add {
   position: relative;
-}
-.composer-add-menu {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 10px);
-  z-index: 30;
-  display: grid;
-  gap: 2px;
-  min-width: 220px;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--elevated);
-  box-shadow: 0 16px 40px color-mix(in srgb, #000 28%, transparent);
-}
-.composer-add-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text);
-  font-size: 13px;
-  text-align: left;
-}
-.composer-add-item svg {
-  flex-shrink: 0;
-  color: var(--secondary);
-}
-.composer-add-item span {
-  display: grid;
-  gap: 1px;
-}
-.composer-add-item small {
-  color: var(--muted);
-  font-size: 11px;
-}
-.composer-add-item:hover:not(:disabled),
-.composer-add-item:focus-visible {
-  background: var(--soft);
-  outline: none;
-}
-.composer-add-item:disabled {
-  opacity: 0.5;
 }
 
 /* Text fades into the composer instead of ending at a hard edge. */
@@ -352,12 +286,6 @@
 /* Empty state sits in the visual middle of the column. */
 .chat-screen .chat-home {
   margin-top: max(48px, 12vh);
-}
-.chat-screen .chat-quick {
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-}
-.chat-screen .chat-quick button {
-  border-radius: 14px;
 }
 
 @media (max-width: 700px) {

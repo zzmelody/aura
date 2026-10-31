@@ -463,9 +463,6 @@
 .standalone .chat-screen .chat-transcript {
   padding-top: 20px;
 }
-.standalone .chat-screen .chat-composer-wrap {
-  padding-bottom: 14px;
-}
 .workspace-status {
   min-height: 22px;
 }
@@ -878,14 +875,6 @@
   align-items: center;
   gap: 5px;
   color: var(--muted);
-}
-.composer-workspace-hint {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .workspace-dialog form {
   display: grid;

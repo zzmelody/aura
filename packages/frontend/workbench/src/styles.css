@@ -193,42 +193,22 @@ textarea {
 }
 /* Quiet, rounded scrollbars with no visible track. Keep a faint thumb at
  * rest so overflow is discoverable, then increase contrast on interaction. */
-.workbench
-  :is(
-    .session-list,
-    .chat-transcript,
-    .studio-scroll,
-    .runtime-config,
-    .runtime-results,
-    .flow-code
-  ) {
+.workbench :is(.session-list, .chat-transcript, .studio-scroll, .flow-code) {
   --scrollbar-thumb: color-mix(in srgb, var(--text) 18%, transparent);
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 .workbench
-  :is(
-    .session-list,
-    .chat-transcript,
-    .studio-scroll,
-    .runtime-config,
-    .runtime-results,
-    .flow-code
-  ):is(:hover, :focus-within) {
+  :is(.session-list, .chat-transcript, .studio-scroll, .flow-code):is(
+    :hover,
+    :focus-within
+  ) {
   --scrollbar-thumb: color-mix(in srgb, var(--text) 32%, transparent);
 }
 /* Chromium/Electron and Safari support rounded, inset thumbs. Reset the
  * standard properties here: non-auto values override these pseudo-elements. */
 @supports selector(::-webkit-scrollbar) {
-  .workbench
-    :is(
-      .session-list,
-      .chat-transcript,
-      .studio-scroll,
-      .runtime-config,
-      .runtime-results,
-      .flow-code
-    ) {
+  .workbench :is(.session-list, .chat-transcript, .studio-scroll, .flow-code) {
     scrollbar-width: auto;
     scrollbar-color: auto;
   }
@@ -237,8 +217,6 @@ textarea {
       .session-list,
       .chat-transcript,
       .studio-scroll,
-      .runtime-config,
-      .runtime-results,
       .flow-code
     )::-webkit-scrollbar {
     width: 10px;
@@ -249,8 +227,6 @@ textarea {
       .session-list,
       .chat-transcript,
       .studio-scroll,
-      .runtime-config,
-      .runtime-results,
       .flow-code
     )::-webkit-scrollbar-track {
     background: transparent;
@@ -260,8 +236,6 @@ textarea {
       .session-list,
       .chat-transcript,
       .studio-scroll,
-      .runtime-config,
-      .runtime-results,
       .flow-code
     )::-webkit-scrollbar-thumb {
     min-height: 32px;
@@ -275,8 +249,6 @@ textarea {
       .session-list,
       .chat-transcript,
       .studio-scroll,
-      .runtime-config,
-      .runtime-results,
       .flow-code
     )::-webkit-scrollbar-thumb:active {
     background-color: color-mix(in srgb, var(--text) 46%, transparent);
@@ -286,8 +258,6 @@ textarea {
       .session-list,
       .chat-transcript,
       .studio-scroll,
-      .runtime-config,
-      .runtime-results,
       .flow-code
     )::-webkit-scrollbar-corner {
     background: transparent;
@@ -480,19 +450,6 @@ textarea {
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
 }
-.workspace-breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  white-space: nowrap;
-  color: var(--muted);
-  font-size: 11px;
-}
-.workspace-breadcrumb strong {
-  color: var(--text);
-  font-weight: 500;
-}
 .header-actions {
   display: flex;
   align-items: center;
@@ -682,28 +639,6 @@ textarea {
   flex: 1;
   min-height: 0;
 }
-.editor-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 42px;
-  padding: 0 16px;
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-.editor-filename {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  color: var(--secondary);
-}
-.editor-filename > strong {
-  font:
-    11px var(--font-mono),
-    monospace;
-}
 .badge {
   display: inline-flex;
   align-items: center;
@@ -715,49 +650,10 @@ textarea {
   border-radius: 4px;
   white-space: nowrap;
 }
-.editor-actions {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-}
-.editor-intro {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  justify-content: space-between;
-  padding: 19px 22px;
-}
 .eyebrow {
   color: var(--accent);
   font-size: 10px;
   letter-spacing: 1px;
-}
-.editor-intro h1 {
-  font-size: 23px;
-  font-weight: 500;
-  letter-spacing: -0.6px;
-  margin: 4px 0 5px;
-}
-.editor-intro p {
-  font-size: 11px;
-  color: var(--muted);
-}
-.editor-intro > button {
-  flex-shrink: 0;
-}
-.code-guide {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 42px;
-  padding: 6px 16px;
-  color: var(--muted);
-  border-bottom: 1px solid var(--border);
-  font-size: 10px;
-}
-.code-guide > button {
-  flex-shrink: 0;
 }
 .editor-notice {
   display: flex;
@@ -821,19 +717,6 @@ textarea {
   display: flex;
   align-items: center;
   gap: 5px;
-}
-.draft-note {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 8px 16px;
-  color: var(--muted);
-  font-size: 10px;
-  border-top: 1px solid var(--border);
-}
-.draft-note > span {
-  font-size: 9px;
 }
 .graph-panel {
   display: flex;
@@ -1163,8 +1046,7 @@ textarea {
   color: var(--accent);
   font-size: 10px !important;
 }
-.graph-warnings,
-.inspector-legend {
+.graph-warnings {
   display: grid;
   gap: 7px;
   margin-top: 16px;
@@ -1175,8 +1057,7 @@ textarea {
   color: var(--secondary);
   font-size: 9px;
 }
-.graph-warnings p,
-.inspector-legend span {
+.graph-warnings p {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1184,11 +1065,6 @@ textarea {
   color: var(--muted);
   font-size: 9px;
   line-height: 1.55;
-}
-.legend-line {
-  width: 14px;
-  height: 1px;
-  background: var(--muted);
 }
 .graph-error {
   display: flex;
@@ -1286,18 +1162,6 @@ textarea {
   margin: 36px auto 20px;
   max-width: 480px;
 }
-.chat-empty-icon {
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 43px;
-  height: 43px;
-  background: var(--soft);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  margin-bottom: 18px;
-}
 .chat-empty h2 {
   font-size: 19px;
   font-weight: 500;
@@ -1309,31 +1173,6 @@ textarea {
   font-size: 12px;
   line-height: 1.9;
   max-width: 340px;
-}
-.chat-suggestions {
-  display: grid;
-  gap: 7px;
-  margin-top: 22px;
-}
-.chat-suggestions button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px 11px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface);
-  text-align: left;
-  color: var(--secondary);
-  font-size: 11px;
-}
-.chat-suggestions button:hover {
-  border-color: var(--muted);
-  background: var(--elevated);
-}
-.chat-suggestions svg {
-  color: var(--muted);
 }
 .chat-message {
   margin: 0 0 18px;
@@ -1396,14 +1235,6 @@ textarea {
   flex-shrink: 0;
   padding: 8px 12px 10px;
 }
-.composer-context {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  color: var(--muted);
-  font-size: 9px;
-  padding: 0 3px 7px;
-}
 .chat-composer {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1442,13 +1273,6 @@ textarea {
   padding: 4px 7px;
   color: var(--secondary);
   font-size: 10px;
-}
-.composer-count {
-  margin-left: auto;
-  color: var(--muted);
-  font:
-    9px var(--font-mono),
-    monospace;
 }
 .send-button {
   display: flex;
@@ -1606,55 +1430,12 @@ textarea {
   .header-actions {
     gap: 4px;
   }
-  .workspace-breadcrumb {
-    gap: 5px;
-  }
-  .workspace-breadcrumb > span {
-    display: none;
-  }
   .studio-tabs {
     padding: 0 6px;
-  }
-  .studio-tab-meta {
-    display: none;
-  }
-  .editor-toolbar {
-    padding: 5px 10px;
-    flex-wrap: wrap;
-  }
-  .editor-filename {
-    gap: 5px;
-  }
-  .editor-filename > strong {
-    font-size: 10px;
-  }
-  .editor-actions {
-    margin-left: auto;
-  }
-  .editor-actions .tool-button {
-    padding: 4px 6px;
-  }
-  .editor-intro {
-    padding: 14px;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-  .editor-intro h1 {
-    font-size: 20px;
-  }
-  .editor-intro p {
-    font-size: 10px;
   }
   .code-gutter {
     flex-basis: 35px;
     padding-right: 8px;
-  }
-  .draft-note {
-    padding: 7px 10px;
-    font-size: 9px;
-  }
-  .draft-note > span {
-    display: none;
   }
   .standalone .chat-transcript {
     padding: 12px 16px;
@@ -1672,12 +1453,6 @@ textarea {
 @media (max-width: 400px) {
   .header-actions .tool-button > span {
     display: none;
-  }
-  .editor-filename .badge {
-    display: none;
-  }
-  .editor-intro > .tool-button {
-    min-height: 28px;
   }
   .editor-status {
     font-size: 8px;
@@ -2502,21 +2277,6 @@ textarea {
 .phase-pausing {
   color: var(--muted);
 }
-.workflow-run-input {
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-}
-.workflow-section-label {
-  margin: 0 0 14px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 500;
-}
-.workflow-run-output > .workflow-section-label {
-  color: var(--secondary);
-}
 .workflow-output-placeholder {
   display: flex;
   align-items: flex-start;
@@ -3278,13 +3038,6 @@ textarea {
 .session-folder-heading .folded {
   transform: rotate(-90deg);
 }
-.session-running {
-  color: var(--muted);
-  animation: session-spin 1.1s linear infinite;
-}
-.session-failed {
-  color: var(--danger);
-}
 @keyframes session-spin {
   to {
     transform: rotate(360deg);
@@ -3322,20 +3075,6 @@ textarea {
 /* Generated files share the conversation's quiet framing; the media carries the colour. */
 .workflow-artifacts {
   margin: 12px 0 20px;
-}
-.artifact-gallery-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-  font-size: 12px;
-  color: var(--secondary);
-}
-.artifact-gallery-heading small {
-  color: var(--muted);
-  font-family: var(--font-mono), monospace;
-  font-size: 10px;
 }
 .artifact-grid {
   display: grid;
