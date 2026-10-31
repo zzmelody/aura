@@ -1,12 +1,5 @@
 /** Studios are task-specific entry points built on top of workflows. */
-export type StudioTab =
-  "studio:content" | "studio:video" | "studio:research" | "studio:coding";
+export type StudioTab = "studio:coding";
 /** Navigation belongs to the client, not the shared conversation model. */
 export type Tab =
-  | "chat"
-  | "flows"
-  | StudioTab
-  | `plugin:${string}`
-  | "history"
-  | "site"
-  | "settings";
+  "chat" | "flows" | StudioTab | `plugin:${string}` | "history" | "settings";

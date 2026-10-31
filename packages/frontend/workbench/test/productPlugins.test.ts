@@ -5,21 +5,6 @@ import { runInThisContext } from "node:vm";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { startPluginHost } from "../src/pluginHost.ts";
-import { migratedStudioTab } from "../src/studio-navigation.ts";
-
-test("legacy workbench shortcuts resolve to product plugin pages", () => {
-  assert.equal(
-    migratedStudioTab("studio:content"),
-    "plugin:self-media/content",
-  );
-  assert.equal(migratedStudioTab("studio:video"), "plugin:self-media/video");
-  assert.equal(
-    migratedStudioTab("studio:research"),
-    "plugin:self-media/topics",
-  );
-  assert.equal(migratedStudioTab("site"), "plugin:site-launcher/sites");
-  assert.equal(migratedStudioTab("studio:coding"), "studio:coding");
-});
 
 test("built product bundle mounts its page through DSH and disposes its styles", async (t) => {
   const workspace = new URL("../../../../", import.meta.url);

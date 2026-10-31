@@ -54,7 +54,6 @@ import type { CodingHandoff } from "./features/coding/CodingStudio";
 import { usePluginPages } from "./usePluginPages";
 import { isPluginTab } from "./pluginPages";
 import { PluginPageBoundary } from "./PluginPageBoundary";
-import { migratedStudioTab } from "./studio-navigation.ts";
 import "./workspace-chrome.css";
 
 const CodingStudio = React.lazy(() =>
@@ -65,12 +64,8 @@ const CodingStudio = React.lazy(() =>
 const tabTitles: Record<Tab, string> = {
   chat: "对话",
   flows: "工作流",
-  "studio:content": "自媒体内容",
-  "studio:video": "视频项目",
-  "studio:research": "选题库",
   "studio:coding": "工作空间",
   history: "全部记录",
-  site: "Site",
   settings: "设置",
 };
 const isStudio = (tab: Tab): tab is StudioTab | `plugin:${string}` =>
@@ -217,8 +212,7 @@ export default function App() {
     wide ? setCollapsed((value) => !value) : setSidebarOpen((value) => !value);
   const toggleTheme = () =>
     workspace.setState((s) => ({ ...s, theme: dark ? "light" : "dark" }));
-  const navigate = (requested: Tab) => {
-    const next = migratedStudioTab(requested);
+  const navigate = (next: Tab) => {
     if (next === tab && isStudio(next)) return;
     if (!canLeaveStudio()) return;
     setStudioDirty(false);
@@ -443,7 +437,6 @@ export default function App() {
                         endpoint={codexAuth.endpoint}
                         catalogState={catalogState}
                         onDetailChange={setWorkflowDetail}
-                        onOpenStudio={navigate}
                         onRun={(flow) => {
                           const sessionId = workspace.newWorkflowChat(
                             flow,

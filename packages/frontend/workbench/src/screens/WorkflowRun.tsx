@@ -441,11 +441,7 @@ export function WorkflowRunResult({
       : undefined;
   const output = cached ? cached.output : savedOutput;
   const composition = videoCompositionResult(output);
-  const videoRun = Boolean(
-    composition ||
-    cached?.flow.id === "self-media/video" ||
-    message.workflow?.id === "self-media/video",
-  );
+  const videoRun = Boolean(composition);
   const problem =
     cached?.error ?? (phase === "failed" && !cached ? message.text : undefined);
   const PhaseIcon =

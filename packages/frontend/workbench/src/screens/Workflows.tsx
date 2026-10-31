@@ -16,7 +16,6 @@ import type { FlowDraftController } from "../flowDraft";
 import { useFlowSource } from "../flowSource";
 import { FlowGraphView } from "./FlowGraphView";
 import { FlowStudio } from "./FlowStudio";
-import type { StudioTab } from "../types";
 
 function WorkflowPreview({
   flow,
@@ -75,7 +74,6 @@ export function Workflows({
   onAsk,
   onRun,
   onDetailChange,
-  onOpenStudio,
 }: {
   browseRevision: number;
   endpoint: string;
@@ -85,8 +83,6 @@ export function Workflows({
   onAsk(): void;
   onRun(flow: FlowCatalogEntry): void;
   onDetailChange(open: boolean): void;
-  /** Flows backed by a dedicated studio open it instead of a bare run. */
-  onOpenStudio(studio: StudioTab): void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [initialLine, setInitialLine] = useState<number>();
@@ -238,11 +234,7 @@ export function Workflows({
                   disabled={!flow.available}
                   aria-label={`运行工作流：${flow.title}`}
                   title="运行工作流"
-                  onClick={() =>
-                    flow.id === "self-media/video"
-                      ? onOpenStudio("studio:video")
-                      : onRun(flow)
-                  }
+                  onClick={() => onRun(flow)}
                 >
                   <Play size={17} />
                 </button>
