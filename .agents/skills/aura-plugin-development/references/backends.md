@@ -93,7 +93,7 @@ hashes still fail closed. Duplicate legacy owners are rejected.
 
 Use SDK `defineWorkflow` when relocating an existing Flow with an explicit root
 `sequence`. It preserves existing durable paths. The original SDK `defineFlow`
-keeps its v1 implicit `plugin` scope; changing that behavior would break existing
+keeps its original implicit `plugin` scope; changing that behavior would break existing
 plugins. Preserve all contribution IDs, schema fields, prompts and durable step
 IDs. Completed history remains readable with the plugin disabled.
 

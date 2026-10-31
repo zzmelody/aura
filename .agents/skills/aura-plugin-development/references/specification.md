@@ -1,42 +1,42 @@
 # Aura backend plugin specification
 
-Status: v1 contract\
-Scope: trusted local backend plugins contributing Action and Flow definitions\
+Status: v2 contract (manifest `schemaVersion: 2`, plugin SDK 2.0)\
+Scope: trusted local plugins contributing Actions, Flows, one backend and optional workbench pages\
 Runtime format: native ESM JavaScript\
 Host implementation language: TypeScript
 
-This specifies the original backend-only v1 contract. Optional workbench pages
-are a backward-compatible host extension in [pages.md](pages.md), not a new
-requirement for existing Action/Flow plugins.
+This specifies the plugin contract. Workbench pages are described in
+[pages.md](pages.md) and product backend services in [backends.md](backends.md).
+Version 1 manifests are not supported.
 
 ## 1. Normative language
 
-The words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are requirements for implementations and plugin authors. This document defines the target v1 contract. Before authoring a plugin, verify that the checked-out Aura version implements the required manifest schema and `@aura/plugin-sdk` version.
+The words MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are requirements for implementations and plugin authors. This document defines the v2 contract. Before authoring a plugin, verify that the checked-out Aura version implements the required manifest schema and `@aura/plugin-sdk` version.
 
 ## 2. Design boundaries
 
-Aura v1 plugins extend backend orchestration only.
+Aura plugins extend backend orchestration and, optionally, the workbench through a prebuilt page bundle.
 
 - The Aura plugin host, registries, configuration, capability adapters, and lifecycle code MUST be implemented in TypeScript under backend packages.
 - Plugin Action and Flow entry modules MUST be native ESM JavaScript at runtime.
 - Plugin authors MAY write TypeScript, but MUST compile it to ESM JavaScript before Aura loads it.
-- Plugins MUST NOT contribute React components, routes, CSS, Electron renderer code, or Capacitor UI in v1.
+- Plugins contribute UI only through `contributes.pages` ([pages.md](pages.md)). They MUST NOT contribute host routes, Electron renderer code, or Capacitor UI any other way.
 - External Flows MUST use the existing Flow catalog, JSON Schema form, execution, history, and result UI. Registering a plugin MUST NOT require a frontend rebuild.
-- Actions are backend capabilities. They MAY be called by a Flow, granted to a DSH Agent, or invoked by an authorized backend host API. V1 does not require a generic direct-Action frontend.
+- Actions are backend capabilities. They MAY be called by a Flow, granted to a DSH Agent, or invoked by an authorized backend host API. There is no generic direct-Action frontend.
 - Plugins MUST use public SDK contracts and MUST NOT import Aura application workspaces, private source subpaths, `@aura/runtime`, pi-ai, or DSH internals.
 
 ## 3. Trust model
 
-V1 plugins are trusted local code with the same effective Node.js authority as the Aura orchestration process.
+Plugins are trusted local code with the same effective Node.js authority as the Aura orchestration process.
 
 - Repository-owned plugins under the deployment's `plugins/` directory are enabled by deployment policy. Other directories MUST be explicitly enabled by user configuration. An explicit disabled entry MUST override default discovery.
 - Aura MUST NOT recursively search arbitrary drives or user directories for plugins.
 - Aura MUST resolve and validate the plugin root and contribution roots before importing code. Contribution paths MUST remain inside the resolved plugin root.
 - Aura MUST NOT run `npm install`, `pnpm install`, package lifecycle scripts, build commands, or downloads while starting or discovering a plugin.
 - Missing dependencies MUST mark the affected plugin unavailable with a sanitized diagnostic.
-- A manifest capability list documents and gates stable Aura services, but it is not a sandbox while plugins run in-process.
+- The manifest `permissions` list documents and gates built-in Aura services, but it is not a sandbox while plugins run in-process.
 - Plugins MUST NOT read `.aura/dsh/.credentials.yaml`, receive OAuth grants or API keys through context, or include secrets in results and logs.
-- Supporting untrusted plugins requires a later out-of-process RPC sandbox with filesystem, network, process, and resource policies; it is outside v1.
+- Supporting untrusted plugins requires a later out-of-process RPC sandbox with filesystem, network, process, and resource policies; it is outside this contract.
 
 ## 4. Plugin package layout
 
@@ -114,9 +114,9 @@ The file `aura.plugin.json` uses UTF-8 JSON without executable values:
 
 - `permissions` lists built-in host capabilities (IDs such as `aura.tripo.game-asset`, `aura.flow.invoke`) and defaults to an empty array; omit it when empty. A plugin's own backend is never listed here.
 - `description`, `homepage`, and `license` MAY provide display metadata and MUST NOT affect execution.
-- Unknown top-level fields SHOULD be rejected in v1 so misspelled security- or execution-related fields cannot be silently ignored.
+- Unknown top-level fields MUST be rejected so misspelled security- or execution-related fields cannot be silently ignored.
 
-The v1 manifest MUST NOT contain lifecycle scripts, executable entrypoints, shell commands, arbitrary environment variables, UI contributions, or remote download URLs.
+The only executable entries are the prebuilt files named by `contributes` (`backend`, `http.entry`, `pages`) and the Action/Flow entry files. The manifest MUST NOT contain lifecycle scripts, shell commands, arbitrary environment variables, or remote download URLs.
 
 ## 6. Identifiers and namespacing
 
@@ -157,7 +157,7 @@ Distribution plugin directories are independent of the user's data root.
 
 - Configuration parsing, canonical path resolution, manifest validation, and plugin status belong to a backend plugin manager.
 - Relative paths MUST resolve against the configuration file directory, not the process working directory.
-- `trust` MUST be `local` in v1. Other values MUST be rejected rather than silently treated as trusted.
+- `trust` MUST be `local`. Other values MUST be rejected rather than silently treated as trusted.
 - Disabling a plugin prevents new runs from resolving its contributions. It MUST NOT mutate historical run records.
 - Built-in Aura contributions and external plugin roots SHOULD pass through the same registry contracts, but built-ins MUST remain available without an external manifest.
 - The runtime MAY also accept explicit programmatic plugin roots for tests and embedded hosts. Environment variables SHOULD be an operational override, not the canonical persisted configuration.
@@ -239,13 +239,13 @@ export default defineAction({
 Requirements:
 
 - Parameters and output MUST use the SDK-supported DSH Tool schema contract.
-- Input and output MUST be JSON-serializable and remain within Aura's configured persistence limit; v1 defaults to 256 KiB each.
+- Input and output MUST be JSON-serializable and remain within Aura's configured persistence limit; the default is 256 KiB each.
 - An Action MUST check or propagate `ctx.signal` for filesystem, network, model, subprocess, and wait operations.
-- `timeoutMs` MUST be finite and within the host limit; v1 defaults to 30 seconds and caps at 10 minutes.
+- `timeoutMs` MUST be finite and within the host limit; the default is 30 seconds, capped at 10 minutes.
 - `output.render` controls the DSH-visible result and MUST NOT disclose secret or host-private values.
 - Action code MUST resolve its own assets relative to `ctx.directory`, not `process.cwd()`.
 - The host MAY provide `cwd`, IDs, mode, and granted `ctx.aura` ports. Plugins MUST treat other context fields as unavailable.
-- V1 Action context MUST NOT expose `agent()`, `flow()`, or nested `action()` execution. Compose those operations in a Flow.
+- Action context MUST NOT expose `agent()`, `flow()`, or nested `action()` execution. Compose those operations in a Flow.
 
 ## 11. Flow contract
 
@@ -320,22 +320,25 @@ Rules:
 
 ## 13. Invocation rules
 
-Supported v1 call graph:
+Supported call graph:
 
 ```text
 Aura backend ──> Flow
 Aura backend ──> Action
 Flow ──────────> Action
 Flow ──────────> DSH Agent ──> explicitly granted Action
-Flow/Action ───> declared Aura capability port
+Flow/Action ───> built-in capability granted by `permissions`
+Action ────────> own plugin backend services (`ctx.services`)
+Plugin page ───> own plugin backend `pageOperations`
 ```
 
-Unsupported v1 call graph:
+Unsupported call graph:
 
 ```text
 Action ─X─> Action
 Action ─X─> Flow
 Action ─X─> Agent
+Plugin page ─X─> another plugin's backend
 Plugin ─X─> frontend implementation
 Plugin ─X─> Aura credentials or pi-ai client
 ```
@@ -349,7 +352,7 @@ These restrictions avoid recursive admission, concurrency deadlocks, hidden retr
 - A plugin update MUST NOT reinterpret an in-flight run with new code.
 - Manifest, SDK, DTO, and capability versions MUST be explicit. Breaking SDK changes require a new major version.
 - Renaming a plugin or contribution creates a new canonical identity. Aliases or migrations require explicit host support and MUST NOT be inferred from matching titles.
-- Plugin state migrations are not executable manifest fields in v1. They require an explicit, separately authorized backend operation.
+- Plugin state migrations are not executable manifest fields. They require an explicit, separately authorized backend operation.
 
 ## 15. Backend package placement
 
@@ -395,10 +398,10 @@ Names are recommendations; prefer existing package seams when they already provi
 
 ## 17. Definition of done
 
-A v1 external plugin is complete when an explicitly configured local directory is validated at Aura startup, its JavaScript Actions/Flows register through public SDK contracts, its Flow appears through the existing catalog without a frontend rebuild, its calls use only allowed invocation paths and declared capability ports, failures are isolated and sanitized, updates affect only new runs, shutdown is clean, and the required tests/documentation pass.
+An external plugin is complete when an explicitly configured local directory is validated at Aura startup, its JavaScript Actions/Flows and backend register through public SDK contracts, its Flow appears through the existing catalog without a frontend rebuild, its calls use only allowed invocation paths and granted permissions, failures are isolated and sanitized, updates affect only new runs, shutdown closes its backend cleanly, and the required tests/documentation pass.
 
-## Product backend extension (SDK 1.4)
+## Product backend extension
 
-[Backend extensions](backends.md) add provider-owned business services, scoped RPC,
-Hono HTTP adapters, DSH presets and explicit durable relocation grants. These are
-additive; ordinary v1 plugins keep their IDs, implicit Flow scope and contracts.
+[Backend extensions](backends.md) add backend-owned business services, scoped RPC,
+Hono HTTP adapters, DSH presets and explicit durable relocation grants. Ordinary
+Action/Flow plugins keep their IDs, implicit Flow scope and contracts.
