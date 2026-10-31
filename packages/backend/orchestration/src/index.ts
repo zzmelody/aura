@@ -47,6 +47,7 @@ import type {
   CodingStreamEvent,
   CodingTurn,
 } from "./types.ts";
+import type { AutomationHistory, AutomationTask } from "@aura/protocol/types";
 import type {
   ContributionConfiguration,
   FlowRpcResult,
@@ -555,6 +556,42 @@ export class OrchestrationHost {
   closeCodingSide(sessionId: string): Promise<{ closed: boolean }> {
     return this.request<{ closed: boolean }>("coding/side/close", {
       sessionId,
+    });
+  }
+
+  /** Automation tasks: DSH Schedule reminders on coding conversations. */
+  automationTasks(): Promise<AutomationTask[]> {
+    return this.request<AutomationTask[]>("automation/list");
+  }
+
+  /** `input` is a request body; the orchestration plugin validates it. */
+  createAutomationTask(
+    input: Record<string, unknown>,
+  ): Promise<AutomationTask> {
+    return this.request<AutomationTask>("automation/create", input);
+  }
+
+  updateAutomationTask(
+    id: string,
+    input: Record<string, unknown>,
+  ): Promise<AutomationTask> {
+    return this.request<AutomationTask>("automation/update", { id, ...input });
+  }
+
+  deleteAutomationTask(
+    sessionId: string,
+    id: string,
+  ): Promise<{ deleted: boolean }> {
+    return this.request<{ deleted: boolean }>("automation/delete", {
+      sessionId,
+      id,
+    });
+  }
+
+  automationHistory(sessionId: string, id: string): Promise<AutomationHistory> {
+    return this.request<AutomationHistory>("automation/history", {
+      sessionId,
+      id,
     });
   }
 

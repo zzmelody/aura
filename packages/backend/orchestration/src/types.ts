@@ -186,6 +186,8 @@ export type CodingStreamEvent =
       name: string;
       /** The file, command or pattern the call touches, when it names one. */
       detail?: string;
+      /** Session event time (ms); feeds the trajectory timeline. */
+      at: number;
     }
   | {
       type: "tool";
@@ -194,11 +196,14 @@ export type CodingStreamEvent =
       ok: boolean;
       /** Applied hunks of a write or edit, for the file-change card. */
       diffs?: CodingFileDiff[];
+      at: number;
     }
+  /** A model request opened (step start) or answered (assistant message). */
+  | { type: "model"; phase: "start" | "end"; at: number }
   | { type: "progress"; done: number; total: number }
   | { type: "deliverable"; path: string }
   /** Guidance the user sent into this turn while it was already running. */
-  | { type: "steer"; text: string }
+  | { type: "steer"; text: string; at: number }
   | {
       type: "question";
       questionId: string;

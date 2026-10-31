@@ -33,12 +33,12 @@ test("sidebar time stays compact at unit boundaries and tolerates future clocks"
     sidebarSessionTime(now - seconds * 1000, now);
   assert.equal(ago(0), "刚刚");
   assert.equal(ago(59), "刚刚");
-  assert.equal(ago(60), "1分钟前");
-  assert.equal(ago(3599), "59分钟前");
-  assert.equal(ago(3600), "1小时前");
-  assert.equal(ago(86400), "1天前");
-  assert.equal(ago(30 * 86400), "1个月前");
-  assert.equal(ago(365 * 86400), "1年前");
+  assert.equal(ago(60), "1分钟");
+  assert.equal(ago(3599), "59分钟");
+  assert.equal(ago(3600), "1小时");
+  assert.equal(ago(86400), "1天");
+  assert.equal(ago(30 * 86400), "1个月");
+  assert.equal(ago(365 * 86400), "1年");
   assert.equal(ago(-60), "刚刚");
   assert.equal(sidebarSessionTime(Number.NaN, now), "—");
 });
@@ -52,13 +52,12 @@ test("a row shows a status icon only when it needs notice, otherwise its time", 
     sidebarRowStatus({ kind: "idle", label: "尚未开始" }),
     undefined,
   );
-  for (const kind of [
-    "running",
-    "waiting",
-    "failed",
-    "stopped",
-    "attention",
-  ] as const)
+  // A turn the user stopped is settled, so the row shows its time.
+  assert.equal(
+    sidebarRowStatus({ kind: "stopped", label: "已停止" }),
+    undefined,
+  );
+  for (const kind of ["running", "waiting", "failed", "attention"] as const)
     assert.equal(sidebarRowStatus({ kind, label: kind })?.kind, kind);
 });
 test("workflow rows identify their task while preserving custom conversation names", () => {

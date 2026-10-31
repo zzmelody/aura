@@ -43,8 +43,10 @@ test("replay keeps the turn's prompt and projects later messages as steering", (
   assert.equal(turns.length, 1);
   assert.equal(turns[0]!.prompt, "写个函数");
   assert.deepEqual(turns[0]!.events, [
+    { type: "model", phase: "end", at: 0 },
     { type: "delta", text: "好，先看文件" },
-    { type: "steer", text: "改用 map" },
+    { type: "steer", text: "改用 map", at: 0 },
+    { type: "model", phase: "end", at: 0 },
     { type: "delta", text: "\n\n改好了" },
   ]);
 });
@@ -94,7 +96,7 @@ test("the live projection matches replay for the same messages", () => {
     userMessage("改用 map"),
   ])
     projectCodingEvent(event, (value) => emitted.push(value), created, own);
-  assert.deepEqual(emitted, [{ type: "steer", text: "改用 map" }]);
+  assert.deepEqual(emitted, [{ type: "steer", text: "改用 map", at: 0 }]);
 });
 
 /** Only what the user typed; other producers carry their own source kind. */
@@ -104,6 +106,7 @@ test("injected context and other producers are not shown as steering", () => {
   projectCodingEvent(
     {
       type: "user/message",
+      time: 0,
       data: {
         source: { kind: "notice", summary: "文件有改动" },
         content: [{ type: "text", text: "a.ts 已被外部修改" }],

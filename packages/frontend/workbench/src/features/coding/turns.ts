@@ -16,7 +16,12 @@ export type ToolEntry = {
   state: "running" | "ok" | "failed" | "stopped";
   /** Applied hunks of a write or edit. */
   diffs?: CodingFileDiff[];
+  startedAt: number;
+  endedAt?: number;
 };
+
+/** One model request: from step start to its assistant message. */
+export type ModelSpan = { startedAt: number; endedAt?: number };
 
 export type AskedQuestion = {
   questionId: string;
@@ -52,6 +57,10 @@ export type Turn = {
   /** Questions the agent asked during this turn, answered or still open. */
   questions: AskedQuestion[];
   workflows?: ChatWorkflowStart[];
+  /** Model requests in order, for the trajectory. */
+  models: ModelSpan[];
+  /** When each steering message arrived. */
+  steers: number[];
   status: "running" | "complete" | "stopped" | "error";
   error?: string;
   startedAt: number;
@@ -76,6 +85,8 @@ export function newTurn(
     tools: [],
     deliverables: [],
     questions: [],
+    models: [],
+    steers: [],
     status: "running",
     startedAt,
   };
@@ -118,9 +129,21 @@ export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
         };
   if (event.type === "answered")
     return answerTurn(turn, event.questionId, event.answers);
+  if (event.type === "model") {
+    const open = turn.models.at(-1);
+    if (event.phase === "start")
+      return { ...turn, models: [...turn.models, { startedAt: event.at }] };
+    return open && open.endedAt === undefined
+      ? {
+          ...turn,
+          models: [...turn.models.slice(0, -1), { ...open, endedAt: event.at }],
+        }
+      : turn;
+  }
   if (event.type === "steer")
     return {
       ...turn,
+      steers: [...turn.steers, event.at],
       // Guidance is its own entry, so the reply text before and after it stay
       // separate paragraphs instead of merging across the interruption.
       timeline: [...turn.timeline, { kind: "steer", text: event.text }],
@@ -138,6 +161,7 @@ export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
               name: event.name,
               ...(event.detail ? { detail: event.detail } : {}),
               state: "running",
+              startedAt: event.at,
             },
           ],
         };
@@ -148,6 +172,7 @@ export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
         ? {
             ...tool,
             state: event.ok ? "ok" : "failed",
+            endedAt: event.at,
             ...(event.diffs?.length ? { diffs: event.diffs } : {}),
           }
         : tool,

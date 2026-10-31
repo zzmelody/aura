@@ -46,6 +46,7 @@ export default defineConfig(
             "SessionId",
             "ToolCallId",
             "ReasoningEffortId",
+            "ScheduleId",
           ],
         },
       ],

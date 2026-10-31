@@ -8,5 +8,7 @@ export type Tab =
   | StudioTab
   | `plugin:${string}`
   | "history"
+  | "plugins"
+  | "automation"
   | "site"
   | "settings";

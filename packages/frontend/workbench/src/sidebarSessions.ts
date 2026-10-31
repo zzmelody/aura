@@ -23,22 +23,25 @@ export function sidebarSessionTime(
   if (!Number.isFinite(updatedAt) || !Number.isFinite(now)) return "—";
   const seconds = Math.max(0, Math.floor((now - updatedAt) / 1000));
   if (seconds < 60) return "刚刚";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟前`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时前`;
-  if (seconds < 30 * 86400) return `${Math.floor(seconds / 86400)}天前`;
-  if (seconds < 365 * 86400)
-    return `${Math.floor(seconds / (30 * 86400))}个月前`;
-  return `${Math.floor(seconds / (365 * 86400))}年前`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时`;
+  if (seconds < 30 * 86400) return `${Math.floor(seconds / 86400)}天`;
+  if (seconds < 365 * 86400) return `${Math.floor(seconds / (30 * 86400))}个月`;
+  return `${Math.floor(seconds / (365 * 86400))}年`;
 }
 
 /**
  * A sidebar row shows either a status icon or its time, never both. Only
- * states worth noticing earn the icon; settled rows fall back to the time.
+ * states worth noticing earn the icon; settled rows, including one the user
+ * stopped, fall back to the time as in DSH.
  */
 export function sidebarRowStatus(
   status: SessionStatus | undefined,
 ): SessionStatus | undefined {
-  return status && status.kind !== "completed" && status.kind !== "idle"
+  return status &&
+    status.kind !== "completed" &&
+    status.kind !== "idle" &&
+    status.kind !== "stopped"
     ? status
     : undefined;
 }

@@ -116,7 +116,7 @@
 .artifact-inline-copy small {
   color: var(--muted);
   font:
-    11px "IBM Plex Mono",
+    11px var(--font-mono),
     monospace;
 }
 .artifact-inline-actions {
@@ -214,7 +214,7 @@
   white-space: nowrap;
   color: var(--muted);
   font:
-    11px "IBM Plex Mono",
+    11px var(--font-mono),
     monospace;
 }
 .workflow-file-chip .icon-control {
@@ -277,7 +277,7 @@
   margin: 0 0 8px;
   color: var(--muted);
   font:
-    10px/16px "IBM Plex Mono",
+    10px/16px var(--font-mono),
     monospace;
   font-weight: 400;
   letter-spacing: 1.1px;
@@ -295,7 +295,7 @@
   background: var(--elevated);
   color: var(--secondary);
   font:
-    11px "IBM Plex Mono",
+    11px var(--font-mono),
     monospace;
 }
 .workflow-step-attempts {
@@ -372,7 +372,7 @@
 }
 .workflow-step-panel .workflow-value-metrics .workflow-value-number {
   font:
-    13px "IBM Plex Mono",
+    13px var(--font-mono),
     monospace;
   color: var(--text);
 }
@@ -393,7 +393,7 @@
 }
 .workflow-step-detail .workflow-history-entry small {
   font:
-    10px "IBM Plex Mono",
+    10px var(--font-mono),
     monospace;
   letter-spacing: 0.6px;
 }

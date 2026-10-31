@@ -1,5 +1,6 @@
 import React, { useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Tooltip } from "./Tooltip";
 
 export type WorkbenchMenuItem =
   | {
@@ -20,12 +21,15 @@ export function WorkbenchMenu({
   items,
   className = "icon-control",
   title,
+  tooltip,
 }: {
   label: string;
   children: React.ReactNode;
   items: WorkbenchMenuItem[];
   className?: string;
   title?: string;
+  /** DSH hover tip in place of the native `title`. */
+  tooltip?: string;
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -69,31 +73,38 @@ export function WorkbenchMenu({
     setOpen(false);
     trigger.current?.focus();
   };
+  const triggerButton = (
+    <button
+      ref={trigger}
+      type="button"
+      className={`${className}${open ? " menu-open" : ""}`}
+      aria-label={label}
+      title={tooltip ? undefined : (title ?? label)}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-controls={open ? id : undefined}
+      onClick={() => setOpen((value) => !value)}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          setOpen(true);
+        }
+      }}
+    >
+      {children}
+    </button>
+  );
   const portal =
     trigger.current?.closest("dialog") ??
     document.querySelector(".aura-root") ??
     document.body;
   return (
     <>
-      <button
-        ref={trigger}
-        type="button"
-        className={`${className}${open ? " menu-open" : ""}`}
-        aria-label={label}
-        title={title ?? label}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? id : undefined}
-        onClick={() => setOpen((value) => !value)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            setOpen(true);
-          }
-        }}
-      >
-        {children}
-      </button>
+      {tooltip ? (
+        <Tooltip label={open ? "" : tooltip}>{triggerButton}</Tooltip>
+      ) : (
+        triggerButton
+      )}
       {open
         ? createPortal(
             <div

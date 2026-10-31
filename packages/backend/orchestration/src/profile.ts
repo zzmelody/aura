@@ -204,6 +204,12 @@ ${Object.entries(customProfiles(await readAiServices(root)))
       name: '@deepseek-ai/dsh-agent-preset-registry'
       config:
         default: researcher-v1
+    # Durable reminders delivered as follow-ups into their coding session;
+    # the coding allow-list admits the four schedule_* tools.
+    - id: schedule
+      name: '@deepseek-ai/dsh-schedule'
+    - id: tool-schedule
+      name: '@deepseek-ai/dsh-tool-schedule'
 ${await presetRows(fileURLToPath(new URL("../presets", import.meta.url)))}`;
   const options = { mode: 0o600, dirMode: 0o700 };
   await writeFileAtomic(

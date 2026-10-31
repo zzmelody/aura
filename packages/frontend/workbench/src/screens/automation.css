@@ -1,0 +1,315 @@
+@import "./feature-page.css";
+
+/* DSH schedule page: pill filters, 48px task rows, a 47% detail pane with a
+ * hairline divider, and a modal create / edit form. */
+.automation-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.automation-layout > .automation-page {
+  flex: 1;
+  min-width: 0;
+}
+.automation-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+.automation-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.automation-pills button,
+.automation-weekdays button {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 0.5px solid var(--hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 13px;
+}
+.automation-pills button:hover,
+.automation-weekdays button:hover {
+  background: var(--soft);
+}
+.automation-pills button[aria-pressed="true"],
+.automation-weekdays button[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primaryText);
+}
+.automation-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(240px, 100%);
+  height: 32px;
+  padding: 0 10px;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+}
+.automation-search:focus-within {
+  border-color: var(--accent);
+}
+.automation-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+}
+.automation-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.automation-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--secondary);
+  text-align: left;
+}
+.automation-row:hover,
+.automation-row.selected {
+  background: var(--soft);
+}
+.automation-row:focus-visible,
+.automation-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.automation-row-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.automation-row-text strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.automation-row-text span,
+.automation-row-target {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.automation-row-target {
+  max-width: 30%;
+}
+.automation-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 64px 20px;
+  text-align: center;
+}
+.automation-empty-art {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 8px;
+  border: 0.5px solid var(--hairline);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--accent);
+}
+.automation-empty strong {
+  font-size: 16px;
+  font-weight: 500;
+}
+.automation-empty p {
+  max-width: 360px;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+.automation-detail {
+  display: grid;
+  flex: 0 0 47%;
+  align-content: start;
+  gap: 20px;
+  max-width: 520px;
+  min-width: 0;
+  overflow: auto;
+  padding: 28px 24px;
+  border-left: 0.5px solid var(--hairline);
+}
+.automation-detail header,
+.automation-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.automation-detail h2,
+.automation-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 26px;
+}
+.automation-detail h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--secondary);
+}
+.automation-detail dl {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+.automation-detail dt {
+  color: var(--muted);
+}
+.automation-detail dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.automation-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  text-align: left;
+}
+.automation-prompt {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--soft);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre-wrap;
+}
+.automation-history {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.automation-history li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  border-bottom: 0.5px solid var(--hairline);
+  font-size: 13px;
+}
+.automation-history small,
+.automation-muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+.automation-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 0.5px solid var(--hairline);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+}
+.automation-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.32);
+}
+.automation-dialog form {
+  display: grid;
+  gap: 16px;
+  padding: 20px 24px 24px;
+}
+.automation-dialog label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--secondary);
+}
+.automation-dialog fieldset {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.automation-dialog legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--secondary);
+  font-size: 13px;
+}
+.automation-dialog :is(input, textarea, select) {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+.automation-dialog textarea {
+  resize: vertical;
+  line-height: 22px;
+}
+.automation-dialog :is(input, textarea, select):focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.automation-weekdays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.automation-weekdays button {
+  width: 36px;
+  padding: 0;
+}
+.automation-dialog footer {
+  justify-content: flex-end;
+}
+@media (max-width: 899px) {
+  .automation-layout.with-detail > .automation-page {
+    display: none;
+  }
+  .automation-detail {
+    flex: 1;
+    max-width: none;
+    border-left: 0;
+  }
+}

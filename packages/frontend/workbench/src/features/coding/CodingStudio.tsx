@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { ArrowLeft, FolderPlus, GitBranch, LoaderCircle } from "lucide-react";
+import { ArrowLeft, Ellipsis, FolderPlus, GitBranch } from "lucide-react";
+import { WorkbenchMenu } from "../../WorkbenchMenu";
 import type { ChatImage, Session, Workspace } from "@aura/core/types";
 import { providerMode } from "@aura/core";
 import type {
@@ -15,6 +16,7 @@ import { codingConversationStatus } from "./conversationStatus";
 import type { CodingProjectsController } from "./useCodingProjects";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import type { Turn } from "./turns";
+import { TrajectoryView } from "./TrajectoryView";
 import "./coding.css";
 
 export type CodingHandoff = {
@@ -35,6 +37,7 @@ export function CodingStudio({
   onHandoffTaken,
   onProvider,
   onBack,
+  headerActions,
   legacy,
   onOpened,
   context,
@@ -52,7 +55,8 @@ export function CodingStudio({
   handoff?: CodingHandoff;
   onHandoffTaken?(): void;
   onProvider(provider: Workspace["provider"]): void;
-  onBack(): void;
+  onBack?(): void;
+  headerActions?: React.ReactNode;
   legacy?: Session;
   onOpened?(): void;
   context?: string;
@@ -90,6 +94,9 @@ export function CodingStudio({
   const [creating, setCreating] = useState(false);
   const [openingSide, setOpeningSide] = useState(false);
   const [mainRunning, setMainRunning] = useState(false);
+  /** Main conversation's turns, mirrored for the trajectory view. */
+  const [mainTurns, setMainTurns] = useState<readonly Turn[]>([]);
+  const [view, setView] = useState<"chat" | "trajectory">("chat");
   const [modelConfigs, setModelConfigs] = useState<
     Record<string, Partial<Record<FlowMode, ChatModelSelection>>>
   >({});
@@ -104,6 +111,7 @@ export function CodingStudio({
   const reportTurns = useCallback(
     (turns: readonly Turn[]) => {
       const current = selection.current.conversationId;
+      setMainTurns(turns);
       if (current) reportStatus(current, codingConversationStatus(turns));
     },
     [reportStatus],
@@ -116,6 +124,7 @@ export function CodingStudio({
       )
     : undefined;
   const sideId = conversation?.sideSessionId;
+  const title = conversation?.title ?? legacy?.title ?? "新对话";
   const offline = provider === "offline";
   const refresh = useCallback(() => {
     if (project) void refreshConversations(project.id).catch(() => {});
@@ -210,44 +219,75 @@ export function CodingStudio({
       className={`coding-studio chat-screen studio-main${sideId ? " with-side" : ""}`}
       aria-label="工作空间对话"
     >
-      <header className="studio-toolbar">
-        <button
-          className="icon-control studio-back"
-          aria-label="返回对话"
-          onClick={onBack}
-        >
-          <ArrowLeft size={16} />
-        </button>
-        <div className="studio-title">
-          <strong>
-            {project
-              ? conversation
-                ? conversation.title
-                : `${project.title} · 新对话`
-              : "对话"}
-          </strong>
-          <span title={project?.directory}>
-            {project ? project.directory : "正在读取工作空间…"}
-          </span>
-        </div>
-        {project &&
-        conversation &&
-        conversation.archivedAt === undefined &&
-        !sideId ? (
-          <div className="studio-toolbar-actions">
+      {/* DSH conversation header: a 30px title row, then the view tabs on a
+          hairline-ruled strip. The workspace stays in the sidebar, so the
+          title row carries only the conversation and its actions. */}
+      <header className="coding-header">
+        <div className="coding-title-row">
+          {onBack ? (
             <button
-              className="coding-side-open"
-              title="另开一段对话，继承当前对话的上下文，不打断主对话"
-              disabled={offline || openingSide}
-              onClick={() => void openSide()}
+              className="icon-control studio-back"
+              aria-label="返回对话"
+              title="返回对话"
+              onClick={onBack}
             >
-              {openingSide ? (
-                <LoaderCircle size={14} className="coding-spin" />
-              ) : (
-                <GitBranch size={14} />
-              )}
-              旁支对话
+              <ArrowLeft size={16} />
             </button>
+          ) : null}
+          <strong
+            className="coding-title"
+            title={
+              project
+                ? `${title}\n${project.title} · ${project.directory}`
+                : title
+            }
+          >
+            {title}
+          </strong>
+          {conversation?.archivedAt !== undefined ||
+          legacy?.archivedAt !== undefined ? (
+            <span className="header-archived">已归档</span>
+          ) : null}
+          {headerActions}
+        </div>
+        {project ? (
+          <div className="coding-tabs" role="tablist" aria-label="对话视图">
+            {(
+              [
+                ["chat", "对话"],
+                ["trajectory", "轨迹"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={view === id}
+                className={`coding-tab${view === id ? " active" : ""}`}
+                onClick={() => setView(id)}
+              >
+                {label}
+              </button>
+            ))}
+            {conversation &&
+            conversation.archivedAt === undefined &&
+            !sideId ? (
+              <WorkbenchMenu
+                label="更多视图"
+                className="coding-tabs-more"
+                items={[
+                  {
+                    id: "side",
+                    label: openingSide ? "正在打开旁支…" : "旁支对话",
+                    icon: <GitBranch size={14} />,
+                    disabled: offline || openingSide,
+                    action: () => void openSide(),
+                  },
+                ]}
+              >
+                <Ellipsis size={16} />
+              </WorkbenchMenu>
+            ) : null}
           </div>
         ) : null}
       </header>
@@ -274,89 +314,97 @@ export function CodingStudio({
           </div>
         </div>
       ) : (
-        <ConversationSplit
-          main={
-            <ConversationPane
-              endpoint={endpoint}
-              provider={provider}
-              projectId={project.id}
-              directory={project.directory}
-              label="工作空间请求输入框"
-              {...(conversationId ? { sessionId: conversationId } : {})}
-              readOnly={
-                conversation?.archivedAt !== undefined ||
-                legacy?.archivedAt !== undefined
-              }
-              placeholder={
-                project.isDefault
-                  ? "描述你想讨论或完成的事情…"
-                  : `在「${project.title}」中描述要完成的事情…`
-              }
-              branchFrom={workspaces.branchFrom}
-              history={history}
-              historyTime={legacy?.updatedAt}
-              context={context}
-              initialDraft={initialDraft}
-              onApplyFlow={onApplyFlow}
-              flows={flows}
-              flowsLoading={flowsLoading}
-              onRunFlow={onRunFlow}
-              composerExtra={
-                <div className="composer-workspace">
-                  <label className="provider-select composer-workspace-select">
-                    <select
-                      aria-label="选择工作空间"
-                      value={project.id}
-                      disabled={mainRunning}
-                      onChange={(event) => {
-                        if (legacy) workspaces.select(event.target.value);
-                        else workspaces.continueIn(event.target.value);
-                      }}
-                    >
-                      {projects.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.title}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              }
-              {...(offline
-                ? {
-                    footnote:
-                      "工作空间需要连接 Aura 服务，请切换到 Codex 订阅或其他模式",
-                  }
-                : {})}
-              onOpen={(id) => {
-                if (id !== configKey)
-                  setModelConfigs((current) => {
-                    const next = {
-                      ...current,
-                      [id]: { ...current[configKey], [mode]: modelConfig },
-                    };
-                    delete next[configKey];
-                    return next;
-                  });
-                open(project.id, id);
-                onOpened?.();
-              }}
-              onSettled={refresh}
-              onProvider={onProvider}
-              modelConfig={modelConfig}
-              onModelConfig={(selection) => changeModel(configKey, selection)}
-              {...(initialSend ? { initialSend } : {})}
-              {...(onHandoffTaken
-                ? { onInitialSendTaken: onHandoffTaken }
-                : {})}
-              sendRef={mainSend}
-              onRunning={setMainRunning}
-              onTurns={reportTurns}
-            />
-          }
-          side={sides.length ? sides : undefined}
-          sideVisible={!!sideId}
-        />
+        <>
+          {view === "trajectory" ? (
+            <div className="studio-scroll coding-trajectory">
+              <TrajectoryView turns={mainTurns} />
+            </div>
+          ) : null}
+          <ConversationSplit
+            hidden={view === "trajectory"}
+            main={
+              <ConversationPane
+                endpoint={endpoint}
+                provider={provider}
+                projectId={project.id}
+                directory={project.directory}
+                label="工作空间请求输入框"
+                {...(conversationId ? { sessionId: conversationId } : {})}
+                readOnly={
+                  conversation?.archivedAt !== undefined ||
+                  legacy?.archivedAt !== undefined
+                }
+                placeholder={
+                  project.isDefault
+                    ? "描述你想讨论或完成的事情…"
+                    : `在「${project.title}」中描述要完成的事情…`
+                }
+                branchFrom={workspaces.branchFrom}
+                history={history}
+                historyTime={legacy?.updatedAt}
+                context={context}
+                initialDraft={initialDraft}
+                onApplyFlow={onApplyFlow}
+                flows={flows}
+                flowsLoading={flowsLoading}
+                onRunFlow={onRunFlow}
+                composerExtra={
+                  <div className="composer-workspace">
+                    <label className="provider-select composer-workspace-select">
+                      <select
+                        aria-label="选择工作空间"
+                        value={project.id}
+                        disabled={mainRunning}
+                        onChange={(event) => {
+                          if (legacy) workspaces.select(event.target.value);
+                          else workspaces.continueIn(event.target.value);
+                        }}
+                      >
+                        {projects.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                }
+                {...(offline
+                  ? {
+                      footnote:
+                        "工作空间需要连接 Aura 服务，请切换到 Codex 订阅或其他模式",
+                    }
+                  : {})}
+                onOpen={(id) => {
+                  if (id !== configKey)
+                    setModelConfigs((current) => {
+                      const next = {
+                        ...current,
+                        [id]: { ...current[configKey], [mode]: modelConfig },
+                      };
+                      delete next[configKey];
+                      return next;
+                    });
+                  open(project.id, id);
+                  onOpened?.();
+                }}
+                onSettled={refresh}
+                onProvider={onProvider}
+                modelConfig={modelConfig}
+                onModelConfig={(selection) => changeModel(configKey, selection)}
+                {...(initialSend ? { initialSend } : {})}
+                {...(onHandoffTaken
+                  ? { onInitialSendTaken: onHandoffTaken }
+                  : {})}
+                sendRef={mainSend}
+                onRunning={setMainRunning}
+                onTurns={reportTurns}
+              />
+            }
+            side={sides.length ? sides : undefined}
+            sideVisible={!!sideId}
+          />
+        </>
       )}
       {creating ? (
         <WorkspaceDialog

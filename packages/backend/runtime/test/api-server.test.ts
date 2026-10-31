@@ -154,6 +154,7 @@ const pluginState = {
       path: "F:/creative/aura-plugin",
       enabled: true,
       trust: "local" as const,
+      builtin: false,
       status: {
         id: "veya",
         name: "Veya Creative",

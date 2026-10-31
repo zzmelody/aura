@@ -39,23 +39,23 @@ export function ModelServiceBadge({
     return () => abort.abort();
   }, [endpoint, provider]);
   const name = provider === "lumina" ? "Lumina" : "自定义 API";
-  const label = compact
-    ? name
-    : ready === undefined
+  const status =
+    ready === undefined
       ? `${name} 检查中`
       : ready
         ? `${name} 已配置`
         : `${name} 未配置`;
+  const label = compact || ready ? name : status;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${label}，打开模型设置`}
+      accessibilityLabel={`${status}，打开模型设置`}
+      title={`${status}，打开模型设置`}
       onPress={onOpen}
       style={({ pressed }) => [
         styles.trigger,
         {
-          backgroundColor: ready ? colors.soft : "transparent",
-          borderColor: ready ? colors.accent : colors.border,
+          backgroundColor: pressed ? colors.soft : "transparent",
           opacity: pressed ? 0.65 : 1,
         },
       ]}
@@ -83,10 +83,9 @@ export function ModelServiceBadge({
 
 const styles = StyleSheet.create({
   trigger: {
-    minHeight: 38,
-    borderRadius: 13,
-    borderWidth: 1,
-    paddingHorizontal: 12,
+    minHeight: 32,
+    borderRadius: 6,
+    paddingHorizontal: 8,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,

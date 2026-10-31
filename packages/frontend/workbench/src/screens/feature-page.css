@@ -1,0 +1,165 @@
+/* DSH feature page frame shared by Plugins and Automation: a centered
+ * 960px column, 20/500 title, 13px intro and outline / primary buttons. */
+.dsh-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 28px clamp(24px, 4vw, 48px) 48px;
+  color: var(--text);
+}
+.dsh-page > * {
+  max-width: 960px;
+  margin-inline: auto;
+}
+.dsh-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 24px;
+}
+.dsh-page-head h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
+}
+.dsh-page-head p {
+  margin: 2px 0 0;
+  color: var(--secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+.dsh-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.dsh-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+.dsh-button:hover:not(:disabled) {
+  background: var(--soft);
+}
+.dsh-button.primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primaryText);
+}
+.dsh-button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 86%, var(--background));
+}
+.dsh-button.danger {
+  color: var(--danger);
+}
+.dsh-button:disabled {
+  opacity: 0.5;
+}
+.dsh-button:focus-visible,
+.dsh-icon-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.dsh-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--secondary);
+}
+.dsh-icon-button:hover:not(:disabled) {
+  background: var(--soft);
+  color: var(--text);
+}
+.dsh-page-notice {
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--soft);
+  color: var(--secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+.dsh-page-notice[role="alert"] {
+  color: var(--danger);
+}
+.dsh-page-empty {
+  padding: 48px 20px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+/* Track 36x20, knob 16; checked uses the primary fill like DSH's Switch. */
+.dsh-switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 36px;
+  height: 20px;
+}
+.dsh-switch input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.dsh-switch input:disabled {
+  cursor: default;
+}
+.dsh-switch > span {
+  width: 100%;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 0.2s ease;
+}
+.dsh-switch > span::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
+}
+.dsh-switch input:checked + span {
+  background: var(--accent);
+}
+.dsh-switch input:checked + span::after {
+  transform: translateX(16px);
+}
+.dsh-switch input:disabled + span {
+  opacity: 0.5;
+}
+.dsh-switch input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (max-width: 767px) {
+  .dsh-page {
+    padding-inline: 16px;
+  }
+}
+[data-reduced="true"] .dsh-switch > span,
+[data-reduced="true"] .dsh-switch > span::after {
+  transition: none;
+}

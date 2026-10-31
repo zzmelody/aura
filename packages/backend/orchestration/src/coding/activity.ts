@@ -11,7 +11,7 @@ import type { CodingFileDiff, CodingStreamEvent } from "../types.ts";
  *   require.
  */
 export function projectCodingEvent(
-  event: { type: string; data?: unknown },
+  event: { type: string; time: number; data?: unknown },
   emit: (event: CodingStreamEvent) => void,
   created: Map<string, CodingFileDiff>,
   ownPrompt?: (message: Record<string, unknown>) => boolean,
@@ -19,13 +19,24 @@ export function projectCodingEvent(
   const data = (event as { data?: unknown }).data;
   if (typeof data !== "object" || data === null) return;
   const fields = data as Record<string, unknown>;
+  const at = event.time;
+  // Model spans for the trajectory: a step opens a model request, the
+  // assistant message (or an interrupted attempt) closes it.
+  if (event.type === "step/start") {
+    emit({ type: "model", phase: "start", at });
+    return;
+  }
+  if (event.type === "assistant/message") {
+    emit({ type: "model", phase: "end", at });
+    return;
+  }
   if (event.type === "user/message" && ownPrompt && !ownPrompt(fields)) {
     // Only what the user actually typed: injected context, model-selection
     // notices and other producers carry their own source kind.
     const source = fields.source as { kind?: unknown } | undefined;
     if (source?.kind !== "user") return;
     const text = messageText(fields.content);
-    if (text) emit({ type: "steer", text });
+    if (text) emit({ type: "steer", text, at });
     return;
   }
   if (event.type === "tool/call") {
@@ -41,6 +52,7 @@ export function projectCodingEvent(
         phase: "start",
         callId,
         name,
+        at,
         ...(detail ? { detail } : {}),
       });
     }
@@ -57,6 +69,7 @@ export function projectCodingEvent(
         phase: "end",
         callId: result.toolCallId,
         ok: !result.isError,
+        at,
         ...(diffs.length ? { diffs } : {}),
       });
       try {

@@ -1,4 +1,4 @@
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type {
   AuraPluginConfiguration,
   AuraPluginSettingsState,
@@ -20,6 +20,11 @@ function signature(value: unknown): string {
 }
 
 /** Owns startup resolution plus safe read/replace operations for the settings API. */
+function isInside(root: string, path: string): boolean {
+  const fromRoot = relative(root, path);
+  return !fromRoot.startsWith("..") && !isAbsolute(fromRoot);
+}
+
 export class AuraPluginManager {
   resolution: AuraPluginResolution;
   readonly #options: LoadAuraPluginsOptions;
@@ -69,6 +74,13 @@ export class AuraPluginManager {
       configPath: resolve(this.#options.configPath),
       plugins: effective.plugins.map((entry, index) => ({
         ...entry,
+        builtin: Boolean(
+          this.#options.defaultPluginsDirectory &&
+          isInside(
+            resolve(this.#options.defaultPluginsDirectory),
+            resolve(entry.path),
+          ),
+        ),
         status: preview.plugins[index] ?? {
           name: "本地 Aura 插件",
           enabled: entry.enabled,

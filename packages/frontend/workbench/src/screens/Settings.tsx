@@ -110,10 +110,13 @@ export function SettingsScreen({
   workspace,
   codexAuth,
   systemReduced,
+  section,
 }: {
   workspace: WorkspaceController;
   codexAuth: CodexAuthController;
   systemReduced: boolean;
+  /** Section to scroll to on open, e.g. from the plugins page. */
+  section?: SectionId;
 }) {
   const { colors } = useTheme();
   const [address, setAddress] = useState(
@@ -161,6 +164,14 @@ export function SettingsScreen({
       ?.querySelector(`#settings-${id}`)
       ?.scrollIntoView({ block: "start", behavior: "smooth" });
   }
+
+  useEffect(() => {
+    if (!section) return;
+    setActive(section);
+    scroller.current
+      ?.querySelector(`#settings-${section}`)
+      ?.scrollIntoView({ block: "start" });
+  }, [section]);
 
   async function connect() {
     const endpoint = validateEndpoint(address);
@@ -319,11 +330,9 @@ export function SettingsScreen({
                   <div className="settings-lab-type">
                     <span>Aa. aura</span>
                     <p>
-                      Manrope · 界面与标题
+                      系统字体 · 界面、标题与中文
                       <br />
-                      IBM Plex Mono · 数字与技术标签
-                      <br />
-                      中文 · 设备原生中文字体
+                      SF Mono / JetBrains Mono · 代码与技术标签
                     </p>
                   </div>
                   <div className="settings-swatches">

@@ -1,0 +1,82 @@
+@import "./feature-page.css";
+
+/* DSH plugin manager cards: a vertical list, 48px artwork box, one-line
+ * description and a trailing switch. */
+.plugins-group + .plugins-group {
+  margin-top: 32px;
+}
+.plugins-group h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+.plugins-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.plugins-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 -8px;
+  padding: 8px;
+  border-radius: 20px;
+}
+.plugins-card:hover {
+  background: var(--soft);
+}
+.plugins-artwork {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 0.5px solid var(--hairline);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--accent);
+}
+.plugins-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.plugins-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.plugins-title strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plugins-tag {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+.plugins-tag.problem {
+  color: var(--danger);
+}
+.plugins-description {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -30,7 +30,7 @@
 .site-card-kicker {
   color: var(--accent);
   font:
-    9px "IBM Plex Mono",
+    9px var(--font-mono),
     monospace;
   letter-spacing: 1.3px;
 }
@@ -89,7 +89,7 @@
   bottom: 20px;
   color: var(--muted);
   font:
-    7px "IBM Plex Mono",
+    7px var(--font-mono),
     monospace;
   letter-spacing: 0.7px;
 }
@@ -139,7 +139,7 @@
   border: 1px solid var(--border);
   border-radius: 7px;
   font:
-    10px "IBM Plex Mono",
+    10px var(--font-mono),
     monospace;
 }
 .site-path svg {
@@ -198,7 +198,7 @@
 }
 .site-project-meta span:first-child {
   color: var(--accent);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-mono), monospace;
 }
 .site-empty-project {
   display: grid;
@@ -316,7 +316,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   font:
-    9px/1.6 "IBM Plex Mono",
+    9px/1.6 var(--font-mono),
     monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -367,7 +367,7 @@
   margin-top: 18px;
   color: var(--muted);
   font:
-    9px "IBM Plex Mono",
+    9px var(--font-mono),
     monospace;
 }
 @media (max-width: 899px) {
@@ -450,7 +450,7 @@
 .site-hero-stats strong {
   color: var(--text);
   font:
-    21px/1 "IBM Plex Mono",
+    21px/1 var(--font-mono),
     monospace;
   letter-spacing: -1px;
 }
@@ -580,7 +580,7 @@
 .site-project-item-copy small {
   color: var(--muted);
   font:
-    9px "IBM Plex Mono",
+    9px var(--font-mono),
     monospace;
 }
 .site-list-check {
@@ -657,7 +657,7 @@
   overflow: hidden;
   color: var(--muted);
   font:
-    10px "IBM Plex Mono",
+    10px var(--font-mono),
     monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -708,7 +708,7 @@
   padding-top: 18px;
   color: var(--muted);
   font:
-    9px "IBM Plex Mono",
+    9px var(--font-mono),
     monospace;
 }
 .site-detail-footer span {
