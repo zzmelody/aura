@@ -32,8 +32,11 @@ import {
   useHasArtifacts,
 } from "./WorkflowArtifacts";
 import { WorkflowControls } from "./WorkflowControls";
-import { WorkflowVideoResult } from "./WorkflowVideoResult";
-import { videoCompositionResult } from "../videoResult";
+import {
+  matchPluginResult,
+  PluginResultBoundary,
+  usePluginResults,
+} from "../pluginResults";
 import {
   isWorkflowActive,
   isWorkflowOpen,
@@ -397,6 +400,7 @@ export function WorkflowRunResult({
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const [stepId, setStepId] = useState<string>();
+  const results = usePluginResults();
   const id = message.workflowRunId!;
   const titleId = useId();
   useEffect(() => {
@@ -440,8 +444,22 @@ export function WorkflowRunResult({
       ? storedWorkflowValue(message.text)
       : undefined;
   const output = cached ? cached.output : savedOutput;
-  const composition = videoCompositionResult(output);
-  const videoRun = Boolean(composition);
+  const pluginResult =
+    output !== undefined
+      ? matchPluginResult(results, {
+          endpoint,
+          run: {
+            id,
+            flowId: cached?.flow.id ?? message.workflow?.id ?? "",
+            ...(cached?.flow.plugin
+              ? { flowPluginId: cached.flow.plugin.id }
+              : {}),
+            status: phase,
+            ...(inputValue !== undefined ? { input: inputValue } : {}),
+          },
+          output,
+        })
+      : undefined;
   const problem =
     cached?.error ?? (phase === "failed" && !cached ? message.text : undefined);
   const PhaseIcon =
@@ -504,11 +522,6 @@ export function WorkflowRunResult({
           <div className="workflow-user-bubble">
             {inputValue === undefined ? (
               <p className="workflow-value-empty">正在读取本次输入…</p>
-            ) : videoRun ? (
-              <details className="workflow-output-details">
-                <summary>视频制作参数</summary>
-                <WorkflowData value={inputValue} schema={inputSchema} />
-              </details>
             ) : (
               <WorkflowData value={inputValue} schema={inputSchema} />
             )}
@@ -583,108 +596,57 @@ export function WorkflowRunResult({
             />
           ) : null}
           <div
-            className={`workflow-stream${composition ? " workflow-video-stream" : ""}`}
+            className="workflow-stream"
             aria-live={active ? "polite" : "off"}
           >
-            {!composition ? steps : null}
+            {steps}
             <section className="workflow-stream-output" aria-label="本次输出">
-              {composition ? (
-                <WorkflowVideoResult
-                  key={composition.id}
-                  endpoint={endpoint}
-                  composition={composition}
-                  raw={output!}
-                />
-              ) : videoRun && phase !== "completed" ? (
-                // The final cut always has a place on a video card, even before it exists.
-                <div className="video-result-pending" aria-label="成片">
-                  <div className="video-result-pending-frame">
-                    {active ? (
-                      <div role="status">
-                        <LoaderCircle size={22} className="workflow-spinner" />
-                        <span>成片制作中</span>
-                      </div>
-                    ) : (
-                      <div>
-                        <CircleAlert size={22} />
-                        <span>未生成成片</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="video-result-pending-copy">
-                    <strong>
-                      {active ? "成片会在这里出现" : "这次没有完成成片"}
-                    </strong>
-                    <p>
-                      {active
-                        ? progress.total
-                          ? `已完成 ${progress.completed} / ${progress.total} 步${progress.current.length ? ` · 正在${progress.current[0]}` : ""}`
-                          : "正在准备镜头…"
-                        : "可在下方步骤中查看原因，处理后再次运行。"}
-                    </p>
-                    {active && progress.total ? (
-                      <div
-                        className="video-result-progress"
-                        role="progressbar"
-                        aria-label="成片进度"
-                        aria-valuemin={0}
-                        aria-valuemax={progress.total}
-                        aria-valuenow={progress.completed}
-                      >
-                        <span
-                          style={{
-                            width: `${Math.round((progress.completed / progress.total) * 100)}%`,
-                          }}
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : (
-                <WorkflowArtifactGallery />
-              )}
               {problem ? (
                 <div className="workflow-run-problem" role="alert">
                   <CircleAlert size={16} />
                   <WorkflowRichText text={problem} />
                 </div>
               ) : null}
-              {/* Video cards already show the final-cut slot; skip the generic placeholder. */}
-              {composition ||
-              (videoRun && phase !== "completed") ? null : hasWorkflowContent(
-                  output,
-                ) && !(problem && output === problem) ? (
-                <RunOutput value={output!} />
+              {pluginResult ? (
+                <PluginResultBoundary
+                  key={
+                    pluginResult.result.pluginId +
+                    pluginResult.result.definition.id
+                  }
+                  render={() =>
+                    pluginResult.result.definition.render(pluginResult.context)
+                  }
+                  fallback={<RunOutput value={output!} />}
+                />
               ) : (
-                <div className="workflow-output-placeholder">
-                  {active ? (
-                    <LoaderCircle size={16} className="workflow-spinner" />
+                <>
+                  {hasWorkflowContent(output) &&
+                  !(problem && output === problem) ? (
+                    <RunOutput value={output!} />
                   ) : (
-                    <FlowIcon size={16} />
+                    <div className="workflow-output-placeholder">
+                      {active ? (
+                        <LoaderCircle size={16} className="workflow-spinner" />
+                      ) : (
+                        <FlowIcon size={16} />
+                      )}
+                      <span>
+                        {!cached && !savedOutput && !error
+                          ? "正在读取执行内容…"
+                          : active
+                            ? "步骤正在执行，结果会继续显示在这里。"
+                            : phase === "completed"
+                              ? "工作流已完成，但未返回输出内容。"
+                              : "本次执行未生成输出。"}
+                      </span>
+                    </div>
                   )}
-                  <span>
-                    {!cached && !savedOutput && !error
-                      ? "正在读取执行内容…"
-                      : active
-                        ? "步骤正在执行，结果会继续显示在这里。"
-                        : phase === "completed"
-                          ? "工作流已完成，但未返回输出内容。"
-                          : "本次执行未生成输出。"}
-                  </span>
-                </div>
+                  {output !== undefined && !hasWorkflowContent(output) ? (
+                    <WorkflowJson value={output} />
+                  ) : null}
+                </>
               )}
-              {output !== undefined && !hasWorkflowContent(output) ? (
-                <WorkflowJson value={output} />
-              ) : null}
             </section>
-            {composition && steps ? (
-              <details className="workflow-video-steps">
-                <summary>
-                  执行步骤 · {progress.completed} / {progress.total} 已完成
-                </summary>
-                {steps}
-              </details>
-            ) : null}
           </div>
           <footer className="workflow-response-meta" aria-label="执行进度">
             <span className="workflow-current-step">

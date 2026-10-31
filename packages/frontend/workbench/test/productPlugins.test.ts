@@ -129,7 +129,6 @@ test("built product bundle mounts its page through DSH and disposes its styles",
       siteDialogsAvailable: () => false,
       NestedFlowRun: () => null,
       WorkflowControls: () => null,
-      WorkflowVideoResult: () => null,
     },
   );
   t.after(() => host.close());

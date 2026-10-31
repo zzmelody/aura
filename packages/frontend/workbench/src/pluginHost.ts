@@ -4,7 +4,9 @@ import {
   pluginOwnerContext,
   pluginOwnerOf,
   validatePageDefinition,
+  validateResultDefinition,
   type AuraPluginPageDefinition,
+  type AuraPluginResultDefinition,
   type AuraWorkbench,
 } from "@aura/plugin-ui";
 import type { JsonValue } from "@aura/protocol/types";
@@ -27,6 +29,11 @@ export interface RegisteredPage {
   definition: AuraPluginPageDefinition;
 }
 
+export interface RegisteredResult {
+  pluginId: string;
+  definition: AuraPluginResultDefinition;
+}
+
 export interface PluginFailure {
   id: string;
   message: string;
@@ -34,6 +41,8 @@ export interface PluginFailure {
 
 export interface HostHandle {
   pages: Map<string, RegisteredPage>;
+  /** Insertion order is registration order; the first match wins. */
+  results: Map<string, RegisteredResult>;
   failures: PluginFailure[];
   close(): Promise<void>;
 }
@@ -132,8 +141,11 @@ export function pluginExports(value: unknown): ClientPlugin {
   };
 }
 
-/** Builds the workbench slot service over one page table. */
-function workbenchPages(pages: Map<string, RegisteredPage>) {
+/** Builds the workbench slot service over the page and result tables. */
+function workbenchPages(
+  pages: Map<string, RegisteredPage>,
+  results: Map<string, RegisteredResult>,
+) {
   return class WorkbenchPages extends Service implements AuraWorkbench {
     constructor(ctx: Context) {
       super(ctx, "auraWorkbench");
@@ -151,6 +163,19 @@ function workbenchPages(pages: Map<string, RegisteredPage>) {
           pages.delete(id);
         };
       }, `plugin-page:${id}`);
+    }
+
+    result(definition: AuraPluginResultDefinition) {
+      const pluginId = pluginOwnerOf(this.ctx);
+      const result = validateResultDefinition(definition);
+      const id = `${pluginId}/${result.id}`;
+      if (results.has(id)) throw new Error(`插件结果视图 ${id} 重复注册。`);
+      this.ctx.effect(() => {
+        results.set(id, { pluginId, definition: result });
+        return () => {
+          results.delete(id);
+        };
+      }, `plugin-result:${id}`);
     }
   };
 }
@@ -201,11 +226,12 @@ async function bootPluginHost(
   if (window.__ModuleLoader__)
     throw new Error("插件模块系统已在此页面启动，请刷新页面。");
   const pages = new Map<string, RegisteredPage>();
+  const results = new Map<string, RegisteredResult>();
   const failures: PluginFailure[] = [];
   const fibers = new Map<string, { dispose(): Promise<unknown> }>();
   const revisions = new Map<string, string>();
   const root = new Context();
-  await root.plugin(workbenchPages(pages)).await();
+  await root.plugin(workbenchPages(pages, results)).await();
 
   const facade: ClientModuleLoaderTarget = {
     mode: "queue",
@@ -344,6 +370,7 @@ async function bootPluginHost(
 
     return {
       pages,
+      results,
       failures,
       close() {
         if (closing) return closing;

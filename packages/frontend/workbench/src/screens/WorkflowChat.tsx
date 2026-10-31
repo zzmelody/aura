@@ -9,7 +9,6 @@ import type {
 } from "@aura/protocol/types";
 import type { WorkspaceController } from "../useWorkspace";
 import { workflowRunKey } from "../workflowSessions";
-import { videoCompositionResult } from "../videoResult";
 import {
   storedWorkflowValue,
   workflowExecutions,
@@ -44,7 +43,6 @@ export function WorkflowChat({
   );
   const scroll = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
-  const positionedVideo = useRef("");
   const viewedSession = useRef(session.id);
   const composer = useRef<HTMLFormElement>(null);
   const runButton = useRef<HTMLButtonElement>(null);
@@ -60,19 +58,6 @@ export function WorkflowChat({
     ({ message }) => message.workflowRunId,
   ).length;
   const error = workspace.workflows.errors[session.id];
-  const latest = executions.at(-1)?.message;
-  const latestRun = latest?.workflowRunId
-    ? workspace.workflows.runs[
-        workflowRunKey(binding.endpoint, latest.workflowRunId)
-      ]
-    : undefined;
-  const latestVideo = latest?.workflowRunId
-    ? videoCompositionResult(
-        latestRun ? latestRun.output : storedWorkflowValue(latest.text),
-      )
-    : undefined;
-  const videoResultKey = latestVideo ? `${session.id}/${latestVideo.id}` : "";
-  const latestRunId = latest?.workflowRunId;
   useEffect(() => {
     const container = scroll.current;
     if (!container) return;
@@ -81,22 +66,8 @@ export function WorkflowChat({
       nearBottom.current = true;
     }
     if (!nearBottom.current) return;
-    // A tall completed video result should open at the player, not its footer.
-    if (videoResultKey) {
-      if (positionedVideo.current === videoResultKey) return;
-      const result = container.querySelector<HTMLElement>(
-        `[data-run-id="${CSS.escape(latestRunId!)}"] .workflow-message-assistant`,
-      );
-      if (result) {
-        container.scrollTop +=
-          result.getBoundingClientRect().top -
-          container.getBoundingClientRect().top;
-        positionedVideo.current = videoResultKey;
-        return;
-      }
-    }
     container.scrollTop = container.scrollHeight;
-  }, [session.id, session.messages, videoResultKey, latestRunId]);
+  }, [session.id, session.messages]);
   useEffect(() => {
     if (session.messages.length === 0 && !binding.pending)
       setComposerSessionId(session.id);

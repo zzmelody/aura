@@ -2,7 +2,6 @@
 export * from "./plugin-transport.ts";
 export { NestedFlowRun } from "./screens/WorkflowRun.tsx";
 export { WorkflowControls } from "./screens/WorkflowControls.tsx";
-export { WorkflowVideoResult } from "./screens/WorkflowVideoResult.tsx";
 export { platform } from "./platform.ts";
 
 export function siteDialogsAvailable(): boolean {

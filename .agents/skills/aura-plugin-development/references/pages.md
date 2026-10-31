@@ -29,8 +29,34 @@ pages. Verify the checked-out host and `@aura/plugin-ui` before authoring one.
   A frontend replacement remounts that plugin page. Use a separate explicit
   build watch command during authoring; never turn host discovery into a build.
 
-- Product pages may reuse public `@aura/workbench/plugin` workflow widgets/native
+- Product pages may reuse public `@aura/workbench/plugin` generic workflow widgets/native
   adapters and `@aura/workbench/transport` Run/media transports. The renderer seeds
   these modules in DSH; runtime graph externals must list them. Business JSON goes
   through the plugin's own provider; existing binary upload/download streams and
   generic durable Run controls remain bounded public host APIs.
+
+## Run result renderers
+
+A page bundle MAY also render the output area of Flow Runs, so plugin-specific
+results never need host code. The host has no built-in result views beyond the
+generic JSON/rich-text output.
+
+```tsx
+ctx.auraWorkbench.result(
+  defineResult({
+    id: "video-composition",
+    match: ({ output }) => isComposition(output),
+    render: ({ endpoint, output }) => <VideoResult endpoint={endpoint} value={output} />,
+  }),
+);
+```
+
+- `match(context)` receives `{ endpoint, pluginId, run: { id, flowId,
+  flowPluginId?, status, input? }, output }`. Keep it cheap and side-effect
+  free; match on the output shape or on your own Flow IDs.
+- Renderers are asked in registration order and the first match wins. A
+  throwing `match` counts as no match; a throwing `render` falls back to the
+  generic view. Neither is a security boundary.
+- Renderers unregister with the plugin fiber, so disabling the plugin returns its
+  Runs to the generic view. Ship result styles in the same bundle.
+- Plugin-specific data formats belong to the plugin, not `@aura/protocol`.

@@ -1,6 +1,19 @@
 import type { ActionContext } from "../action-api.ts";
 import type { JsonValue } from "@aura/protocol/types";
 
+/** Preset speakers of the host-managed local TTS model. */
+export const TTS_VOICES = [
+  "Vivian",
+  "Serena",
+  "Uncle_Fu",
+  "Dylan",
+  "Eric",
+  "Ryan",
+  "Aiden",
+  "Ono_Anna",
+  "Sohee",
+] as const;
+
 export type LocalAIServiceId = "qwen-image" | "minimax-h3" | "qwen3-tts";
 export interface MediaResult {
   service: LocalAIServiceId;

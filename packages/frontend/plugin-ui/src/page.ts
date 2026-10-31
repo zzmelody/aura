@@ -42,9 +42,44 @@ export interface AuraPluginPageDefinition {
   render(props: AuraPluginPageProps): ReactNode;
 }
 
-/** Plugin workbench slot service. `page()` registers within the calling fiber. */
+/** What a result renderer sees: one Flow Run as the workbench shows it. */
+export interface AuraPluginResultContext {
+  /** Aura runtime origin, e.g. `http://127.0.0.1:4311`. */
+  endpoint: string;
+  /** Plugin id that registered the renderer. */
+  pluginId: string;
+  run: {
+    id: string;
+    flowId: string;
+    /** Owning plugin of the Flow, when the Flow came from a plugin. */
+    flowPluginId?: string;
+    status: string;
+    input?: JsonValue;
+  };
+  /** Run output, or the stored output of a finished Run. */
+  output: JsonValue;
+}
+
+/**
+ * Renders the output area of matching Flow Runs. The workbench asks every
+ * registered renderer in registration order and uses the first match; Runs no
+ * renderer claims use the generic view. The host never special-cases Flow IDs.
+ */
+export interface AuraPluginResultDefinition {
+  /** Renderer-local ID; the canonical ID is `<plugin-id>/<id>`. */
+  id: string;
+  /** Cheap, side-effect-free check on the output shape or Run identity. */
+  match(context: AuraPluginResultContext): boolean;
+  render(context: AuraPluginResultContext): ReactNode;
+}
+
+/**
+ * Plugin workbench slot service. Registrations happen within the calling
+ * fiber and are removed when the plugin unloads.
+ */
 export interface AuraWorkbench {
   page(definition: AuraPluginPageDefinition): void;
+  result(definition: AuraPluginResultDefinition): void;
 }
 
 const ownerKey = Symbol.for("aura.plugin-owner");
@@ -85,6 +120,31 @@ export function validatePageDefinition(
     ...(page.icon ? { icon: page.icon } : {}),
     render: page.render,
   };
+}
+
+export function validateResultDefinition(
+  value: unknown,
+): AuraPluginResultDefinition {
+  const result = value as AuraPluginResultDefinition | null;
+  if (
+    !result ||
+    typeof result.id !== "string" ||
+    !/^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/u.test(result.id) ||
+    typeof result.match !== "function" ||
+    typeof result.render !== "function"
+  )
+    throw new Error("plugin-ui: a result needs an id, match() and render().");
+  return { id: result.id, match: result.match, render: result.render };
+}
+
+/**
+ * Declares a Run result renderer. The client bundle's `apply(ctx)` registers
+ * it through `ctx.auraWorkbench.result(...)`.
+ */
+export function defineResult(
+  definition: AuraPluginResultDefinition,
+): AuraPluginResultDefinition {
+  return validateResultDefinition(definition);
 }
 
 /**

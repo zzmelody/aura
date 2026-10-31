@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
-import { VIDEO_VOICES } from "@aura/protocol/video";
+import { TTS_VOICES } from "./local-ai/api.ts";
 import type { PluginTaskTool } from "./backend-api.ts";
 import type {
   ChatWorkflowStart,
@@ -156,7 +156,7 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
       },
       speaker: {
         type: "string",
-        enum: [...VIDEO_VOICES],
+        enum: [...TTS_VOICES],
         default: "Vivian",
         description: "预设音色。",
       },

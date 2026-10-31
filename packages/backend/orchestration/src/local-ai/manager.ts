@@ -23,6 +23,7 @@ import type {
   ComfyWorkflowInput,
   ComfyWorkflowResult,
 } from "./api.ts";
+import { TTS_VOICES } from "./api.ts";
 import { videoInputSchema as videoSchema } from "./video-input.ts";
 import { referenceGraph } from "./reference-graph.ts";
 import { imageGraph, videoGraph } from "./graphs.ts";
@@ -90,19 +91,7 @@ const ttsSchema = z
         "Italian",
       ])
       .default("Auto"),
-    speaker: z
-      .enum([
-        "Vivian",
-        "Serena",
-        "Uncle_Fu",
-        "Dylan",
-        "Eric",
-        "Ryan",
-        "Aiden",
-        "Ono_Anna",
-        "Sohee",
-      ])
-      .default("Vivian"),
+    speaker: z.enum(TTS_VOICES).default("Vivian"),
     instruct: z.string().max(1000).optional(),
     voiceDescription: z.string().min(1).max(2000).optional(),
     referenceAudio: z.string().min(1).optional(),

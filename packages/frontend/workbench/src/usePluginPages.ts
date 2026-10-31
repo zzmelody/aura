@@ -3,6 +3,7 @@ import {
   pluginPageInvoke,
   startPluginHost,
   type RegisteredPage,
+  type RegisteredResult,
 } from "./pluginHost";
 import { pluginTab } from "./pluginPages";
 import * as workbenchModule from "./plugin-api.ts";
@@ -17,6 +18,7 @@ export interface PluginStudio {
 
 export function usePluginPages(endpoint: string, enabled: boolean) {
   const [pages, setPages] = useState<RegisteredPage[]>([]);
+  const [results, setResults] = useState<RegisteredResult[]>([]);
   const [failures, setFailures] = useState<
     Array<{ id: string; message: string }>
   >([]);
@@ -24,6 +26,7 @@ export function usePluginPages(endpoint: string, enabled: boolean) {
   useEffect(() => {
     if (!enabled) {
       setPages([]);
+      setResults([]);
       setFailures([]);
       return;
     }
@@ -32,6 +35,7 @@ export function usePluginPages(endpoint: string, enabled: boolean) {
     const refresh = () => {
       if (!handle || closed) return;
       setPages([...handle.pages.values()]);
+      setResults([...handle.results.values()]);
       setFailures([...handle.failures]);
     };
     void startPluginHost(endpoint, refresh, workbenchModule)
@@ -70,5 +74,5 @@ export function usePluginPages(endpoint: string, enabled: boolean) {
     [pages],
   );
 
-  return { studios, failures, invoke: pluginPageInvoke };
+  return { studios, results, failures, invoke: pluginPageInvoke };
 }
