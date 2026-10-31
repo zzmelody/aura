@@ -13,7 +13,7 @@ description: Aura 的测试规范：node:test 用法、测试文件放置与命�
 - 跨包和脚本层测试放根 `tests/*.test.ts`，由根 `pnpm run test` 执行（`tsx --test tests/*.test.ts`）。
 - 插件测试放 `plugins/<plugin>/test/*.test.ts`，由 `pnpm run check:product-plugins` 执行。
 - 大多数包用 `tsx --test test/*.test.ts`；`@aura/workbench` 用 `node --test test/*.test.ts`。新增包沿用同层既有包的写法。
-- 文件名用 `kebab-case.test.ts`，贴近被测领域（`plugin-storage.test.ts`、`nested-flow.test.ts`）。共享 fixture 用不带 `.test` 的同目录模块（`fixture-ports.ts`、`plugin-backend-fixture.ts`），数据放 `test/fixtures/`。
+- 文件名用 `kebab-case.test.ts`，贴近被测领域（`plugin-storage.test.ts`、`nested-flow.test.ts`）。共享 fixture 用不带 `.test` 的同目录模块（`plugin-backend-fixture.ts`），数据放 `test/fixtures/`。
 
 ## 写法
 

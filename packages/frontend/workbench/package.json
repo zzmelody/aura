@@ -10,7 +10,6 @@
   "exports": {
     ".": "./src/App.tsx",
     "./file-picker": "./src/file-picker.ts",
-    "./site": "./src/site.ts",
     "./plugin": "./src/plugin-api.ts",
     "./transport": "./src/plugin-transport.ts",
     "./flow-graph": "./src/flowGraph.ts"
