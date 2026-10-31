@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,17 +6,20 @@ import { join } from "node:path";
 import { checkWorkspaces } from "../scripts/check-workspaces.ts";
 
 async function fixture(
-  t,
+  t: TestContext,
   {
-    clientDependency = { "@aura/core": "workspace:*" },
+    clientDependency = { "@aura/core": "workspace:*" } as Record<
+      string,
+      string
+    >,
     clientSource = 'import { value } from "@aura/core";',
-    client = {},
-    core = {},
+    client = {} as Record<string, unknown>,
+    core = {} as Record<string, unknown>,
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "aura-workspaces-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const json = (path, value) =>
+  const json = (path: string, value: unknown) =>
     writeFile(join(root, path), JSON.stringify(value));
   for (const path of [
     "apps/mobile",

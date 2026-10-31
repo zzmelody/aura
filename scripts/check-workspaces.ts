@@ -35,17 +35,31 @@ const directModelClients = new Set([
   "@earendil-works/pi-ai",
   "@mariozechner/pi-ai",
 ]);
-const readJson = async (path) => JSON.parse(await readFile(path, "utf8"));
-const inside = (root, path) => path === root || path.startsWith(root + sep);
+/** The manifest fields these checks read; packages carry many more. */
+interface Manifest {
+  name?: string;
+  private?: boolean;
+  workspaces?: string[];
+  exports?: unknown;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  aura?: { kind?: string; layer?: string; platform?: string };
+}
 
-function exportTargets(value) {
+const readJson = async (path: string): Promise<Manifest> =>
+  JSON.parse(await readFile(path, "utf8"));
+const inside = (root: string, path: string) =>
+  path === root || path.startsWith(root + sep);
+
+function exportTargets(value: unknown): string[] {
   if (typeof value === "string") return [value];
   if (!value || typeof value !== "object") return [];
   return Object.values(value).flatMap(exportTargets);
 }
 
-async function sourceFiles(dir) {
-  const files = [];
+async function sourceFiles(dir: string): Promise<string[]> {
+  const files: string[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     if (ignored.has(entry.name) || entry.isSymbolicLink()) continue;
     const path = resolve(dir, entry.name);
@@ -55,13 +69,13 @@ async function sourceFiles(dir) {
   return files;
 }
 
-function imports(source, path) {
-  const result = [];
+function imports(source: string, path: string): string[] {
+  const result: string[] = [];
   const tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
-  const add = (value) => {
+  const add = (value: ts.Node | undefined) => {
     if (value && ts.isStringLiteralLike(value)) result.push(value.text);
   };
-  const visit = (node) => {
+  const visit = (node: ts.Node) => {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
       add(node.moduleSpecifier);
     if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument))
@@ -83,11 +97,11 @@ function imports(source, path) {
 
 /**
  * Checks package metadata, layer dependencies, public imports and cycles.
- * @param {string} root Absolute repository directory.
- * @returns {Promise<string[]>} Violations; an empty list means all checks passed.
+ * @param root Absolute repository directory.
+ * @returns Violations; an empty list means all checks passed.
  */
-export async function checkWorkspaces(root) {
-  const errors = [];
+export async function checkWorkspaces(root: string): Promise<string[]> {
+  const errors: string[] = [];
   const rootManifest = await readJson(resolve(root, "package.json"));
   if (
     JSON.stringify(rootManifest.workspaces) !==
@@ -95,7 +109,14 @@ export async function checkWorkspaces(root) {
   )
     errors.push(`Root workspaces must be ${expectedWorkspaces.join(", ")}.`);
 
-  const packages = new Map();
+  interface Workspace {
+    dir: string;
+    kind: string;
+    layer?: string;
+    platform?: string;
+    manifest: Manifest;
+  }
+  const packages = new Map<string, Workspace>();
   const appsDir = resolve(root, "apps");
   for (const entry of await readdir(appsDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -105,22 +126,25 @@ export async function checkWorkspaces(root) {
     try {
       manifest = await readJson(resolve(dir, "package.json"));
     } catch (error) {
-      errors.push(`${label}: unreadable package.json (${error.message}).`);
+      errors.push(
+        `${label}: unreadable package.json (${(error as Error).message}).`,
+      );
       continue;
     }
     if (!manifest.name?.startsWith("@aura/") || manifest.private !== true)
       errors.push(`${label}: requires a private @aura/* package.`);
     if (manifest.aura?.kind !== "app")
       errors.push(`${label}: aura.kind must be app.`);
-    if (!new Set(platforms).has(manifest.aura?.platform))
+    if (!platforms.includes(manifest.aura?.platform ?? ""))
       errors.push(
         `${label}: aura.platform must be web, mobile, desktop or server.`,
       );
     if (manifest.aura?.layer !== undefined)
       errors.push(`${label}: applications do not declare aura.layer.`);
-    if (packages.has(manifest.name))
-      errors.push(`Duplicate package ${manifest.name}.`);
-    packages.set(manifest.name, {
+    // A nameless manifest is already reported; key it by path to keep checking.
+    const name = manifest.name ?? label;
+    if (packages.has(name)) errors.push(`Duplicate package ${name}.`);
+    packages.set(name, {
       dir,
       kind: "app",
       platform: manifest.aura?.platform,
@@ -137,7 +161,9 @@ export async function checkWorkspaces(root) {
       try {
         manifest = await readJson(resolve(dir, "package.json"));
       } catch (error) {
-        errors.push(`${label}: unreadable package.json (${error.message}).`);
+        errors.push(
+          `${label}: unreadable package.json (${(error as Error).message}).`,
+        );
         continue;
       }
       if (!manifest.name?.startsWith("@aura/") || manifest.private !== true)
@@ -148,9 +174,9 @@ export async function checkWorkspaces(root) {
         errors.push(`${label}: packages must declare aura.kind as library.`);
       if (manifest.aura?.platform !== undefined)
         errors.push(`${label}: libraries do not declare aura.platform.`);
-      if (packages.has(manifest.name))
-        errors.push(`Duplicate package ${manifest.name}.`);
-      packages.set(manifest.name, { dir, kind: "library", layer, manifest });
+      const name = manifest.name ?? label;
+      if (packages.has(name)) errors.push(`Duplicate package ${name}.`);
+      packages.set(name, { dir, kind: "library", layer, manifest });
     }
   }
 
@@ -200,7 +226,9 @@ export async function checkWorkspaces(root) {
       if (
         kind === "library" &&
         target.kind === "library" &&
-        !allowedLayers[layer].has(target.layer)
+        !allowedLayers[layer as keyof typeof allowedLayers]?.has(
+          target.layer ?? "",
+        )
       )
         errors.push(
           `${name}: ${layer} packages cannot depend on ${target.layer} package ${dep}.`,
@@ -208,7 +236,9 @@ export async function checkWorkspaces(root) {
       if (
         kind === "app" &&
         target.kind === "library" &&
-        !allowedAppLayers[platform]?.has(target.layer)
+        !allowedAppLayers[platform as keyof typeof allowedAppLayers]?.has(
+          target.layer ?? "",
+        )
       )
         errors.push(
           `${name}: ${platform} applications cannot depend on ${target.layer} package ${dep}.`,
@@ -246,16 +276,16 @@ export async function checkWorkspaces(root) {
     }
   }
 
-  const visited = new Set();
-  const active = new Set();
-  function visit(name) {
+  const visited = new Set<string>();
+  const active = new Set<string>();
+  function visit(name: string) {
     if (active.has(name)) {
       errors.push(`Workspace dependency cycle through ${name}.`);
       return;
     }
     if (visited.has(name)) return;
     active.add(name);
-    const manifest = packages.get(name).manifest;
+    const manifest = packages.get(name)!.manifest;
     for (const dep of Object.keys({
       ...manifest.dependencies,
       ...manifest.devDependencies,

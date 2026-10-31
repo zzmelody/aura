@@ -3,23 +3,5 @@
   "compilerOptions": {
     "types": ["node", "vite/client"]
   },
-  "include": [
-    "scripts/build-server-launch.ts",
-    "tests/server-launch.test.ts",
-    "eslint.config.ts",
-    "scripts/check-format.ts",
-    "scripts/lint-strict.ts",
-    "tests/code-style.test.ts",
-    "scripts/build-desktop-preload.ts",
-    "scripts/dev-renderer.ts",
-    "scripts/vite-live-reload.ts",
-    "scripts/vite-live-reload-client.ts",
-    "scripts/build-renderer.ts",
-    "scripts/model-viewer-assets.ts",
-    "scripts/build-plugins.ts",
-    "tests/plugin-release.test.ts",
-    "scripts/setup-product-plugins.ts",
-    "scripts/build-product-plugin.ts",
-    "tests/product-provider.test.ts"
-  ]
+  "include": ["eslint.config.ts", "scripts/**/*.ts", "tests/**/*.ts"]
 }
