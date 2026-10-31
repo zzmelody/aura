@@ -90,7 +90,7 @@ AI 对话，全程可见、可干预，结束时产出报告。对标 Codex 的�
 
 | 层       | 位置                                               | 职责                                                |
 | -------- | -------------------------------------------------- | --------------------------------------------------- |
-| shared   | `packages/shared/protocol/src/coding.ts`           | 项目、编码会话、活动事件的 DTO                      |
+| shared   | `packages/shared/protocol/src/types.ts`            | 项目、编码会话、活动事件的 DTO                      |
 | backend  | `packages/backend/orchestration/src/coding/`       | 项目注册、编码 session 生命周期、事件投影、提问应答 |
 | backend  | `packages/backend/orchestration/presets/coder-v1/` | 编码 agent 的人设与工具组合                         |
 | backend  | `packages/backend/runtime/src/coding-routes.ts`    | HTTP 边界                                           |
