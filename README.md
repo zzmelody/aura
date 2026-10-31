@@ -78,7 +78,7 @@ Web 预览地址是 `http://127.0.0.1:4173`；预览命令现在会同时启动 
 .\scripts\aura.ps1 run test:runtime
 ```
 
-Android 内测包使用 `.\scripts\build-android.ps1`，输出位于 `output/android/aura-preview.apk`。浏览器、Electron renderer 与 Capacitor Web 产物分别位于 `apps/web/dist`、`apps/desktop/dist` 和 `apps/mobile/dist`。Windows 可以生成并同步 iOS Web 资源，但仍需在 macOS/Xcode 中产出 IPA。
+Android 内测包使用 `.\scripts\build-android.ps1`，输出位于 `apps/mobile/dist-android/aura-preview.apk`。浏览器、Electron renderer 与 Capacitor Web 产物分别位于 `apps/web/dist`、`apps/desktop/dist` 和 `apps/mobile/dist`。Windows 可以生成并同步 iOS Web 资源，但仍需在 macOS/Xcode 中产出 IPA。
 
 ## Monorepo 目录
 

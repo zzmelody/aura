@@ -3,9 +3,10 @@ node_modules/
 .expo/
 .aura/
 .tools/
-output/
+/local/
 apps/web/dist/
 apps/mobile/dist/
+apps/mobile/dist-android/
 apps/mobile/android/
 apps/mobile/ios/
 apps/desktop/dist/
@@ -20,7 +21,6 @@ apps/server/dist/
 *.keystore
 *.jks
 .DS_Store
-.aura-site-test-*/
 examples/*/node_modules/
 plugins/**/node_modules/
 plugins/**/client/dist/

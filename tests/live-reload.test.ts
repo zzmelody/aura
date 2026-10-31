@@ -159,7 +159,7 @@ test("Vite revision endpoint watches renderer sources and isolates unrelated fil
   for (const path of [
     "packages/backend/runtime/src/index.ts",
     "packages/frontend/workbench/dist/index.js",
-    "output/probe.ts",
+    "local/probe.ts",
     "apps/web/node_modules/dep/index.ts",
   ])
     server.watcher.emit("all", "change", resolve(path));

@@ -45,4 +45,10 @@ Follow the Google TypeScript Style Guide, with Aura's explicit adaptations and R
 - Aura is Web-first. Use React DOM for reusable UI, Vite for Web renderers, Electron for the desktop host and Capacitor for mobile hosts. Do not add Expo, React Native, React Native Web or Metro dependencies.
 - Keep React, React DOM and renderer-wide UI runtimes as peer dependencies of reusable frontend UI libraries so applications provide a single runtime copy.
 
+## Local scratch files
+
+- Agents put temporary scripts, one-off tools, logs, screenshots, debug output and downloads under the repository-root `local/` directory (create it on demand; per-task subdirectories are fine). `local/` is git-ignored and may be deleted at any time, so never keep anything there that must survive.
+- Never write temporary files or tools into source directories (`apps/`, `packages/`, `plugins/`, `docs/`, `scripts/`, `.agents/` or the repository root). Commit scripts worth keeping to `scripts/` as a normal change.
+- Source code never references paths under `local/`. Tests keep using the OS temp directory and clean up after themselves.
+
 Update affected documentation and focused tests with non-trivial behavior changes. Run the narrow package checks first, then `pnpm run check` before handing off repository-wide structural work.

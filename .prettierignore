@@ -5,7 +5,8 @@ node_modules/
 .agents/
 .codex/
 .playwright-cli/
-output/
+local/
+apps/mobile/dist-android/
 **/dist/
 **/dist-host/
 apps/mobile/android/

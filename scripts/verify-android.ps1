@@ -1,4 +1,4 @@
-param([string]$Apk = "$PSScriptRoot\..\output\android\aura-preview.apk")
+param([string]$Apk = "$PSScriptRoot\..\apps\mobile\dist-android\aura-preview.apk")
 $ErrorActionPreference = 'Stop'
 $auraApkPath = (Resolve-Path -LiteralPath $Apk).Path
 Add-Type -AssemblyName System.IO.Compression.FileSystem

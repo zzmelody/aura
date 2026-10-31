@@ -21,7 +21,8 @@ export default defineConfig(
     "apps/mobile/ios/**",
     ".aura/**",
     ".tools/**",
-    "output/**",
+    "local/**",
+    "apps/mobile/dist-android/**",
   ]),
   {
     name: "aura/source",

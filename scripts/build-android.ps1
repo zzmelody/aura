@@ -40,7 +40,7 @@ Set-Location -LiteralPath '.\android'
 & .\gradlew.bat :app:assembleDebug --no-daemon --console=plain --max-workers=4
 if ($LASTEXITCODE -ne 0) { throw 'Android packaging failed.' }
 
-$auraOutput = "$auraRoot\output\android"
+$auraOutput = "$auraRoot\apps\mobile\dist-android"
 New-Item -ItemType Directory -Path $auraOutput -Force | Out-Null
 Copy-Item -LiteralPath '.\app\build\outputs\apk\debug\app-debug.apk' -Destination "$auraOutput\aura-preview.apk"
 & "$PSScriptRoot\verify-android.ps1" -Apk "$auraOutput\aura-preview.apk"

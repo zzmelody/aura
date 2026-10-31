@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
-import {
-  access,
-  copyFile,
-  mkdtemp,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
-import { join } from "node:path";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
@@ -48,12 +43,10 @@ async function server(t: TestContext, hostname = "127.0.0.1", port = 0) {
 }
 
 async function fixture(t: TestContext, script: string) {
-  // Place fixtures under this package so Node resolves the package's pnpm
-  // links from their original location. A junction to node_modules from an
-  // OS temp directory breaks pnpm's relative package links on Windows.
-  const directory = await mkdtemp(
-    join(import.meta.dirname, "../.aura-site-test-"),
-  );
+  // Fixtures live in the OS temp directory, which has no node_modules, so the
+  // copied server imports its dependencies by absolute URLs resolved here. A
+  // junction to node_modules would break pnpm's relative links on Windows.
+  const directory = await mkdtemp(join(tmpdir(), "aura-site-test-"));
   const workspace = JSON.parse(
     await readFile(new URL("../../../package.json", import.meta.url), "utf8"),
   ) as { packageManager: string };
@@ -66,9 +59,16 @@ async function fixture(t: TestContext, script: string) {
       scripts: { dev: script },
     }),
   );
-  await copyFile(
+  const source = await readFile(
     new URL("./fixtures/site-server.ts", import.meta.url),
+    "utf8",
+  );
+  await writeFile(
     join(directory, "server.ts"),
+    source.replace(
+      /from "(hono|@hono\/node-server)"/g,
+      (_, name: string) => `from ${JSON.stringify(import.meta.resolve(name))}`,
+    ),
   );
   return describeProject(directory);
 }
@@ -335,6 +335,15 @@ test("port taken after preflight is not mistaken for the newly spawned project",
 });
 
 test("direct dev server scripts get a selected free port and keep existing services alone", async (t) => {
+  // The temp fixture has no node_modules, so expose the workspace's Vite bin.
+  const path = process.env.PATH;
+  process.env.PATH = [
+    fileURLToPath(new URL("../../../node_modules/.bin", import.meta.url)),
+    path,
+  ].join(delimiter);
+  t.after(() => {
+    process.env.PATH = path;
+  });
   // Avoid Windows' dynamic client-port range while testing port selection.
   const occupied = await server(t, "127.0.0.1", await availableSitePort(44000));
   const project = await fixture(
