@@ -26,8 +26,6 @@
     "@aura/protocol": "workspace:*",
     "@aura/ui": "workspace:*",
     "@deepseek-ai/cordis": "4.0.5-alpha.1",
-    "@fontsource/ibm-plex-mono": "5.3.0",
-    "@fontsource/manrope": "5.3.0",
     "acorn": "8.18.0",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1"

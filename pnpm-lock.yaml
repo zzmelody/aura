@@ -515,6 +515,9 @@ importers:
       '@deepseek-ai/dsh-persona':
         specifier: 0.2.1-alpha.2
         version: 0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)(@deepseek-ai/dsh-system-prompt@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)(@deepseek-ai/dsh-llm@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1))(@deepseek-ai/dsh-scope@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)))
+      '@deepseek-ai/dsh-schedule':
+        specifier: 0.2.1-alpha.2
+        version: 0.2.1-alpha.2(f79283edf2f3ec9db0fe00d65507bba2)
       '@deepseek-ai/dsh-sdk-app':
         specifier: 0.2.1-alpha.2
         version: 0.2.1-alpha.2(f209b2f8cfde70f4c252bc3ad9837a76)
@@ -536,6 +539,9 @@ importers:
       '@deepseek-ai/dsh-subprocess-local':
         specifier: 0.2.1-alpha.2
         version: 0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)(@deepseek-ai/dsh-subprocess@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)(@deepseek-ai/dsh-http-proxy@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)))(@deepseek-ai/dsh-timeout@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1))
+      '@deepseek-ai/dsh-tool-schedule':
+        specifier: 0.2.1-alpha.2
+        version: 0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1)(@deepseek-ai/dsh-llm@0.2.1-alpha.2(@deepseek-ai/cordis@4.0.5-alpha.1))(@deepseek-ai/dsh-schedule@0.2.1-alpha.2(f79283edf2f3ec9db0fe00d65507bba2))(@deepseek-ai/dsh-subagent@0.2.1-alpha.2(dfada773e225e9a415768089388c1a9f))(@deepseek-ai/dsh-tools@0.2.1-alpha.2(7dae165423b610802c67ae1eb268e109))
       '@deepseek-ai/dsh-tools':
         specifier: 0.2.1-alpha.2
         version: 0.2.1-alpha.2(7dae165423b610802c67ae1eb268e109)
@@ -761,12 +767,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: 4.0.5-alpha.1
         version: 4.0.5-alpha.1(@deepseek-ai/cordis-plugin-include@1.0.10-alpha.1)(@deepseek-ai/cordis-plugin-loader@1.0.6-alpha.1)
-      '@fontsource/ibm-plex-mono':
-        specifier: 5.3.0
-        version: 5.3.0
-      '@fontsource/manrope':
-        specifier: 5.3.0
-        version: 5.3.0
       '@google/model-viewer':
         specifier: 4.1.0
         version: 4.1.0(three@0.172.0)
@@ -3727,12 +3727,6 @@ packages:
     resolution: {integrity: sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
 
-  '@fontsource/ibm-plex-mono@5.3.0':
-    resolution: {integrity: sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q==}
-
-  '@fontsource/manrope@5.3.0':
-    resolution: {integrity: sha512-obJ1Dv3+uCA6HlHgW8u4BGYxJR9In2HW7gjJhlflEvkrj1X1iSEwu0fToL+JYGC/FEKFfIz1sBuPduvcL2gIAA==}
-
   '@google/genai@2.21.0':
     resolution: {integrity: sha512-+PDtco2/Z0ONdzCGekCoCT+O1VJS9xJQNN4XzQpXG/t3El/SWWMkCWlFRO1KmivOHPa4Q0VjUYu1HBKCZ/v33Q==}
     engines: {node: '>=20.0.0'}
@@ -4623,7 +4617,7 @@ packages:
     resolution: {integrity: sha512-1mEZtMKPM09vDmQt5y7YvmN2+DFTP7Tg0EWXdic8/C6VRnpb33e4ghisCIE3WZjsE2N8mf+QV1Zqh7ZFYLWInQ==}
 
   '@vastai/tripo-sdk@0.3.0':
-    resolution: {integrity: sha512-ipzCrlgs2Tg/jUPKzWSL+HHMslzwWksKtZmQiAlN+YY990n8ih79Snm8XJTrlc7tOEr+VbJff7lkIP1FdbTDxA==, tarball: https://registry.npmjs.org/@vastai/tripo-sdk/-/tripo-sdk-0.3.0.tgz}
+    resolution: {integrity: sha512-ipzCrlgs2Tg/jUPKzWSL+HHMslzwWksKtZmQiAlN+YY990n8ih79Snm8XJTrlc7tOEr+VbJff7lkIP1FdbTDxA==}
     engines: {node: '>=18'}
 
   '@vitejs/plugin-react@6.1.1':
@@ -10432,10 +10426,6 @@ snapshots:
     dependencies:
       '@eslint/core': 1.2.1
       levn: 0.4.1
-
-  '@fontsource/ibm-plex-mono@5.3.0': {}
-
-  '@fontsource/manrope@5.3.0': {}
 
   '@google/genai@2.21.0':
     dependencies:

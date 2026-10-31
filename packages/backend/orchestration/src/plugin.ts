@@ -52,6 +52,7 @@ import { chatService } from "./chat.ts";
 import type { ChatToolHost } from "./chat-tools.ts";
 import { codingService } from "./coding/session.ts";
 import { conversationService } from "./coding/conversations.ts";
+import { automationService } from "./coding/automation.ts";
 import { legacyConversationTurns } from "@aura/protocol/conversations";
 import {
   historyTurns,
@@ -286,6 +287,8 @@ export const inject = [
   "settings",
   "subprocess",
   "attachments",
+  // Automation tasks are DSH Schedule reminders on coding sessions.
+  "schedule",
 ];
 
 function contributionRoots(
@@ -701,6 +704,7 @@ export async function apply(ctx: Context) {
     coding,
   );
   const chat = chatService(conversations);
+  const automation = automationService(ctx, codingConversations);
 
   transport.onNotification((method, params) => {
     if (method === "chat/cancel" && typeof params.chatId === "string")
@@ -1101,6 +1105,30 @@ export async function apply(ctx: Context) {
           data = { updated: true };
           break;
         }
+        case "automation/list":
+          data = await automation.list();
+          break;
+        case "automation/create":
+          data = await automation.create(automationInput(params));
+          break;
+        case "automation/update": {
+          if (typeof params.id !== "string")
+            throw new FlowError("无效的任务。", 400);
+          data = await automation.update(params.id, automationInput(params));
+          break;
+        }
+        case "automation/delete": {
+          const input = automationRef(params);
+          data = {
+            deleted: await automation.remove(input.sessionId, input.id),
+          };
+          break;
+        }
+        case "automation/history": {
+          const input = automationRef(params);
+          data = await automation.history(input.sessionId, input.id);
+          break;
+        }
         case "coding/projects":
           await codingProjects.defaultProject();
           data = codingProjects.list();
@@ -1348,4 +1376,52 @@ export async function apply(ctx: Context) {
       }
     };
   }, "aura-orchestration.serve");
+}
+
+const automationTimingSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("at"), at: z.string().min(1).max(64) }),
+  z.object({
+    kind: z.literal("every"),
+    everySeconds: z
+      .number()
+      .int()
+      .min(60)
+      .max(366 * 86_400),
+  }),
+  z.object({
+    kind: z.literal("daily"),
+    time: z.string().min(1).max(16),
+    timeZone: z.string().min(1).max(64),
+  }),
+  z.object({
+    kind: z.literal("weekly"),
+    time: z.string().min(1).max(16),
+    timeZone: z.string().min(1).max(64),
+    weekdays: z.array(z.number().int().min(1).max(7)).min(1).max(7),
+  }),
+  z.object({
+    kind: z.literal("cron"),
+    expression: z.string().trim().min(1).max(200),
+    timeZone: z.string().min(1).max(64),
+  }),
+]);
+
+/** Browser input for a task; DSH re-validates every field it stores. */
+function automationInput(params: Record<string, unknown>) {
+  const input = z
+    .object({
+      sessionId: z.string().min(1),
+      title: z.string().trim().min(1).max(120),
+      prompt: z.string().trim().min(1).max(20_000),
+      timing: automationTimingSchema,
+    })
+    .safeParse(params);
+  if (!input.success) throw new FlowError("任务内容不完整。", 400);
+  return input.data;
+}
+
+function automationRef(params: Record<string, unknown>) {
+  if (typeof params.sessionId !== "string" || typeof params.id !== "string")
+    throw new FlowError("无效的任务。", 400);
+  return { sessionId: params.sessionId, id: params.id };
 }

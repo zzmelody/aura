@@ -209,6 +209,67 @@ export function createCodingApp(host: OrchestrationHost) {
     }
   });
 
+  // Automation tasks: DSH Schedule reminders delivered into a conversation.
+  app.get("/automation", async (context) => {
+    try {
+      return context.json(await host.automationTasks());
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
+  app.post("/automation", async (context) => {
+    const body = await context.req.json().catch(() => undefined);
+    if (!isRecord(body)) return context.json({ message: "无效的任务。" }, 400);
+    try {
+      return context.json(await host.createAutomationTask(body), 201);
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
+  // POST like every other coding mutation: runtime CORS admits GET/POST only.
+  app.post("/automation/:sessionId/:id", async (context) => {
+    const body = await context.req.json().catch(() => undefined);
+    if (!isRecord(body)) return context.json({ message: "无效的任务。" }, 400);
+    try {
+      return context.json(
+        await host.updateAutomationTask(context.req.param("id"), {
+          ...body,
+          sessionId: context.req.param("sessionId"),
+        }),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
+  app.post("/automation/:sessionId/:id/delete", async (context) => {
+    try {
+      return context.json(
+        await host.deleteAutomationTask(
+          context.req.param("sessionId"),
+          context.req.param("id"),
+        ),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
+  app.get("/automation/:sessionId/:id/history", async (context) => {
+    try {
+      return context.json(
+        await host.automationHistory(
+          context.req.param("sessionId"),
+          context.req.param("id"),
+        ),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
   app.get("/projects/:id/conversations", async (context) => {
     try {
       return context.json(await host.conversations(context.req.param("id")));

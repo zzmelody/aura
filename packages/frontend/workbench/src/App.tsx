@@ -19,15 +19,11 @@ import {
   X,
 } from "lucide-react";
 import { FlowIcon } from "./FlowIcon";
-import "@fontsource/manrope/latin-400.css";
-import "@fontsource/manrope/latin-500.css";
-import "@fontsource/manrope/latin-600.css";
-import "@fontsource/ibm-plex-mono/latin-400.css";
 import "./styles.css";
 import "./shell.css";
 import "./workflow-output.css";
 import { ThemeContext } from "@aura/ui/components";
-import { palettes } from "@aura/ui/theme";
+import { fonts, palettes } from "@aura/ui/theme";
 import { useWorkspace } from "./useWorkspace";
 import { useCodexAuth } from "./useCodexAuth";
 import { CodexLoginButton } from "./CodexLoginButton";
@@ -35,6 +31,9 @@ import { ModelServiceBadge } from "./ModelServiceBadge";
 import { HistoryScreen } from "./screens/Home";
 import { ChatScreen } from "./screens/Chat";
 import { SettingsScreen } from "./screens/Settings";
+import { PluginsScreen } from "./screens/Plugins";
+import { AutomationScreen } from "./screens/Automation";
+import { useScheduledConversations } from "./useScheduledConversations";
 import { Workflows } from "./screens/Workflows";
 import { useFlowCatalog } from "./flowCatalog";
 import { flowContext, useFlowDraft } from "./flowDraft";
@@ -67,6 +66,8 @@ const tabTitles: Record<Tab, string> = {
   flows: "工作流",
   "studio:coding": "工作空间",
   history: "全部记录",
+  plugins: "插件",
+  automation: "自动化任务",
   settings: "设置",
 };
 const isStudio = (tab: Tab): tab is StudioTab | `plugin:${string}` =>
@@ -103,6 +104,12 @@ export default function App() {
   const [workflowBrowseRevision, setWorkflowBrowseRevision] = useState(0);
   const [tab, setTab] = useState<Tab>("chat");
   const [showArchived, setShowArchived] = useState(false);
+  const scheduledIds = useScheduledConversations(
+    codexAuth.endpoint,
+    workspace.ready && workspace.state.provider !== "offline",
+    tab,
+  );
+  const [settingsSection, setSettingsSection] = useState<"plugins">();
   const [sessionDialog, setSessionDialog] = useState<SessionDialogRequest>();
   const navigation = useRef<Array<{ tab: Tab; sessionId: string | null }>>([
     { tab: "chat", sessionId: null },
@@ -168,6 +175,10 @@ export default function App() {
     document.documentElement.style.backgroundColor = colors.background;
     document.body.style.backgroundColor = colors.background;
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
+    // Fonts are theme-independent; the document carries them so body text
+    // outside the workbench root (dialogs, plugin pages) uses the same stack.
+    document.documentElement.style.setProperty("--font-text", fonts.body);
+    document.documentElement.style.setProperty("--font-mono", fonts.mono);
     document.title = documentTitle;
   }, [colors.background, dark, documentTitle]);
   useEffect(() => {
@@ -219,6 +230,7 @@ export default function App() {
     setStudioDirty(false);
     remember(next);
     setTab(next);
+    setSettingsSection(undefined);
     if (next === "flows") {
       setWorkflowBrowseRevision((value) => value + 1);
       setAssistantOpen(false);
@@ -270,6 +282,7 @@ export default function App() {
       codingWorkspaces={codingWorkspaces}
       offline={workspace.state.provider === "offline"}
       pluginStudios={pluginPages.studios}
+      scheduledIds={scheduledIds}
     />
   );
   const showChat =
@@ -279,6 +292,60 @@ export default function App() {
       workflowDetail &&
       assistantOpen &&
       !workspace.active?.workflow);
+  const codingHeader =
+    workspace.state.provider !== "offline" &&
+    (tab === "studio:coding" ||
+      (tab === "chat" && !workspace.active?.workflow));
+  const headerActions = (
+    <div className="header-actions">
+      {tab === "chat" && workspace.active ? (
+        <>
+          <SessionStatus
+            status={sidebarSessionStatus(
+              workspace.active,
+              workspace.runningIds.includes(workspace.active.id),
+            )}
+            text={wide}
+          />
+          <SessionActions
+            session={workspace.active}
+            workspace={workspace}
+            onDialog={setSessionDialog}
+            className="icon-control header-session-more"
+          />
+          <span className="header-divider" />
+        </>
+      ) : null}
+      {tab === "flows" && workflowDetail ? (
+        <button
+          className={`tool-button${assistantOpen ? " active" : ""}`}
+          aria-pressed={assistantOpen}
+          onClick={() => {
+            if (workspace.active?.workflow) workspace.newChat();
+            setAssistantOpen(!assistantOpen);
+          }}
+        >
+          {assistantOpen ? (
+            <PanelRightClose size={15} />
+          ) : (
+            <PanelRightOpen size={15} />
+          )}
+          <span>生成助手</span>
+        </button>
+      ) : null}
+      {workspace.state.provider === "lumina" ||
+      workspace.state.provider === "custom" ? (
+        <ModelServiceBadge
+          endpoint={codexAuth.endpoint}
+          provider={workspace.state.provider}
+          compact={!wide}
+          onOpen={() => navigate("settings")}
+        />
+      ) : (
+        <CodexLoginButton auth={codexAuth} compact={!wide} />
+      )}
+    </div>
+  );
   return (
     <PluginResultsProvider results={pluginPages.results}>
       <ThemeContext.Provider value={{ colors, dark, reduced }}>
@@ -348,76 +415,28 @@ export default function App() {
                     </dialog>
                   ) : null}
                   <main className="workspace-main">
-                    <header className="workspace-header">
-                      <div className="workspace-heading">
-                        {workspace.active?.workflow && tab === "chat" ? (
-                          <FlowIcon size={16} />
-                        ) : (
-                          <FolderOpen size={16} />
-                        )}
-                        <strong title={currentTitle}>
-                          {tab === "chat"
-                            ? workspace.active
-                              ? sidebarSessionTitle(workspace.active)
-                              : (activeConversation?.title ?? "新对话")
-                            : currentTitle}
-                        </strong>
-                        {tab === "chat" && workspace.active?.archivedAt ? (
-                          <span className="header-archived">已归档</span>
-                        ) : null}
-                      </div>
-                      <div className="header-actions">
-                        {tab === "chat" && workspace.active ? (
-                          <>
-                            <SessionStatus
-                              status={sidebarSessionStatus(
-                                workspace.active,
-                                workspace.runningIds.includes(
-                                  workspace.active.id,
-                                ),
-                              )}
-                              text={wide}
-                            />
-                            <SessionActions
-                              session={workspace.active}
-                              workspace={workspace}
-                              onDialog={setSessionDialog}
-                              className="icon-control header-session-more"
-                            />
-                            <span className="header-divider" />
-                          </>
-                        ) : null}
-                        {tab === "flows" && workflowDetail ? (
-                          <button
-                            className={`tool-button${assistantOpen ? " active" : ""}`}
-                            aria-pressed={assistantOpen}
-                            onClick={() => {
-                              if (workspace.active?.workflow)
-                                workspace.newChat();
-                              setAssistantOpen(!assistantOpen);
-                            }}
-                          >
-                            {assistantOpen ? (
-                              <PanelRightClose size={15} />
-                            ) : (
-                              <PanelRightOpen size={15} />
-                            )}
-                            <span>生成助手</span>
-                          </button>
-                        ) : null}
-                        {workspace.state.provider === "lumina" ||
-                        workspace.state.provider === "custom" ? (
-                          <ModelServiceBadge
-                            endpoint={codexAuth.endpoint}
-                            provider={workspace.state.provider}
-                            compact={!wide}
-                            onOpen={() => navigate("settings")}
-                          />
-                        ) : (
-                          <CodexLoginButton auth={codexAuth} compact={!wide} />
-                        )}
-                      </div>
-                    </header>
+                    {!codingHeader ? (
+                      <header className="workspace-header">
+                        <div className="workspace-heading">
+                          {workspace.active?.workflow && tab === "chat" ? (
+                            <FlowIcon size={16} />
+                          ) : (
+                            <FolderOpen size={16} />
+                          )}
+                          <strong title={currentTitle}>
+                            {tab === "chat"
+                              ? workspace.active
+                                ? sidebarSessionTitle(workspace.active)
+                                : (activeConversation?.title ?? "新对话")
+                              : currentTitle}
+                          </strong>
+                          {tab === "chat" && workspace.active?.archivedAt ? (
+                            <span className="header-archived">已归档</span>
+                          ) : null}
+                        </div>
+                        {headerActions}
+                      </header>
+                    ) : null}
                     {workspace.saveError ? (
                       <div className="workspace-notice" role="alert">
                         {workspace.saveError}
@@ -557,7 +576,14 @@ export default function App() {
                                     provider,
                                   }))
                                 }
-                                onBack={() => navigate("chat")}
+                                headerActions={
+                                  codingHeader ? headerActions : undefined
+                                }
+                                onBack={
+                                  tab === "chat"
+                                    ? undefined
+                                    : () => navigate("chat")
+                                }
                               />
                             </React.Suspense>
                           </div>
@@ -648,11 +674,32 @@ export default function App() {
                         }}
                       />
                     ) : null}
+                    {tab === "plugins" ? (
+                      <PluginsScreen
+                        endpoint={codexAuth.endpoint}
+                        onManageDirectories={() => {
+                          navigate("settings");
+                          setSettingsSection("plugins");
+                        }}
+                      />
+                    ) : null}
+                    {tab === "automation" ? (
+                      <AutomationScreen
+                        endpoint={codexAuth.endpoint}
+                        conversations={codingWorkspaces}
+                        openConversation={(projectId, id) => {
+                          codingWorkspaces.open(projectId, id);
+                          workspace.newChat();
+                          navigate("studio:coding");
+                        }}
+                      />
+                    ) : null}
                     {tab === "settings" ? (
                       <SettingsScreen
                         workspace={workspace}
                         codexAuth={codexAuth}
                         systemReduced={systemReduced}
+                        section={settingsSection}
                       />
                     ) : null}
                     <footer className="workspace-status">

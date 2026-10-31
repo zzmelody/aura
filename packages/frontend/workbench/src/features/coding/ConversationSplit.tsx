@@ -18,11 +18,14 @@ export function ConversationSplit({
   main,
   side,
   sideVisible = !!side,
+  hidden = false,
 }: {
   main: React.ReactNode;
   side?: React.ReactNode;
   /** Hidden side chats stay mounted without reserving width or a divider. */
   sideVisible?: boolean;
+  /** Another view covers the panes; they stay mounted so streams continue. */
+  hidden?: boolean;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const drag = useRef<{
@@ -69,6 +72,7 @@ export function ConversationSplit({
     <div
       ref={root}
       className="coding-panes"
+      hidden={hidden}
       data-stacked={(sideVisible && stacked) || undefined}
       style={
         {

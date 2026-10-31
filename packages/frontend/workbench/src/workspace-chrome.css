@@ -126,83 +126,218 @@
   cursor: col-resize !important;
   user-select: none !important;
 }
+/* DSH desktop sidebar: tinted fill, 0.5px hairline, 12px-radius rows. */
 .workspace-sidebar {
-  padding: 0 9px;
-  border-right: 0;
-  background: color-mix(in srgb, var(--surface) 84%, var(--background));
+  padding: 6px 8px;
+  border-right: 0.5px solid var(--hairline);
+  background: var(--sidebar);
+  font-size: 14px;
 }
 .sidebar-brand {
-  min-height: 50px;
-  padding: 0 10px;
-  gap: 8px;
+  min-height: 52px;
+  padding: 0 0 0 8px;
+  gap: 5px;
 }
 .sidebar-brand > strong {
-  font-size: 19px;
-  letter-spacing: -0.5px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.sidebar-brand .icon-control {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.sidebar-brand .icon-control:hover {
+  background: var(--soft);
+}
+.workspace-sidebar > .new-session {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border: 0.5px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+}
+.workspace-sidebar > .new-session:hover {
+  background: var(--elevated);
 }
 .workspace-nav {
-  gap: 1px;
-  padding-bottom: 10px;
+  gap: 2px;
+  padding: 0 0 8px;
 }
 .workspace-nav button {
-  min-height: 33px;
-  padding: 6px 11px;
-  gap: 10px;
-  font-size: 13px;
-}
-.workspace-nav:not(.studio-nav) {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-}
-.workspace-nav .new-session {
-  grid-column: 1 / -1;
-  margin-bottom: 4px;
   min-height: 36px;
+  padding: 7px 9px;
+  gap: 6px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 22px;
+}
+.workspace-nav button:hover,
+.workspace-sidebar .workspace-nav .selected {
+  color: var(--text);
+  background: var(--soft);
 }
 .sidebar-group-label {
   padding: 7px 11px 4px;
   font:
-    11px/18px "Manrope",
+    11px/18px var(--font-text),
     sans-serif;
   letter-spacing: 0;
 }
 .workspace-nav.studio-nav {
   padding-bottom: 8px;
 }
+/* DSH section header: 36px, muted 14/20 label, 28px icon buttons. */
 .session-heading {
-  min-height: 34px;
-  padding: 2px 9px 4px;
-}
-.session-heading > span {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 7px;
+  justify-content: space-between;
+  gap: 4px;
+  height: 36px;
+  margin: 2px -4px 4px 0;
+  padding: 0 0 0 12px;
 }
-.session-heading small {
+.session-heading-label {
+  max-width: 45%;
+  overflow: hidden;
   color: var(--muted);
-  font:
-    10px "IBM Plex Mono",
-    monospace;
-  opacity: 0.65;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-heading.searching .session-heading-label {
+  display: none;
 }
 .session-heading-actions {
   display: flex;
-  gap: 2px;
+  gap: 4px;
+}
+.session-heading-actions .icon-control {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--secondary);
+}
+@media (hover: hover) {
+  .session-heading-actions .icon-control:hover:not(:disabled),
+  .session-heading-actions .icon-control.menu-open {
+    background: var(--soft);
+    color: var(--secondary);
+  }
+}
+/* A narrowed list (running only / archived) keeps its view button lit. */
+.session-heading-actions .icon-control.filtered {
+  color: var(--accent);
+}
+.session-heading .session-search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  height: 32px;
+  margin: 0 4px 0 -8px;
+  padding: 0 4px 0 10px;
+  gap: 6px;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--muted);
+  animation: session-search-in 180ms ease-out;
+}
+@keyframes session-search-in {
+  from {
+    opacity: 0;
+  }
+}
+.session-heading .session-search:focus-within {
+  border-color: var(--accent);
+}
+.session-heading .session-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 18px;
+}
+.session-search-clear {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+.session-search-clear:hover {
+  background: var(--soft);
+  color: var(--text);
 }
 .session-folder + .session-folder {
-  margin-top: 9px;
+  margin-top: 4px;
 }
+/* DSH folder row: 34px, 12px radius, 16px folder glyph that turns into a
+ * caret on hover; blue while it holds the open conversation. */
 .session-folder-heading {
-  padding: 7px 10px;
-  font-size: 12px;
-  gap: 8px;
-  min-height: 32px;
+  min-height: 34px;
+  padding: 0 8px 0 9px;
+  gap: 6px;
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
 }
-.session-folder-heading > svg:last-child {
+.session-folder-heading:hover {
+  background: var(--soft);
+}
+.folder-glyph {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  flex-shrink: 0;
+  place-items: center;
+  width: 16px;
+  height: 20px;
+  color: var(--muted);
+}
+.session-folder-heading.current .folder-glyph {
+  color: var(--accent);
+}
+.folder-caret {
+  position: absolute;
   opacity: 0;
+  color: var(--caption);
+  transition: transform 150ms ease;
 }
-.session-folder-heading:hover > svg:last-child,
-.session-folder-heading:focus-visible > svg:last-child {
-  opacity: 1;
+.session-folder-heading[aria-expanded="true"] .folder-caret {
+  transform: rotate(90deg);
+}
+@media (hover: hover) {
+  .session-folder-heading:hover .folder-glyph > svg:not(.folder-caret) {
+    opacity: 0;
+  }
+  .session-folder-heading:hover .folder-caret {
+    opacity: 1;
+  }
 }
 .session-list {
   padding-bottom: 12px;
@@ -214,18 +349,19 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   min-width: 0;
-  border-radius: 7px;
+  border-radius: 12px;
   position: relative;
   margin: 1px 0;
 }
 .session-row:hover,
-.session-row:focus-within {
-  background: var(--elevated);
+.session-row:focus-within,
+.session-row.selected {
+  background: var(--soft);
 }
 .session-row .session-item {
   min-width: 0;
   width: 100%;
-  min-height: 34px;
+  min-height: 32px;
   margin: 0;
   padding: 6px 5px 6px 28px;
   gap: 6px;
@@ -236,8 +372,8 @@
   background: transparent;
 }
 .session-name {
-  font-size: 12px;
-  line-height: 21px;
+  font-size: 14px;
+  line-height: 20px;
 }
 .session-workflow-icon {
   display: none;
@@ -385,7 +521,7 @@
 }
 .workbench-menu-item kbd {
   font:
-    10px "Manrope",
+    10px var(--font-text),
     sans-serif;
   color: var(--muted);
 }
@@ -705,7 +841,7 @@
   top: 50%;
   right: 6px;
   display: flex;
-  gap: 2px;
+  gap: 4px;
   transform: translateY(-50%);
   opacity: 0;
 }
@@ -716,7 +852,16 @@
 .workspace-folder-actions .icon-control {
   width: 24px;
   height: 24px;
+  border-radius: 4px;
   color: var(--muted);
+}
+.workspace-folder-actions .icon-control:hover,
+.workspace-folder-actions .icon-control.menu-open {
+  background: transparent;
+  color: var(--text);
+}
+.workspace-folder-actions:has(.menu-open) {
+  opacity: 1;
 }
 .workspace-folder-empty {
   padding: 4px 12px 6px 36px;
@@ -780,4 +925,10 @@
   margin: 0;
   color: var(--danger);
   font-size: 12px;
+}
+
+/* DSH SessionScheduleMark: a quiet clock before the row's time or status. */
+.session-schedule-mark {
+  flex-shrink: 0;
+  color: var(--muted);
 }

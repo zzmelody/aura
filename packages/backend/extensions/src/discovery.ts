@@ -136,6 +136,7 @@ async function validatePlugin(
   options: LoadAuraPluginsOptions,
 ): Promise<{
   identity: AuraPluginIdentity;
+  description?: string;
   pluginRoot: string;
   capabilities: string[];
   actionRoot?: string;
@@ -239,6 +240,7 @@ async function validatePlugin(
     );
   return {
     identity,
+    ...(manifest.description ? { description: manifest.description } : {}),
     pluginRoot: root,
     ...(manifest.compatibility
       ? { compatibility: manifest.compatibility }
@@ -371,6 +373,7 @@ export async function resolveAuraPluginConfiguration(
         });
       result.plugins.push({
         ...plugin.identity,
+        ...(plugin.description ? { description: plugin.description } : {}),
         enabled: true,
         available: true,
       });

@@ -48,6 +48,12 @@ export const codingTools = [
   "present",
   "exit_plan_mode",
   "ask_user_question",
+  // DSH Schedule reminders: due occurrences arrive as follow-ups in this
+  // session, so the agent itself drives them under the same allow-list.
+  "schedule_create",
+  "schedule_list",
+  "schedule_update",
+  "schedule_delete",
 ] as const;
 
 /** Shell tool names differ by platform; whichever exists is admitted. */
@@ -88,6 +94,15 @@ export function codingService(
   const stops = new Map<string, AbortController>();
   /** Cancels only the in-progress turn; the conversation stays usable. */
   const turnStops = new Map<string, AbortController>();
+
+  // The allow-list belongs to the agent, not to a turn: DSH Schedule delivers
+  // reminders straight into a live or restored agent, outside `run()`, and
+  // that turn must see exactly the tools a user-sent turn sees.
+  ctx.on("agent/created", async ({ agent }) => {
+    const preset = (await ctx.agentPresets.resolve("coder-v1")).id;
+    if (agent.session.header.agentPreset === preset) mountCodingTools(agent);
+    return undefined;
+  });
 
   return {
     stream,
@@ -366,9 +381,6 @@ export function codingService(
           ? {}
           : { reasoningEffort: config.reasoningEffort }),
       });
-      // Scoped restrictions are lifted when this turn ends, so every turn,
-      // including follow-ups on a live agent, re-applies the allow-list.
-      scoped.push(...mountCodingTools(agent));
       for (const tool of chatTools(workflows, {
         mode: turn.mode,
         signal: stop,
@@ -541,7 +553,8 @@ export function codingService(
   /**
    * Admits the coding tool set to this agent's own scope. DSH restrictions
    * filter inherited tools only, so `restrict({ allow })` keeps exactly these
-   * names and nothing else the profile mounts reaches the model.
+   * names and nothing else the profile mounts reaches the model. Both
+   * registrations unwind with the agent's scope.
    */
   function mountCodingTools(agent: {
     ctx: {
@@ -552,8 +565,7 @@ export function codingService(
       };
     };
   }) {
-    const mounted: Array<() => void> = [];
-    mounted.push(agent.ctx.tools.presentAs("native"));
+    agent.ctx.tools.presentAs("native");
     // A coding session needs every listed tool; the shell name varies by
     // platform, so only one of those is expected to exist.
     const available = codingTools.filter((name) => agent.ctx.tools.get(name));
@@ -561,12 +573,9 @@ export function codingService(
     if (missing.length)
       throw new FlowError(`编码工具未注册：${missing.join("、")}。`);
     const shell = shellTools.find((name) => agent.ctx.tools.get(name));
-    mounted.push(
-      agent.ctx.tools.restrict({
-        allow: [...available, ...(shell ? [shell] : [])],
-      }),
-    );
-    return mounted;
+    agent.ctx.tools.restrict({
+      allow: [...available, ...(shell ? [shell] : [])],
+    });
   }
 }
 

@@ -3,7 +3,7 @@
   padding: 4px 12px 6px;
   color: var(--muted);
   font:
-    10px/16px "IBM Plex Mono",
+    10px/16px var(--font-mono),
     monospace;
   letter-spacing: 1.1px;
 }
@@ -74,7 +74,7 @@
 .chat-quick small {
   color: var(--muted);
   font:
-    10px/16px "IBM Plex Mono",
+    10px/16px var(--font-mono),
     monospace;
   letter-spacing: 1.1px;
 }
@@ -176,7 +176,7 @@
 }
 .flow-picker-hint kbd {
   font:
-    10px "IBM Plex Mono",
+    10px var(--font-mono),
     monospace;
   padding: 1px 5px;
   border: 1px solid var(--border);
@@ -237,7 +237,7 @@
   flex-shrink: 0;
   color: var(--success);
   font:
-    10px "IBM Plex Mono",
+    10px var(--font-mono),
     monospace;
 }
 .flow-picker-state.unavailable {
@@ -333,7 +333,7 @@
   padding: 0 8px 0 16px;
   color: var(--muted);
   font:
-    10px/16px "IBM Plex Mono",
+    10px/16px var(--font-mono),
     monospace;
   letter-spacing: 1.1px;
 }

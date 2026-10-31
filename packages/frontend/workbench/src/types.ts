@@ -2,4 +2,11 @@
 export type StudioTab = "studio:coding";
 /** Navigation belongs to the client, not the shared conversation model. */
 export type Tab =
-  "chat" | "flows" | StudioTab | `plugin:${string}` | "history" | "settings";
+  | "chat"
+  | "flows"
+  | StudioTab
+  | `plugin:${string}`
+  | "history"
+  | "plugins"
+  | "automation"
+  | "settings";

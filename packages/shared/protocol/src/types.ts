@@ -125,6 +125,8 @@ export interface AuraPluginStatus {
   version?: string;
   enabled: boolean;
   available: boolean;
+  /** Manifest `description`, shown on the plugins page. */
+  description?: string;
   error?: string;
 }
 
@@ -145,6 +147,8 @@ export interface AuraPluginConfiguration {
 /** Editable projection returned by the local runtime configuration endpoint. */
 export interface AuraPluginSettingsEntry extends AuraPluginConfigurationEntry {
   status: AuraPluginStatus;
+  /** Shipped in the repository `plugins/` root rather than added by path. */
+  builtin: boolean;
 }
 
 export interface AuraPluginSettingsState {
@@ -584,6 +588,8 @@ export type CodingActivity =
       name: string;
       /** The file, command or pattern the call touches, when it names one. */
       detail?: string;
+      /** Session event time (ms); feeds the trajectory timeline. */
+      at: number;
     }
   | {
       type: "tool";
@@ -592,11 +598,14 @@ export type CodingActivity =
       ok: boolean;
       /** Applied hunks of a write or edit, for the file-change card. */
       diffs?: CodingFileDiff[];
+      at: number;
     }
+  /** A model request opened (step start) or answered (assistant message). */
+  | { type: "model"; phase: "start" | "end"; at: number }
   | { type: "progress"; done: number; total: number }
   | { type: "deliverable"; path: string }
   /** Guidance the user sent into this turn while it was already running. */
-  | { type: "steer"; text: string }
+  | { type: "steer"; text: string; at: number }
   | {
       type: "question";
       questionId: string;
@@ -660,4 +669,58 @@ export interface PluginCompatibility {
 export interface PluginHttpContribution {
   entry: string;
   mounts: string[];
+}
+
+/**
+ * Automation task timing, mirroring DSH Schedule's record kinds. `after` is a
+ * relative one-shot DSH keeps for model-created reminders.
+ */
+export type AutomationTiming =
+  | { kind: "at"; at: string }
+  | { kind: "after"; afterSeconds: number }
+  | { kind: "every"; everySeconds: number }
+  | { kind: "daily"; time: string; timeZone: string }
+  | { kind: "weekly"; time: string; timeZone: string; weekdays: number[] }
+  | { kind: "cron"; expression: string; timeZone: string };
+
+/** One DSH Schedule task bound to a coding conversation. */
+export interface AutomationTask {
+  id: string;
+  sessionId: string;
+  /** Owning workspace and conversation title, when the conversation still exists. */
+  projectId?: string;
+  conversationTitle?: string;
+  title: string;
+  prompt: string;
+  timing: AutomationTiming;
+  /** Next occurrence (ISO). Meaningless once `status` is `ended`. */
+  scheduledAt: string;
+  /** DSH keeps `active`/`inactive`; a finished one-shot is `ended`. */
+  status: "active" | "ended";
+  lastDeliveredAt?: string;
+}
+
+/** Timing the create and edit forms submit; `after` is model-only. */
+export type AutomationTimingInput = Exclude<
+  AutomationTiming,
+  { kind: "after" }
+>;
+
+export interface AutomationTaskInput {
+  sessionId: string;
+  title: string;
+  prompt: string;
+  timing: AutomationTimingInput;
+}
+
+export interface AutomationDelivery {
+  scheduledAt: string;
+  deliveredAt: string;
+  prompt?: string;
+}
+
+export interface AutomationHistory {
+  records: AutomationDelivery[];
+  /** Older deliveries were pruned by retention or predate history. */
+  truncated: boolean;
 }

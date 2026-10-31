@@ -176,14 +176,14 @@ test(
       assert.equal(history.turns[0]!.prompt, "写个函数");
       assert.equal(history.turns[0]!.status, "complete");
       // The guidance shows in the transcript, live and replayed alike.
-      const steerEvent = { type: "steer", text: GUIDANCE };
-      assert.deepEqual(
-        events.filter((event) => event.type === "steer"),
-        [steerEvent],
-      );
+      // Both carry the same session event time, so the trajectory agrees.
+      const live = events.filter((event) => event.type === "steer");
+      assert.equal(live.length, 1);
+      assert.equal(live[0]!.text, GUIDANCE);
+      assert.equal(typeof live[0]!.at, "number");
       assert.deepEqual(
         history.turns[0]!.events.filter((event) => event.type === "steer"),
-        [steerEvent],
+        live,
       );
 
       // A conversation whose turn has ended takes no more guidance.

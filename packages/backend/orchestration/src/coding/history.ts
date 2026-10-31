@@ -164,6 +164,7 @@ export function historyTurns(
       continue;
     }
     if (event.type === "assistant/message") {
+      emit({ type: "model", phase: "end", at: event.time });
       if (data.interrupted === true) continue;
       const reply = text((data.message as { content?: unknown })?.content);
       if (reply) {

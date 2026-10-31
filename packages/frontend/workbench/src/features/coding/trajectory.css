@@ -1,0 +1,216 @@
+@import "../../screens/feature-page.css";
+
+/* DSH trajectory: 44px lane labels, a 56px plot of 8px spans on three lanes,
+ * dashed turn boundaries, and a 30px-row step table. */
+.trajectory {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  max-width: var(--chat-column, 800px);
+  margin: 0 auto;
+  padding: 20px 24px 40px;
+  color: var(--text);
+}
+.trajectory-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  color: var(--secondary);
+  font-size: 13px;
+}
+.trajectory-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.trajectory-chart {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  padding: 12px 12px 8px 4px;
+  border: 0.5px solid var(--hairline);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.trajectory-labels {
+  display: grid;
+  grid-auto-rows: 16px;
+  padding-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+.trajectory-plot {
+  position: relative;
+  height: 56px;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+.trajectory-lane {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--soft) 60%, transparent);
+}
+.trajectory-span {
+  position: absolute;
+  top: 0;
+  height: 8px;
+  border-radius: 4px;
+}
+.trajectory-span.input {
+  background: var(--secondary);
+}
+.trajectory-span.model {
+  background: var(--accent);
+}
+.trajectory-span.tool {
+  background: var(--success);
+}
+.trajectory-span.failed {
+  background: var(--danger);
+}
+.trajectory-span.stopped {
+  opacity: 0.45;
+}
+.trajectory-span.running {
+  animation: trajectory-pulse 1.2s ease-in-out infinite;
+}
+@keyframes trajectory-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+.trajectory-turn {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  border-left: 1px dashed var(--border);
+  pointer-events: none;
+}
+.trajectory-turn small {
+  position: absolute;
+  bottom: -14px;
+  left: 3px;
+  color: var(--caption);
+  font-size: 10px;
+}
+.trajectory-selection {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  pointer-events: none;
+}
+/* Below the plot: above it the toolbar and header would clip it. */
+.trajectory-tooltip {
+  position: absolute;
+  top: calc(100% + 14px);
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  max-width: 280px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--elevated);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 18px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.trajectory-tooltip > span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--secondary);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  word-break: break-all;
+}
+.trajectory-tooltip small {
+  color: var(--muted);
+}
+.trajectory-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: fixed;
+}
+.trajectory-table th {
+  height: 30px;
+  border-bottom: 0.5px solid var(--hairline);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+}
+.trajectory-table th:nth-child(1) {
+  width: 48px;
+}
+.trajectory-table th:nth-child(2) {
+  width: 132px;
+}
+.trajectory-table th:nth-child(4),
+.trajectory-table th:nth-child(5) {
+  width: 92px;
+}
+.trajectory-table td {
+  height: 30px;
+  padding-right: 8px;
+  border-bottom: 0.5px solid var(--hairline);
+  overflow: hidden;
+  color: var(--secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trajectory-table td:nth-child(2) {
+  color: var(--text);
+}
+.trajectory-table tr.failed td:last-child {
+  color: var(--danger);
+}
+.trajectory-detail {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.trajectory-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+.trajectory-dot.model {
+  background: var(--accent);
+}
+.trajectory-dot.tool {
+  background: var(--success);
+}
+.trajectory-empty {
+  max-width: 420px;
+  margin: 64px auto;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+}
+@media (max-width: 767px) {
+  .trajectory {
+    padding-inline: 16px;
+  }
+  .trajectory-table th:nth-child(3),
+  .trajectory-table td:nth-child(3) {
+    display: none;
+  }
+}
+[data-reduced="true"] .trajectory-span.running {
+  animation: none;
+}

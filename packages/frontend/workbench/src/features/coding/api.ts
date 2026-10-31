@@ -8,6 +8,9 @@ import type {
   CodingProjectInfo,
   CodingQuestionAnswer,
   CodingQuestionItem,
+  AutomationHistory,
+  AutomationTask,
+  AutomationTaskInput,
   FlowMode,
 } from "@aura/protocol/types";
 import { WorkflowApiError } from "../../workflowSessions";
@@ -204,6 +207,12 @@ function parseCodingEvent(
     };
   if (event.type === "delta" && typeof event.text === "string")
     return { type: "delta", text: event.text };
+  const at = typeof event.at === "number" ? event.at : Date.now();
+  if (
+    event.type === "model" &&
+    (event.phase === "start" || event.phase === "end")
+  )
+    return { type: "model", phase: event.phase, at };
   if (
     event.type === "tool" &&
     typeof event.callId === "string" &&
@@ -216,12 +225,14 @@ function parseCodingEvent(
           callId: event.callId,
           name: String(event.name ?? "tool"),
           ...(typeof event.detail === "string" ? { detail: event.detail } : {}),
+          at,
         }
       : {
           type: "tool",
           phase: "end",
           callId: event.callId,
           ok: event.ok !== false,
+          at,
           ...(Array.isArray(event.diffs)
             ? { diffs: fileDiffs(event.diffs) }
             : {}),
@@ -235,7 +246,7 @@ function parseCodingEvent(
   if (event.type === "deliverable" && typeof event.path === "string")
     return { type: "deliverable", path: event.path };
   if (event.type === "steer" && typeof event.text === "string" && event.text)
-    return { type: "steer", text: event.text };
+    return { type: "steer", text: event.text, at };
   if (
     event.type === "question" &&
     typeof event.questionId === "string" &&
@@ -487,3 +498,58 @@ function planIntent(
     ? { intent: { kind: "plan-review", approve: value.approve } }
     : {};
 }
+
+/** Automation tasks: DSH Schedule reminders on coding conversations. */
+export const listAutomation = (endpoint: string, signal?: AbortSignal) =>
+  codingApi<AutomationTask[]>(
+    endpoint,
+    "/automation",
+    "GET",
+    undefined,
+    signal,
+  );
+
+export const createAutomation = (
+  endpoint: string,
+  input: AutomationTaskInput,
+) => codingApi<AutomationTask>(endpoint, "/automation", "POST", input);
+
+const automationPath = (sessionId: string, id: string) =>
+  `/automation/${encodeURIComponent(sessionId)}/${encodeURIComponent(id)}`;
+
+export const updateAutomation = (
+  endpoint: string,
+  id: string,
+  input: AutomationTaskInput,
+) =>
+  codingApi<AutomationTask>(
+    endpoint,
+    automationPath(input.sessionId, id),
+    "POST",
+    input,
+  );
+
+export const deleteAutomation = (
+  endpoint: string,
+  sessionId: string,
+  id: string,
+) =>
+  codingApi<{ deleted: boolean }>(
+    endpoint,
+    `${automationPath(sessionId, id)}/delete`,
+    "POST",
+  );
+
+export const automationHistory = (
+  endpoint: string,
+  sessionId: string,
+  id: string,
+  signal?: AbortSignal,
+) =>
+  codingApi<AutomationHistory>(
+    endpoint,
+    `${automationPath(sessionId, id)}/history`,
+    "GET",
+    undefined,
+    signal,
+  );
