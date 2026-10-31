@@ -20,10 +20,8 @@
 - [Tripo 3D](features/tripo.md)
 - [本地媒体 Actions](../packages/backend/orchestration/docs/local-ai-actions.md)
 
-## 运维、设计与验证
+## 设计与验证
 
-- [本机 CI](operations/ci-runner.md)
-- [需求驱动的自动开发](operations/auto-development.md)
 - [剧情决策器部署调研](proposals/local-story-director.md)：尚未实现的选型方案，不是当前能力。
 - [本轮验证](verification.md)
 - [历史验证记录](verification/history.md)：按当时提交与环境记录，不代表当前全仓状态。
