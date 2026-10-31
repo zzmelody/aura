@@ -32,11 +32,10 @@ function inside(root: string, path: string): boolean {
   );
 }
 
-type ContributionKind = "action" | "flow" | "capability";
+type ContributionKind = "action" | "flow";
 const kindLabels: Record<ContributionKind, string> = {
   action: "Action",
   flow: "Flow",
-  capability: "Capability",
 };
 
 async function contributionEntries(
@@ -56,30 +55,27 @@ async function contributionEntries(
 }
 
 /**
- * Locates the prebuilt browser bundle a page-contributing plugin declares.
- * The file must sit inside the plugin root and stay readable; Aura never
- * builds or transpiles plugin browser code at discovery time.
+ * Locates a prebuilt entry file the manifest declares (page bundle, backend
+ * module or HTTP adapter). The file must sit inside the plugin root and stay
+ * readable; Aura never builds or transpiles plugin code at discovery time.
  */
-async function validatePageBundle(
+async function validateEntryFile(
   pluginRoot: string,
   configuredPath: string,
+  label: string,
 ): Promise<string> {
-  let bundle: string;
+  let entry: string;
   try {
-    bundle = await realpath(resolve(pluginRoot, configuredPath));
+    entry = await realpath(resolve(pluginRoot, configuredPath));
   } catch {
-    throw new AuraPluginConfigurationError("页面贡献的浏览器入口不存在。");
+    throw new AuraPluginConfigurationError(`${label}不存在。`);
   }
-  if (bundle === pluginRoot || !inside(pluginRoot, bundle))
-    throw new AuraPluginConfigurationError(
-      "页面贡献的浏览器入口必须位于插件根目录内。",
-    );
-  const info = await stat(bundle);
+  if (entry === pluginRoot || !inside(pluginRoot, entry))
+    throw new AuraPluginConfigurationError(`${label}必须位于插件根目录内。`);
+  const info = await stat(entry);
   if (!info.isFile() || info.size === 0)
-    throw new AuraPluginConfigurationError(
-      "页面贡献的浏览器入口必须是非空文件。",
-    );
-  return bundle;
+    throw new AuraPluginConfigurationError(`${label}必须是非空文件。`);
+  return entry;
 }
 
 async function validateContributionRoot(
@@ -138,10 +134,11 @@ async function validatePlugin(
   identity: AuraPluginIdentity;
   description?: string;
   pluginRoot: string;
-  capabilities: string[];
+  permissions: string[];
   actionRoot?: string;
   flowRoot?: string;
-  capabilityRoot?: string;
+  /** Absolute path of the built backend module, when the plugin has one. */
+  backendEntry?: string;
   /** Absolute path of the built browser bundle, when the plugin contributes pages. */
   pageBundle?: string;
   compatibility?: PluginCompatibility;
@@ -159,7 +156,7 @@ async function validatePlugin(
   );
   if (!manifestResult.success)
     throw new AuraPluginConfigurationError(
-      "aura.plugin.json 不符合 v1 插件规范。",
+      "aura.plugin.json 不符合 v2 插件规范。",
     );
   const manifest = manifestResult.data;
   const packageResult = z
@@ -186,14 +183,13 @@ async function validatePlugin(
     throw new AuraPluginConfigurationError(
       `插件不支持 Plugin SDK ${options.pluginSdkVersion}。`,
     );
-  // Declared capabilities are built-ins only; a plugin's own providers are implicit.
-  const supported = new Set(options.supportedCapabilities ?? []);
-  const unsupported = manifest.capabilities.filter(
+  const supported = new Set(options.supportedPermissions ?? []);
+  const unsupported = manifest.permissions.filter(
     (item) => !supported.has(item),
   );
   if (unsupported.length)
     throw new AuraPluginConfigurationError(
-      `插件请求了未提供的能力：${unsupported.join(", ")}。`,
+      `插件请求了未提供的权限：${unsupported.join(", ")}。`,
     );
 
   // `@aura/plugin-sdk` is provided by the host at load time; plugins never
@@ -204,17 +200,9 @@ async function validatePlugin(
     name: manifest.name,
     version: manifest.version,
   };
-  const capabilityRoot = manifest.contributes.capabilities
-    ? await validateContributionRoot(
-        root,
-        manifest.contributes.capabilities,
-        "capability",
-      )
+  const backendEntry = manifest.contributes.backend
+    ? await validateEntryFile(root, manifest.contributes.backend, "后端入口")
     : undefined;
-  // A plugin may always call its own providers; they are granted by ID.
-  const own = capabilityRoot
-    ? (await readdir(capabilityRoot)).map((local) => `${manifest.id}/${local}`)
-    : [];
   for (const [kind, path] of [
     ["actions", manifest.contributes.actions],
     ["flows", manifest.contributes.flows],
@@ -233,10 +221,10 @@ async function validatePlugin(
   }
   if (
     (manifest.contributes.http || manifest.contributes.presets) &&
-    !capabilityRoot
+    !backendEntry
   )
     throw new AuraPluginConfigurationError(
-      "Backend HTTP/presets require an owning capability provider.",
+      "Backend HTTP/presets require contributes.backend.",
     );
   return {
     identity,
@@ -248,9 +236,10 @@ async function validatePlugin(
     ...(manifest.contributes.http
       ? {
           http: {
-            entry: await validatePageBundle(
+            entry: await validateEntryFile(
               root,
               manifest.contributes.http.entry,
+              "HTTP 入口",
             ),
             mounts: manifest.contributes.http.mounts,
           },
@@ -261,8 +250,8 @@ async function validatePlugin(
           presets: await validatePresetRoot(root, manifest.contributes.presets),
         }
       : {}),
-    capabilities: [...manifest.capabilities, ...own.sort()],
-    ...(capabilityRoot ? { capabilityRoot } : {}),
+    permissions: [...manifest.permissions],
+    ...(backendEntry ? { backendEntry } : {}),
     ...(manifest.contributes.actions
       ? {
           actionRoot: await validateContributionRoot(
@@ -283,9 +272,10 @@ async function validatePlugin(
       : {}),
     ...(manifest.contributes.pages
       ? {
-          pageBundle: await validatePageBundle(
+          pageBundle: await validateEntryFile(
             root,
             manifest.contributes.pages,
+            "页面贡献的浏览器入口",
           ),
         }
       : {}),
@@ -299,7 +289,7 @@ export async function resolveAuraPluginConfiguration(
   const result: AuraPluginResolution = {
     actionRoots: [],
     flowRoots: [],
-    capabilityRoots: [],
+    backendRoots: [],
     pageRoots: [],
     plugins: [],
   };
@@ -351,7 +341,7 @@ export async function resolveAuraPluginConfiguration(
         pluginRoot: plugin.pluginRoot,
         namespace: plugin.identity.id,
         plugin: plugin.identity,
-        capabilities: [...plugin.capabilities],
+        permissions: [...plugin.permissions],
         ...(plugin.compatibility
           ? { compatibility: plugin.compatibility }
           : {}),
@@ -360,9 +350,9 @@ export async function resolveAuraPluginConfiguration(
       });
       if (plugin.actionRoot) result.actionRoots.push(root(plugin.actionRoot));
       if (plugin.flowRoot) result.flowRoots.push(root(plugin.flowRoot));
-      if (plugin.capabilityRoot)
-        result.capabilityRoots.push({
-          ...root(plugin.capabilityRoot),
+      if (plugin.backendEntry)
+        result.backendRoots.push({
+          ...root(plugin.backendEntry),
           ...(entry.settings === undefined ? {} : { settings: entry.settings }),
         });
       if (plugin.pageBundle)

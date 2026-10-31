@@ -107,8 +107,8 @@ scripts/       根级运行、构建与依赖检查
 tests/         仓库级工作区规则测试
 ```
 
-放置和依赖规则见 [AGENTS.md](AGENTS.md)。简要规则是：可运行入口只放 `apps/*`，可复用库才放 `packages/*`；frontend 只依赖 frontend/shared，backend 只依赖 backend/shared，shared 只依赖 shared；任何 workspace 都不能导入应用；跨 workspace 只使用显式导出和 `workspace:*`。
+放置和依赖规则见 [项目结构 skill](.agents/skills/aura-project-structure/SKILL.md)。简要规则是：可运行入口只放 `apps/*`，可复用库才放 `packages/*`；frontend 只依赖 frontend/shared，backend 只依赖 backend/shared，shared 只依赖 shared；任何 workspace 都不能导入应用；跨 workspace 只使用显式导出和 `workspace:*`。
 
-仓库内置 [Aura 插件开发 skill](.agents/skills/aura-plugin-development/SKILL.md)，包含插件契约、JavaScript 编码规范和调用配置，随 Git 一起维护。开发 Aura 插件或插件宿主时按该 skill 执行；在 Codex 中可使用 `$aura-plugin-development` 调用。
+开发规则按任务拆成 skill，随 Git 一起维护在 `.agents/skills/`：[项目结构](.agents/skills/aura-project-structure/SKILL.md)、[代码规范](.agents/skills/aura-code-style/SKILL.md)、[测试规范](.agents/skills/aura-testing/SKILL.md) 和 [插件开发](.agents/skills/aura-plugin-development/SKILL.md)。插件 skill 包含插件契约、JavaScript 编码规范和调用配置；在 Codex 中可使用 `$aura-plugin-development` 调用。入口与始终适用的凭据、DSH 约束见 [AGENTS.md](AGENTS.md)。
 
 完整入口见 [文档目录](docs/README.md) 与 [模块边界](docs/development/module-boundaries.md)。更多信息见 [架构](docs/architecture.md)、[后端 Runtime 技术方案](docs/development/backend-runtime.md)、[模型接入](docs/features/model-providers.md)、[主题规范](docs/development/design-system.md) 和 [当前验证](docs/verification.md)。

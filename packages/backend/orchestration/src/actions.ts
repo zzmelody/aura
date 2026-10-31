@@ -17,7 +17,7 @@ const internalPrefix = "aura_direct_";
 
 /** @internal Narrows the host capability port to one Action's manifest grants. */
 export function actionCapabilities(
-  action: Pick<LoadedAction, "id" | "capabilities">,
+  action: Pick<LoadedAction, "id" | "permissions">,
   host: AuraCapabilityClient | undefined,
   binding?: string | Pick<ActionBinding, "runId" | "stepId" | "idempotencyKey">,
 ): AuraCapabilityClient | undefined {
@@ -29,7 +29,7 @@ export function actionCapabilities(
     ...(call.stepId ? { stepId: call.stepId } : {}),
     ...(call.idempotencyKey ? { idempotencyKey: call.idempotencyKey } : {}),
   });
-  const allowed = new Set(action.capabilities);
+  const allowed = new Set(action.permissions);
   return Object.freeze({
     invoke(
       capability: string,

@@ -11,35 +11,32 @@ test("release plugins preserve nested layout and load without source plugin dire
   t.after(() => rm(root, { recursive: true, force: true }));
   const source = join(root, "source");
   const plugin = join(source, "personal", "chat");
-  await mkdir(join(plugin, "capabilities", "echo"), { recursive: true });
+  await mkdir(join(plugin, "backend", "dist"), { recursive: true });
   await writeFile(
     join(plugin, "package.json"),
-    JSON.stringify({ type: "module", files: ["capabilities"] }),
+    JSON.stringify({ type: "module", files: ["backend/dist/index.js"] }),
   );
   await writeFile(
     join(plugin, "aura.plugin.json"),
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: "test.release",
       name: "Release",
       version: "0.1.0",
-      engines: { aura: "^0.1.0", pluginSdk: "^1.3.0" },
-      contributes: { capabilities: "./capabilities" },
+      engines: { aura: "^0.1.0", pluginSdk: "^2.0.0" },
+      contributes: { backend: "./backend/dist/index.js" },
     }),
   );
   await writeFile(
-    join(plugin, "capabilities", "echo", "echo.capability.js"),
-    'export { defineCapabilityProvider as default } from "@aura/plugin-sdk/capability";',
+    join(plugin, "backend", "dist", "index.js"),
+    'import { defineBackend } from "@aura/plugin-sdk/backend";\nexport default defineBackend({ open() { return {}; } });\n',
   );
-  await mkdir(join(plugin, "capabilities", "echo", "cache"));
+  await mkdir(join(plugin, "backend", "dist", "cache"));
   await writeFile(
-    join(plugin, "capabilities", "echo", "cache", "private.json"),
+    join(plugin, "backend", "dist", "cache", "private.json"),
     "private",
   );
-  await writeFile(
-    join(plugin, "capabilities", "echo", "private.key"),
-    "private",
-  );
+  await writeFile(join(plugin, "backend", "dist", "private.key"), "private");
   await writeFile(join(plugin, "unlisted.txt"), "private");
   const output = join(root, "installed", "plugins");
   await buildPlugins(source, output, false);
@@ -47,8 +44,8 @@ test("release plugins preserve nested layout and load without source plugin dire
   const installed = join(output, "personal", "chat");
   for (const file of [
     "unlisted.txt",
-    "capabilities/echo/cache/private.json",
-    "capabilities/echo/private.key",
+    "backend/dist/cache/private.json",
+    "backend/dist/private.key",
   ]) {
     await assert.rejects(readFile(join(installed, file)), { code: "ENOENT" });
   }
@@ -63,14 +60,14 @@ test("release plugins preserve nested layout and load without source plugin dire
     configPath: join(root, "user-data", "plugins.json"),
     defaultPluginsDirectory: output,
     auraVersion: "0.1.0",
-    pluginSdkVersion: "1.3.0",
+    pluginSdkVersion: "2.0.0",
   });
   assert.equal(
     resolution.plugins[0]?.available,
     true,
     resolution.plugins[0]?.error,
   );
-  assert.equal(resolution.capabilityRoots[0]?.plugin.id, "test.release");
+  assert.equal(resolution.backendRoots[0]?.plugin.id, "test.release");
 });
 
 test("release rejects undeclared files and output inside source", async (t) => {

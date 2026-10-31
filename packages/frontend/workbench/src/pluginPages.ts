@@ -79,7 +79,6 @@ export async function readPluginGraph(
 export async function invokePluginPage(
   endpoint: string,
   pluginId: string,
-  capabilityLocalId: string,
   operation: string,
   input: JsonValue = null,
   signal?: AbortSignal,
@@ -93,7 +92,6 @@ export async function invokePluginPage(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        capability: `${pluginId}/${capabilityLocalId}`,
         operation,
         input,
       }),

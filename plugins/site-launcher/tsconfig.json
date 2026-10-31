@@ -9,11 +9,6 @@
     "jsx": "react-jsx",
     "esModuleInterop": true
   },
-  "include": [
-    "client/src/**/*.ts",
-    "client/src/**/*.tsx",
-    "backend/**/*.ts",
-    "capabilities/**/*.js"
-  ],
+  "include": ["client/src/**/*.ts", "client/src/**/*.tsx", "backend/**/*.ts"],
   "exclude": ["**/dist/**"]
 }

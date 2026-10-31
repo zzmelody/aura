@@ -221,7 +221,6 @@ test("Hono API serves combo scripts, the graph and per-plugin page invoke", () =
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        capability: "wechat-history/archive",
         operation: "summary",
         input: { a: 1 },
       }),
@@ -231,7 +230,6 @@ test("Hono API serves combo scripts, the graph and per-plugin page invoke", () =
       method: "plugins/page-invoke",
       params: {
         pluginId: "wechat-history",
-        capability: "wechat-history/archive",
         operation: "summary",
         input: { a: 1 },
       },
@@ -240,7 +238,6 @@ test("Hono API serves combo scripts, the graph and per-plugin page invoke", () =
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        capability: "wechat-history/archive",
         operation: "sync-status",
       }),
     });
@@ -249,7 +246,6 @@ test("Hono API serves combo scripts, the graph and per-plugin page invoke", () =
       method: "plugins/page-invoke",
       params: {
         pluginId: "wechat-history",
-        capability: "wechat-history/archive",
         operation: "sync-status",
         input: null,
       },
@@ -260,7 +256,6 @@ test("Hono API serves combo scripts, the graph and per-plugin page invoke", () =
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          capability: "wechat-history/archive",
           operation: "invalidOperation",
         }),
       },
@@ -271,7 +266,6 @@ test("Hono API serves combo scripts, the graph and per-plugin page invoke", () =
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        capability: "wechat-history/archive",
         operation: "drop",
       }),
     });
@@ -284,7 +278,6 @@ test("Hono API serves combo scripts, the graph and per-plugin page invoke", () =
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        capability: "wechat-history/archive",
         operation: "summary",
         input: { text: "x".repeat(300_000) },
       }),
@@ -300,7 +293,6 @@ test("Hono API serves combo scripts, the graph and per-plugin page invoke", () =
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          capability: "wechat-history/archive",
           operation: "summary",
           input: { text: "x".repeat(4 * 1024 * 1024) },
         }),

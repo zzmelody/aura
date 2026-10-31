@@ -45,7 +45,7 @@ function contributions(resolution: AuraPluginResolution) {
     pluginRoot,
     namespace,
     plugin,
-    capabilities,
+    permissions,
     compatibility,
     http,
     presets,
@@ -54,7 +54,7 @@ function contributions(resolution: AuraPluginResolution) {
     pluginRoot,
     namespace,
     plugin,
-    capabilities,
+    permissions,
     ...(compatibility ? { compatibility } : {}),
     ...(http ? { http } : {}),
     ...(presets ? { presets } : {}),
@@ -62,7 +62,7 @@ function contributions(resolution: AuraPluginResolution) {
   return {
     flowRoots: resolution.flowRoots.map(root),
     actionRoots: resolution.actionRoots.map(root),
-    capabilityRoots: resolution.capabilityRoots.map((item) => ({
+    backendRoots: resolution.backendRoots.map((item) => ({
       ...root(item),
       ...(item.settings === undefined ? {} : { settings: item.settings }),
     })),
@@ -81,7 +81,7 @@ export async function startAuraRuntime(
     defaultPluginsDirectory: config.defaultPluginsDirectory,
     auraVersion: "0.1.0",
     pluginSdkVersion,
-    supportedCapabilities: ["aura.tripo.game-asset", "aura.flow.invoke"],
+    supportedPermissions: ["aura.tripo.game-asset", "aura.flow.invoke"],
   });
   const plugins = pluginManager.resolution;
   const pluginPages = new PluginPageRegistry({

@@ -6,7 +6,7 @@ import {
 import { readFile, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import { parse } from "yaml";
-import type { CapabilityRoot } from "./types.ts";
+import type { BackendRoot } from "./types.ts";
 
 /** Plugin preset declarations use the same DSH registry and retained Agent revisions. */
 export class PluginPresets {
@@ -18,7 +18,7 @@ export class PluginPresets {
   constructor(registry: Context["agentPresets"]) {
     this.registry = registry;
   }
-  async replace(roots: readonly CapabilityRoot[]) {
+  async replace(roots: readonly BackendRoot[]) {
     const desired = new Map<
       string,
       { source: string; definition: PresetDefinition }

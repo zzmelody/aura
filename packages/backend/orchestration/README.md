@@ -170,7 +170,7 @@ Action `recovery` 默认为 `manual`。只有显式 `idempotent` 的直接 Actio
 
 `ctx` 还提供 `signal`、`cwd`、Action 目录 `directory`、每次工具调用的 `callId`、`mode`，以及调用方存在时的 `runId`、`stepId`、`sessionId`。直接 Flow Action 的 `idempotencyKey` 跨 attempt 和重启保持不变。Agent 内部 Action 调用由 DSH 记录和调度，不是单独的 Flow durable step；未完成 Agent 一旦调用过工具，就需人工处理，不能自动重跑整个 Agent。
 
-外部插件可以通过 `@aura/plugin-sdk/action` 的 `auraCapability(ctx, id)` 使用 manifest 已声明且宿主支持的领域能力，或本插件 `contributes.capabilities` 贡献的 provider。能力实现由长驻宿主或插件 provider 持有，Action 只收到固定操作及 JSON 结果，不接触凭据、任意 URL 或进程句柄。
+外部插件可以通过 `@aura/plugin-sdk/action` 的 `auraCapability(ctx, id)` 使用 manifest `permissions` 已声明且宿主支持的领域能力；本插件后端的私有服务经 `ctx.services` 提供。能力实现由长驻宿主或插件后端持有，Action 只收到固定操作及 JSON 结果，不接触凭据、任意 URL 或进程句柄。
 
 Flow Agent 使用 fail-closed 工具白名单：固定为原生工具呈现并屏蔽 DSH、preset 及 profile 的全部继承工具，只把 `flow.agent({actions:["text-stats"],...})` 显式声明的 Action 注册到当前 Agent scope；未声明时模型工具集合为空。profile 对已知内置工具的禁用继续作为纵深防护，未来新增的 DSH 默认工具也不会自动进入 Flow Agent 上下文。Action 名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。全部内置和仓库插件的 Action 超时统一为 30 分钟，最大也为 30 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
 
@@ -213,10 +213,10 @@ unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算�
 
 外部插件的 manifest、信任、能力声明和根目录由 `@aura/extensions` 在进入编排宿主前校验，插件代码只通过 `@aura/plugin-sdk/action` 与 `@aura/plugin-sdk/flow` 接入。宿主不支持 manifest 请求的任一 capability 时插件整体保持不可用，不带着缺失能力部分加载。运行时可通过内部 `plugins/configure` RPC 动态替换多根发现器并扩展 HMR 监听；加载失败会恢复上一组根。插件版本与贡献 hash 随定义固定到运行记录。hash 包含贡献目录和插件根内静态 ESM 依赖闭包，共享 schema/prompt 修改也使版本变化。可信 pluginRoot 仅由 Extensions 内部传递；本地依赖越界和计算式动态 import 被拒绝。HMR 监听整个插件根，目录启停和内容更新只影响新运行。进程内已有运行继续使用固定版本；重启后原版本不存在则以 `revision_mismatch` 停止，不能使用新 helper 重放旧运行。Aura 不替插件执行安装、构建或生命周期脚本。
 
-`contributes.capabilities` 的 provider 及其静态本地 ESM 依赖也按一秒周期检测内容变化。
-宿主等待进行中的调用和该插件的活跃 Flow 结束后，准备新 provider 并切换版本；
+`contributes.backend` 入口及其静态本地 ESM 依赖也按一秒周期检测内容变化。
+宿主等待进行中的调用和该插件的活跃 Flow 结束后，准备新后端并切换版本；
 加载失败保留上一版。版本标签沿插件自己的本地模块图传递，SDK 和已安装依赖保持共享，
-不重新安装依赖、不写插件清单。资源与业务状态的回收仍由 provider 的 `close` 负责。
+不重新安装依赖、不写插件清单。资源与业务状态的回收仍由后端的 `close` 负责。
 
 ## API
 

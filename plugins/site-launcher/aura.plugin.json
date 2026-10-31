@@ -1,15 +1,14 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "site-launcher",
   "name": "站点启动",
   "version": "0.1.0",
   "engines": {
     "aura": "^0.1.0",
-    "pluginSdk": "^1.3.0"
+    "pluginSdk": "^2.0.0"
   },
   "contributes": {
-    "capabilities": "./capabilities",
+    "backend": "./backend/dist/index.js",
     "pages": "./client/dist/client.js"
-  },
-  "capabilities": []
+  }
 }

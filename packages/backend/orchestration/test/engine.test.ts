@@ -58,7 +58,7 @@ function flow(
     outputSchema: z.object({ report: z.string() }),
     concurrency: 2,
     agentTimeoutMs: 1_000,
-    capabilities: [],
+    permissions: [],
     run: (ctx, input) =>
       ctx.sequence({ id: "main" }, (scope) => run(scope, input)),
     ...options,

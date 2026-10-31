@@ -1,67 +1,43 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { basename, dirname, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
-import ts from "typescript";
 
 const id = process.argv[2];
 if (id !== "site-launcher") throw new Error("Unknown product plugin.");
 const workspace = fileURLToPath(new URL("../", import.meta.url));
 const root = resolve(workspace, "plugins", id);
-if (id === "site-launcher") {
-  await build({
-    configFile: false,
-    root,
-    logLevel: "warn",
-    build: {
-      ssr: true,
-      target: "node24",
-      minify: false,
-      outDir: resolve(root, "backend/dist"),
-      lib: {
-        entry: resolve(root, "backend/site-runner.ts"),
-        formats: ["es"],
-        fileName: () => "site-runner.js",
-      },
-    },
-  });
-  // The checked TS runner is bundled for execution; emit its authoring types too.
-  const base = ts.readConfigFile(
-    resolve(workspace, "tsconfig.base.json"),
-    ts.sys.readFile,
-  );
-  const parsed = ts.parseJsonConfigFileContent(base.config, ts.sys, workspace);
-  const backend = resolve(root, "backend");
-  const program = ts.createProgram([resolve(backend, "site-runner.ts")], {
-    ...parsed.options,
-    noEmit: false,
-    allowJs: false,
-    checkJs: false,
-    declaration: true,
-    emitDeclarationOnly: true,
-    types: ["node"],
-  });
-  const outputs = new Map<string, string>();
-  program.emit(undefined, (path, source) => {
-    if (
-      [
-        "site-runner.d.ts",
-        "site-project.d.ts",
-        "site-network.d.ts",
-        "site-process.d.ts",
-      ].includes(basename(path))
-    ) {
-      outputs.set(resolve(backend, "dist", basename(path)), source);
-    }
-  });
-  if (outputs.size !== 4)
-    throw new Error("Runner declaration build was incomplete.");
-  for (const [path, source] of outputs) await writeFile(path, source);
-}
 const manifest = JSON.parse(
   await readFile(resolve(root, "aura.plugin.json"), "utf8"),
-) as { contributes: { pages: string } };
+) as { contributes: { backend: string; pages: string } };
+
+// The backend entry is bundled to the single ESM module the manifest names.
+// The SDK stays external: the Aura host provides it at load time.
+const backendEntry = resolve(root, manifest.contributes.backend);
+await rm(dirname(backendEntry), { recursive: true, force: true });
+await build({
+  configFile: false,
+  root,
+  logLevel: "warn",
+  build: {
+    ssr: true,
+    target: "node24",
+    minify: false,
+    outDir: dirname(backendEntry),
+    lib: {
+      entry: resolve(root, "backend/index.ts"),
+      formats: ["es"],
+      fileName: () => "index.js",
+    },
+    rollupOptions: {
+      external: (source) =>
+        source.startsWith("node:") ||
+        source === "@aura/plugin-sdk" ||
+        source.startsWith("@aura/plugin-sdk/"),
+    },
+  },
+});
 await build({
   configFile: false,
   root,

@@ -56,7 +56,7 @@ export const compatibilitySchema = z
   .strict();
 export const manifestSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     id: z.string().regex(pluginIdPattern),
     name: z.string().trim().min(1).max(80),
     version: z.string().refine((value) => Boolean(valid(value))),
@@ -73,7 +73,8 @@ export const manifestSchema = z
       .object({
         actions: z.string().trim().min(1).optional(),
         flows: z.string().trim().min(1).optional(),
-        capabilities: z.string().trim().min(1).optional(),
+        /** Built backend module default-exporting defineBackend(...). */
+        backend: z.string().trim().min(1).optional(),
         /** Built browser bundle entry (lazy-CJS), e.g. ./client/dist/client.js. */
         pages: z.string().trim().min(1).optional(),
         presets: z.string().trim().min(1).optional(),
@@ -89,11 +90,10 @@ export const manifestSchema = z
       })
       .strict()
       .refine((value) =>
-        Boolean(
-          value.actions || value.flows || value.capabilities || value.pages,
-        ),
+        Boolean(value.actions || value.flows || value.backend || value.pages),
       ),
     compatibility: compatibilitySchema.optional(),
-    capabilities: z.array(z.string().trim().min(1)).default([]),
+    /** Built-in host capabilities the plugin's Actions and Flows may call. */
+    permissions: z.array(z.string().trim().min(1)).default([]),
   })
   .strict();

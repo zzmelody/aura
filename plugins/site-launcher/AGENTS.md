@@ -1,13 +1,11 @@
-# Site launcher plugin
+# 站点启动插件
 
-Follow `../../docs/plugin-javascript-code-style.md`. Migrated sources retain Aura's
-double quotes and the repository's single pnpm lockfile. The provider entry is
-ESM JavaScript with `// @ts-check`; the TypeScript runner compiles to ESM JavaScript
-before discovery. Never build or install dependencies during plugin startup.
+遵循[外部插件 JavaScript 规范](../../docs/plugin-javascript-code-style.md)。迁移来的源码保留 Aura 的双引号，依赖继续使用仓库唯一的 pnpm lockfile。后端入口 `backend/index.ts` 与 runner 一起在发现之前构建为 `backend/dist/index.js`（ESM）。启动阶段不构建、不安装依赖。
 
-Own project description, startup, port/process verification and cleanup here.
-Electron supplies directory selection and preview windows only. Preserve existing
-site storage keys. Never stop a process unless it belongs to this runner. Stop
-owned projects on provider disposal; navigating away must not stop them.
+职责边界：
 
-Run `pnpm run check:product-plugins` from the repository root.
+- 项目描述、启动、端口与进程校验、清理都归本插件。Electron 只提供目录选择和预览窗口。
+- 保留现有的站点存储键，不改写用户数据。
+- 只停止属于本 runner 的进程。插件后端关闭时停止自己启动的项目；页面切换不停止项目。
+
+从仓库根运行 `pnpm run check:product-plugins`。

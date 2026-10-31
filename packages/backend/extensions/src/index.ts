@@ -1,7 +1,7 @@
 export { AuraPluginConfigurationError } from "./types.ts";
 export type {
   PluginContributionRoot,
-  PluginCapabilityRoot,
+  PluginBackendRoot,
   PluginPageRoot,
   AuraPluginResolution,
   LoadAuraPluginsOptions,

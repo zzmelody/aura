@@ -29,7 +29,7 @@ import { CHAT_IMAGE_LIMIT } from "@aura/protocol/types";
 
 const chatModeSchema = z.enum(["demo", "codex", "lumina", "custom"]);
 import type {
-  CapabilityRoot,
+  BackendRoot,
   ContributionRoot,
   FlowDomain,
   Table,
@@ -38,7 +38,7 @@ import type { ActionRun, AuraPluginStatus } from "@aura/protocol/types";
 import { ActionRegistry } from "./action-registry.ts";
 import { ActionRuntime } from "./actions.ts";
 import { AuraCapabilityRouter } from "./capability-router.ts";
-import { PluginCapabilities } from "./plugin-capabilities.ts";
+import { PluginBackends } from "./plugin-backends.ts";
 import { TripoGameAssetCapability } from "./tripo-game-asset.ts";
 import { tripoLedgerDirectory } from "./tripo-budget.ts";
 import { GeneratedArtifacts } from "./artifacts/generated.ts";
@@ -92,7 +92,7 @@ const contributionRootSchema = z
     pluginRoot: z.string().min(1).max(4096).optional(),
     namespace: z.string().trim().min(1).max(64).optional(),
     plugin: pluginIdentitySchema.optional(),
-    capabilities: z.array(z.string().trim().min(1)).max(32).optional(),
+    permissions: z.array(z.string().trim().min(1)).max(32).optional(),
     compatibility: compatibilitySchema.optional(),
     http: httpContributionSchema.optional(),
     presets: z.string().optional(),
@@ -112,13 +112,13 @@ const pluginStatusSchema = z
     error: z.string().optional(),
   })
   .strict();
-const capabilityRootSchema = z
+const backendRootSchema = z
   .object({
     root: z.string().trim().min(1).max(4_096),
     pluginRoot: z.string().min(1).max(4096),
     namespace: z.string().trim().min(1).max(64),
     plugin: pluginIdentitySchema,
-    capabilities: z.array(z.string().trim().min(1)).max(32).optional(),
+    permissions: z.array(z.string().trim().min(1)).max(32).optional(),
     compatibility: compatibilitySchema.optional(),
     http: httpContributionSchema.optional(),
     presets: z.string().optional(),
@@ -129,7 +129,7 @@ const contributionConfigurationSchema = z
   .object({
     flowRoots: z.array(contributionRootSchema).max(65),
     actionRoots: z.array(contributionRootSchema).max(65),
-    capabilityRoots: z.array(capabilityRootSchema).max(64).default([]),
+    backendRoots: z.array(backendRootSchema).max(64).default([]),
     plugins: z.array(pluginStatusSchema).max(64),
   })
   .strict();
@@ -144,7 +144,7 @@ function rootKey(root: ContributionRoot): string {
     root.compatibility ?? null,
     root.http ?? null,
     root.presets ?? null,
-    [...(root.capabilities ?? [])].sort(),
+    [...(root.permissions ?? [])].sort(),
   ]);
 }
 
@@ -310,13 +310,13 @@ function contributionRoots(
   });
 }
 
-function capabilityRootsFromEnv(): CapabilityRoot[] {
-  const value = process.env.AURA_CAPABILITY_ROOTS;
+function backendRootsFromEnv(): BackendRoot[] {
+  const value = process.env.AURA_BACKEND_ROOTS;
   if (!value) return [];
   return z
-    .array(capabilityRootSchema)
+    .array(backendRootSchema)
     .max(64)
-    .parse(JSON.parse(value) as unknown) as CapabilityRoot[];
+    .parse(JSON.parse(value) as unknown) as BackendRoot[];
 }
 
 function pluginStatuses(): AuraPluginStatus[] {
@@ -428,10 +428,14 @@ export async function apply(ctx: Context) {
       }),
     ] as const);
   }
-  // Built-in routes plus plugin-contributed providers (`<plugin-id>/<local-id>`).
+  // Built-in host capabilities, granted to Actions and backends by `permissions`.
+  const builtins = capabilityRoutes.length
+    ? new AuraCapabilityRouter(capabilityRoutes)
+    : undefined;
+  // One backend per plugin.
   const workflowPort: { current?: PluginWorkflows } = {};
-  const auraCapabilities = new PluginCapabilities({
-    backend: {
+  const pluginBackends = new PluginBackends({
+    host: {
       cwd: process.env.AURA_FLOW_CWD ?? process.cwd(),
       storage: new PluginDomainStorage(
         ctx.storageDomain,
@@ -457,9 +461,7 @@ export async function apply(ctx: Context) {
         },
       },
     },
-    builtins: capabilityRoutes.length
-      ? new AuraCapabilityRouter(capabilityRoutes)
-      : undefined,
+    builtins,
     dataRoot: resolve(
       process.env.AURA_FLOW_CWD ?? process.cwd(),
       ".aura",
@@ -473,32 +475,32 @@ export async function apply(ctx: Context) {
       process.stderr.write(`${JSON.stringify({ level, message, data })}\n`),
   });
   const pluginPresets = new PluginPresets(ctx.agentPresets);
-  await pluginPresets.replace(capabilityRootsFromEnv());
+  await pluginPresets.replace(backendRootsFromEnv());
   ctx.effect(
     () => () => pluginPresets.close(),
     "aura-plugin-presets.lifecycle",
   );
-  await auraCapabilities.replace(capabilityRootsFromEnv());
-  actionRegistry.setServicesResolver((id) => auraCapabilities.services(id));
+  await pluginBackends.replace(backendRootsFromEnv());
+  actionRegistry.setServicesResolver((id) => pluginBackends.services(id));
   actionRegistry.setServiceRetention((id) =>
-    auraCapabilities.serviceRetention(id),
+    pluginBackends.serviceRetention(id),
   );
   ctx.effect(
-    () => () => auraCapabilities.close(),
-    "aura-plugin-capabilities.lifecycle",
+    () => () => pluginBackends.close(),
+    "aura-plugin-backends.lifecycle",
   );
   const artifactIndex = new WorkflowArtifactIndex(
     artifacts,
     process.env.AURA_FLOW_CWD ?? process.cwd(),
   );
   artifactIndex.setPluginCandidates((output, producer) =>
-    auraCapabilities.artifactCandidates(output, producer),
+    pluginBackends.artifactCandidates(output, producer),
   );
   ctx.effect(() => () => artifactIndex.close(), "aura-artifacts.lifecycle");
   const actionRuntime = new ActionRuntime(
     ctx,
     localAI,
-    auraCapabilities,
+    builtins,
     artifactIndex,
     gptImage,
   );
@@ -592,7 +594,7 @@ export async function apply(ctx: Context) {
             await cancelJobs(step.childRunId);
       };
       await cancelJobs(run.id);
-      await auraCapabilities.runSettled(run);
+      await pluginBackends.runSettled(run);
     },
     presets: async () =>
       (await ctx.agentPresets.list()).map(
@@ -604,7 +606,7 @@ export async function apply(ctx: Context) {
         }),
       ),
   });
-  auraCapabilities.attachRuns(
+  pluginBackends.attachRuns(
     (id) => engine.runs.get(id),
     function* () {
       for (const [, run] of engine.runs.entries()) yield run;
@@ -615,24 +617,22 @@ export async function apply(ctx: Context) {
   artifactIndex.attach((id) => engine.get(id), historicalArtifactReader(ctx));
 
   let activePlugins = pluginStatuses();
-  let activeCapabilityRoots = capabilityRootsFromEnv();
+  let activeBackendRoots = backendRootsFromEnv();
   const applyConfiguration = async (
     source: z.infer<typeof contributionConfigurationSchema>,
   ) => {
     const previous = {
       flowRoots: discoveries.descriptors(),
       actionRoots: actionDiscoveries.descriptors(),
-      capabilityRoots: activeCapabilityRoots,
+      backendRoots: activeBackendRoots,
       plugins: activePlugins,
     };
     const changedPlugins = changedPluginIds(previous, source);
     try {
       await extendHmrRoots(ctx, [...source.flowRoots, ...source.actionRoots]);
-      await pluginPresets.replace(source.capabilityRoots as CapabilityRoot[]);
-      await auraCapabilities.replace(
-        source.capabilityRoots as CapabilityRoot[],
-      );
-      activeCapabilityRoots = source.capabilityRoots as CapabilityRoot[];
+      await pluginPresets.replace(source.backendRoots as BackendRoot[]);
+      await pluginBackends.replace(source.backendRoots as BackendRoot[]);
+      activeBackendRoots = source.backendRoots as BackendRoot[];
       await discoveries.replace(source.flowRoots);
       await actionDiscoveries.replace(source.actionRoots);
       await ctx.loader.await();
@@ -646,9 +646,9 @@ export async function apply(ctx: Context) {
       engine.setPlugins(activePlugins, changedPlugins);
     } catch (error) {
       try {
-        await pluginPresets.replace(previous.capabilityRoots);
-        await auraCapabilities.replace(previous.capabilityRoots);
-        activeCapabilityRoots = previous.capabilityRoots;
+        await pluginPresets.replace(previous.backendRoots);
+        await pluginBackends.replace(previous.backendRoots);
+        activeBackendRoots = previous.backendRoots;
         await discoveries.replace(previous.flowRoots);
         await actionDiscoveries.replace(previous.actionRoots);
         await ctx.loader.await();
@@ -692,7 +692,7 @@ export async function apply(ctx: Context) {
   const workflowTools: ChatToolHost = {
     start: (input) => engine.start(input),
     get: (id) => engine.get(id),
-    taskTools: () => auraCapabilities.taskTools(),
+    taskTools: () => pluginBackends.taskTools(),
   };
   const chats = new Map<string, AbortController>();
   const rejectedChatModels = new RejectedChatModels();
@@ -785,7 +785,7 @@ export async function apply(ctx: Context) {
           )?.[1];
           if (existing && existing.flow.id !== request.flowId)
             throw new FlowError("同一请求 ID 不能用于不同 Flow。", 409);
-          const input = await auraCapabilities
+          const input = await pluginBackends
             .admit(
               request.flowId,
               request.requestId,
@@ -822,24 +822,22 @@ export async function apply(ctx: Context) {
           break;
         }
         case "services/view":
-          data = (await auraCapabilities.view(engine.get(id))) ?? null;
+          data = (await pluginBackends.view(engine.get(id))) ?? null;
           break;
         case "plugins/page-invoke": {
           // Controlled page boundary: a plugin page reaches only its own
-          // providers' declared page operations. Failures cross as codes.
+          // backend's declared page operations. Failures cross as codes.
           const request = z
             .object({
               pluginId: z.string().min(1).max(64),
-              capability: z.string().min(3).max(130),
               operation: z.string().regex(/^[a-z][a-z0-9_.-]{0,63}$/u),
               input: z.json(),
             })
             .strict()
             .parse(params);
-          data = await auraCapabilities
+          data = await pluginBackends
             .invokeFromPage(
               request.pluginId,
-              request.capability,
               request.operation,
               request.input,
               AbortSignal.timeout(120_000),
@@ -865,7 +863,7 @@ export async function apply(ctx: Context) {
             .strict()
             .parse(params);
           if (request.input !== undefined)
-            await auraCapabilities
+            await pluginBackends
               .resume(
                 engine.get(request.id),
                 request.input,
@@ -1311,7 +1309,7 @@ export async function apply(ctx: Context) {
           setImmediate(() => void disposeAndExit());
           break;
         default:
-          data = await auraCapabilities
+          data = await pluginBackends
             .request(method, params, AbortSignal.timeout(120_000))
             .catch((error) => {
               if (
@@ -1348,7 +1346,7 @@ export async function apply(ctx: Context) {
     process.stdin.on("error", disconnected);
     const scan = setInterval(() => {
       void refreshFlows().catch(() => undefined);
-      void auraCapabilities.refresh().catch(() => undefined);
+      void pluginBackends.refresh().catch(() => undefined);
     }, 1_000);
     return async () => {
       process.stdin.off("end", disconnected);

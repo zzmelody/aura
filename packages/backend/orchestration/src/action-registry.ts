@@ -18,7 +18,7 @@ export interface LoadedAction extends ActionRegistration {
   plugin?: AuraPluginIdentity;
   services?: Readonly<Record<string, unknown>>;
   retainServices?: () => () => void;
-  capabilities: readonly string[];
+  permissions: readonly string[];
   legacySourceHashes?: readonly string[];
   ownerPlugin?: AuraPluginIdentity;
 }
@@ -105,7 +105,7 @@ export class ActionRegistry {
         config.legacyRevision?.to === sourceHash
           ? Object.freeze([...config.legacyRevision.from])
           : undefined,
-      capabilities: Object.freeze([...(config.capabilities ?? [])]),
+      permissions: Object.freeze([...(config.permissions ?? [])]),
     });
     this.problems.delete(id);
     this.warnings.delete(id);

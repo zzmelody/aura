@@ -46,7 +46,7 @@ function loaded(
     outputSchema: z.object({ value: z.number() }),
     concurrency: 2,
     agentTimeoutMs: 1000,
-    capabilities: [],
+    permissions: [],
     run,
     ...options,
   };
@@ -449,7 +449,7 @@ test("nested calls reject cycles and plugin boundary crossings without capabilit
     registry.set(caller.id, {
       ...caller,
       sourceHash: hash("allowed"),
-      capabilities: ["aura.flow.invoke"],
+      permissions: ["aura.flow.invoke"],
     });
     const allowed = await engine.start(request("plugin.one/parent", 3));
     assert.equal((await engine.wait(allowed.id)).status, "completed");

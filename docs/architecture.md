@@ -17,7 +17,7 @@ Codex：客户端 → Aura runtime → DSH SDK profile → dsh-llm-pi-ai → ope
 
 `@aura/dsh-auth` 是 Aura 对 DSH authorization/credentials seam 的后端适配层。包名描述稳定职责，不绑定当前供应商；其中 `CodexSubscriptionAuth` 组合 DSH 的 `dsh-credentials-local`、`dsh-authorization`、`dsh-llm` 和 `dsh-llm-pi-ai` 服务。它只把 notice、设备码、手动回调提示和最终状态投影到客户端；浏览器回调监听使用与 OpenAI redirect URI 一致的 `localhost`。OAuth grant 由 DSH 写入 `.aura/dsh/.credentials.yaml`，不会进入 HTTP 响应、前端存储或日志。
 
-对话与流程共用长驻的 `aura-flow` DSH profile：所有在线对话共用持久化的 `coder-v1` DSH session，具备文件、搜索、命令、规划、提问及工作流工具。未选项目时使用后端配置的默认工作目录；讨论、调研与执行由同一 Agent 根据当前请求和上下文衔接，没有额外分类模型或聊天/工作模式开关。工具启动的工作流继续显示运行卡片。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、Tripo 路由、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 不是 LLM provider，由 `@aura/tripo` 使用官方 v3 SDK 提交异步 3D 任务；Key 只从后端环境或已忽略的 `.aura/tripo/` 读取。图片生成由 `image-generate` Action 统一：已登录 Codex 时优先经订阅后端（`chatgpt.com/backend-api/codex/responses` 的 `image_generation` 工具）生成，复用对话的同一份 DSH 授权与令牌刷新，消耗 Codex 订阅额度而非按张计费，具体图片模型由 Codex 决定；每次调用只发一个请求，失败或结果未知时不重试也不改用其他引擎。未登录时改用本机 Qwen-Image；`image` 工作流与对话工具 `aura_image` 都经由它。插件可以贡献自己的 capability provider（见 `@aura/plugin-sdk/capability`），领域专用的外部工具由插件自己的 provider 调用，不进 Aura。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](development/backend-runtime.md)。
+对话与流程共用长驻的 `aura-flow` DSH profile：所有在线对话共用持久化的 `coder-v1` DSH session，具备文件、搜索、命令、规划、提问及工作流工具。未选项目时使用后端配置的默认工作目录；讨论、调研与执行由同一 Agent 根据当前请求和上下文衔接，没有额外分类模型或聊天/工作模式开关。工具启动的工作流继续显示运行卡片。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、Tripo 路由、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 不是 LLM provider，由 `@aura/tripo` 使用官方 v3 SDK 提交异步 3D 任务；Key 只从后端环境或已忽略的 `.aura/tripo/` 读取。图片生成由 `image-generate` Action 统一：已登录 Codex 时优先经订阅后端（`chatgpt.com/backend-api/codex/responses` 的 `image_generation` 工具）生成，复用对话的同一份 DSH 授权与令牌刷新，消耗 Codex 订阅额度而非按张计费，具体图片模型由 Codex 决定；每次调用只发一个请求，失败或结果未知时不重试也不改用其他引擎。未登录时改用本机 Qwen-Image；`image` 工作流与对话工具 `aura_image` 都经由它。插件可以贡献自己的后端（`contributes.backend`，见 `@aura/plugin-sdk/backend`），领域专用的外部工具由插件后端调用，不进 Aura。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](development/backend-runtime.md)。
 
 ## Monorepo
 
@@ -30,7 +30,7 @@ pnpm workspace 收录应用输出和三层可复用库：
 | `packages/backend/*`  | HTTP 服务、凭据、DSH、进程、文件和网络能力        | backend library、shared  |
 | `packages/shared/*`   | 与运行环境无关的类型、校验、存储格式和纯流程      | shared                   |
 
-应用声明 `aura.kind: app` 与 `aura.platform`；packages 只允许 library，并声明 `aura.layer`。Web 与移动应用只能依赖 frontend/shared，服务应用只能依赖 backend/shared，桌面应用可以组合 frontend/backend/shared。`check:workspaces` 校验目录元数据、依赖方向、`workspace:*`、显式导出、未声明依赖、私有子路径、跨 workspace 相对导入、应用被依赖和依赖环。完整约束位于根 [AGENTS.md](../AGENTS.md)。
+应用声明 `aura.kind: app` 与 `aura.platform`；packages 只允许 library，并声明 `aura.layer`。Web 与移动应用只能依赖 frontend/shared，服务应用只能依赖 backend/shared，桌面应用可以组合 frontend/backend/shared。`check:workspaces` 校验目录元数据、依赖方向、`workspace:*`、显式导出、未声明依赖、私有子路径、跨 workspace 相对导入、应用被依赖和依赖环。完整的放置与依赖约束见 [项目结构 skill](../.agents/skills/aura-project-structure/SKILL.md)。
 
 浏览器、移动、桌面和服务入口分别位于 `apps/web`、`apps/mobile`、`apps/desktop` 与 `apps/server`。客户端导航和 React 状态属于 `packages/frontend/workbench`，DOM 原语与设计系统属于 `packages/frontend/ui`，DSH 授权适配属于 `packages/backend/dsh-auth`，Tripo 3D 网络与凭据适配属于 `packages/backend/tripo`，协议、存储与规则演示属于 shared。新增小程序时创建独立的 `apps/miniprogram`，复用适合小程序运行时的 shared 逻辑，不在 packages 中伪装成应用。
 
@@ -44,7 +44,7 @@ Aura 只有一套 React Web 界面。`@aura/workbench` 负责页面、状态与 
 
 桌面 Site 目录选择、项目运行以及工作流图片/输出目录选择通过最小宿主桥接暴露。工作流选择器只返回用户明确选择的本机绝对路径，不读取文件内容；共享表单仍允许输入服务端路径，使 Web 与移动端不会伪造浏览器无法取得的绝对路径。`src/preload.ts` 在开发启动和静态构建时编译为独立的 CommonJS 产物 `dist-host/preload.cjs`，Electron 在启用 `sandbox` 与 `contextIsolation` 的窗口中加载它；主进程的 TypeScript 支持不适用于沙箱 preload。renderer 只在桥接缺失时补充平台标识，以便显示准确的桌面连接错误。
 
-Site 页面与站点运行后端属于独立的 `plugins/site-launcher`。目录/脚本解析、端口检查、进程组和就绪验证位于插件 `backend/`，构建成 ESM，由 runner provider 持有；Electron 只提供原生目录选择与本机预览窗口，前端通过自己的受控 provider 操作进程。`site-project.ts`、`site-network.ts`、`site-process.ts`、`site-runner.ts` 分别管理配置、网络与进程归属、子进程和生命周期；共享类型放在 protocol。已识别的直接开发命令先检查系统监听表并尝试绑定 loopback 端口，以排除 Windows 未显示为监听者的保留端口，再把明确端口传给开发服务器并从输出同步真实地址。自定义脚本冲突拒绝启动；不能仅凭某个地址能响应就判定启动成功，必须同时验证监听者属于本次进程树。子进程在启动时退出会立即更新为错误状态并保留诊断输出。停用插件或关闭所属 runtime 时清理插件启动的项目；切换页面只取消状态轮询，项目继续运行。站点列表的原有 Web Storage 键保持不变。
+Site 页面与站点运行后端属于独立的 `plugins/site-launcher`。目录/脚本解析、端口检查、进程组和就绪验证位于插件 `backend/`，构建成 ESM，由插件后端持有；Electron 只提供原生目录选择与本机预览窗口，前端通过插件后端声明的页面操作管理进程。`site-project.ts`、`site-network.ts`、`site-process.ts`、`site-runner.ts` 分别管理配置、网络与进程归属、子进程和生命周期；共享类型放在 protocol。已识别的直接开发命令先检查系统监听表并尝试绑定 loopback 端口，以排除 Windows 未显示为监听者的保留端口，再把明确端口传给开发服务器并从输出同步真实地址。自定义脚本冲突拒绝启动；不能仅凭某个地址能响应就判定启动成功，必须同时验证监听者属于本次进程树。子进程在启动时退出会立即更新为错误状态并保留诊断输出。停用插件或关闭所属 runtime 时清理插件启动的项目；切换页面只取消状态轮询，项目继续运行。站点列表的原有 Web Storage 键保持不变。
 
 Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动页面服务和 Aura runtime，解决页面存在但 4311 服务缺失的问题。`scripts/dev-renderer.ts` 在根开发工具层统一启动 Web / Desktop / Mobile 的 Vite 服务（Web 固定 8081，Desktop 与 Mobile 默认 8082），应用配置继续留在各自入口。Desktop 开发模式加载 Vite URL，静态预览仍由 Electron 使用 Hono 提供构建产物。根工具的 Vite 插件只在开发期注入 HTTP 版本检查，Vite WebSocket 不可用时以整页刷新恢复；HTTP 路由通过 Hono 官方适配器接入 Vite Connect，不进入发布产物，也不引入 frontend → backend 依赖。Electron 主进程会先检查并启动 runtime，再显示 renderer；开发入口和窗口退出时回收自己启动的服务。Capacitor 原生应用不能内嵌 Node/DSH，真机通过设置中的局域网地址连接电脑端 runtime。后端 Origin 策略仅额外接受 Capacitor 固定的 `https://localhost` / `capacitor://localhost` 来源。
 
@@ -60,17 +60,17 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 `scripts/build-plugins.ts` 在构建期按插件 `package.json#files` 的显式资产清单，将 manifest、后端和预构建页面复制到 server 的 `dist/plugins` 与 desktop 的 `dist-host/plugins`，保留嵌套目录。这些目录纳入应用发布文件；启动器从安装目录加载，与用户数据根分开。构建不分发个人数据、密钥、缓存、本地 reader runtime 或开发依赖，启动也不构建插件。具体开发/发布规则见 [plugins/README.md](../plugins/README.md)。
 
-插件 manifest 请求的宿主能力必须全部受当前 Runtime 支持，否则插件不会加载。Action 通过 Plugin SDK 的 `auraCapability()` 取得按调用取消域绑定的领域端口，不接触凭据、任意 URL 或底层进程。插件还可以在 `contributes.capabilities` 下贡献自己的 provider（`<plugin-id>/<local-id>`），由宿主在激活插件时打开，取得插件数据目录、`plugins.json` 中的 `settings`、只读的本插件 Run 视图和内置能力；领域专用的服务连接与策略都在插件 provider 内实现。
+插件 manifest 在 `permissions` 中请求的宿主能力必须全部受当前 Runtime 支持，否则插件不会加载。Action 通过 Plugin SDK 的 `auraCapability()` 取得按调用取消域绑定的领域端口，不接触凭据、任意 URL 或底层进程。插件还可以用 `contributes.backend` 指向一个已构建的 ESM 入口，默认导出 `defineBackend({ open(host) })`；每个插件至多一个后端，按插件 ID 寻址。宿主在激活插件时打开它，交给它插件数据目录、`plugins.json` 中的 `settings`、只读的本插件 Run 视图和内置能力；领域专用的服务连接与策略都在插件后端内实现。
 
-插件还可以通过 `contributes.pages` 贡献完整的工作台页面。该字段指向插件根内预构建的 DSH lazy-CJS 浏览器入口（`window.__ModuleLoader__.load({ id, factory })`）。runtime 的 `PluginPageRegistry` 只读取并校验该文件，不构建、不转译插件代码；它按 DSH `WebBootGraph` 格式组合启动图，以 `/plugins/??<id>/client.js&rev=<rev>` 提供不可变的 combo 脚本，并通过 `/plugins/pages`、`/plugins/graph` 与 SSE `/plugins/events` 发布变化。工作台复用 DSH `@deepseek-ai/dsh-client-modules` 的浏览器 `ClientModuleSystem` 负责模块加载与依赖解析，以 React 19、`@aura/plugin-ui` 和 Cordis 作为静态种子模块；插件的 `apply(ctx)` 挂在 Aura 自己的 Cordis 树下，通过 `ctx.auraWorkbench.page(definePage(...))` 注册页面。DSH 的 `ClientEntries` 依赖未发布的浏览器 Cordis Loader，因此由 Aura 自行协调挂载、销毁与样式清理；启用、停用或重建插件时，页面无需刷新即可增减。页面只能调用 `/plugins/pages/<plugin-id>/invoke`，编排子进程只转发到该插件自己的 provider，并且仅限 provider 在 `pageOperations` 中声明的操作，其他请求以 `page_*_forbidden` 拒绝。同页插件与工作台共享浏览器环境，这不是安全沙箱；页面渲染错误由边界组件隔离。`aura.tripo.game-asset` 只允许固定的 GPT Image 2.5 四视图到 Tripo P1 GLB 链路和单张付费图片，所有付费阶段先在用户拥有的账本中预留；调用方可用不透明的 `scope` 给付费工作分组。token、API Key 和上游 URL 不进入插件输入、Flow/Agent 上下文、前端 DTO 或日志。
+插件还可以通过 `contributes.pages` 贡献完整的工作台页面。该字段指向插件根内预构建的 DSH lazy-CJS 浏览器入口（`window.__ModuleLoader__.load({ id, factory })`）。runtime 的 `PluginPageRegistry` 只读取并校验该文件，不构建、不转译插件代码；它按 DSH `WebBootGraph` 格式组合启动图，以 `/plugins/??<id>/client.js&rev=<rev>` 提供不可变的 combo 脚本，并通过 `/plugins/pages`、`/plugins/graph` 与 SSE `/plugins/events` 发布变化。工作台复用 DSH `@deepseek-ai/dsh-client-modules` 的浏览器 `ClientModuleSystem` 负责模块加载与依赖解析，以 React 19、`@aura/plugin-ui` 和 Cordis 作为静态种子模块；插件的 `apply(ctx)` 挂在 Aura 自己的 Cordis 树下，通过 `ctx.auraWorkbench.page(definePage(...))` 注册页面。DSH 的 `ClientEntries` 依赖未发布的浏览器 Cordis Loader，因此由 Aura 自行协调挂载、销毁与样式清理；启用、停用或重建插件时，页面无需刷新即可增减。页面只能调用 `/plugins/pages/<plugin-id>/invoke`，编排子进程只转发到该插件自己的后端，并且仅限后端在 `pageOperations` 中声明的操作，其他请求以 `page_*_forbidden` 拒绝。同页插件与工作台共享浏览器环境，这不是安全沙箱；页面渲染错误由边界组件隔离。`aura.tripo.game-asset` 只允许固定的 GPT Image 2.5 四视图到 Tripo P1 GLB 链路和单张付费图片，所有付费阶段先在用户拥有的账本中预留；调用方可用不透明的 `scope` 给付费工作分组。token、API Key 和上游 URL 不进入插件输入、Flow/Agent 上下文、前端 DTO 或日志。
 
 Flow 的模型参数由 `flow.agent({model,reasoningEffort,temperature,maxTokens,timeoutMs,...})` 按步骤声明，或通过 `defineFlow.agentDefaults` 提供公共默认值；步骤覆盖 Flow 默认，Flow 默认覆盖运行时配置。provider 仍绑定 Run.mode，脚本不接触凭据或任意 endpoint。入队时固定 Run 默认参数，Agent dispatch 前保存完整 `config` 并纳入请求指纹；重试与重放不读取新的环境默认值。`sessionController.selectModel` 选择模型，DSH Agent 的官方 `agent/request` scoped waterfall 将同一配置应用到每轮模型请求并写入 DSH request header。模型与思考强度先经过 DSH 能力校验，无效配置不会启动 Agent attempt。升级前未保存参数的未结束记录安全中断为 `agent_config_unrecoverable`；已完成历史继续可读。
 
-Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Session 边界校验并读取实际图片，不把 base64 或任意图片路径塞入 durable JSON。插件 provider 可经 `host.attachments.image` 把图片放入会话附件，经 `host.artifacts` 读写按 SHA-256 寻址的 artifact 存储。文本模型拒绝图片并返回明确错误，不退回只看路径的“视觉验收”。
+Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Session 边界校验并读取实际图片，不把 base64 或任意图片路径塞入 durable JSON。插件后端可经 `host.attachments.image` 把图片放入会话附件，经 `host.artifacts` 读写按 SHA-256 寻址的 artifact 存储。文本模型拒绝图片并返回明确错误，不退回只看路径的“视觉验收”。
 
 页面包由 runtime 每秒检查已启用的构建产物，通过现有 SSE 模块图通知浏览器热更新。
 工作台先读取候选包再替换插件 fiber；下载或 apply 失败时保留/恢复上一版页面。
-后端 capability provider 同样每秒检查自身目录和插件根内静态 ESM 依赖闭包，
+插件后端同样每秒检查入口所在目录和插件根内静态 ESM 依赖闭包，
 用 Node 原生 ESM 版本标签加载整组本地模块，SDK 和外部依赖保持单例。
 后端切换等待进行中的调用和本插件的活跃 Flow，更新失败继续提供上一版。
 这些监听只读取显式启用的插件目录，不修改应用配置。源码自动构建是单独的开发命令，

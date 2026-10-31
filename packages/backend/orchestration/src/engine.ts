@@ -322,7 +322,7 @@ export class FlowEngine {
     if (
       callerPlugin &&
       !sameOwner &&
-      !caller.capabilities.includes("aura.flow.invoke")
+      !caller.permissions.includes("aura.flow.invoke")
     )
       throw new FlowError(
         `插件 Flow ${caller.id} 缺少跨插件调用能力 aura.flow.invoke。`,

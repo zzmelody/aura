@@ -7,7 +7,7 @@ import type { PluginPageRegistry } from "./plugin-pages.ts";
 
 /**
  * Workbench pages: DSH combo scripts, the live graph, SSE graph/rebuild
- * frames, and a per-plugin capability invoke that never reaches other
+ * frames, and a per-plugin backend invoke that never reaches other
  * plugins. Page configuration is not here; `/plugins/config` stays the
  * loopback-only directory boundary.
  */
@@ -83,27 +83,19 @@ export function createPluginPagesApp(
       )
         return context.json({ message: "插件页面未启用。" }, 404);
       const body = (await context.req.json().catch(() => undefined)) as
-        | { capability?: unknown; operation?: unknown; input?: unknown }
-        | undefined;
+        { operation?: unknown; input?: unknown } | undefined;
       if (
         !body ||
-        typeof body.capability !== "string" ||
         typeof body.operation !== "string" ||
         !/^[a-z][a-z0-9_.-]{0,63}$/u.test(body.operation)
       )
-        return context.json(
-          { message: "页面调用的 capability 或 operation 无效。" },
-          400,
-        );
-      if (!body.capability.startsWith(`${pluginId}/`))
-        return context.json({ message: "page_capability_forbidden" }, 403);
+        return context.json({ message: "页面调用的 operation 无效。" }, 400);
       try {
         return context.json(
           await flows.request(
             "plugins/page-invoke",
             {
               pluginId,
-              capability: body.capability,
               operation: body.operation,
               input: body.input ?? null,
             },

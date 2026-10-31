@@ -6,7 +6,9 @@
 | ---------------- | -------- | ---------------------------------------------------------------- |
 | `site-launcher/` | 站点启动 | Site 页面、命令/端口/进程管理；Electron 仅提供目录选择和预览窗口 |
 
-基础宿主、运行时、公共 SDK 和共享协议继续放在 `packages/*`。正式产品插件不放在 `examples/`，也不直接导入宿主私有源码。
+基础宿主、运行时、公共 SDK 和共享协议继续放在 `packages/*`。产品插件不直接导入宿主私有源码。
+
+本目录不在 pnpm workspace（`pnpm-workspace.yaml` 只收 `apps/*` 与 `packages/*/*`）内，各插件自带 ESLint、Prettier 与 TypeScript 配置，依赖由下面的 `setup:product-plugins` 准备。放置与分发规则见 [项目结构 skill](../.agents/skills/aura-project-structure/SKILL.md)，编写插件代码见 [插件开发 skill](../.agents/skills/aura-plugin-development/SKILL.md)。
 
 ## 默认加载
 

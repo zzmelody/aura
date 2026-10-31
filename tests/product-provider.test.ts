@@ -6,8 +6,8 @@ import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { loadAuraPlugins } from "@aura/extensions";
-import { PluginCapabilities } from "../packages/backend/orchestration/src/plugin-capabilities.ts";
-type JsonValue = Parameters<PluginCapabilities["invokeFromPage"]>[3];
+import { PluginBackends } from "../packages/backend/orchestration/src/plugin-backends.ts";
+type JsonValue = Parameters<PluginBackends["invokeFromPage"]>[2];
 
 test("default product providers honor page ownership and close independently", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "aura-product-plugins-"));
@@ -15,7 +15,7 @@ test("default product providers honor page ownership and close independently", a
     configPath: join(directory, "plugins.json"),
     defaultPluginsDirectory: resolve("plugins"),
     auraVersion: "0.1.0",
-    pluginSdkVersion: "1.4.0",
+    pluginSdkVersion: "2.0.0",
   });
   // Only site-launcher ships with Aura; other plugins load from explicit paths.
   assert.deepEqual(
@@ -27,9 +27,9 @@ test("default product providers honor page ownership and close independently", a
     products.every((plugin) => plugin.available),
     JSON.stringify(products),
   );
-  const providers = new PluginCapabilities({
+  const providers = new PluginBackends({
     dataRoot: directory,
-    backend: memoryBackend(directory),
+    host: memoryBackend(directory),
   });
   t.after(async () => {
     await providers.close();
@@ -41,12 +41,12 @@ test("default product providers honor page ownership and close independently", a
     });
   });
   await providers.replace(
-    resolution.capabilityRoots.map((entry) => ({
+    resolution.backendRoots.map((entry) => ({
       root: entry.path,
       pluginRoot: entry.pluginRoot,
       namespace: entry.namespace,
       plugin: entry.plugin,
-      capabilities: entry.capabilities,
+      permissions: entry.permissions,
       compatibility: entry.compatibility,
       http: entry.http,
       presets: entry.presets,
@@ -55,14 +55,13 @@ test("default product providers honor page ownership and close independently", a
   const signal = new AbortController().signal;
   const pageInvoke = (
     pluginId: string,
-    capability: string,
     operation: string,
     input: JsonValue = {},
-  ) => providers.invokeFromPage(pluginId, capability, operation, input, signal);
-  // A page may call only its own plugin's providers.
+  ) => providers.invokeFromPage(pluginId, operation, input, signal);
+  // A page may call only its own plugin's backend.
   await assert.rejects(
-    pageInvoke("another-plugin", "site-launcher/runner", "status"),
-    /page_capability_forbidden/u,
+    pageInvoke("another-plugin", "status"),
+    /page_backend_unavailable/u,
   );
   const project = join(directory, "project");
   await mkdir(project);
@@ -70,19 +69,13 @@ test("default product providers honor page ownership and close independently", a
     join(project, "package.json"),
     JSON.stringify({ name: "fixture", scripts: { dev: "node server.js" } }),
   );
-  const described = await pageInvoke(
-    "site-launcher",
-    "site-launcher/runner",
-    "describe",
-    { directory: project },
-  );
+  const described = await pageInvoke("site-launcher", "describe", {
+    directory: project,
+  });
   assert.equal((described as { name: string }).name, "fixture");
-  assert.deepEqual(
-    await pageInvoke("site-launcher", "site-launcher/runner", "status"),
-    [],
-  );
+  assert.deepEqual(await pageInvoke("site-launcher", "status"), []);
   await assert.rejects(
-    pageInvoke("site-launcher", "site-launcher/runner", "open", {
+    pageInvoke("site-launcher", "open", {
       id: project,
     }),
   );
@@ -103,12 +96,10 @@ test("default product providers honor page ownership and close independently", a
   assert.ok(
     described && typeof described === "object" && !Array.isArray(described),
   );
-  const running = await pageInvoke(
-    "site-launcher",
-    "site-launcher/runner",
-    "start",
-    { ...described, url: `http://127.0.0.1:${address.port}/` },
-  );
+  const running = await pageInvoke("site-launcher", "start", {
+    ...described,
+    url: `http://127.0.0.1:${address.port}/`,
+  });
   assert.ok(
     running &&
       typeof running === "object" &&
@@ -119,9 +110,7 @@ test("default product providers honor page ownership and close independently", a
   const pid = running.pid;
   await providers.replace([]);
   assert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
-  await assert.rejects(
-    pageInvoke("site-launcher", "site-launcher/runner", "status"),
-  );
+  await assert.rejects(pageInvoke("site-launcher", "status"));
   assert.equal(
     (await readFile(join(project, "package.json"), "utf8")).includes("fixture"),
     true,

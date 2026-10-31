@@ -50,7 +50,7 @@ test("concurrent browser hosts dispose their predecessor and recover after a fai
   assert.equal(events.at(-1), "closed-second");
 });
 
-test("page invoke scopes the capability to the calling plugin", async () => {
+test("page invoke is scoped to the calling plugin's backend", async () => {
   const original = globalThis.fetch;
   const requests: Array<{ url: string; body: unknown }> = [];
   globalThis.fetch = (async (url: string, init?: RequestInit) => {
@@ -64,12 +64,7 @@ test("page invoke scopes the capability to the calling plugin", async () => {
   }) as typeof fetch;
   try {
     await assert.rejects(
-      invokePluginPage(
-        "http://127.0.0.1:4311",
-        "wechat-history",
-        "archive",
-        "drop",
-      ),
+      invokePluginPage("http://127.0.0.1:4311", "wechat-history", "drop"),
       /page_operation_forbidden/u,
     );
   } finally {
@@ -79,7 +74,6 @@ test("page invoke scopes the capability to the calling plugin", async () => {
     {
       url: "http://127.0.0.1:4311/plugins/pages/wechat-history/invoke",
       body: {
-        capability: "wechat-history/archive",
         operation: "drop",
         input: null,
       },

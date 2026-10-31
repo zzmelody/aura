@@ -135,7 +135,7 @@ export interface AuraPluginConfigurationEntry {
   path: string;
   enabled: boolean;
   trust: "local";
-  /** Opaque plugin-owned JSON passed to its capability providers. */
+  /** Opaque plugin-owned JSON passed to its backend as `host.settings`. */
   settings?: JsonValue;
 }
 

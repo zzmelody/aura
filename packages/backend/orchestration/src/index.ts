@@ -109,7 +109,7 @@ export class OrchestrationHost {
   }
   async pluginHttp(request: Request) {
     await (this.pluginHttpReady ??= this.pluginHttpRegistry.replace(
-      this.options.capabilityRoots ?? [],
+      this.options.backendRoots ?? [],
     ));
     return this.pluginHttpRegistry.fetch(request);
   }
@@ -258,9 +258,7 @@ export class OrchestrationHost {
           AURA_FLOW_ROOTS: JSON.stringify(flowRoots),
           AURA_ACTION_ROOTS: JSON.stringify(actionRoots),
           AURA_PLUGIN_STATUSES: JSON.stringify(this.options.plugins ?? []),
-          AURA_CAPABILITY_ROOTS: JSON.stringify(
-            this.options.capabilityRoots ?? [],
-          ),
+          AURA_BACKEND_ROOTS: JSON.stringify(this.options.backendRoots ?? []),
           [PLUGIN_SDK_ENV]: this.options.pluginSdkPackage,
           ...(this.options.tripoCredentialPath
             ? {
@@ -655,11 +653,11 @@ export class OrchestrationHost {
     const next = {
       flowRoots: [{ root: flowRoot }, ...configuration.flowRoots],
       actionRoots: [{ root: actionRoot }, ...configuration.actionRoots],
-      capabilityRoots: configuration.capabilityRoots ?? [],
+      backendRoots: configuration.backendRoots ?? [],
       plugins: configuration.plugins,
     };
     const candidate = this.createPluginHttp();
-    await candidate.replace(next.capabilityRoots);
+    await candidate.replace(next.backendRoots);
     try {
       await this.request(
         "plugins/configure",
@@ -682,7 +680,7 @@ export class OrchestrationHost {
       ...root,
       ...(root.plugin ? { plugin: { ...root.plugin } } : {}),
     }));
-    this.options.capabilityRoots = structuredClone(next.capabilityRoots);
+    this.options.backendRoots = structuredClone(next.backendRoots);
     this.options.plugins = configuration.plugins.map((plugin) => ({
       ...plugin,
     }));

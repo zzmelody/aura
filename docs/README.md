@@ -10,7 +10,9 @@
 - [后端 Runtime](development/backend-runtime.md)：组合根、服务路由、生命周期与失败策略。
 - [界面设计系统](development/design-system.md)：共享 React DOM 组件与主题。
 - [外部插件 JavaScript](plugin-javascript-code-style.md)：Airbnb 适配与公共 SDK 例外。
-- [插件开发 skill](../.agents/skills/aura-plugin-development/SKILL.md)：随仓库维护的开发流程和参考契约。
+- [产品插件](../plugins/README.md)：随 Aura 发布的插件目录、默认加载与分发命令。
+
+规则清单按任务拆成 skill，位于 `.agents/skills/`：[项目结构](../.agents/skills/aura-project-structure/SKILL.md)、[代码规范](../.agents/skills/aura-code-style/SKILL.md)、[测试规范](../.agents/skills/aura-testing/SKILL.md)、[插件开发](../.agents/skills/aura-plugin-development/SKILL.md)。本目录的文档提供它们背后的架构背景与完整说明；入口和始终适用的约束见 [AGENTS.md](../AGENTS.md)。
 
 ## 功能
 

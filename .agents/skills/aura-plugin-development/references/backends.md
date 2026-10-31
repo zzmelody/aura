@@ -1,17 +1,19 @@
-# Product backend extension (SDK 1.4)
+# Product backend extension (SDK 2.0)
 
-Read this with the v1 specification and page extension. Product plugins own their
+Read this with the v2 specification and page extension. Product plugins own their
 business libraries, collectors, HTTP adapters, Actions, Flows and presets. Host
 packages supply generic workflow execution, model/credential mediation, storage
 and plugin lifecycle. Do not add a permanent product-specific host facade.
 
-## Provider ownership
+## Backend ownership
 
-`defineCapability({open(host)})` remains the backend lifecycle entry. In addition
-to page operations, a provider may return private `services`, `requests`,
-`chatTools` and `artifactCandidates`. These objects never cross the page JSON
-boundary. `services` binds only to this plugin's Actions as `ctx.services`;
-Action definitions and running snapshots retain their provider lease. Compose
+A plugin has at most one backend: `contributes.backend` names one built ESM file
+that default-exports `defineBackend({open(host)})` from `@aura/plugin-sdk/backend`.
+In addition to page operations, the backend may return private `services`,
+`requests`, `chatTools` and `artifactCandidates`. These objects never cross the
+page JSON boundary. `services` binds only to this plugin's Actions as
+`ctx.services`; Action definitions and running snapshots retain their backend
+lease. Compose
 work in Flows: Actions still cannot start Flows or nested Actions.
 
 `host.storage.open(spec)` opens a generic schema-validated DSH domain. New names
@@ -26,7 +28,7 @@ primitives, never a raw Cordis context, model client or credential service.
 
 `host.workflows.start/get/runs.entries` is restricted to this plugin's namespace
 and explicitly relocated Flow IDs. `host.runs` remains the read-only view.
-Providers use this port to attach their own business services to the existing
+Backends use this port to attach their own business services to the existing
 durable engine. Model execution stays in host-managed Actions/DSH Agents.
 
 `requests: {prefixes, handle}` handles plugin-namespaced RPC methods; historical
@@ -48,7 +50,7 @@ refused until retained work settles; state is never force-closed underneath it.
 ```json
 {
   "contributes": {
-    "capabilities": "./capabilities",
+    "backend": "./backend/dist/index.js",
     "http": {
       "entry": "./backend/dist/http.js",
       "mounts": ["/flows/example-documents"]
@@ -63,13 +65,13 @@ from `@aura/plugin-sdk/backend`. Return `{fetch(request), close?()}` and impleme
 HTTP with Hono. It runs in the API process so uploads and Range streams do not
 enter bounded JSON RPC. Only declared mounts and owned RPC prefixes are
 reachable; overlapping mounts are rejected. Include body limits and error
-projections in the plugin. Provider storage/credentials remain in the backend
+projections in the plugin. Backend storage/credentials remain in the backend
 child process; the HTTP adapter receives only generic artifacts and scoped RPC.
 
 Preset directories contain `preset.yml` and `agent.cordis.yml`. The host registers
 them with DSH, namespaced by default. `compatibility.presets` explicitly preserves
 old IDs. Disabling unregisters new selection while DSH retains live Agent
-revisions. Neither HTTP nor presets activate without an owning provider.
+revisions. Neither HTTP nor presets activate without `contributes.backend`.
 
 Flow Agent calls reference a plugin preset as `<plugin-id>/<preset-directory>`,
 for example a plugin preset such as `example-plugin/analyst`. Both Agent request validation and

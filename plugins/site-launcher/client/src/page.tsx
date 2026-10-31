@@ -17,7 +17,7 @@ import styles from "./site.css?inline";
 
 function siteHost(call: AuraPluginPageProps["invoke"]): SiteHostApi {
   const invoke = (operation: string, input: JsonValue = {}) =>
-    call("runner", operation, input);
+    call(operation, input);
   const readProject = (value: unknown) => {
     const project = normalizeSiteProject(value);
     if (!project) throw new Error("站点配置无效。");
@@ -60,7 +60,7 @@ function siteHost(call: AuraPluginPageProps["invoke"]): SiteHostApi {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const poll = async () => {
         try {
-          const source = await call("runner", "status", {}, abort.signal);
+          const source = await call("status", {}, abort.signal);
           if (!Array.isArray(source)) throw new Error("站点状态无效。");
           for (const value of source) {
             const status = readStatus(value);

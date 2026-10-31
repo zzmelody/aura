@@ -1,6 +1,6 @@
 # Aura 代码规范
 
-本规范约束 Aura 自有源码。包职责、依赖方向和凭据边界继续遵循 [AGENTS.md](../AGENTS.md) 与 [架构](architecture.md)。工具配置是格式与静态检查的执行依据；下面的设计约定用于开发和评审。
+本规范约束 Aura 自有源码，是 [代码规范 skill](../.agents/skills/aura-code-style/SKILL.md) 背后的完整说明；该 skill 列出必须遵守的条目，本文给出规则到工具的对应和历史基线机制。包职责与依赖方向见 [项目结构 skill](../.agents/skills/aura-project-structure/SKILL.md) 与 [架构](architecture.md)，凭据边界见 [AGENTS.md](../AGENTS.md)。工具配置是格式与静态检查的执行依据；下面的设计约定用于开发和评审。
 
 ## 采用的规范
 

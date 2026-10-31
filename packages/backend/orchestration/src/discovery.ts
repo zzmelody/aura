@@ -52,7 +52,7 @@ export class CodeDiscovery {
   readonly namespace?: string;
   readonly pluginRoot?: string;
   readonly plugin?: ContributionRoot["plugin"];
-  readonly capabilities?: ContributionRoot["capabilities"];
+  readonly permissions?: ContributionRoot["permissions"];
   readonly compatibility?: ContributionRoot["compatibility"];
   private mounted = new Map<string, MountedFlow>();
   private failures = new Map<string, string>();
@@ -71,8 +71,7 @@ export class CodeDiscovery {
     this.pluginRoot = typeof root === "string" ? undefined : root.pluginRoot;
     this.namespace = typeof root === "string" ? undefined : root.namespace;
     this.plugin = typeof root === "string" ? undefined : root.plugin;
-    this.capabilities =
-      typeof root === "string" ? undefined : root.capabilities;
+    this.permissions = typeof root === "string" ? undefined : root.permissions;
     this.compatibility =
       typeof root === "string" ? undefined : root.compatibility;
     this.kind = kind;
@@ -91,7 +90,7 @@ export class CodeDiscovery {
       ...(this.pluginRoot ? { pluginRoot: this.pluginRoot } : {}),
       ...(this.namespace ? { namespace: this.namespace } : {}),
       ...(this.plugin ? { plugin: this.plugin } : {}),
-      ...(this.capabilities ? { capabilities: [...this.capabilities] } : {}),
+      ...(this.permissions ? { permissions: [...this.permissions] } : {}),
     };
   }
 
@@ -210,7 +209,7 @@ export class CodeDiscovery {
         plugin: this.plugin,
         legacyRevision,
         pluginRoot: this.pluginRoot,
-        capabilities: this.capabilities,
+        permissions: this.permissions,
       };
       try {
         const loaderId = await this.loader.create({

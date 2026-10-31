@@ -22,12 +22,12 @@ test("Action host capabilities are limited to manifest grants", async () => {
   const granted = actionCapabilities(
     {
       id: "example.plugin/world-list",
-      capabilities: ["aura.tripo.game-asset"],
+      permissions: ["aura.tripo.game-asset"],
     },
     host,
   );
   const undeclared = actionCapabilities(
-    { id: "example.plugin/plain", capabilities: [] },
+    { id: "example.plugin/plain", permissions: [] },
     host,
   );
   const signal = new AbortController().signal;
@@ -56,7 +56,7 @@ test("Action capability forwards its durable Run identity to the host", async ()
     ],
   ]);
   const granted = actionCapabilities(
-    { id: "example.plugin/model", capabilities: ["aura.tripo.game-asset"] },
+    { id: "example.plugin/model", permissions: ["aura.tripo.game-asset"] },
     host,
     "creation-child-run",
   );

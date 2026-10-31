@@ -32,7 +32,7 @@ async function fixture(run: (root: string) => Promise<void>) {
 async function writePlugin(
   root: string,
   id = "example.tools",
-  capabilities: string[] = [],
+  permissions: string[] = [],
 ) {
   const plugin = join(root, id);
   await mkdir(join(plugin, "actions", "echo"), { recursive: true });
@@ -40,13 +40,13 @@ async function writePlugin(
   await writeFile(
     join(plugin, "aura.plugin.json"),
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       id,
       name: "Example tools",
       version: "0.1.0",
-      engines: { aura: ">=0.1.0 <0.2.0", pluginSdk: "^1.0.0" },
+      engines: { aura: ">=0.1.0 <0.2.0", pluginSdk: "^2.0.0" },
       contributes: { actions: "./actions", flows: "./flows" },
-      capabilities,
+      permissions,
     }),
   );
   await writeFile(
@@ -67,7 +67,7 @@ async function writePlugin(
 const options = (configPath: string) => ({
   configPath,
   auraVersion: "0.1.0",
-  pluginSdkVersion: "1.0.0",
+  pluginSdkVersion: "2.0.0",
 });
 
 test("default plugins recurse through categories, stop at manifests and skip links", async () =>
@@ -155,24 +155,22 @@ test("missing configuration keeps built-in contributions available", async () =>
     assert.deepEqual(result, {
       actionRoots: [],
       flowRoots: [],
-      capabilityRoots: [],
+      backendRoots: [],
       pageRoots: [],
       plugins: [],
     });
   }));
 
-test("contributed capability providers are granted by ID and receive plugin settings", async () =>
+test("a contributed backend entry is resolved and receives plugin settings", async () =>
   fixture(async (root) => {
     const plugin = await writePlugin(root, "example.providers");
     const manifestPath = join(plugin, "aura.plugin.json");
     const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-    manifest.contributes.capabilities = "./capabilities";
+    manifest.contributes.backend = "./backend/dist/index.js";
     await writeFile(manifestPath, JSON.stringify(manifest));
-    await mkdir(join(plugin, "capabilities", "world-agent"), {
-      recursive: true,
-    });
+    await mkdir(join(plugin, "backend", "dist"), { recursive: true });
     await writeFile(
-      join(plugin, "capabilities", "world-agent", "world-agent.capability.js"),
+      join(plugin, "backend", "dist", "index.js"),
       "export default {};\n",
     );
     const config = join(root, "plugins.json");
@@ -192,14 +190,13 @@ test("contributed capability providers are granted by ID and receive plugin sett
     );
     const result = await loadAuraPlugins(options(config));
     assert.equal(result.plugins[0]?.available, true, result.plugins[0]?.error);
-    assert.deepEqual(result.actionRoots[0]?.capabilities, [
-      "example.providers/world-agent",
-    ]);
+    // A plugin's own backend is implicit; permissions list built-ins only.
+    assert.deepEqual(result.actionRoots[0]?.permissions, []);
     assert.equal(
-      result.capabilityRoots[0]?.path,
-      await realpath(join(plugin, "capabilities")),
+      result.backendRoots[0]?.path,
+      await realpath(join(plugin, "backend", "dist", "index.js")),
     );
-    assert.deepEqual(result.capabilityRoots[0]?.settings, { session: "s" });
+    assert.deepEqual(result.backendRoots[0]?.settings, { session: "s" });
 
     // The settings UI edits paths only; plugin-owned settings survive a save.
     const manager = await AuraPluginManager.create(options(config));
@@ -212,10 +209,38 @@ test("contributed capability providers are granted by ID and receive plugin sett
       { session: "s" },
     );
 
-    await writeFile(join(plugin, "capabilities", "stray.js"), "");
+    await writeFile(join(plugin, "backend", "dist", "index.js"), "");
     assert.match(
       (await loadAuraPlugins(options(config))).plugins[0]?.error ?? "",
-      /贡献根目录只能包含直接贡献目录/u,
+      /后端入口必须是非空文件/u,
+    );
+    manifest.contributes.backend = "../outside.js";
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    await writeFile(join(root, "outside.js"), "export default {};\n");
+    assert.match(
+      (await loadAuraPlugins(options(config))).plugins[0]?.error ?? "",
+      /后端入口必须位于插件根目录内/u,
+    );
+  }));
+
+test("v1 manifests are rejected", async () =>
+  fixture(async (root) => {
+    const plugin = await writePlugin(root);
+    const manifestPath = join(plugin, "aura.plugin.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.schemaVersion = 1;
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    const config = join(root, "plugins.json");
+    await writeFile(
+      config,
+      JSON.stringify({
+        version: 1,
+        plugins: [{ path: plugin, enabled: true, trust: "local" }],
+      }),
+    );
+    assert.match(
+      (await loadAuraPlugins(options(config))).plugins[0]?.error ?? "",
+      /v2 插件规范/u,
     );
   }));
 
@@ -238,10 +263,10 @@ test("loads an explicitly enabled relative plugin directory", async () =>
       await realpath(resolve(plugin, "actions")),
     );
     assert.equal(result.flowRoots[0]?.namespace, "example.tools");
-    assert.deepEqual(result.actionRoots[0]?.capabilities, []);
+    assert.deepEqual(result.actionRoots[0]?.permissions, []);
   }));
 
-test("loads only plugins whose declared host capabilities are supported", async () =>
+test("loads only plugins whose declared permissions are supported", async () =>
   fixture(async (root) => {
     const plugin = await writePlugin(root, "example.capability", [
       "aura.tripo.game-asset",
@@ -257,14 +282,14 @@ test("loads only plugins whose declared host capabilities are supported", async 
 
     const missing = await loadAuraPlugins(options(config));
     assert.equal(missing.plugins[0]?.available, false);
-    assert.match(missing.plugins[0]?.error ?? "", /未提供的能力/u);
+    assert.match(missing.plugins[0]?.error ?? "", /未提供的权限/u);
 
     const supported = await loadAuraPlugins({
       ...options(config),
-      supportedCapabilities: ["aura.tripo.game-asset"],
+      supportedPermissions: ["aura.tripo.game-asset"],
     });
     assert.equal(supported.plugins[0]?.available, true);
-    assert.deepEqual(supported.actionRoots[0]?.capabilities, [
+    assert.deepEqual(supported.actionRoots[0]?.permissions, [
       "aura.tripo.game-asset",
     ]);
   }));
@@ -372,11 +397,11 @@ test("page-only plugins contribute a built browser bundle", async () =>
     await writeFile(
       join(plugin, "aura.plugin.json"),
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         id: "example.pages",
         name: "Pages",
         version: "0.1.0",
-        engines: { aura: ">=0.1.0 <0.2.0", pluginSdk: "^1.0.0" },
+        engines: { aura: ">=0.1.0 <0.2.0", pluginSdk: "^2.0.0" },
         contributes: { pages: "./client/client.js" },
       }),
     );

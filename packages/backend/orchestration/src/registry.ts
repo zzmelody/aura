@@ -31,7 +31,7 @@ export interface LoadedFlow {
   agentTimeoutMs: number;
   agentDefaults?: FlowAgentOptions;
   plugin?: AuraPluginIdentity;
-  capabilities: readonly string[];
+  permissions: readonly string[];
   legacySourceHashes?: readonly string[];
   ownerPlugin?: AuraPluginIdentity;
   run: FlowDefinition["run"];
@@ -109,7 +109,7 @@ export class FlowRegistry {
         config.legacyRevision?.to === sourceHash
           ? Object.freeze([...config.legacyRevision.from])
           : undefined,
-      capabilities: Object.freeze([...(config.capabilities ?? [])]),
+      permissions: Object.freeze([...(config.permissions ?? [])]),
       run: definition.run,
     });
     this.problems.delete(id);

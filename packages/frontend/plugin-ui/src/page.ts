@@ -16,12 +16,11 @@ export interface AuraPluginPageProps {
   /** Plugin id of the page, matching the manifest `id`. */
   pluginId: string;
   /**
-   * Controlled backend boundary: calls this plugin's own capability provider
-   * through the Aura runtime. The provider declares the supported operations;
-   * other plugins' capabilities are unreachable.
+   * Controlled backend boundary: calls this plugin's own backend through the
+   * Aura runtime. The backend lists the supported `pageOperations`; other
+   * plugins' backends are unreachable.
    */
   invoke(
-    capabilityLocalId: string,
     operation: string,
     input?: JsonValue,
     signal?: AbortSignal,

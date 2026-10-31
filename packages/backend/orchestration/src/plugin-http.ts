@@ -1,5 +1,5 @@
 import { dirname, isAbsolute, relative, resolve } from "node:path";
-import type { CapabilityRoot } from "./types.ts";
+import type { BackendRoot } from "./types.ts";
 import type { PluginHttpDefinition, PluginHttpHost } from "./backend-api.ts";
 import { hashContribution } from "./contribution-hash.ts";
 import { PluginModules } from "./plugin-modules.ts";
@@ -8,15 +8,15 @@ import { FlowError } from "./schema.ts";
 /** Loads trusted Hono adapters. Only declared mounts and RPC prefixes are reachable. */
 export class PluginHttpRegistry {
   readonly #modules = new PluginModules();
-  readonly #routes: Array<{ root: CapabilityRoot; app: PluginHttpDefinition }> =
+  readonly #routes: Array<{ root: BackendRoot; app: PluginHttpDefinition }> =
     [];
   private readonly host: PluginHttpHost;
   constructor(host: PluginHttpHost) {
     this.host = host;
   }
-  async replace(roots: readonly CapabilityRoot[]) {
+  async replace(roots: readonly BackendRoot[]) {
     const candidates: Array<{
-      root: CapabilityRoot;
+      root: BackendRoot;
       app: PluginHttpDefinition;
     }> = [];
     const mounts = new Set<string>();

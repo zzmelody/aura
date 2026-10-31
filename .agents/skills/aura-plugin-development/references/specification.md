@@ -46,6 +46,9 @@ A plugin is one self-contained directory:
 media-toolkit/
 ├─ aura.plugin.json
 ├─ package.json
+├─ backend/
+│  ├─ index.ts            # 源码；构建为 backend/dist/index.js（可选）
+│  └─ dist/index.js       # contributes.backend 指向的已构建入口
 ├─ actions/
 │  └─ image-info/
 │     ├─ image-info.action.js
@@ -67,6 +70,7 @@ Requirements:
   - `actions/<action-id>/<action-id>.action.js`
   - `flows/<flow-id>/<flow-id>.flow.js`
 - Helper modules MAY be nested below the contribution directory and MUST use ESM imports.
+- A plugin MAY declare one backend through `contributes.backend`: a single prebuilt native ESM file inside the plugin root that default-exports `defineBackend({ open(host) })` from `@aura/plugin-sdk/backend`. There is no backend directory scan and no per-provider ID; the backend is addressed by plugin ID.
 - Runtime dependencies MUST already be installed in the plugin package. Aura discovery MUST remain read-only.
 
 ## 5. Manifest
@@ -75,21 +79,21 @@ The file `aura.plugin.json` uses UTF-8 JSON without executable values:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "melody.media-toolkit",
   "name": "Media Toolkit",
   "version": "0.1.0",
   "engines": {
     "aura": ">=0.1.0 <0.2.0",
-    "pluginSdk": "^1.0.0"
+    "pluginSdk": "^2.0.0"
   },
   "contributes": {
+    "backend": "./backend/dist/index.js",
     "actions": "./actions",
     "flows": "./flows"
   },
-  "capabilities": [
-    "aura.artifacts.write",
-    "aura.local-ai.use"
+  "permissions": [
+    "aura.tripo.game-asset"
   ]
 }
 ```
@@ -98,17 +102,17 @@ The file `aura.plugin.json` uses UTF-8 JSON without executable values:
 
 | Field | Requirement |
 | --- | --- |
-| `schemaVersion` | Integer `1`. Unknown versions MUST be rejected. |
+| `schemaVersion` | Integer `2`. Version 1 manifests (`contributes.capabilities` directories, top-level `capabilities`) and unknown versions MUST be rejected. |
 | `id` | Stable lowercase publisher-qualified plugin ID. |
 | `name` | Human-readable name, 1–80 characters. |
 | `version` | Semantic version for the installed plugin revision. |
 | `engines.aura` | Supported Aura semantic-version range. |
 | `engines.pluginSdk` | Supported public plugin SDK range. |
-| `contributes` | Object containing at least `actions` or `flows`. |
+| `contributes` | Object containing at least one of `actions`, `flows`, `backend` or `pages`. |
 
 ### 5.2 Optional fields
 
-- `capabilities` defaults to an empty array.
+- `permissions` lists built-in host capabilities (IDs such as `aura.tripo.game-asset`, `aura.flow.invoke`) and defaults to an empty array; omit it when empty. A plugin's own backend is never listed here.
 - `description`, `homepage`, and `license` MAY provide display metadata and MUST NOT affect execution.
 - Unknown top-level fields SHOULD be rejected in v1 so misspelled security- or execution-related fields cannot be silently ignored.
 
@@ -163,7 +167,7 @@ Distribution plugin directories are independent of the user's data root.
 The plugin manager validates packages; the orchestration host discovers their contribution directories.
 
 1. Resolve the configured plugin directory and manifest.
-2. Validate schema, engine ranges, path containment, ID uniqueness, and granted capabilities.
+2. Validate schema, engine ranges, path containment, ID uniqueness, and granted permissions.
 3. Add each valid contribution root to the multi-root Action/Flow discovery service.
 4. Register each entry through the existing Cordis Loader/HMR seam.
 5. Publish plugin and contribution availability through backend catalog DTOs.
@@ -292,7 +296,7 @@ Requirements:
 
 ## 12. Aura capability gateway
 
-Plugins call Aura through an SDK-defined `ctx.aura` object, never by importing implementation packages. Capabilities are deny-by-default and declared in the manifest.
+Plugins call Aura through an SDK-defined `ctx.aura` object, never by importing implementation packages. Built-in capabilities are deny-by-default and granted by the manifest `permissions` array.
 
 Initial capability namespaces MAY include:
 
@@ -306,7 +310,7 @@ Initial capability namespaces MAY include:
 
 Rules:
 
-- The manifest lists required capabilities. Activation MUST fail clearly when a required capability is unsupported or not granted.
+- The manifest `permissions` lists required built-in capabilities. Activation MUST fail clearly when one is unsupported or not granted.
 - The host MUST expose narrow versioned interfaces, not a generic service locator, raw Cordis context, filesystem root, process handle, or credential store.
 - Durable storage keys and artifacts MUST be namespaced by plugin ID.
 - Capability calls MUST accept cancellation where work can block and MUST apply host limits.

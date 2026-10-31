@@ -12,14 +12,15 @@ export interface PluginContributionRoot {
   path: string;
   namespace: string;
   plugin: AuraPluginIdentity;
-  capabilities: string[];
+  /** Built-in host capabilities granted by the manifest `permissions`. */
+  permissions: string[];
   compatibility?: PluginCompatibility;
   http?: PluginHttpContribution;
   presets?: string;
 }
 
-/** A plugin's provider directory plus the opaque settings handed to its providers. */
-export interface PluginCapabilityRoot extends PluginContributionRoot {
+/** A plugin's backend entry (`path`) plus the opaque settings handed to it. */
+export interface PluginBackendRoot extends PluginContributionRoot {
   settings?: JsonValue;
 }
 
@@ -34,7 +35,7 @@ export interface PluginPageRoot {
 export interface AuraPluginResolution {
   actionRoots: PluginContributionRoot[];
   flowRoots: PluginContributionRoot[];
-  capabilityRoots: PluginCapabilityRoot[];
+  backendRoots: PluginBackendRoot[];
   pageRoots: PluginPageRoot[];
   plugins: AuraPluginStatus[];
 }
@@ -45,7 +46,8 @@ export interface LoadAuraPluginsOptions {
   defaultPluginsDirectory?: string;
   auraVersion: string;
   pluginSdkVersion: string;
-  supportedCapabilities?: readonly string[];
+  /** Built-in host capability IDs a manifest may list in `permissions`. */
+  supportedPermissions?: readonly string[];
 }
 
 export class AuraPluginConfigurationError extends Error {}

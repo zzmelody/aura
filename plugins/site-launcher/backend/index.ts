@@ -1,14 +1,12 @@
-// @ts-check
-import { defineCapability } from "@aura/plugin-sdk/capability";
-import { describeProject, SiteRunner } from "../../backend/dist/site-runner.js";
+import { defineBackend } from "@aura/plugin-sdk/backend";
+import type { JsonValue } from "@aura/protocol/types";
+import { describeProject, SiteRunner } from "./site-runner.ts";
 
-/** @param {unknown} value @returns {import("@aura/protocol/types").JsonValue} */
-function json(value) {
-  return JSON.parse(JSON.stringify(value));
+function json(value: unknown): JsonValue {
+  return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
-export default defineCapability({
-  title: "本地站点运行器",
+export default defineBackend({
   open() {
     let closed = false;
     const runner = new SiteRunner({

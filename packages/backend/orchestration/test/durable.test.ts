@@ -667,7 +667,7 @@ async function setup(
     outputSchema: z.json(),
     concurrency: options.concurrency ?? 2,
     agentTimeoutMs: 1000,
-    capabilities: [],
+    permissions: [],
     run: (ctx) => ctx.sequence({ id: "main" }, run),
     ...options.flow,
   };

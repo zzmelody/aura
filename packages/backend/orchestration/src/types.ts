@@ -33,7 +33,7 @@ export interface HostOptions {
   actionRoot?: string;
   flowRoots?: ContributionRoot[];
   actionRoots?: ContributionRoot[];
-  capabilityRoots?: CapabilityRoot[];
+  backendRoots?: BackendRoot[];
   plugins?: AuraPluginStatus[];
   tripoCredentialPath?: string;
   tripoRegion?: "global" | "china";
@@ -50,21 +50,22 @@ export interface ContributionRoot {
   plugin?: AuraPluginIdentity;
   /** Trusted local package root, never projected into public catalog DTOs. */
   pluginRoot?: string;
-  capabilities?: string[];
+  /** Built-in host capabilities granted by the manifest `permissions`. */
+  permissions?: string[];
   compatibility?: PluginCompatibility;
   http?: PluginHttpContribution;
   presets?: string;
 }
 
-/** A plugin's capability provider directory and its opaque plugins.json settings. */
-export interface CapabilityRoot extends ContributionRoot {
+/** A plugin's backend entry module (`root`) and its opaque plugins.json settings. */
+export interface BackendRoot extends ContributionRoot {
   settings?: JsonValue;
 }
 
 export interface ContributionConfiguration {
   flowRoots: ContributionRoot[];
   actionRoots: ContributionRoot[];
-  capabilityRoots?: CapabilityRoot[];
+  backendRoots?: BackendRoot[];
   plugins: AuraPluginStatus[];
 }
 

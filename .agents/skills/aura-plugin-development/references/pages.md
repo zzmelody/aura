@@ -1,8 +1,7 @@
 # Optional workbench pages
 
-The original backend-only v1 contract stays compatible. Optional
-`contributes.pages` and capability providers extend it for complete workbench
-pages. Verify the checked-out host and `@aura/plugin-ui` before authoring one.
+Optional `contributes.pages` and `contributes.backend` extend the Action/Flow
+contract for complete workbench pages. Verify the checked-out host and `@aura/plugin-ui` before authoring one.
 
 - `pages` names one prebuilt DSH lazy-CJS bundle inside the plugin root.
   Browser TypeScript/React compiles before discovery; keep React, React DOM,
@@ -14,15 +13,15 @@ pages. Verify the checked-out host and `@aura/plugin-ui` before authoring one.
   workbench area on window/sidebar resize. Return a single page root, let it
   fill that viewport, and keep scrolling inside the page; do not measure and
   freeze its width from message contents or the initial window size.
-- Pages call only their own provider using the supplied `invoke`; providers
-  explicitly list `pageOperations`. Validate inputs and bound JSON/media output.
-  Credentials never cross this boundary.
-- Long work belongs to a provider-owned job: return status immediately,
+- Pages call only their own backend with `invoke(operation, input, signal)`;
+  the backend explicitly lists `pageOperations`. Validate inputs and bound
+  JSON/media output. Credentials never cross this boundary.
+- Long work belongs to a backend-owned job: return status immediately,
   coalesce starts, poll status and cancel owned work on close. Import/open
   must not start work. Cancel stale frontend requests and clean up subscriptions.
 - Preserve old Action/Flow-only manifests. Test disable, ownership refusal,
   failed startup cleanup and concurrent browser host replacement.
-- A page shares the browser realm and a provider is trusted local Node.js code;
+- A page shares the browser realm and a backend is trusted local Node.js code;
   an ErrorBoundary and operation allowlist do not constitute a security sandbox.
 - Development setup and builds are explicit commands. Aura startup never installs
   dependencies or builds packages. Failed revisions retain the last working version.
@@ -32,7 +31,7 @@ pages. Verify the checked-out host and `@aura/plugin-ui` before authoring one.
 - Product pages may reuse public `@aura/workbench/plugin` generic workflow widgets/native
   adapters and `@aura/workbench/transport` Run/media transports. The renderer seeds
   these modules in DSH; runtime graph externals must list them. Business JSON goes
-  through the plugin's own provider; existing binary upload/download streams and
+  through the plugin's own backend; existing binary upload/download streams and
   generic durable Run controls remain bounded public host APIs.
 
 ## Run result renderers

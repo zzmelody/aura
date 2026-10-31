@@ -407,18 +407,10 @@ export function pluginPageInvoke(
   endpoint: string,
   pluginId: string,
 ): (
-  capabilityLocalId: string,
   operation: string,
   input?: JsonValue,
   signal?: AbortSignal,
 ) => Promise<JsonValue> {
-  return (capabilityLocalId, operation, input, signal) =>
-    invokePluginPage(
-      endpoint,
-      pluginId,
-      capabilityLocalId,
-      operation,
-      input ?? null,
-      signal,
-    );
+  return (operation, input, signal) =>
+    invokePluginPage(endpoint, pluginId, operation, input ?? null, signal);
 }
