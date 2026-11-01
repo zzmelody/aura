@@ -395,12 +395,14 @@ export default function App() {
       ) : null}
       {workspace.state.provider === "lumina" ||
       workspace.state.provider === "custom" ? (
-        <ModelServiceBadge
-          endpoint={codexAuth.endpoint}
-          provider={workspace.state.provider}
-          compact={!wide}
-          onOpen={() => navigate("settings")}
-        />
+        !codingHeader ? (
+          <ModelServiceBadge
+            endpoint={codexAuth.endpoint}
+            provider={workspace.state.provider}
+            compact={!wide}
+            onOpen={() => navigate("settings")}
+          />
+        ) : null
       ) : (
         <CodexLoginButton auth={codexAuth} compact={!wide} />
       )}

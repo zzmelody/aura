@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import {
   ArrowLeft,
-  ChevronDown,
+  Ellipsis,
   FolderPlus,
   PanelRight,
   MessageSquare,
@@ -356,8 +356,7 @@ ${summary}`,
       ) : null}
       {project ? (
         <WorkbenchMenu
-          label="切换对话视图"
-          className="coding-view-control"
+          label="对话菜单"
           items={[
             { id: "chat", label: "对话", action: () => setView("chat") },
             {
@@ -367,8 +366,7 @@ ${summary}`,
             },
           ]}
         >
-          {view === "chat" ? "对话" : "执行记录"}
-          <ChevronDown size={12} />
+          <Ellipsis size={16} />
         </WorkbenchMenu>
       ) : null}
       {headerActions}

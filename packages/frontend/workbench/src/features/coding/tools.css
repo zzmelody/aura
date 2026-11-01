@@ -14,23 +14,6 @@
 .coding-header.coding-title-row .coding-title {
   font-size: 14px;
 }
-.coding-view-control {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 7px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.coding-view-control:hover {
-  background: var(--soft);
-  color: var(--text);
-}
 .coding-tools-header {
   gap: 2px;
   padding: 5px 5px 0;
