@@ -19,6 +19,8 @@ Codex：客户端 → Aura runtime → DSH SDK profile → dsh-llm-pi-ai → ope
 
 对话与流程共用长驻的 `aura-flow` DSH profile：所有在线对话共用持久化的 `coder-v1` DSH session，具备文件、搜索、命令、规划、提问及工作流工具。未选项目时使用后端配置的默认工作目录；讨论、调研与执行由同一 Agent 根据当前请求和上下文衔接，没有额外分类模型或聊天/工作模式开关。工具启动的工作流继续显示运行卡片。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、Tripo 路由、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 不是 LLM provider，由 `@aura/tripo` 使用官方 v3 SDK 提交异步 3D 任务；Key 只从后端环境或已忽略的 `.aura/tripo/` 读取。图片生成由 `image-generate` Action 统一：已登录 Codex 时优先经订阅后端（`chatgpt.com/backend-api/codex/responses` 的 `image_generation` 工具）生成，复用对话的同一份 DSH 授权与令牌刷新，消耗 Codex 订阅额度而非按张计费，具体图片模型由 Codex 决定；每次调用只发一个请求，失败或结果未知时不重试也不改用其他引擎。未登录时改用本机 Qwen-Image；`image` 工作流与对话工具 `aura_image` 都经由它。插件可以贡献自己的后端（`contributes.backend`，见 `@aura/plugin-sdk/backend`），领域专用的外部工具由插件后端调用，不进 Aura。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](development/backend-runtime.md)。
 
+在线 Flow 的运行入口与主、侧边对话共用输入和结果界面。选择 Flow 后在当前对话填写参数，明确请求由同一 Agent 调用通用 Flow 工具；结果、产物与后续追问保留在该对话。运行卡片可以回填参数再次执行，查询结果使用原 Run ID。新 Run 在原格式中附加可选 `conversationId`，工作台据此避免创建重复的绑定 Flow 会话；旧执行记录通过显式「继续对话」接入，不迁移用户存储。
+
 ## Monorepo
 
 pnpm workspace 收录应用输出和三层可复用库：

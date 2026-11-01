@@ -709,8 +709,12 @@ export async function apply(ctx: Context) {
 
   // Conversation tools use generic workflow admission and plugin contributions.
   const workflowTools: ChatToolHost = {
-    start: (input) => engine.start(input),
+    start: ({ conversationId, ...input }) =>
+      engine.start(input, conversationId),
     get: (id) => engine.get(id),
+    catalog: () => engine.catalog(),
+    associateConversation: (id, conversationId) =>
+      engine.associateConversation(id, conversationId),
     taskTools: () => pluginBackends.taskTools(),
   };
   const chats = new Map<string, AbortController>();

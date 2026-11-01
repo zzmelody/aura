@@ -200,6 +200,7 @@ export class FlowEngine {
       .filter(([, run]) => !run.parent)
       .map(([, run]) => ({
         id: run.id,
+        ...(run.conversationId ? { conversationId: run.conversationId } : {}),
         flowId: run.flow.id,
         title: run.flow.title,
         inputPreview:
@@ -219,7 +220,19 @@ export class FlowEngine {
     if (!run) throw new FlowError("Flow 运行不存在。", 404);
     return run;
   }
-  start(input: unknown) {
+  associateConversation(id: string, conversationId: string) {
+    return this.serialize(async () => {
+      const run = this.get(id);
+      if (run.conversationId && run.conversationId !== conversationId)
+        throw new FlowError("工作流已属于另一段对话。", 409);
+      if (!run.conversationId)
+        await this.runs.update(id, (current) => ({
+          ...current,
+          conversationId,
+        }));
+    });
+  }
+  start(input: unknown, conversationId?: string) {
     return this.serialize(async () => {
       if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
       const request = parse(startSchema, input);
@@ -240,6 +253,9 @@ export class FlowEngine {
       )?.[1];
       if (previous) {
         if (
+          (conversationId &&
+            previous.conversationId &&
+            previous.conversationId !== conversationId) ||
           previous.flow.id !== request.flowId ||
           (!request.useConfiguredModel && previous.mode !== request.mode) ||
           (previous.requestInputHash ?? fingerprint(previous.input)) !==
@@ -266,6 +282,7 @@ export class FlowEngine {
       const run: FlowRun = {
         id: randomUUID(),
         requestId: request.requestId,
+        ...(conversationId ? { conversationId } : {}),
         flow: {
           id: flow.id,
           title: flow.title,

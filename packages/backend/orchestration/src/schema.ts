@@ -263,6 +263,7 @@ export const actionRunSchema = z.object({
 export const runSchema = z.object({
   id: z.uuid(),
   requestId: z.uuid(),
+  conversationId: z.string().min(1).max(200).optional(),
   flow: z.object({
     id: contributionIdSchema,
     title: z.string(),

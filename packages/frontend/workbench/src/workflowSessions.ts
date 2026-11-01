@@ -60,6 +60,9 @@ export function mergeWorkflowRuns(
       holdsRun(session, endpoint, run.id),
     );
     if (!found) {
+      // Conversation tools retain their own durable cards; do not create a
+      // second, bound workflow session for the same execution.
+      if (run.conversationId) continue;
       if (!importUnknown || hidden.has(workflowRunKey(endpoint, run.id)))
         continue;
       sessions = [

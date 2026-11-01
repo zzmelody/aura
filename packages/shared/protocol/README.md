@@ -1,5 +1,7 @@
 # @aura/protocol
 
+`FlowRun` 与 `FlowRunSummary` 的可选 `conversationId` 标记发起运行的持久化对话，供工作台保留原对话内的运行卡片并避免重复导入。旧记录不需要此字段，继续沿用原版本和 ID。
+
 `CodingHistoryPage` 描述完整回合组成的历史窗口，携带 `hasMore`、`beforeSeq` 与 `throughSeq`，游标用于固定日志截面的向前读取；不改变持久化记录格式。
 
 Aura 客户端与后端的公共协议。`@aura/protocol/types` 导出 ChatMessage、ChatRequest、ChatEvent、CodexLoginRequest 与 CodexAuthStatus；`@aura/protocol` 导出 HTTP 历史校验。没有运行依赖。授权状态只包含登录阶段、模型名、验证地址和设备码，不允许携带 access token、refresh token 或 API Key。

@@ -384,6 +384,7 @@ export function codingService(
       });
       for (const tool of chatTools(workflows, {
         mode: turn.mode,
+        sessionId: turn.sessionId,
         signal: stop,
         started: (run) => emit({ type: "workflow", ...run }),
       }))

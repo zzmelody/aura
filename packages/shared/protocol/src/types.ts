@@ -318,6 +318,8 @@ export interface ActionRun {
 export interface FlowRun {
   id: string;
   requestId: string;
+  /** Conversation that explicitly started this run; absent on older records. */
+  conversationId?: string;
   flow: {
     id: string;
     title: string;
@@ -361,6 +363,7 @@ export interface FlowRun {
 }
 export interface FlowRunSummary {
   id: string;
+  conversationId?: string;
   flowId: string;
   title: string;
   inputPreview: string;

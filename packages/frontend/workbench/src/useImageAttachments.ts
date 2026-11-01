@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { SetStateAction } from "react";
 import type { ChatImage } from "@aura/core/types";
 import {
   CHAT_IMAGE_LIMIT,
@@ -46,9 +47,26 @@ export function pastedImages(data: DataTransfer, now = Date.now()): File[] {
  * Composer image attachments: pick, paste or drop, upload immediately, and
  * keep a local preview until the message is sent.
  */
-export function useImageAttachments(endpoint: string) {
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [error, setError] = useState("");
+export function useImageAttachments(endpoint: string, scope = "draft") {
+  const [drafts, setDrafts] = useState<Record<string, Attachment[]>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const attachments = drafts[scope] ?? [];
+  const error = errors[scope] ?? "";
+  // Upload callbacks retain the scope they started in, even after navigation.
+  const setAttachments = useCallback(
+    (change: SetStateAction<Attachment[]>) =>
+      setDrafts((current) => ({
+        ...current,
+        [scope]:
+          typeof change === "function" ? change(current[scope] ?? []) : change,
+      })),
+    [scope],
+  );
+  const setError = useCallback(
+    (message: string) =>
+      setErrors((current) => ({ ...current, [scope]: message })),
+    [scope],
+  );
   const previews = useRef(new Set<string>());
   useEffect(() => {
     const urls = previews.current;
@@ -118,6 +136,19 @@ export function useImageAttachments(endpoint: string) {
     setError("");
   }
 
+  /** Transfers a completed attachment draft when its first turn gets an ID. */
+  function moveTo(nextScope: string) {
+    if (nextScope === scope) return;
+    setDrafts((current) => {
+      const { [scope]: selected, ...rest } = current;
+      return selected ? { ...rest, [nextScope]: selected } : current;
+    });
+    setErrors((current) => {
+      const { [scope]: selected, ...rest } = current;
+      return selected ? { ...rest, [nextScope]: selected } : current;
+    });
+  }
+
   return {
     attachments,
     /** Uploaded images, ready to send. */
@@ -129,6 +160,7 @@ export function useImageAttachments(endpoint: string) {
     attach,
     detach,
     clear,
+    moveTo,
   };
 }
 

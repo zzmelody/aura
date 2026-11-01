@@ -25,6 +25,10 @@ import type {
   WorkspaceTerminalInfo,
 } from "@aura/protocol/types";
 import { chatHistory } from "../../workflowSessions";
+import {
+  flowConversationHistory,
+  type FlowConversationRequest,
+} from "../../flow-conversation";
 import { ConversationPane } from "./ConversationPane";
 import { ConversationSplit } from "./ConversationSplit";
 import { SideConversation } from "./SideConversation";
@@ -74,7 +78,8 @@ export function CodingStudio({
   onApplyFlow,
   flows,
   flowsLoading,
-  onRunFlow,
+  flowRequest,
+  onFlowRequestTaken,
 }: {
   endpoint: string;
   visible?: boolean;
@@ -94,7 +99,8 @@ export function CodingStudio({
   onApplyFlow?(code: string): void;
   flows?: FlowCatalogEntry[];
   flowsLoading?: boolean;
-  onRunFlow?(flow: FlowCatalogEntry): void;
+  flowRequest?: FlowConversationRequest;
+  onFlowRequestTaken?(): void;
 }) {
   const {
     projects,
@@ -109,15 +115,17 @@ export function CodingStudio({
   const history = useMemo(
     () =>
       legacy
-        ? chatHistory(
-            legacy.messages.filter((message) => message.status !== "error"),
-          ).map(({ role, text, images }) => ({
-            role,
-            text,
-            ...(images?.length
-              ? { images: images.map((image) => image.assetId) }
-              : {}),
-          }))
+        ? legacy.workflow
+          ? flowConversationHistory(legacy)
+          : chatHistory(
+              legacy.messages.filter((message) => message.status !== "error"),
+            ).map(({ role, text, images }) => ({
+              role,
+              text,
+              ...(images?.length
+                ? { images: images.map((image) => image.assetId) }
+                : {}),
+            }))
         : undefined,
     [legacy],
   );
@@ -321,6 +329,8 @@ ${summary}`,
                 }
                 onModelConfig={(selection) => changeModel(sessionId, selection)}
                 onProvider={onProvider}
+                flows={flows}
+                flowsLoading={flowsLoading}
                 onSendBack={sendBack}
                 onSettled={() =>
                   void refreshConversations(space.id).catch(() => {})
@@ -473,7 +483,8 @@ ${summary}`,
                 onApplyFlow={onApplyFlow}
                 flows={flows}
                 flowsLoading={flowsLoading}
-                onRunFlow={onRunFlow}
+                flowRequest={flowRequest}
+                onFlowRequestTaken={onFlowRequestTaken}
                 composerLeading={
                   <WorkbenchMenu
                     label="选择工作空间"

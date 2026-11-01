@@ -4,6 +4,7 @@ import type { Workspace } from "@aura/core/types";
 import type {
   ChatModelSelection,
   CodingProjectInfo,
+  FlowCatalogEntry,
 } from "@aura/protocol/types";
 import { ConversationPane } from "./ConversationPane";
 import { fileDiff } from "./diff";
@@ -23,6 +24,8 @@ export function SideConversation({
   onProvider,
   onSendBack,
   onSettled,
+  flows,
+  flowsLoading,
 }: {
   endpoint: string;
   provider: Workspace["provider"];
@@ -37,6 +40,8 @@ export function SideConversation({
   /** Refuses a handoff if the selected main conversation changed meanwhile. */
   onSendBack(parentId: string, sessionId: string, summary: string): boolean;
   onSettled(): void;
+  flows?: FlowCatalogEntry[];
+  flowsLoading?: boolean;
 }) {
   const [turns, setTurns] = useState<readonly Turn[]>([]);
   const [running, setRunning] = useState(false);
@@ -118,6 +123,8 @@ export function SideConversation({
           onRunning={setRunning}
           onTurns={setTurns}
           onSettled={onSettled}
+          flows={flows}
+          flowsLoading={flowsLoading}
         />
       ) : null}
     </section>

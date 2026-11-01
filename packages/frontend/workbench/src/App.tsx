@@ -30,6 +30,7 @@ import { CodexLoginButton } from "./CodexLoginButton";
 import { ModelServiceBadge } from "./ModelServiceBadge";
 import { useScheduledConversations } from "./useScheduledConversations";
 import { useFlowCatalog } from "./flowCatalog";
+import type { FlowConversationRequest } from "./flow-conversation";
 import { flowContext, useFlowDraft } from "./flowDraft";
 import type { StudioTab, Tab } from "./types";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
@@ -129,6 +130,9 @@ export default function App({ onReady }: AppProps) {
   ]).size;
   const [workflowDetail, setWorkflowDetail] = useState(false);
   const [codingHandoff, setCodingHandoff] = useState<CodingHandoff>();
+  const [flowRequest, setFlowRequest] = useState<FlowConversationRequest>();
+  const takeFlowRequest = useCallback(() => setFlowRequest(undefined), []);
+  const [workflowDiscussionId, setWorkflowDiscussionId] = useState<string>();
   const takeHandoff = useCallback(() => setCodingHandoff(undefined), []);
   const [studioDirty, setStudioDirty] = useState(false);
   const canLeaveStudio = () =>
@@ -361,10 +365,13 @@ export default function App({ onReady }: AppProps) {
       workflowDetail &&
       assistantOpen &&
       !workspace.active?.workflow);
+  const showWorkflowChat =
+    Boolean(workspace.active?.workflow) &&
+    tab === "chat" &&
+    workflowDiscussionId !== workspace.active?.id;
   const codingHeader =
     workspace.state.provider !== "offline" &&
-    (tab === "studio:coding" ||
-      (tab === "chat" && !workspace.active?.workflow));
+    (tab === "studio:coding" || (tab === "chat" && !showWorkflowChat));
   const headerActions = (
     <div className="header-actions">
       {tab === "chat" && workspace.active ? (
@@ -531,11 +538,20 @@ export default function App({ onReady }: AppProps) {
                               catalogState={catalogState}
                               onDetailChange={setWorkflowDetail}
                               onRun={(flow) => {
-                                const sessionId = workspace.newWorkflowChat(
-                                  flow,
-                                  codexAuth.endpoint,
-                                );
-                                remember("chat", sessionId);
+                                if (workspace.state.provider === "offline") {
+                                  const sessionId = workspace.newWorkflowChat(
+                                    flow,
+                                    codexAuth.endpoint,
+                                  );
+                                  remember("chat", sessionId);
+                                } else {
+                                  workspace.newChat();
+                                  setFlowRequest({
+                                    id: crypto.randomUUID(),
+                                    flow,
+                                  });
+                                  remember("chat", null);
+                                }
                                 setTab("chat");
                                 setAssistantOpen(false);
                               }}
@@ -584,7 +600,7 @@ export default function App({ onReady }: AppProps) {
                             <div
                               className="studio-area"
                               style={
-                                workspace.active?.workflow && tab === "chat"
+                                showWorkflowChat
                                   ? { display: "none" }
                                   : undefined
                               }
@@ -597,13 +613,7 @@ export default function App({ onReady }: AppProps) {
                                 }
                               >
                                 <CodingStudio
-                                  visible={
-                                    showChat &&
-                                    !(
-                                      workspace.active?.workflow &&
-                                      tab === "chat"
-                                    )
-                                  }
+                                  visible={showChat && !showWorkflowChat}
                                   key={codexAuth.endpoint}
                                   endpoint={codexAuth.endpoint}
                                   provider={workspace.state.provider}
@@ -613,7 +623,7 @@ export default function App({ onReady }: AppProps) {
                                   legacy={
                                     tab === "chat" &&
                                     workspace.active &&
-                                    !workspace.active.workflow
+                                    !showWorkflowChat
                                       ? workspace.active
                                       : undefined
                                   }
@@ -646,14 +656,8 @@ export default function App({ onReady }: AppProps) {
                                   flowsLoading={
                                     !catalogState.catalog && !catalogState.error
                                   }
-                                  onRunFlow={(flow) => {
-                                    const id = workspace.newWorkflowChat(
-                                      flow,
-                                      codexAuth.endpoint,
-                                    );
-                                    remember("chat", id);
-                                    setTab("chat");
-                                  }}
+                                  flowRequest={flowRequest}
+                                  onFlowRequestTaken={takeFlowRequest}
                                   onProvider={(provider) =>
                                     workspace.setState((current) => ({
                                       ...current,
@@ -672,7 +676,7 @@ export default function App({ onReady }: AppProps) {
                               </React.Suspense>
                             </div>
                           ) : null}
-                          {workspace.active?.workflow && tab === "chat" ? (
+                          {showWorkflowChat ? (
                             <React.Suspense
                               fallback={
                                 <div className="workspace-loading">
@@ -681,8 +685,18 @@ export default function App({ onReady }: AppProps) {
                               }
                             >
                               <WorkflowChat
-                                key={workspace.active.id}
+                                key={workspace.active?.id}
                                 workspace={workspace}
+                                onContinue={
+                                  workspace.state.provider !== "offline" &&
+                                  workspace.active?.workflow?.endpoint ===
+                                    codexAuth.endpoint
+                                    ? () =>
+                                        setWorkflowDiscussionId(
+                                          workspace.active?.id,
+                                        )
+                                    : undefined
+                                }
                                 flow={catalogState.catalog?.flows.find(
                                   (flow) =>
                                     flow.id ===

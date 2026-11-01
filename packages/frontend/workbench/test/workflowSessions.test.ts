@@ -23,6 +23,22 @@ const summary: FlowRunSummary = {
   createdAt: 100,
 };
 
+test("conversation-owned runs do not create duplicate workflow sessions", () => {
+  const state = initialState();
+  assert.equal(
+    mergeWorkflowRuns(
+      state,
+      [{ ...summary, conversationId: "coding-1" }],
+      endpoint,
+    ),
+    state,
+  );
+  assert.equal(
+    mergeWorkflowRuns(state, [summary], endpoint).sessions.length,
+    1,
+  );
+});
+
 test("human waits remain resumable without presenting a running spinner", () => {
   for (const status of [
     "paused",

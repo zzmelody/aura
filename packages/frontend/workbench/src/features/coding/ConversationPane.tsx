@@ -11,6 +11,12 @@ import React, {
 import { legacyConversationTurns } from "@aura/protocol/conversations";
 import { extractFlowCode } from "../../flowDraft";
 import { NestedFlowRun } from "../../screens/WorkflowRun";
+import { schemaInitialValue } from "../../screens/WorkflowInput";
+import { WorkflowRunForm } from "../../screens/WorkflowRunForm";
+import {
+  flowConversationPrompt,
+  type FlowConversationRequest,
+} from "../../flow-conversation";
 import { ComposerCommands, useComposerCommands } from "./ComposerCommands";
 import {
   ArrowUp,
@@ -64,6 +70,8 @@ import type {
   ChatModelSelection,
   ChatMessage,
   FlowCatalogEntry,
+  FlowRun,
+  FlowMode,
   CodingFileDiff,
   CodingQuestionAnswer,
 } from "@aura/protocol/types";
@@ -712,6 +720,7 @@ const TurnView = memo(function TurnView({
   endpoint,
   onAnswer,
   onApplyFlow,
+  onRepeatFlow,
 }: {
   turn: Turn;
   visible: boolean;
@@ -725,6 +734,7 @@ const TurnView = memo(function TurnView({
     answers: CodingQuestionAnswer[],
   ): Promise<void>;
   onApplyFlow?(code: string): void;
+  onRepeatFlow?(run: FlowRun): void;
 }) {
   const running = turn.status === "running";
   const waiting = turn.questions.some((item) => !item.answered);
@@ -902,6 +912,7 @@ const TurnView = memo(function TurnView({
               key={item.runId}
               endpoint={endpoint}
               runId={run.runId}
+              onRepeat={onRepeatFlow}
             />
           ) : null;
         }
@@ -1221,6 +1232,7 @@ function TurnDuration({ turn, visible }: { turn: Turn; visible: boolean }) {
 export type ConversationSend = (
   text?: string,
   attached?: ChatImage[],
+  options?: { preserveDraft?: boolean },
 ) => Promise<Turn | undefined>;
 
 /**
@@ -1248,7 +1260,8 @@ export function ConversationPane({
   onApplyFlow,
   flows,
   flowsLoading = false,
-  onRunFlow,
+  flowRequest,
+  onFlowRequestTaken,
   composerExtra,
   composerLeading,
   readOnly = false,
@@ -1289,7 +1302,8 @@ export function ConversationPane({
   onApplyFlow?(code: string): void;
   flows?: FlowCatalogEntry[];
   flowsLoading?: boolean;
-  onRunFlow?(flow: FlowCatalogEntry): void;
+  flowRequest?: FlowConversationRequest;
+  onFlowRequestTaken?(): void;
   composerExtra?: React.ReactNode;
   /** Workspace context inside the card, beside the attachment menu. */
   composerLeading?: React.ReactNode;
@@ -1315,12 +1329,25 @@ export function ConversationPane({
   onTurns?(turns: readonly Turn[]): void;
 }) {
   const [turns, setTurns] = useState<Record<string, Turn[]>>({});
-  const [draft, setDraft] = useState(initialDraft ?? "");
+  const draftKey = sessionId ?? "draft";
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draft = drafts[draftKey] ?? initialDraft ?? "";
+  const setDraft = useCallback(
+    (value: React.SetStateAction<string>) =>
+      setDrafts((current) => ({
+        ...current,
+        [draftKey]:
+          typeof value === "function"
+            ? value(current[draftKey] ?? initialDraft ?? "")
+            : value,
+      })),
+    [draftKey, initialDraft],
+  );
   const [modelOpenRequest, setModelOpenRequest] = useState(0);
   const [error, setError] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const images = useImageAttachments(endpoint);
+  const images = useImageAttachments(endpoint, draftKey);
   const fileInput = useRef<HTMLInputElement>(null);
   /** Conversations already read from the log; a live turn is never overwritten. */
   const loaded = useRef(new Set<string>());
@@ -1343,6 +1370,7 @@ export function ConversationPane({
    * conversation abort another one's turn.
    */
   const controllers = useRef(new Map<string, AbortController>());
+  const sending = useRef(new Set<string>());
   const [stopping, setStopping] = useState(false);
   const [steering, setSteering] = useState(false);
   const transcript = useRef<HTMLDivElement>(null);
@@ -1375,6 +1403,56 @@ export function ConversationPane({
   const running = shown.some((turn) => turn.status === "running");
   const offline = provider === "offline";
   const mode = providerMode(provider);
+  const flowFormId = useId();
+  const [flowForms, setFlowForms] = useState<
+    Record<string, { flow: FlowCatalogEntry; text: string; mode: FlowMode }>
+  >({});
+  const flowForm = flowForms[draftKey];
+  const openFlow = useCallback(
+    (flow: FlowCatalogEntry, run?: FlowRun) => {
+      setFlowForms((current) => ({
+        ...current,
+        [draftKey]: {
+          flow,
+          text: JSON.stringify(
+            run ? run.input : schemaInitialValue(flow.inputSchema),
+            null,
+            2,
+          ),
+          mode: run?.mode ?? mode,
+        },
+      }));
+    },
+    [draftKey, mode],
+  );
+  const repeatFlow = useCallback(
+    (run: FlowRun) => {
+      const flow = flows?.find((entry) => entry.id === run.flow.id) ?? {
+        id: run.flow.id,
+        title: run.flow.title,
+        description: "",
+        available: false,
+      };
+      openFlow(flow, run);
+    },
+    [flows, openFlow],
+  );
+  const takenFlowRequest = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!visible || !flowRequest || takenFlowRequest.current === flowRequest.id)
+      return;
+    takenFlowRequest.current = flowRequest.id;
+    openFlow(flowRequest.flow);
+    onFlowRequestTaken?.();
+  }, [flowRequest, visible, openFlow, onFlowRequestTaken]);
+  const closeFlow = () => {
+    setFlowForms((current) => {
+      const next = { ...current };
+      delete next[draftKey];
+      return next;
+    });
+    editor.current?.focus();
+  };
   const commands = useComposerCommands({
     endpoint,
     projectId,
@@ -1383,7 +1461,7 @@ export function ConversationPane({
     flows: flows ?? [],
     running,
     enabled: !!projectId && !offline && !readOnly,
-    onFlow: onRunFlow,
+    onFlow: openFlow,
     editor,
     onCommand(command) {
       if (command === "model") setModelOpenRequest((value) => value + 1);
@@ -1391,7 +1469,9 @@ export function ConversationPane({
       else editor.current?.focus();
     },
   });
-  useEffect(() => setDraft(initialDraft ?? ""), [initialDraft, sessionId]);
+  useEffect(() => {
+    if (initialDraft !== undefined) setDraft(initialDraft);
+  }, [initialDraft, setDraft]);
   useEffect(() => onDraftChange?.(draft), [draft, onDraftChange]);
   useEffect(
     () => onAttachmentsChange?.(images.attachments.length > 0),
@@ -1405,7 +1485,7 @@ export function ConversationPane({
       current.trim() ? `${current}\n\n${draftInsert.text}` : draftInsert.text,
     );
     editor.current?.focus();
-  }, [draftInsert]);
+  }, [draftInsert, setDraft]);
 
   useEffect(() => onRunning?.(running), [running, onRunning]);
   useEffect(() => onTurns?.(shown), [shown, onTurns]);
@@ -1675,6 +1755,7 @@ export function ConversationPane({
   const send: ConversationSend = async (
     text = draft,
     attached = images.ready,
+    options,
   ) => {
     const prompt = text.trim();
     if (
@@ -1683,20 +1764,31 @@ export function ConversationPane({
       images.uploading ||
       loadingHistory ||
       readOnly ||
+      sending.current.has(draftKey) ||
       !projectId ||
       offline
     )
       return undefined;
+    sending.current.add(draftKey);
     // Side chats use a prefix the backend requires, so they never collide
     // with an indexed conversation.
     const id = sessionId ?? `${forkFrom ? "side" : "coding"}-${newId()}`;
     // A brand-new conversation has no stored log to read back.
     if (!sessionId) loaded.current.add(id);
     const turnId = newId();
+    if (options?.preserveDraft && !sessionId) {
+      setDrafts((current) => {
+        const { [draftKey]: previous, ...rest } = current;
+        return { ...rest, [id]: previous ?? draft };
+      });
+      images.moveTo(id);
+    }
     onOpen?.(id);
-    setDraft("");
     setError("");
-    images.clear();
+    if (!options?.preserveDraft) {
+      setDraft("");
+      images.clear();
+    }
     // Mirrors the state updates so the finished turn can be returned.
     let latest = newTurn(turnId, prompt, Date.now(), attached);
     const change = (next: (turn: Turn) => Turn) => {
@@ -1753,6 +1845,7 @@ export function ConversationPane({
         ),
       );
     } finally {
+      sending.current.delete(draftKey);
       clearTimeout(listed);
       if (controllers.current.get(id) === abort) controllers.current.delete(id);
       onSettled?.();
@@ -1836,6 +1929,7 @@ export function ConversationPane({
               endpoint={endpoint}
               onAnswer={answer}
               onApplyFlow={onApplyFlow}
+              onRepeatFlow={readOnly ? undefined : repeatFlow}
             />
           ))
         )}
@@ -1874,6 +1968,56 @@ export function ConversationPane({
         style={readOnly ? { display: "none" } : undefined}
       >
         {composerExtra}
+        {flowForm ? (
+          <WorkflowRunForm
+            key={`${draftKey}:${flowForm.flow.id}`}
+            id={flowFormId}
+            title="在当前对话中运行"
+            subtitle={flowForm.flow.title}
+            schema={flowForm.flow.inputSchema}
+            text={flowForm.text}
+            onTextChange={(text) =>
+              setFlowForms((current) => ({
+                ...current,
+                [draftKey]: { ...flowForm, text },
+              }))
+            }
+            endpoint={endpoint}
+            initialMode={flowForm.mode}
+            locked={
+              running ||
+              loadingHistory ||
+              images.uploading ||
+              !projectId ||
+              offline
+            }
+            submitting={false}
+            submitLabel="发送运行请求"
+            unavailable={!flowForm.flow.available}
+            onSubmit={(input, runMode) => {
+              if (
+                running ||
+                loadingHistory ||
+                images.uploading ||
+                !projectId ||
+                offline
+              )
+                return;
+              const prompt = flowConversationPrompt(
+                flowForm.flow,
+                input,
+                runMode,
+              );
+              if (prompt.length > 80_000) {
+                setError("工作流输入过长，请缩短后再发送。");
+                return;
+              }
+              closeFlow();
+              void send(prompt, [], { preserveDraft: true });
+            }}
+            onClose={closeFlow}
+          />
+        ) : null}
         {images.error ? (
           <p className="composer-attach-error" role="alert">
             {images.error}

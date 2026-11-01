@@ -20,6 +20,7 @@ export const WorkflowRunForm = React.forwardRef<
     unavailable?: boolean;
     error?: string;
     notice?: React.ReactNode;
+    submitLabel?: string;
     onSubmit(input: JsonValue, mode: FlowMode): void;
     onClose(): void;
   }
@@ -38,6 +39,7 @@ export const WorkflowRunForm = React.forwardRef<
     unavailable,
     error,
     notice,
+    submitLabel = "开始执行",
     onSubmit,
     onClose,
   },
@@ -146,7 +148,7 @@ export const WorkflowRunForm = React.forwardRef<
           ) : (
             <Play size={14} />
           )}
-          {submitting ? "提交中…" : "开始执行"}
+          {submitting ? "提交中…" : submitLabel}
         </button>
       </div>
       <p className="workflow-compose-note">输入与结果将保存在当前会话中。</p>

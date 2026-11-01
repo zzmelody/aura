@@ -1,6 +1,6 @@
 import { providerMode } from "@aura/core";
 import React, { useEffect, useId, useRef, useState } from "react";
-import { Play, Plus } from "lucide-react";
+import { MessageCircle, Play, Plus } from "lucide-react";
 import { FlowIcon } from "../FlowIcon";
 import type {
   FlowCatalogEntry,
@@ -21,9 +21,11 @@ import { WorkflowData } from "./WorkflowValue";
 export function WorkflowChat({
   workspace,
   flow,
+  onContinue,
 }: {
   workspace: WorkspaceController;
   flow?: FlowCatalogEntry;
+  onContinue?(): void;
 }) {
   const session = workspace.active!;
   const binding = session.workflow!;
@@ -113,6 +115,19 @@ export function WorkflowChat({
             <span>{binding.title}</span>
           </span>
         </div>
+        {onContinue ? (
+          <button
+            type="button"
+            className="tool-button"
+            onClick={onContinue}
+            disabled={
+              Boolean(pending) || submitting || Boolean(session.archivedAt)
+            }
+          >
+            <MessageCircle size={14} />
+            继续对话
+          </button>
+        ) : null}
         <button
           ref={runButton}
           type="button"

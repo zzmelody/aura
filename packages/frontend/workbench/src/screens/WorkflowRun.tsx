@@ -4,7 +4,6 @@ import {
   Circle,
   CircleAlert,
   Clock3,
-  GitFork,
   LoaderCircle,
   RefreshCw,
   Square,
@@ -15,6 +14,7 @@ import { workflowRuns } from "../workflow-run-store";
 import { AuraMark } from "@aura/ui/components";
 import type {
   FlowHistory,
+  FlowMode,
   FlowRun,
   FlowStep,
   JsonValue,
@@ -45,6 +45,13 @@ import {
   workflowPhaseLabels,
 } from "../workflowSessions";
 
+const modeLabels: Record<FlowMode, string> = {
+  demo: "本地演示",
+  codex: "Codex",
+  lumina: "Lumina",
+  custom: "自定义 API",
+};
+
 /**
  * When the run produced playable or viewable files, those are the result; an
  * output that only restates their local paths folds into a details row.
@@ -64,52 +71,58 @@ function RunOutput({ value }: { value: JsonValue }) {
 export function NestedFlowRun({
   endpoint,
   runId,
+  onRepeat,
 }: {
   endpoint: string;
   runId: string;
+  onRepeat?(run: FlowRun): void;
 }) {
   const { run, error } = useWorkflowRun(endpoint, runId);
-  if (error) return <p className="error">{error}</p>;
-  if (!run) return <p className="muted">正在读取子工作流…</p>;
+  const [actionError, setActionError] = useState("");
+  const [cancelRequestId] = useState(() => crypto.randomUUID());
+  if (error)
+    return (
+      <p className="error" role="alert">
+        {error}
+      </p>
+    );
+  if (!run) return <p className="muted">正在读取工作流…</p>;
   return (
-    <section
-      className="workflow-child-run"
-      aria-label={`子工作流 ${run.flow.title}`}
-    >
-      <header>
-        <span className="workflow-child-icon" aria-hidden="true">
-          <GitFork size={14} />
-        </span>
-        <div>
-          <strong>{run.flow.title}</strong>
-          <small>{run.flow.id}</small>
-        </div>
-        <span className={`workflow-phase phase-${run.status}`}>
-          {workflowPhaseLabels[run.status]}
-        </span>
-      </header>
-      <WorkflowControls
+    <>
+      {actionError ? (
+        <p className="error" role="alert">
+          {actionError}
+        </p>
+      ) : null}
+      <WorkflowRunResult
         endpoint={endpoint}
-        run={run}
+        cached={run}
+        message={{
+          id: run.id,
+          role: "assistant",
+          text: "",
+          status: "complete",
+          workflowRunId: run.id,
+        }}
+        title={run.flow.title}
         receive={(source, next) => workflowRuns.publish(source, next)}
+        onRepeat={onRepeat}
+        onCancel={() => {
+          setActionError("");
+          void workflowApi<FlowRun>(
+            endpoint,
+            `/runs/${encodeURIComponent(run.id)}/cancel`,
+            { requestId: cancelRequestId },
+          )
+            .then((next) => workflowRuns.publish(endpoint, next))
+            .catch((cause: unknown) =>
+              setActionError(
+                cause instanceof Error ? cause.message : "停止工作流失败。",
+              ),
+            );
+        }}
       />
-      {run.steps.length ? (
-        <div className="workflow-child-steps">
-          {run.steps.map((step) => (
-            <details key={step.stepKey ?? step.id}>
-              <summary>
-                <StepStateIcon status={step.status} />
-                <span>{step.label}</span>
-                <small>{workflowPhaseLabels[step.status]}</small>
-              </summary>
-              <StepHistory endpoint={endpoint} runId={run.id} step={step} />
-            </details>
-          ))}
-        </div>
-      ) : (
-        <p className="muted">尚未创建执行步骤</p>
-      )}
-    </section>
+    </>
   );
 }
 
@@ -359,6 +372,7 @@ export function WorkflowRunResult({
   inputSchema,
   title,
   onCancel,
+  onRepeat,
 }: {
   endpoint: string;
   /** Flow name shown when the run lives in an ordinary conversation. */
@@ -367,9 +381,10 @@ export function WorkflowRunResult({
   cached?: FlowRun;
   receive(endpoint: string, run: FlowRun): void;
   input?: Message;
-  index: number;
+  index?: number;
   inputSchema?: JsonValue;
   onCancel(): void;
+  onRepeat?(run: FlowRun): void;
 }) {
   const [stepId, setStepId] = useState<string>();
   const results = usePluginResults();
@@ -486,7 +501,9 @@ export function WorkflowRunResult({
             <div className="workflow-response-identity">
               <div>
                 <strong id={titleId}>{title ?? "工作流"}</strong>
-                <span className="workflow-run-number">第 {index} 次执行</span>
+                {index ? (
+                  <span className="workflow-run-number">第 {index} 次执行</span>
+                ) : null}
               </div>
               <div className="workflow-run-meta">
                 {cached ? (
@@ -501,9 +518,7 @@ export function WorkflowRunResult({
                 ) : (
                   <span>正在同步记录</span>
                 )}
-                {cached ? (
-                  <span>{cached.mode === "demo" ? "本地演示" : "Codex"}</span>
-                ) : null}
+                {cached ? <span>{modeLabels[cached.mode]}</span> : null}
               </div>
             </div>
             <span
@@ -520,7 +535,7 @@ export function WorkflowRunResult({
               <button
                 type="button"
                 className="icon-control workflow-stop"
-                aria-label={`停止第 ${index} 次执行`}
+                aria-label={index ? `停止第 ${index} 次执行` : "停止工作流"}
                 title="停止运行"
                 onClick={onCancel}
               >
@@ -549,6 +564,7 @@ export function WorkflowRunResult({
           >
             {steps}
             <section className="workflow-stream-output" aria-label="本次输出">
+              <WorkflowArtifactGallery />
               {problem ? (
                 <div className="workflow-run-problem" role="alert">
                   <CircleAlert size={16} />
@@ -597,6 +613,17 @@ export function WorkflowRunResult({
             </section>
           </div>
           <footer className="workflow-response-meta" aria-label="执行进度">
+            {onRepeat && cached ? (
+              <button
+                type="button"
+                className="tool-button"
+                disabled={active}
+                onClick={() => onRepeat(cached)}
+              >
+                <RefreshCw size={14} />
+                再次运行
+              </button>
+            ) : null}
             <span className="workflow-current-step">
               {active ? (
                 <>

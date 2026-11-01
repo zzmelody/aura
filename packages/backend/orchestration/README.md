@@ -2,6 +2,8 @@
 
 目录读取直接投影已加载的最后可用定义，不触发磁盘扫描；HTTP 目录提供 ETag / 304。发现保留 Cordis HMR，新增/移除的兜底扫描为 5 秒，并合并同一发现器上并发的扫描请求。创建 Run 的版本固定与 revision 校验保持原有路径。
 
+在线对话通过 `aura_flow_catalog` 读取所有可用 Flow 的公开输入 Schema，通过 `aura_run_flow` 调用相同的 durable 引擎，通过 `aura_flow_status` 读取原 Run 的当前输入与结果。明确的重复执行生成新 Run；同一工具 call ID 沿用原算法的稳定 requestId，保留旧执行的幂等身份。未知提交或读取结果阻止本轮自动重新启动，已接收运行的引用仍进入工具结果以便历史恢复。新运行可带可选 `conversationId`，在原 Run 格式中附加归属，列表同步返回，避免工作台重复导入为另一段会话；不迁移或重写旧记录。模型和执行仍经 DSH，停止聊天不会自动取消独立 Run。
+
 `codingHistory(id, { page: true, beforeSeq?, throughSeq? })` 使用 DSH 的 message/turn 窗口和稳定日志截面返回完整回合与向前游标。默认调用仍支持完整历史投影；分页不改写 DSH 日志或用户配置，旁支过滤继承前缀，旧导入历史只在最早一页出现。
 
 `src/` 根模块拥有执行引擎、恢复、注册和 DSH 集成；业务模块按 `content/`、`video/`、`topics/` 归拢，产物登记、历史绑定和 HTTP 交付在 `artifacts/`，模型进程适配在 `local-ai/`。各领域的 library、production 与 routes 分开，公共 package 子路径名称保持稳定。完整职责见 [模块边界](../../../docs/development/module-boundaries.md)。

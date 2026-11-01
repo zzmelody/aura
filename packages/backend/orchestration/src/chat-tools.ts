@@ -4,6 +4,7 @@ import { TTS_VOICES } from "./local-ai/api.ts";
 import type { PluginTaskTool } from "./backend-api.ts";
 import type {
   ChatWorkflowStart,
+  FlowCatalog,
   FlowMode,
   FlowRun,
   JsonValue,
@@ -18,13 +19,17 @@ export interface ChatToolHost {
     flowId: string;
     input: unknown;
     mode: FlowMode;
+    conversationId?: string;
   }): Promise<FlowRun>;
   get(id: string): FlowRun;
+  catalog?(): Promise<FlowCatalog>;
+  associateConversation?(runId: string, conversationId: string): Promise<void>;
   taskTools?(): readonly PluginTaskTool[];
 }
 
 export interface ChatToolScope {
   mode: FlowMode;
+  sessionId?: string;
   signal: AbortSignal;
   /** Called once per accepted run so the client can attach a run card. */
   started(run: ChatWorkflowStart): void;
@@ -47,21 +52,19 @@ const preview = (value: unknown) => {
 };
 
 const summary = (run: FlowRun): Record<string, JsonValue> => {
-  if (executable(run.status))
-    return {
-      status: run.status,
-      runId: run.id,
-      note: "工作流已开始运行，进度会显示在用户的运行卡片中；不要重复启动。",
-    };
   const output =
     run.output === undefined ? undefined : JSON.stringify(run.output);
   return {
     status: run.status,
     runId: run.id,
+    ...(executable(run.status)
+      ? { note: "工作流仍在运行，请查询此 runId 的状态，不要重复启动。" }
+      : {}),
     ...(run.error ? { error: run.error.slice(0, 500) } : {}),
     ...(output
       ? {
-          output: output.length > 1_500 ? `${output.slice(0, 1_497)}…` : output,
+          output:
+            output.length > 12_000 ? `${output.slice(0, 11_997)}…` : output,
         }
       : {}),
   };
@@ -78,6 +81,7 @@ const compileTool = defineTool as unknown as (
 export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
   const results = new Map<string, Promise<JsonValue>>();
   let starts = 0;
+  let uncertainStart = false;
   const waitMs = scope.waitMs ?? 15_000;
   const maxStarts = scope.maxStarts ?? 2;
 
@@ -105,30 +109,56 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
     let result = results.get(callId);
     if (!result) {
       result = (async (): Promise<JsonValue> => {
+        if (uncertainStart)
+          return {
+            status: "unknown",
+            error:
+              "上次提交结果尚未确认，本轮不能再次启动工作流。请先检查已有运行。",
+          };
         if (starts >= maxStarts)
           return {
             status: "rejected",
             error: `本轮对话最多启动 ${maxStarts} 个工作流，请等当前运行结束后再请求。`,
           };
         starts++;
+        let accepted = false;
+        let workflow: ChatWorkflowStart | undefined;
         try {
+          scope.signal.throwIfAborted();
+          signal.throwIfAborted();
           const started = await task(requestIdFor(callId));
-          const workflow = {
+          accepted = true;
+          workflow = {
             flowId: started.flowId,
             title: started.title,
             runId: started.runId,
             inputPreview: preview(started.input),
           };
           scope.started(workflow);
-          return { ...(await settle(started.runId, signal)), workflow };
-        } catch (error) {
-          starts--;
+          if (scope.sessionId)
+            await host.associateConversation?.(started.runId, scope.sessionId);
           return {
-            status: "rejected",
+            ...(await settle(started.runId, signal)),
+            workflow: { ...workflow },
+          };
+        } catch (error) {
+          const rejected =
+            !accepted &&
+            error instanceof FlowError &&
+            error.status >= 400 &&
+            error.status < 500;
+          if (rejected) starts--;
+          else uncertainStart = true;
+          return {
+            status: rejected ? "rejected" : "unknown",
+            requestId: requestIdFor(callId),
+            ...(workflow
+              ? { workflow: { ...workflow }, runId: workflow.runId }
+              : {}),
             error:
-              error instanceof FlowError || error instanceof Error
+              error instanceof FlowError
                 ? error.message.slice(0, 500)
-                : "工作流启动失败。",
+                : "工作流提交或结果读取尚未确认，请检查已有运行，不要重新启动。",
           };
         }
       })();
@@ -183,6 +213,7 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
           flowId: "tts",
           input,
           mode: scope.mode,
+          ...(scope.sessionId ? { conversationId: scope.sessionId } : {}),
         });
         return { runId: run.id, flowId: "tts", title: run.flow.title, input };
       }),
@@ -223,12 +254,82 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
           flowId: "image",
           input,
           mode: scope.mode,
+          ...(scope.sessionId ? { conversationId: scope.sessionId } : {}),
         });
         return { runId: run.id, flowId: "image", title: run.flow.title, input };
       }),
   });
 
-  const names = new Set(["aura_tts", "aura_image"]);
+  const catalog = compileTool({
+    name: "aura_flow_catalog",
+    description:
+      "查看 Aura 可运行的工作流及其输入 Schema。在用户要求完成工作、选择或运行工作流时查询，按 Schema 准备参数，不猜测工作流 ID。",
+    parameters: {},
+    output,
+    execute: async () =>
+      (await host.catalog?.())?.flows
+        .filter((flow) => flow.available)
+        .map((flow) => ({
+          id: flow.id,
+          title: flow.title,
+          description: flow.description,
+          ...(flow.inputSchema ? { inputSchema: flow.inputSchema } : {}),
+        })) ?? [],
+  });
+  const run = compileTool({
+    name: "aura_run_flow",
+    description:
+      "在当前对话中运行任意已发现的 Aura 工作流。仅在用户要求执行时启动；先从目录确认 ID 和输入 Schema。查看结果或继续讨论时使用 aura_flow_status；只有用户明确要求再次运行才创建新运行。",
+    parameters: {
+      flowId: { type: "string", required: true },
+      input: { type: "json", required: true },
+      mode: {
+        type: "string",
+        enum: ["demo", "codex", "lumina", "custom"],
+        description: "用户选择的运行模式；未指定时沿用当前对话模式。",
+      },
+    },
+    output,
+    timeoutMs: waitMs + 15_000,
+    execute: (
+      args: { flowId: string; input: JsonValue; mode?: FlowMode },
+      exec: { callId: string; signal: AbortSignal },
+    ) =>
+      once(exec.callId, exec.signal, async (requestId) => {
+        const started = await host.start({
+          requestId,
+          flowId: args.flowId,
+          input: args.input,
+          mode: args.mode ?? scope.mode,
+          ...(scope.sessionId ? { conversationId: scope.sessionId } : {}),
+        });
+        return {
+          runId: started.id,
+          flowId: started.flow.id,
+          title: started.flow.title,
+          input: started.input,
+        };
+      }),
+  });
+  const status = compileTool({
+    name: "aura_flow_status",
+    description:
+      "读取既有工作流运行的当前状态、输入和输出。继续讨论结果或等待完成时使用，不会启动或重试工作流。",
+    parameters: { runId: { type: "string", required: true } },
+    output,
+    execute: async (args: { runId: string }) => {
+      const current = host.get(args.runId);
+      return { ...summary(current), input: current.input };
+    },
+  });
+
+  const names = new Set([
+    "aura_tts",
+    "aura_image",
+    "aura_flow_catalog",
+    "aura_run_flow",
+    "aura_flow_status",
+  ]);
   const plugins = (host.taskTools?.() ?? []).map((tool) => {
     if (names.has(tool.name))
       throw new FlowError("Chat tool name already owned.", 409);
@@ -252,5 +353,5 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
         ),
     });
   });
-  return [tts, image, ...plugins];
+  return [tts, image, catalog, run, status, ...plugins];
 }

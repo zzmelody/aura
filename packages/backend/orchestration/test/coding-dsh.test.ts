@@ -261,6 +261,9 @@ test(
         "pwsh",
         "aura_tts",
         "aura_image",
+        "aura_flow_catalog",
+        "aura_run_flow",
+        "aura_flow_status",
       ]);
       for (const name of followUpTools)
         assert.ok(
