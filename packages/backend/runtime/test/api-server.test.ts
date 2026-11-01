@@ -501,3 +501,38 @@ test("coding turns accept uploaded image IDs and reject invalid ones", async () 
     assert.equal((await send(invalid)).status, 400);
   assert.equal(turns.length, 3, "invalid requests never reach the host");
 });
+
+test("coding preserves safe image admission errors and hides unexpected failures", async () => {
+  const message =
+    "当前模型不支持图片输入，请更换支持图片的模型，或移除附件后重新发送。";
+  let unsupported = true;
+  const app = createApiApp({
+    codexAuth,
+    chat: {
+      ...chat,
+      async coding() {
+        if (unsupported) throw new FlowError(message, 422);
+        throw new Error("Bearer private-provider-token");
+      },
+    },
+  });
+  const send = () =>
+    app.request("/coding/turn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "coding-image-error",
+        prompt: "describe",
+        mode: "codex",
+        images: ["a".repeat(64)],
+      }),
+    });
+  assert.deepEqual(JSON.parse(await (await send()).text()), {
+    type: "error",
+    message,
+  });
+  unsupported = false;
+  const unexpected = await (await send()).text();
+  assert.doesNotMatch(unexpected, /private-provider-token/u);
+  assert.match(unexpected, /编码请求暂时不可用/u);
+});

@@ -156,7 +156,7 @@ export function codingService(
       { type: "text" as const, text: prompt.trim() || "请查看我附上的图片。" },
       ...(await promptImages(imageIds, stop)),
     ];
-    await controller.prompt(
+    await submitPrompt(
       {
         sessionId: SessionId(sessionId),
         requestId: randomUUID() as SessionRequestId,
@@ -166,6 +166,29 @@ export function codingService(
       stop,
     );
     return true;
+  }
+
+  /** Preserve DSH's safe admission reason without forwarding provider errors. */
+  async function submitPrompt(
+    request: Parameters<typeof controller.prompt>[0],
+    signal: AbortSignal,
+  ) {
+    try {
+      return await controller.prompt(request, signal);
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "details" in error &&
+        (error.details as { reason?: unknown } | undefined)?.reason ===
+          "MODEL_DOES_NOT_SUPPORT_IMAGES"
+      )
+        throw new FlowError(
+          "当前模型不支持图片输入，请更换支持图片的模型，或移除附件后重新发送。",
+          422,
+        );
+      throw error;
+    }
   }
 
   /**
@@ -516,7 +539,7 @@ export function codingService(
             : undefined;
         const pictures =
           imported?.parts ?? (await promptImages(turn.images ?? [], stop));
-        await controller.prompt(
+        await submitPrompt(
           {
             sessionId,
             requestId,
