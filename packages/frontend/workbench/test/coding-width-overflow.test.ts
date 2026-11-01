@@ -18,7 +18,7 @@ const run = promisify(execFile);
 // This is a browser layout regression, not a source-text assertion. Other hosts
 // can opt in with CHROME_BIN without adding a browser automation dependency.
 test(
-  "long code, tables and expanded diffs stay inside each conversation",
+  "conversation content, approval and input stay aligned around wide code, tables and diffs",
   {
     skip:
       !chrome || !existsSync(chrome)
@@ -34,7 +34,13 @@ test(
       await rm(temporary, { recursive: true, force: true });
     });
     const styles = await Promise.all(
-      ["styles.css", "shell.css", "features/coding/coding.css"].map((file) =>
+      [
+        "styles.css",
+        "shell.css",
+        "features/coding/coding.css",
+        "features/coding/composer.css",
+        "screens/chat-model-controls.css",
+      ].map((file) =>
         readFile(new URL(`../src/${file}`, import.meta.url), "utf8"),
       ),
     );
@@ -46,11 +52,11 @@ test(
     await writeFile(
       fixture,
       `<!doctype html><html><head><style>${styles.join("\n")}</style></head>
-<body><div class="coding-panes" style="height:800px"></div><pre id="layout-result"></pre>
+<body class="workbench coding-studio" style="display:block"><div class="coding-panes" style="height:800px"></div><pre id="layout-result"></pre>
 <script>
 const root = document.querySelector(".coding-panes");
 const results = [];
-const pane = (content) => '<div class="coding-pane"><div class="studio-scroll coding-transcript"><article class="coding-turn"><div class="coding-prompt">检查长内容</div><div class="coding-reply"><div class="workflow-rich-text">' + content + '</div></div><section class="coding-recap">本轮小结</section></article></div></div>';
+const pane = (content) => '<div class="coding-pane"><div class="studio-scroll coding-transcript"><article class="coding-turn"><div class="coding-prompt">检查长内容</div><div class="coding-reply"><div class="workflow-rich-text">' + content + '</div></div><section class="coding-recap">本轮小结</section></article></div><div class="chat-composer-area"><div class="coding-approval"><div class="coding-approval-strip">等待审批</div><div class="coding-approval-body">允许运行构建吗？</div><div class="coding-approval-actions"><button>拒绝</button><button>允许这一次</button></div></div><div class="chat-composer"><textarea>检查宽度</textarea><div class="composer-tools coding-composer-tools"><div class="composer-leading"><button class="icon-control composer-add-trigger">+</button></div><div class="composer-trailing"><div class="chat-model-picker"><button class="chat-model-trigger"><span class="chat-model-name">a-very-long-model-name</span><span class="chat-model-effort">High</span></button></div><button class="icon-control composer-stop">■</button><button class="send-button">↑</button></div></div></div></div></div>';
 for (const content of ${JSON.stringify([code, table, code + table, diff])}) {
   for (const width of [1200, 920, 700, 648, 600, 375])
   for (const stale of [false, true]) {
@@ -70,6 +76,23 @@ for (const content of ${JSON.stringify([code, table, code + table, diff])}) {
       transcripts: transcripts.map(node => ({ client: node.clientWidth, scroll: node.scrollWidth })),
       blocks: blocks.map(node => ({ client: node.clientWidth, scroll: node.scrollWidth, overflow: getComputedStyle(node).overflowX })),
       turns: Array.from(root.querySelectorAll('.coding-turn')).map(node => ({ width: node.getBoundingClientRect().width, children: Array.from(node.children).map(child => child.getBoundingClientRect().width) })),
+      columns: Array.from(root.querySelectorAll('.chat-composer-area')).map(area => {
+        const conversation = area.parentElement;
+        const text = conversation.querySelector('.coding-reply').getBoundingClientRect();
+        const input = area.querySelector('textarea');
+        const inputBox = input.getBoundingClientRect();
+        const inputCss = getComputedStyle(input);
+        const card = area.querySelector('.chat-composer').getBoundingClientRect();
+        const approval = area.querySelector('.coding-approval').getBoundingClientRect();
+        return {
+          textLeft: text.left, textRight: text.right,
+          inputLeft: inputBox.left + parseFloat(inputCss.paddingLeft),
+          inputRight: inputBox.right - parseFloat(inputCss.paddingRight),
+          cardLeft: card.left, cardRight: card.right, cardTop: card.top,
+          approvalLeft: approval.left, approvalRight: approval.right, approvalBottom: approval.bottom,
+          controlsRight: Math.max(...Array.from(area.querySelectorAll('button')).map(button => button.getBoundingClientRect().right)),
+        };
+      }),
     });
   }
 }
@@ -104,6 +127,19 @@ document.getElementById('layout-result').textContent = JSON.stringify(results);
       transcripts: Array<{ client: number; scroll: number }>;
       blocks: Array<{ client: number; scroll: number; overflow: string }>;
       turns: Array<{ width: number; children: number[] }>;
+      columns: Array<{
+        textLeft: number;
+        textRight: number;
+        inputLeft: number;
+        inputRight: number;
+        cardLeft: number;
+        cardRight: number;
+        cardTop: number;
+        approvalLeft: number;
+        approvalRight: number;
+        approvalBottom: number;
+        controlsRight: number;
+      }>;
     }>;
     assert.equal(layouts.length, 48);
     for (const layout of layouts) {
@@ -135,6 +171,21 @@ document.getElementById('layout-result').textContent = JSON.stringify(results);
           "auto",
           "Scroll only inside the wide block",
         );
+      }
+      for (const column of layout.columns) {
+        // Only the input card's border and subpixel rounding may differ.
+        assert.ok(
+          Math.abs(column.textLeft - column.inputLeft) <= 2,
+          JSON.stringify({ width: layout.width, column }),
+        );
+        assert.ok(
+          Math.abs(column.textRight - column.inputRight) <= 2,
+          JSON.stringify({ width: layout.width, column }),
+        );
+        assert.equal(column.approvalLeft, column.cardLeft);
+        assert.equal(column.approvalRight, column.cardRight);
+        assert.ok(column.approvalBottom <= column.cardTop - 12);
+        assert.ok(column.controlsRight <= column.cardRight);
       }
     }
   },

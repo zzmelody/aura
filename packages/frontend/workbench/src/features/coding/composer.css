@@ -1,0 +1,199 @@
+/* Main and side chats own these styles independently of the lazy demo page. */
+.coding-studio .coding-pane .chat-composer-area {
+  width: 100%;
+  max-width: calc(var(--coding-content-width) + 64px);
+  margin-inline: auto;
+  margin-top: auto;
+  padding: 0 16px 12px;
+}
+.coding-studio .coding-pane .chat-composer {
+  container: message-composer / inline-size;
+  padding: 8px 12px 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  border-radius: 24px;
+  background: var(--elevated);
+  box-shadow: none;
+  transition: border-color 120ms ease;
+}
+.coding-studio .coding-pane .chat-composer:focus-within {
+  border-color: color-mix(in srgb, var(--muted) 55%, transparent);
+  box-shadow: none;
+}
+.coding-studio .coding-pane .chat-composer.dragging {
+  border-color: var(--accent);
+}
+.coding-studio .coding-pane .chat-composer textarea {
+  min-height: 52px;
+  max-height: 220px;
+  padding: 4px 2px 0;
+  resize: none;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 24px;
+}
+.coding-studio .chat-composer textarea::placeholder {
+  color: var(--muted);
+}
+.coding-studio .coding-composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin: 12px 0 0;
+}
+.composer-leading,
+.composer-trailing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.composer-leading {
+  flex: 0 1 auto;
+}
+.composer-trailing {
+  flex: 1;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.coding-studio .composer-add-trigger {
+  display: grid;
+  flex: 0 0 28px;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--secondary);
+}
+.coding-studio .composer-add-trigger > svg {
+  flex: none;
+}
+.composer-context {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 160px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.composer-context > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-context > svg {
+  flex-shrink: 0;
+}
+.composer-context:hover:not(:disabled),
+.composer-context[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+}
+.composer-context:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.composer-trailing .chat-model-picker {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.composer-trailing .chat-model-trigger {
+  display: flex;
+  height: 28px;
+  max-width: 100%;
+  padding: 0 6px;
+}
+.composer-trailing .chat-model-effort {
+  flex-shrink: 0;
+}
+.coding-studio .coding-composer-tools :is(.send-button, .composer-stop) {
+  display: grid;
+  flex: 0 0 34px;
+  place-items: center;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--secondary) !important;
+}
+.coding-studio .coding-composer-tools .send-button {
+  background: var(--accent);
+  color: #fff !important;
+}
+.coding-studio .coding-composer-tools :is(.send-button, .composer-stop) > svg {
+  display: block;
+  flex: none;
+}
+.coding-studio
+  .coding-composer-tools
+  :is(.send-button, .composer-stop):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.coding-studio
+  .coding-composer-tools
+  :is(.send-button, .composer-stop):disabled {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--muted) !important;
+  opacity: 1;
+}
+.coding-studio .coding-pane .composer-footnote {
+  display: block;
+  margin: 8px 8px 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+.coding-studio .composer-attachments {
+  padding: 0 4px 10px;
+}
+@container message-composer (max-width: 560px) {
+  .composer-trailing {
+    gap: 8px;
+  }
+}
+@container message-composer (max-width: 440px) {
+  .composer-context {
+    max-width: 105px;
+  }
+  .composer-trailing .chat-model-effort {
+    display: none;
+  }
+  .coding-composer-tools {
+    gap: 6px;
+  }
+}
+@container message-composer (max-width: 300px) {
+  .composer-context {
+    gap: 3px;
+    padding-inline: 4px;
+  }
+  .composer-context > span {
+    display: none;
+  }
+}
+@media (pointer: coarse) {
+  .coding-studio .coding-pane .chat-composer textarea {
+    font-size: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coding-studio .coding-pane .chat-composer {
+    transition: none;
+  }
+}

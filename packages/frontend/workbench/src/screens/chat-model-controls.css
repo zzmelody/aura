@@ -65,6 +65,33 @@
   color: var(--muted);
   font-size: 11px;
 }
+.chat-model-services {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 2px 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.chat-model-services > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--secondary);
+  font-size: 12px;
+}
+.chat-model-services > button:hover,
+.chat-model-services > button:focus-visible,
+.chat-model-services > button[aria-checked="true"] {
+  outline: none;
+  background: var(--soft);
+  color: var(--text);
+}
 .chat-model-menu-list {
   display: grid;
   gap: 1px;

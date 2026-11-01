@@ -38,7 +38,7 @@ export function useComposerCommands({
   editor,
 }: {
   endpoint: string;
-  projectId: string;
+  projectId?: string;
   draft: string;
   setDraft(value: string): void;
   flows: FlowCatalogEntry[];
@@ -80,7 +80,7 @@ export function useComposerCommands({
   const active = Math.min(index, Math.max(0, entries.length - 1));
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !projectId) return;
     const abort = new AbortController();
     setCatalog({ key });
     listSkills(endpoint, projectId, abort.signal)

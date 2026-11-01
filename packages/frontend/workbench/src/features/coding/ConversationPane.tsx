@@ -3,6 +3,8 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useLayoutEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -40,6 +42,7 @@ import {
   Palette,
   Image as ImageIcon,
   ImagePlus,
+  Plus,
   ListTodo,
   LoaderCircle,
   PackageCheck,
@@ -48,6 +51,9 @@ import {
   Terminal,
   SquareTerminal,
   MessageCircleQuestion,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldX,
   Wrench,
   X,
   type LucideIcon,
@@ -63,6 +69,8 @@ import type {
 } from "@aura/protocol/types";
 import { WorkflowRichText } from "../../screens/WorkflowValue";
 import { ChatModelControls } from "../../screens/ChatModelControls";
+import { WorkbenchMenu } from "../../WorkbenchMenu";
+import "./composer.css";
 import { writeClipboard } from "../../clipboard";
 import type { ChatImage } from "@aura/core/types";
 import { chatImageUrl } from "../../chatImages";
@@ -93,6 +101,8 @@ import {
   newTurn,
   recapParts,
   summarizeTurn,
+  summarizeToolGroup,
+  describeToolGroup,
   turnsFromHistory,
   type AskedQuestion,
   type ToolEntry,
@@ -248,6 +258,230 @@ function duration(ms: number): string {
   return `${minutes} 分 ${seconds % 60} 秒`;
 }
 
+/** One consecutive run stays between the assistant messages that surround it. */
+function ToolGroup({
+  tools,
+  expanded,
+  onToggle,
+}: {
+  tools: ToolEntry[];
+  expanded: boolean;
+  onToggle(): void;
+}) {
+  const id = useId();
+  const summary = summarizeToolGroup(tools);
+  if (!summary.total) return null;
+  const description = summary.active
+    ? `正在${toolLabels[summary.active.name] ?? "调用工具"}`
+    : describeToolGroup(tools);
+  const Icon = summary.active ? LoaderCircle : Wrench;
+  return (
+    <section
+      className={`coding-tool-group ${summary.state}`}
+      aria-label="工具调用组"
+    >
+      <button
+        type="button"
+        className="coding-tool-group-toggle"
+        aria-expanded={expanded}
+        aria-controls={id}
+        title={`${description} · ${summary.total} 次工具调用 · 点击${expanded ? "收起" : "展开"}详情`}
+        onClick={onToggle}
+      >
+        <Icon
+          size={15}
+          className={summary.state === "running" ? "coding-spin" : undefined}
+        />
+        <span className="coding-tool-group-title">{description}</span>
+        {summary.failed ? (
+          <span className="coding-tool-group-failed">
+            {summary.failed} 项失败
+          </span>
+        ) : null}
+        {summary.stopped ? (
+          <span className="coding-tool-group-stopped">
+            {summary.stopped} 项中断
+          </span>
+        ) : null}
+        <ChevronRight size={12} className="coding-tool-group-chevron" />
+      </button>
+      <ol
+        id={id}
+        className="coding-tools"
+        aria-label="操作记录"
+        hidden={!expanded}
+      >
+        {expanded
+          ? tools.map((tool) => <ToolRow key={tool.callId} tool={tool} />)
+          : null}
+      </ol>
+    </section>
+  );
+}
+
+/** Allow and reject labels of an approval, as the backend offers them. */
+function approvalLabels(asked: AskedQuestion) {
+  const options = asked.questions[0]?.options ?? [];
+  return {
+    allow: options[0]?.label ?? "允许这一次",
+    reject: options[1]?.label ?? "拒绝",
+  };
+}
+
+/** The transcript trace of one approval request. */
+function ApprovalNote({
+  asked,
+  live,
+}: {
+  asked: AskedQuestion;
+  live: boolean;
+}) {
+  const question = asked.questions[0];
+  const { allow } = approvalLabels(asked);
+  const granted = asked.answered?.some((answer) =>
+    answer.selected.includes(allow),
+  );
+  const state = asked.answered
+    ? granted
+      ? { Icon: ShieldCheck, text: "已允许", tone: "" }
+      : { Icon: ShieldX, text: "已拒绝", tone: " rejected" }
+    : live
+      ? { Icon: ShieldAlert, text: "等待你授权", tone: "" }
+      : { Icon: ShieldX, text: "授权请求已结束", tone: " rejected" };
+  return (
+    <div
+      className={`coding-approval-note${state.tone}`}
+      title={question?.detail ?? question?.question}
+    >
+      <state.Icon aria-hidden="true" />
+      <span>{state.text}</span>
+      {question ? <span>· {question.question}</span> : null}
+    </div>
+  );
+}
+
+/**
+ * A pending approval above the composer. Enter allows once and Escape rejects,
+ * as in DSH; the user's draft stays editable while the decision is pending.
+ */
+function ApprovalCard({
+  asked,
+  active,
+  onAnswer,
+}: {
+  asked: AskedQuestion;
+  active: boolean;
+  onAnswer(answers: CodingQuestionAnswer[]): Promise<void>;
+}) {
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const waiting = useRef(false);
+  const composing = useRef(false);
+  const compositionEnded = useRef(false);
+  const root = useRef<HTMLDivElement>(null);
+  const question = asked.questions[0];
+  const labels = approvalLabels(asked);
+  useEffect(() => {
+    if (active) root.current?.focus();
+  }, [active, asked.questionId]);
+  if (!question) return null;
+  const answer = async (label: string) => {
+    if (waiting.current) return;
+    waiting.current = true;
+    setSending(true);
+    setError("");
+    try {
+      await onAnswer([{ id: question.id, selected: [label] }]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      waiting.current = false;
+      setSending(false);
+    }
+  };
+  return (
+    <div
+      ref={root}
+      className="coding-approval"
+      role="region"
+      aria-label="授权请求"
+      aria-busy={sending}
+      tabIndex={-1}
+      onCompositionStartCapture={() => {
+        composing.current = true;
+      }}
+      onCompositionEndCapture={() => {
+        composing.current = false;
+        compositionEnded.current = true;
+      }}
+      onKeyUpCapture={() => {
+        compositionEnded.current = false;
+      }}
+      onKeyDown={(event) => {
+        if (
+          event.defaultPrevented ||
+          event.nativeEvent.isComposing ||
+          composing.current ||
+          compositionEnded.current ||
+          event.repeat
+        )
+          return;
+        if (
+          (event.target as Element).closest(
+            "input, textarea, select, [contenteditable]",
+          )
+        )
+          return;
+        if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey)
+          return;
+        // A focused button already acts on Enter by itself.
+        if (
+          event.key === "Enter" &&
+          (event.target as Element).closest("button")
+        )
+          return;
+        if (event.key !== "Enter" && event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        void answer(event.key === "Enter" ? labels.allow : labels.reject);
+      }}
+    >
+      <div className="coding-approval-strip">
+        <span className="coding-approval-dot" aria-hidden="true" />
+        等待审批
+      </div>
+      <div className="coding-approval-body">
+        <div className="coding-approval-headline">{question.question}</div>
+        {question.detail ? (
+          <div className="coding-approval-detail">{question.detail}</div>
+        ) : null}
+      </div>
+      <div className="coding-approval-actions">
+        <button
+          type="button"
+          className="reject"
+          disabled={sending}
+          onClick={() => void answer(labels.reject)}
+        >
+          {labels.reject}
+        </button>
+        <button
+          type="button"
+          className="allow"
+          disabled={sending}
+          onClick={() => void answer(labels.allow)}
+        >
+          {labels.allow}
+        </button>
+      </div>
+      {error ? (
+        <p className="coding-approval-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /** One question batch from the agent: open with a form, or its answer once sent. */
 function QuestionCard({
   asked,
@@ -266,6 +500,9 @@ function QuestionCard({
   const done = asked.answered !== undefined;
   const approval = asked.questions.some((item) => item.kind === "approval");
   const plan = asked.questions.some((item) => item.intent);
+  // Like DSH, the decision happens in the composer card; the transcript keeps
+  // only one quiet line recording what was asked and how it was settled.
+  if (approval) return <ApprovalNote asked={asked} live={live} />;
   const toggle = (id: string, label: string, multi: boolean) =>
     setSelected((current) => {
       const now = current[id] ?? [];
@@ -468,13 +705,6 @@ function DeliverableItem({
   );
 }
 
-/** The guidance entries of a turn, in the order the user sent them. */
-function steerings(turn: Turn): string[] {
-  return turn.timeline.flatMap((item) =>
-    item.kind === "steer" ? [item.text] : [],
-  );
-}
-
 const TurnView = memo(function TurnView({
   turn,
   visible,
@@ -498,10 +728,19 @@ const TurnView = memo(function TurnView({
 }) {
   const running = turn.status === "running";
   const waiting = turn.questions.some((item) => !item.answered);
-  // Like DSH, the process stays open while it runs and folds away once the
-  // turn ends; an explicit toggle by the user wins over both.
-  const [toggled, setToggled] = useState<boolean | undefined>(undefined);
-  const open = toggled ?? running;
+  const [open, setOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
+    {},
+  );
+  const groups = turn.timeline.filter((item) => item.kind === "tools");
+  const allExpanded =
+    (!turn.progress?.total || open) &&
+    groups.every((group) => expandedGroups[group.callIds[0]!] ?? open);
+  const tools = new Map(turn.tools.map((tool) => [tool.callId, tool]));
+  const questions = new Map(
+    turn.questions.map((asked) => [asked.questionId, asked]),
+  );
+  const workflows = new Map(turn.workflows?.map((run) => [run.runId, run]));
   const hasSteps = turn.tools.length > 0 || !!turn.progress?.total;
   const stateLabel = running
     ? waiting
@@ -546,23 +785,31 @@ const TurnView = memo(function TurnView({
           <button
             type="button"
             className={`coding-process ${turn.status}`}
-            aria-expanded={hasSteps ? open : undefined}
+            aria-expanded={hasSteps ? allExpanded : undefined}
             disabled={!hasSteps}
-            data-open={(hasSteps && open) || undefined}
-            onClick={() => setToggled(!open)}
+            data-open={(hasSteps && allExpanded) || undefined}
+            title={`${stateLabel} · ${turn.tools.length} 次工具调用`}
+            onClick={() => {
+              setOpen(!allExpanded);
+              setExpandedGroups({});
+            }}
           >
-            <StateIcon
-              size={15}
-              className={`coding-process-icon${running && !waiting ? " coding-spin" : ""}`}
-              aria-hidden="true"
-            />
+            {turn.status !== "complete" ? (
+              <StateIcon
+                size={15}
+                className={`coding-process-icon${running && !waiting ? " coding-spin" : ""}`}
+                aria-hidden="true"
+              />
+            ) : null}
             <span className="coding-process-label">
-              <span className="coding-process-state">{stateLabel}</span>
+              {turn.status !== "complete" ? (
+                <span className="coding-process-state">{stateLabel} · </span>
+              ) : (
+                "用时 "
+              )}
               <span className="coding-process-number">
-                {" "}
-                · <TurnDuration turn={turn} visible={visible} />
+                <TurnDuration turn={turn} visible={visible} />
               </span>
-              {turn.tools.length ? ` · ${turn.tools.length} 次操作` : ""}
             </span>
             {hasSteps ? (
               <ChevronDown
@@ -572,7 +819,7 @@ const TurnView = memo(function TurnView({
               />
             ) : null}
           </button>
-          {hasSteps && open ? (
+          {open && turn.progress && turn.progress.total > 0 ? (
             <div className="coding-process-body">
               {turn.progress && turn.progress.total > 0 ? (
                 <div className="coding-progress">
@@ -596,44 +843,74 @@ const TurnView = memo(function TurnView({
                   </span>
                 </div>
               ) : null}
-              {turn.tools.length ? (
-                <ol className="coding-tools" aria-label="操作记录">
-                  {turn.tools.map((tool) => (
-                    <ToolRow key={tool.callId} tool={tool} />
-                  ))}
-                </ol>
-              ) : null}
             </div>
           ) : null}
         </div>
       ) : null}
-      {/* Questions come before the reply: the agent asked, then answered. */}
-      {turn.questions.map((asked) => (
-        <QuestionCard
-          key={asked.questionId}
-          asked={asked}
-          live={running}
-          onAnswer={(answers) => onAnswer(turn.id, asked.questionId, answers)}
-        />
-      ))}
-      {/*
-       * Guidance sent into this turn while it ran, after the prompt it
-       * redirected. The reply below is the whole turn's text, including what
-       * the model said once it took the guidance.
-       */}
-      {steerings(turn).map((text, index) => (
-        <div key={`${index}-${text}`} className="coding-prompt coding-steer">
-          {text}
-        </div>
-      ))}
-      {turn.reply ? (
-        <div className="coding-reply">
-          <WorkflowRichText text={turn.reply} />
-        </div>
-      ) : null}
-      {turn.workflows?.map((run) => (
-        <NestedFlowRun key={run.runId} endpoint={endpoint} runId={run.runId} />
-      ))}
+      {turn.timeline.map((item, index) => {
+        if (item.kind === "text")
+          return item.text.trim() ? (
+            <div key={index} className="coding-reply">
+              <WorkflowRichText text={item.text} />
+            </div>
+          ) : null;
+        if (item.kind === "tools") {
+          const key = item.callIds[0]!;
+          const expanded = expandedGroups[key] ?? open;
+          return (
+            <ToolGroup
+              key={`tools:${key}`}
+              tools={item.callIds.flatMap((id) => {
+                const tool = tools.get(id);
+                return tool ? [tool] : [];
+              })}
+              expanded={expanded}
+              onToggle={() =>
+                setExpandedGroups((current) => ({
+                  ...current,
+                  [key]: !expanded,
+                }))
+              }
+            />
+          );
+        }
+        if (item.kind === "question") {
+          const asked = questions.get(item.questionId);
+          // Pending approvals are actionable only in the card above the input.
+          if (
+            !asked ||
+            (!asked.answered &&
+              running &&
+              asked.questions.some((q) => q.kind === "approval"))
+          )
+            return null;
+          return (
+            <QuestionCard
+              key={item.questionId}
+              asked={asked}
+              live={running}
+              onAnswer={(answers) =>
+                onAnswer(turn.id, asked.questionId, answers)
+              }
+            />
+          );
+        }
+        if (item.kind === "workflow") {
+          const run = workflows.get(item.runId);
+          return run ? (
+            <NestedFlowRun
+              key={item.runId}
+              endpoint={endpoint}
+              runId={run.runId}
+            />
+          ) : null;
+        }
+        return (
+          <div key={index} className="coding-prompt coding-steer">
+            {item.text}
+          </div>
+        );
+      })}
       {onApplyFlow &&
       turn.status === "complete" &&
       extractFlowCode(turn.reply) ? (
@@ -956,7 +1233,7 @@ export function ConversationPane({
   visible = true,
   provider,
   projectId,
-  directory,
+  directory = "",
   label,
   sessionId,
   forkFrom,
@@ -973,6 +1250,7 @@ export function ConversationPane({
   flowsLoading = false,
   onRunFlow,
   composerExtra,
+  composerLeading,
   readOnly = false,
   placeholder,
   empty,
@@ -991,8 +1269,9 @@ export function ConversationPane({
   endpoint: string;
   visible?: boolean;
   provider: Workspace["provider"];
-  projectId: string;
-  directory: string;
+  /** Missing while workspaces load; history and draft remain available. */
+  projectId?: string;
+  directory?: string;
   /** Accessible name of the composer. */
   label: string;
   /** Selected conversation; undefined starts a new one on the first send. */
@@ -1012,6 +1291,8 @@ export function ConversationPane({
   flowsLoading?: boolean;
   onRunFlow?(flow: FlowCatalogEntry): void;
   composerExtra?: React.ReactNode;
+  /** Workspace context inside the card, beside the attachment menu. */
+  composerLeading?: React.ReactNode;
   /** Archived parents retain a readable transcript, but cannot accept turns. */
   readOnly?: boolean;
   placeholder: string;
@@ -1067,6 +1348,12 @@ export function ConversationPane({
   const transcript = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLDivElement>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const textarea = editor.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [draft]);
 
   const imported = useMemo(
     () =>
@@ -1095,7 +1382,7 @@ export function ConversationPane({
     setDraft,
     flows: flows ?? [],
     running,
-    enabled: !offline && !readOnly,
+    enabled: !!projectId && !offline && !readOnly,
     onFlow: onRunFlow,
     editor,
     onCommand(command) {
@@ -1327,6 +1614,20 @@ export function ConversationPane({
     [endpoint, sessionId],
   );
 
+  // Only this conversation's oldest pending approval owns the decision card.
+  const pendingApproval = useMemo(() => {
+    for (const turn of shown) {
+      if (turn.status !== "running") continue;
+      const asked = turn.questions.find(
+        (item) =>
+          !item.answered &&
+          item.questions.some((question) => question.kind === "approval"),
+      );
+      if (asked) return { turnId: turn.id, asked };
+    }
+    return undefined;
+  }, [shown]);
+
   /**
    * Sends guidance into the running turn. DSH joins it to that turn, which
    * picks it up at its next step boundary, so the model changes course with
@@ -1336,7 +1637,12 @@ export function ConversationPane({
    */
   const steer = async (text: string, attached: ChatImage[]) => {
     // An image-only message is allowed, as it is for a turn.
-    if (!sessionId || steering || (!text.trim() && !attached.length))
+    if (
+      !projectId ||
+      !sessionId ||
+      steering ||
+      (!text.trim() && !attached.length)
+    )
       return false;
     setSteering(true);
     setError("");
@@ -1377,6 +1683,7 @@ export function ConversationPane({
       images.uploading ||
       loadingHistory ||
       readOnly ||
+      !projectId ||
       offline
     )
       return undefined;
@@ -1459,6 +1766,7 @@ export function ConversationPane({
    * `send` stays the new-turn path its programmatic callers expect.
    */
   const submit = () => {
+    if (pendingApproval) return Promise.resolve(false);
     if (commands.submitCommand() || commands.slash !== undefined)
       return Promise.resolve(false);
     return running ? steer(draft, images.ready) : send().then(Boolean);
@@ -1483,9 +1791,7 @@ export function ConversationPane({
   }, [initialSend, onInitialSendTaken]);
 
   return (
-    // Like DSH's conversation phases: an empty conversation is a "hero" with
-    // the hint and composer centred together; once it has turns the
-    // transcript fills the pane and scrolls above a bottom-docked composer.
+    // Empty and active conversations share the same bottom-docked composer.
     <div
       className="coding-pane"
       data-phase={!shown.length && !loadingHistory ? "hero" : "active"}
@@ -1567,6 +1873,26 @@ export function ConversationPane({
         className="chat-composer-area"
         style={readOnly ? { display: "none" } : undefined}
       >
+        {composerExtra}
+        {images.error ? (
+          <p className="composer-attach-error" role="alert">
+            {images.error}
+          </p>
+        ) : null}
+        {pendingApproval ? (
+          <ApprovalCard
+            key={pendingApproval.asked.questionId}
+            asked={pendingApproval.asked}
+            active={visible}
+            onAnswer={(answers) =>
+              answer(
+                pendingApproval.turnId,
+                pendingApproval.asked.questionId,
+                answers,
+              )
+            }
+          />
+        ) : null}
         <div
           ref={composer}
           className={`chat-composer${dragging ? " dragging" : ""}`}
@@ -1667,113 +1993,105 @@ export function ConversationPane({
               }
             }}
           />
-          <div className="composer-tools">
-            {!offline ? (
-              <>
+          <div className="composer-tools coding-composer-tools">
+            <div className="composer-leading">
+              <WorkbenchMenu
+                label="添加附件或工具"
+                className="icon-control composer-add-trigger"
+                items={[
+                  {
+                    id: "image",
+                    label: "添加图片",
+                    icon: <ImagePlus size={15} />,
+                    disabled: offline || images.full,
+                    action: () => fileInput.current?.click(),
+                  },
+                  {
+                    id: "commands",
+                    label: "命令、Skills 和 Flows",
+                    icon: <Terminal size={15} />,
+                    shortcut: "/",
+                    disabled: offline || !projectId,
+                    action: commands.toggle,
+                  },
+                ]}
+              >
+                <Plus size={16} aria-hidden="true" />
+              </WorkbenchMenu>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                hidden
+                onChange={(event) => {
+                  if (event.target.files) images.attach(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              {composerLeading}
+            </div>
+            <div className="composer-trailing">
+              {!offline ? (
+                <ChatModelControls
+                  endpoint={endpoint}
+                  mode={mode}
+                  selection={modelConfig}
+                  disabled={running}
+                  openRequest={modelOpenRequest}
+                  onChange={onModelConfig}
+                  onModeChange={(next) =>
+                    onProvider(next === "demo" ? "offline" : next)
+                  }
+                />
+              ) : null}
+              {/*
+               * Stop is its own control while a turn runs, so the send button
+               * stays send: text typed during a turn steers it instead of
+               * waiting for it to finish.
+               */}
+              {running ? (
                 <button
                   type="button"
-                  className="icon-control"
-                  aria-label="添加图片"
-                  title="添加图片（也可以直接粘贴或拖入）"
-                  disabled={images.full}
-                  onClick={() => fileInput.current?.click()}
+                  className="icon-control composer-stop"
+                  aria-label={stopping ? "正在停止" : "停止生成"}
+                  title={stopping ? "正在停止" : "停止生成"}
+                  disabled={offline || readOnly || stopping}
+                  onClick={() => void stop()}
                 >
-                  <ImagePlus size={16} />
+                  <Square
+                    size={14}
+                    fill="currentColor"
+                    strokeWidth={0}
+                    aria-hidden="true"
+                  />
                 </button>
-                <input
-                  ref={fileInput}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  multiple
-                  hidden
-                  onChange={(event) => {
-                    if (event.target.files) images.attach(event.target.files);
-                    event.target.value = "";
-                  }}
-                />
-              </>
-            ) : null}
-            <label className="provider-select">
-              <select
-                aria-label="对话模式"
-                value={provider}
-                disabled={running}
-                onChange={(event) =>
-                  onProvider(event.target.value as Workspace["provider"])
-                }
-              >
-                <option value="offline">本地演示</option>
-                <option value="codex">Codex 订阅</option>
-                <option value="lumina">Lumina</option>
-                <option value="custom">自定义 API</option>
-              </select>
-            </label>
-            <span className="composer-spacer" />
-            <button
-              type="button"
-              className="icon-control"
-              aria-label="命令、Skills 和 Flows"
-              title="命令、Skills 和 Flows（/）"
-              aria-expanded={commands.visible}
-              aria-haspopup="dialog"
-              disabled={offline}
-              onClick={commands.toggle}
-            >
-              <Terminal size={16} />
-            </button>
-            {!offline ? (
-              <ChatModelControls
-                endpoint={endpoint}
-                mode={mode}
-                selection={modelConfig}
-                disabled={running}
-                openRequest={modelOpenRequest}
-                onChange={onModelConfig}
-              />
-            ) : null}
-            {/*
-             * Stop is its own control while a turn runs, so the send button
-             * stays send: text typed during a turn steers it instead of
-             * waiting for it to finish.
-             */}
-            {running ? (
-              <button
-                type="button"
-                className="icon-control composer-stop"
-                aria-label={stopping ? "正在停止" : "停止生成"}
-                title={stopping ? "正在停止" : "停止生成"}
-                disabled={offline || readOnly || stopping}
-                onClick={() => void stop()}
-              >
-                <Square size={13} fill="currentColor" />
-              </button>
-            ) : null}
-            <button
-              className="send-button"
-              aria-label={running ? "发送引导" : "发送消息"}
-              title={running ? "发送引导（模型会在下一步读到）" : undefined}
-              disabled={
-                offline ||
-                loadingHistory ||
-                readOnly ||
-                steering ||
-                (!draft.trim() && !images.ready.length) ||
-                images.uploading ||
-                commands.slash !== undefined
-              }
-              onClick={() => void submit()}
-            >
-              <ArrowUp size={18} />
-            </button>
+              ) : null}
+              {!running || draft.trim() || images.ready.length ? (
+                <button
+                  className="send-button"
+                  aria-label={running ? "发送引导" : "发送消息"}
+                  title={running ? "发送引导（模型会在下一步读到）" : undefined}
+                  disabled={
+                    offline ||
+                    !projectId ||
+                    loadingHistory ||
+                    readOnly ||
+                    steering ||
+                    !!pendingApproval ||
+                    (!draft.trim() && !images.ready.length) ||
+                    images.uploading ||
+                    commands.slash !== undefined
+                  }
+                  onClick={() => void submit()}
+                >
+                  <ArrowUp size={16} strokeWidth={2.5} aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
-        {images.error ? (
-          <p className="composer-attach-error" role="alert">
-            {images.error}
-          </p>
-        ) : null}
         {footnote ? <p className="composer-footnote">{footnote}</p> : null}
-        {composerExtra}
       </div>
     </div>
   );

@@ -111,7 +111,7 @@
 .coding-side-actions {
   display: flex;
   justify-content: flex-end;
-  padding-top: 6px;
+  padding: 0 4px 6px;
 }
 .coding-side-actions .coding-side-handoff {
   border: 0;

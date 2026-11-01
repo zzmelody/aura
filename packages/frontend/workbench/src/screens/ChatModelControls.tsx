@@ -13,6 +13,13 @@ import "./chat-model-controls.css";
 const effortName = (effort: { id: string; name: string }) =>
   effort.id === "xhigh" ? "Extra High" : effort.name;
 
+const services = [
+  { mode: "codex", name: "Codex 订阅" },
+  { mode: "lumina", name: "Lumina" },
+  { mode: "custom", name: "自定义 API" },
+  { mode: "demo", name: "本地演示" },
+] satisfies Array<{ mode: FlowMode; name: string }>;
+
 /**
  * One compact trigger in the composer row: model name with its reasoning
  * effort, opening a menu. Model metadata belongs to DSH; the browser only
@@ -25,6 +32,7 @@ export function ChatModelControls({
   disabled,
   openRequest,
   onChange,
+  onModeChange,
 }: {
   endpoint: string;
   mode: FlowMode;
@@ -33,6 +41,7 @@ export function ChatModelControls({
   /** Opens the same model menu when invoked through the command palette. */
   openRequest?: number;
   onChange(selection: ChatModelSelection): void;
+  onModeChange?(mode: FlowMode): void;
 }) {
   const key = `${endpoint}/${mode}`;
   const [result, setResult] = useState<{
@@ -150,7 +159,7 @@ export function ChatModelControls({
         title={
           unsupported
             ? "已保存的配置不可用，请重新选择"
-            : "选择模型和思考强度（仅本会话）"
+            : `${label}${shownEffort ? ` · ${effortName(shownEffort)}` : ""} · ${services.find((service) => service.mode === mode)?.name ?? mode}`
         }
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
@@ -171,6 +180,33 @@ export function ChatModelControls({
           aria-label="模型与思考强度"
           onKeyDown={moveFocus}
         >
+          {onModeChange ? (
+            <>
+              <div className="chat-model-menu-heading">模型服务</div>
+              <div
+                className="chat-model-services"
+                role="group"
+                aria-label="模型服务"
+              >
+                {services.map((service) => (
+                  <button
+                    key={service.mode}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={service.mode === mode}
+                    onClick={() => {
+                      onModeChange(service.mode);
+                      setOpen(false);
+                      trigger.current?.focus();
+                    }}
+                  >
+                    <span>{service.name}</span>
+                    {service.mode === mode ? <Check size={13} /> : null}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
           {catalog ? (
             <>
               <div className="chat-model-menu-heading">模型</div>

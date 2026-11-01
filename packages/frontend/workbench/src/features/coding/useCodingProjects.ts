@@ -17,6 +17,7 @@ import {
   saveConversationModel,
 } from "./api";
 import { conversationInfoStatus, isActiveStatus } from "./conversationStatus";
+import { conversationProject } from "./conversation-project";
 
 /** How often the sidebar re-reads statuses while some turn is still running. */
 const ACTIVE_POLL_MS = 3000;
@@ -148,7 +149,7 @@ export function useCodingProjects(
         current.projectId && list.some((item) => item.id === current.projectId)
           ? current
           : {
-              projectId: list.find((item) => item.isDefault)?.id ?? list[0]?.id,
+              projectId: conversationProject(list)?.id,
             },
       );
       // A workspace whose conversations fail to load still shows as a folder.
@@ -352,7 +353,7 @@ export function useCodingProjects(
             },
       ),
     newChat: () =>
-      setSelection({ projectId: projects.find((item) => item.isDefault)?.id }),
+      setSelection({ projectId: conversationProject(projects)?.id }),
     selectModel: (sessionId, mode, selection) => {
       const parent = Object.values(conversations)
         .flat()

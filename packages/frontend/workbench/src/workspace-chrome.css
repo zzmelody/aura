@@ -911,19 +911,6 @@
 .workspace-folder-empty {
   padding: 4px 12px 6px 36px;
 }
-.composer-workspace {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 7px 2px 0;
-}
-.composer-workspace-select {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--muted);
-}
 .workspace-dialog form {
   display: grid;
   gap: 12px;

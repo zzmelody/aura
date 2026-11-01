@@ -22,6 +22,7 @@ export function WorkbenchMenu({
   className = "icon-control",
   title,
   tooltip,
+  disabled = false,
 }: {
   label: string;
   children: React.ReactNode;
@@ -30,6 +31,7 @@ export function WorkbenchMenu({
   title?: string;
   /** DSH hover tip in place of the native `title`. */
   tooltip?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -77,6 +79,7 @@ export function WorkbenchMenu({
     <button
       ref={trigger}
       type="button"
+      disabled={disabled}
       className={`${className}${open ? " menu-open" : ""}`}
       aria-label={label}
       title={tooltip ? undefined : (title ?? label)}

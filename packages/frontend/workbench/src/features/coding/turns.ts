@@ -20,6 +20,74 @@ export type ToolEntry = {
   endedAt?: number;
 };
 
+export type ToolGroupSummary = {
+  total: number;
+  finished: number;
+  failed: number;
+  stopped: number;
+  state: ToolEntry["state"];
+  active?: ToolEntry;
+};
+
+const toolGroupActivities: Record<string, readonly [string, string]> = {
+  read: ["读取了文件", "尝试读取文件"],
+  read_image: ["查看了图片", "尝试查看图片"],
+  glob: ["搜索了项目", "尝试搜索项目"],
+  grep: ["搜索了项目", "尝试搜索项目"],
+  write: ["修改了文件", "尝试修改文件"],
+  edit: ["修改了文件", "尝试修改文件"],
+  bash: ["运行了命令", "尝试运行命令"],
+  pwsh: ["运行了命令", "尝试运行命令"],
+  todo_write: ["更新了任务清单", "尝试更新任务清单"],
+  present: ["交付了文件", "尝试交付文件"],
+};
+
+/** Describe the work once per activity, without claiming failed edits succeeded. */
+export function describeToolGroup(tools: readonly ToolEntry[]): string {
+  const activities = new Map<
+    string,
+    { attempted: string; succeeded: boolean }
+  >();
+  for (const tool of tools) {
+    const [done, attempted] = toolGroupActivities[tool.name] ?? [
+      "调用了工具",
+      "尝试调用工具",
+    ];
+    activities.set(done, {
+      attempted,
+      succeeded: tool.state === "ok" || !!activities.get(done)?.succeeded,
+    });
+  }
+  return [...activities]
+    .map(([done, activity]) => (activity.succeeded ? done : activity.attempted))
+    .join("、");
+}
+
+/** A collapsed run keeps failures visible even while another call is active. */
+export function summarizeToolGroup(
+  tools: readonly ToolEntry[],
+): ToolGroupSummary {
+  let running = 0;
+  let failed = 0;
+  let stopped = 0;
+  let active: ToolEntry | undefined;
+  for (const tool of tools) {
+    if (tool.state === "running") {
+      running++;
+      active = tool;
+    } else if (tool.state === "failed") failed++;
+    else if (tool.state === "stopped") stopped++;
+  }
+  return {
+    total: tools.length,
+    finished: tools.length - running,
+    failed,
+    stopped,
+    state: running ? "running" : failed ? "failed" : stopped ? "stopped" : "ok",
+    ...(active ? { active } : {}),
+  };
+}
+
 /** One model request: from step start to its assistant message. */
 export type ModelSpan = { startedAt: number; endedAt?: number };
 
@@ -39,6 +107,7 @@ export type TimelineItem =
   | { kind: "text"; text: string }
   | { kind: "tools"; callIds: string[] }
   | { kind: "question"; questionId: string }
+  | { kind: "workflow"; runId: string }
   /** Guidance the user sent while this turn was running. */
   | { kind: "steer"; text: string };
 
@@ -100,7 +169,14 @@ export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
   if (event.type === "workflow")
     return turn.workflows?.some((run) => run.runId === event.runId)
       ? turn
-      : { ...turn, workflows: [...(turn.workflows ?? []), event] };
+      : {
+          ...turn,
+          workflows: [...(turn.workflows ?? []), event],
+          timeline: [
+            ...turn.timeline,
+            { kind: "workflow", runId: event.runId },
+          ],
+        };
   if (event.type === "delta")
     return {
       ...turn,

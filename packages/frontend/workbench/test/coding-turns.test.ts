@@ -50,10 +50,67 @@ test("workflow references are replayable and duplicate live notifications do not
     event,
   );
   assert.equal(turn.workflows?.length, 1);
+  assert.deepEqual(turn.timeline, [{ kind: "workflow", runId: "run" }]);
   const replayed = turnsFromHistory("session", [
     { prompt: "运行", startedAt: 1, status: "complete", events: [event] },
   ]);
   assert.deepEqual(replayed[0]!.workflows, turn.workflows);
+  assert.deepEqual(replayed[0]!.timeline, turn.timeline);
+});
+
+test("completion and history retain the interleaved assistant, tool, approval and guidance sequence", () => {
+  const steps: TurnEvent[] = [
+    { type: "delta", text: "先检查项目。" },
+    { type: "tool", phase: "start", callId: "read", name: "read", at: 2 },
+    { type: "tool", phase: "end", callId: "read", ok: true, at: 3 },
+    { type: "delta", text: "需要运行命令。" },
+    { type: "tool", phase: "start", callId: "shell", name: "pwsh", at: 4 },
+    {
+      type: "question",
+      questionId: "approval",
+      questions: [{ id: "allow", kind: "approval", question: "允许？" }],
+    },
+    {
+      type: "answered",
+      questionId: "approval",
+      answers: [{ id: "allow", selected: ["允许"] }],
+    },
+    { type: "tool", phase: "end", callId: "shell", ok: true, at: 5 },
+    { type: "steer", text: "也检查一下构建。", at: 6 },
+    { type: "delta", text: "开始构建。" },
+    {
+      type: "workflow",
+      runId: "build",
+      flowId: "build",
+      title: "构建",
+      inputPreview: "{}",
+    },
+    { type: "delta", text: "检查完成。" },
+  ];
+  const live = steps.reduce(applyTurnEvent, newTurn("s-0", "检查", 1));
+  const finished = finishTurn(live, "complete", 9);
+  const [replayed] = turnsFromHistory("s", [
+    {
+      prompt: "检查",
+      startedAt: 1,
+      endedAt: 9,
+      status: "complete",
+      events: steps,
+    },
+  ]);
+  assert.deepEqual(finished.timeline, [
+    { kind: "text", text: "先检查项目。" },
+    { kind: "tools", callIds: ["read"] },
+    { kind: "text", text: "需要运行命令。" },
+    { kind: "tools", callIds: ["shell"] },
+    { kind: "question", questionId: "approval" },
+    { kind: "steer", text: "也检查一下构建。" },
+    { kind: "text", text: "开始构建。" },
+    { kind: "workflow", runId: "build" },
+    { kind: "text", text: "检查完成。" },
+  ]);
+  assert.deepEqual(replayed, finished);
+  assert.equal(finished.questions[0]!.answered?.[0]!.selected[0], "允许");
 });
 
 test("events fold into tools, progress, questions, deliverables and reply", () => {

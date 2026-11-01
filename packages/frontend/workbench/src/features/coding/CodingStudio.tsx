@@ -9,6 +9,8 @@ import {
   ArrowLeft,
   Ellipsis,
   FolderPlus,
+  FolderOpen,
+  ChevronDown,
   PanelRight,
   MessageSquare,
   SquareTerminal,
@@ -396,7 +398,6 @@ ${summary}`,
       className={`coding-studio chat-screen studio-main${sideVisible ? " with-side" : ""}`}
       aria-label="工作空间对话"
     >
-      {!project ? mainHeader : null}
       {workspaces.error ? (
         <p className="coding-notice" role="alert">
           {workspaces.error}
@@ -407,197 +408,192 @@ ${summary}`,
           将继承来源对话的上下文，在「{project?.title}」中继续。
         </p>
       ) : null}
-      {!project ? (
-        <div className="studio-scroll coding-transcript">
-          <div className="coding-empty">
-            <p>
-              工作空间对应一个本机目录：在里面读写代码、运行命令，并把过程实时展示给你。
-            </p>
-            <button onClick={() => setCreating(true)}>
-              <FolderPlus size={15} />
-              新建工作空间
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <ConversationSplit
-            mainHeader={mainHeader}
-            sideHeader={
-              <ToolTabs
-                tabs={tabs}
-                selectedId={activeToolId}
-                busy={openingSide || terminals.creating}
-                closing={closingTools}
-                canChat={
-                  !!conversation &&
-                  conversation.archivedAt === undefined &&
-                  !offline
-                }
-                onSelect={selectTool}
-                onChat={() => void openSide()}
-                onTerminal={() => void createTerminal()}
-                onClose={(tab) => void closeTool(tab)}
-                onHide={() => {
-                  restoreToolFocus.current = true;
-                  setToolVisibility((current) => ({
-                    ...current,
-                    [toolKey]: false,
-                  }));
-                }}
-              />
+      <ConversationSplit
+        mainHeader={mainHeader}
+        sideHeader={
+          <ToolTabs
+            tabs={tabs}
+            selectedId={activeToolId}
+            busy={openingSide || terminals.creating}
+            closing={closingTools}
+            canChat={
+              !!conversation &&
+              conversation.archivedAt === undefined &&
+              !offline
             }
-            main={
-              <>
-                {view === "trajectory" ? (
-                  <div className="studio-scroll coding-trajectory">
-                    <TrajectoryView turns={mainTurns} />
-                  </div>
-                ) : null}
-                <div
-                  className="coding-pane coding-main-transcript"
-                  hidden={view !== "chat"}
-                >
-                  <ConversationPane
-                    endpoint={endpoint}
-                    visible={visible && view === "chat"}
-                    provider={provider}
-                    projectId={project.id}
-                    directory={project.directory}
-                    label="工作空间请求输入框"
-                    {...(conversationId ? { sessionId: conversationId } : {})}
-                    readOnly={
-                      conversation?.archivedAt !== undefined ||
-                      legacy?.archivedAt !== undefined
-                    }
-                    placeholder={
-                      project.isDefault
-                        ? "描述你想讨论或完成的事情…"
-                        : `在「${project.title}」中描述要完成的事情…`
-                    }
-                    branchFrom={workspaces.branchFrom}
-                    history={history}
-                    historyTime={legacy?.updatedAt}
-                    context={context}
-                    initialDraft={initialDraft}
-                    draftInsert={
-                      conversationId ? draftInserts[conversationId] : undefined
-                    }
-                    onApplyFlow={onApplyFlow}
-                    flows={flows}
-                    flowsLoading={flowsLoading}
-                    onRunFlow={onRunFlow}
-                    composerExtra={
-                      <div className="composer-workspace">
-                        <label className="provider-select composer-workspace-select">
-                          <select
-                            aria-label="选择工作空间"
-                            value={project.id}
-                            disabled={mainRunning}
-                            onChange={(event) => {
-                              if (legacy) workspaces.select(event.target.value);
-                              else workspaces.continueIn(event.target.value);
-                            }}
-                          >
-                            {projects.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.title}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                    }
-                    {...(offline
-                      ? {
-                          footnote:
-                            "工作空间需要连接 Aura 服务，请切换到 Codex 订阅或其他模式",
-                        }
-                      : {})}
-                    onOpen={(id) => {
-                      if (id !== configKey)
-                        setModelConfigs((current) => {
-                          const next = {
-                            ...current,
-                            [id]: {
-                              ...current[configKey],
-                              [mode]: modelConfig,
-                            },
-                          };
-                          delete next[configKey];
-                          return next;
-                        });
-                      open(project.id, id);
-                      onOpened?.();
-                    }}
-                    onSettled={refresh}
-                    onProvider={onProvider}
-                    modelConfig={modelConfig}
-                    onModelConfig={(selection) =>
-                      changeModel(configKey, selection)
-                    }
-                    {...(initialSend ? { initialSend } : {})}
-                    {...(onHandoffTaken
-                      ? { onInitialSendTaken: onHandoffTaken }
-                      : {})}
-                    onRunning={setMainRunning}
-                    onTurns={reportTurns}
-                  />
-                </div>
-              </>
-            }
-            side={
-              <>
-                {toolError || terminals.error ? (
-                  <p className="coding-notice" role="alert">
-                    {toolError || terminals.error}
-                  </p>
-                ) : null}
-                {!tabs.length ? (
-                  <div className="coding-tools-empty">
-                    <strong>打开工具</strong>
-                    <button
-                      type="button"
-                      className="tool-button"
-                      disabled={
-                        !conversation ||
-                        conversation.archivedAt !== undefined ||
-                        openingSide
-                      }
-                      onClick={() => void openSide()}
-                    >
-                      <MessageSquare size={15} />
-                      侧边对话
-                    </button>
-                    <button
-                      type="button"
-                      className="tool-button"
-                      disabled={terminals.creating}
-                      onClick={() => void createTerminal()}
-                    >
-                      <SquareTerminal size={15} />
-                      终端
-                    </button>
-                  </div>
-                ) : null}
-                {sides}
-                {terminals.all.map((info) => (
-                  <TerminalPane
-                    key={`${endpoint}:${info.id}`}
-                    endpoint={endpoint}
-                    info={info}
-                    visible={
-                      info.projectId === project.id && info.id === activeToolId
-                    }
-                    onInfo={terminals.update}
-                  />
-                ))}
-              </>
-            }
-            sideVisible={sideVisible}
+            onSelect={selectTool}
+            onChat={() => void openSide()}
+            onTerminal={() => void createTerminal()}
+            onClose={(tab) => void closeTool(tab)}
+            onHide={() => {
+              restoreToolFocus.current = true;
+              setToolVisibility((current) => ({
+                ...current,
+                [toolKey]: false,
+              }));
+            }}
           />
-        </>
-      )}
+        }
+        main={
+          <>
+            {view === "trajectory" ? (
+              <div className="studio-scroll coding-trajectory">
+                <TrajectoryView turns={mainTurns} />
+              </div>
+            ) : null}
+            <div
+              className="coding-pane coding-main-transcript"
+              hidden={view !== "chat"}
+            >
+              <ConversationPane
+                endpoint={endpoint}
+                visible={visible && view === "chat"}
+                provider={provider}
+                projectId={project?.id}
+                directory={project?.directory}
+                label="工作空间请求输入框"
+                {...(conversationId ? { sessionId: conversationId } : {})}
+                readOnly={
+                  conversation?.archivedAt !== undefined ||
+                  legacy?.archivedAt !== undefined
+                }
+                placeholder={
+                  !project || project.isDefault
+                    ? "描述你想讨论或完成的事情…"
+                    : `在「${project.title}」中描述要完成的事情…`
+                }
+                branchFrom={workspaces.branchFrom}
+                history={history}
+                historyTime={legacy?.updatedAt}
+                context={context}
+                initialDraft={initialDraft}
+                draftInsert={
+                  conversationId ? draftInserts[conversationId] : undefined
+                }
+                onApplyFlow={onApplyFlow}
+                flows={flows}
+                flowsLoading={flowsLoading}
+                onRunFlow={onRunFlow}
+                composerLeading={
+                  <WorkbenchMenu
+                    label="选择工作空间"
+                    className="composer-context"
+                    title={project?.title ?? "选择工作空间"}
+                    disabled={mainRunning}
+                    items={[
+                      ...projects.map((item) => ({
+                        id: item.id,
+                        label: `${item.id === project?.id ? "✓ " : ""}${item.title}`,
+                        icon: <FolderOpen size={14} />,
+                        action: () => {
+                          if (legacy) workspaces.select(item.id);
+                          else workspaces.continueIn(item.id);
+                        },
+                      })),
+                      ...(projects.length
+                        ? [{ id: "separator", separator: true as const }]
+                        : []),
+                      {
+                        id: "create",
+                        label: "新建工作空间",
+                        icon: <FolderPlus size={14} />,
+                        action: () => setCreating(true),
+                      },
+                    ]}
+                  >
+                    <FolderOpen size={14} />
+                    <span>{project?.title ?? "工作空间"}</span>
+                    <ChevronDown size={12} />
+                  </WorkbenchMenu>
+                }
+                footnote={
+                  offline
+                    ? "工作空间需要连接 Aura 服务，请切换到 Codex 订阅或其他模式"
+                    : !project
+                      ? "工作空间暂不可用，仍可查看历史和编辑草稿；选择或新建工作空间后可继续发送。"
+                      : undefined
+                }
+                onOpen={(id) => {
+                  if (!project) return;
+                  if (id !== configKey)
+                    setModelConfigs((current) => {
+                      const next = {
+                        ...current,
+                        [id]: {
+                          ...current[configKey],
+                          [mode]: modelConfig,
+                        },
+                      };
+                      delete next[configKey];
+                      return next;
+                    });
+                  open(project.id, id);
+                  onOpened?.();
+                }}
+                onSettled={refresh}
+                onProvider={onProvider}
+                modelConfig={modelConfig}
+                onModelConfig={(selection) => changeModel(configKey, selection)}
+                {...(initialSend ? { initialSend } : {})}
+                {...(onHandoffTaken
+                  ? { onInitialSendTaken: onHandoffTaken }
+                  : {})}
+                onRunning={setMainRunning}
+                onTurns={reportTurns}
+              />
+            </div>
+          </>
+        }
+        side={
+          <>
+            {toolError || terminals.error ? (
+              <p className="coding-notice" role="alert">
+                {toolError || terminals.error}
+              </p>
+            ) : null}
+            {!tabs.length ? (
+              <div className="coding-tools-empty">
+                <strong>打开工具</strong>
+                <button
+                  type="button"
+                  className="tool-button"
+                  disabled={
+                    !conversation ||
+                    conversation.archivedAt !== undefined ||
+                    openingSide
+                  }
+                  onClick={() => void openSide()}
+                >
+                  <MessageSquare size={15} />
+                  侧边对话
+                </button>
+                <button
+                  type="button"
+                  className="tool-button"
+                  disabled={terminals.creating}
+                  onClick={() => void createTerminal()}
+                >
+                  <SquareTerminal size={15} />
+                  终端
+                </button>
+              </div>
+            ) : null}
+            {sides}
+            {terminals.all.map((info) => (
+              <TerminalPane
+                key={`${endpoint}:${info.id}`}
+                endpoint={endpoint}
+                info={info}
+                visible={
+                  info.projectId === project?.id && info.id === activeToolId
+                }
+                onInfo={terminals.update}
+              />
+            ))}
+          </>
+        }
+        sideVisible={sideVisible}
+      />
       {confirmTerminal ? (
         <TerminalCloseDialog
           terminal={confirmTerminal}
