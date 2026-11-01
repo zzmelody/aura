@@ -78,6 +78,11 @@ export interface BackendHost {
   /** The plugin's `settings` from plugins.json, uninterpreted. Validate it yourself. */
   readonly settings: JsonValue | undefined;
   readonly workspace: { readonly cwd: string };
+  /**
+   * `<tempDir>/plugins/<plugin-id>/`, created by the host. Scratch space only:
+   * it may be deleted at any time, so keep nothing here that must persist.
+   */
+  readonly tempDir: string;
   readonly storage: PluginStorage;
   readonly workflows: PluginWorkflows;
   readonly media: GeneratedArtifacts;

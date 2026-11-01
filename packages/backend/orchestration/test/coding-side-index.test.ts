@@ -27,7 +27,7 @@ function memoryTable(): Table<CodingConversationRecord> {
   };
 }
 
-test("empty side panels have stable per-parent identities across index reloads", async () => {
+test("multiple sides keep independent identities and models across index reloads", async () => {
   const table = memoryTable();
   let index = new CodingConversationIndex(table);
   await index.open("main-a", "project", "A");
@@ -35,7 +35,17 @@ test("empty side panels have stable per-parent identities across index reloads",
   const sideA = await index.openSide("main-a");
   const sideB = await index.openSide("main-b");
   assert.notEqual(sideA, sideB);
-  assert.equal(await index.openSide("main-a"), sideA);
+  const sibling = await index.openSide("main-a");
+  assert.notEqual(sibling, sideA);
+  await index.nameSide(sideA, "第一条思路\n继续讨论");
+  await index.nameSide(sideA, "后续问题不覆盖标题");
+  assert.equal(
+    index.list("project").find((item) => item.id === "main-a")
+      ?.sideConversations?.[0]?.title,
+    "第一条思路 继续讨论",
+  );
+  await index.selectModel(sideA, "demo", { model: "first" });
+  await index.selectModel(sibling, "demo", { model: "second" });
   // Recreate the consumer, retaining only the serialized storage records.
   const restored = memoryTable();
   for (const [id, record] of table.entries())
@@ -44,7 +54,15 @@ test("empty side panels have stable per-parent identities across index reloads",
       JSON.parse(JSON.stringify(record)) as CodingConversationRecord,
     );
   index = new CodingConversationIndex(restored);
-  assert.equal(await index.openSide("main-a"), sideA);
+  assert.deepEqual(
+    index
+      .list("project")
+      .find((item) => item.id === "main-a")
+      ?.sideConversations?.map((item) => item.id),
+    [sideA, sibling],
+  );
+  assert.deepEqual(index.modelConfig(sideA), { demo: { model: "first" } });
+  assert.deepEqual(index.modelConfig(sibling), { demo: { model: "second" } });
   assert.equal(index.sideParent(sideB)?.id, "main-b");
   assert.equal(
     index.list("project").length,
@@ -53,6 +71,32 @@ test("empty side panels have stable per-parent identities across index reloads",
   );
   await index.touch("main-a");
   assert.equal(index.get("main-a")?.sideSessionId, sideA);
+  await index.closeSide(sideA);
+  assert.equal(index.sideParent(sibling)?.id, "main-a");
+  assert.deepEqual(index.modelConfig(sibling), { demo: { model: "second" } });
+});
+
+test("legacy single-side records remain readable without rewriting storage", async () => {
+  const table = memoryTable();
+  const record: CodingConversationRecord = {
+    id: "main",
+    projectId: "project",
+    title: "Main",
+    createdAt: 1,
+    updatedAt: 1,
+    sideSessionId: "side-legacy",
+    sideModelConfig: { demo: { model: "saved" } },
+  };
+  await table.put(record.id, record);
+  const index = new CodingConversationIndex(table);
+  assert.equal(index.sideParent("side-legacy")?.id, "main");
+  assert.deepEqual(index.modelConfig("side-legacy"), record.sideModelConfig);
+  assert.deepEqual(table.get("main"), record);
+  const sibling = await index.openSide("main");
+  assert.equal(index.sideParent("side-legacy")?.id, "main");
+  assert.equal(index.sideParent(sibling)?.id, "main");
+  await index.closeSide(sibling);
+  assert.deepEqual(index.modelConfig("side-legacy"), record.sideModelConfig);
 });
 
 test("explicit close clears only the requested side and a later open starts fresh", async () => {
@@ -70,6 +114,7 @@ test("explicit close clears only the requested side and a later open starts fres
   );
   assert.equal(index.get("main")?.sideSessionId, next);
   assert.equal(index.sideParent(old), undefined);
+  await assert.rejects(index.selectModel(old, "demo", { model: "closed" }));
   await assert.rejects(
     index.open(old, "project", "do not adopt a side as a main"),
   );
@@ -81,11 +126,13 @@ test("archive and close clear sides, and restoring a parent never restores a sid
   await index.open("archived", "project", "Archived");
   await index.open("closed", "project", "Closed");
   const archivedSide = await index.openSide("archived");
+  const archivedSibling = await index.openSide("archived");
   const closedSide = await index.openSide("closed");
   await index.archive("archived", true);
   await index.close("closed");
   index = new CodingConversationIndex(table);
   assert.equal(index.sideParent(archivedSide), undefined);
+  assert.equal(index.sideParent(archivedSibling), undefined);
   assert.equal(index.sideParent(closedSide), undefined);
   assert.equal(index.get("closed"), undefined);
   assert.deepEqual(

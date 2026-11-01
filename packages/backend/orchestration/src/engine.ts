@@ -182,7 +182,7 @@ export class FlowEngine {
     this.scheduler.kick();
   }
   async catalog(): Promise<FlowCatalog> {
-    await this.options.refreshFlows();
+    // Discovery and HMR maintain the registry; reads must not rescan disk.
     return {
       flows: this.options.registry.catalog(),
       actions: this.options.actions?.registry.catalog() ?? [],

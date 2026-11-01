@@ -5,7 +5,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { app, BrowserWindow, dialog, shell } from "electron";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
-import { startAuraRuntime } from "@aura/runtime";
+import type { AuraRuntimeHandle } from "@aura/runtime";
 import { closeSiteHost, installSiteHost } from "./site-host.ts";
 import { installWorkflowFileHost } from "./workflow-file-host.ts";
 import { installWindowHost } from "./window-host.ts";
@@ -15,7 +15,8 @@ const sourceDir = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(sourceDir, "..");
 const repoRoot = resolve(sourceDir, "..", "..", "..");
 const rendererRoot = resolve(appDir, "dist");
-let ownedRuntime: Awaited<ReturnType<typeof startAuraRuntime>> | null = null;
+let ownedRuntime: AuraRuntimeHandle | null = null;
+let runtimeStartup: Promise<void> | undefined;
 let renderer: ServerType | null = null;
 installSiteHost();
 installWorkflowFileHost();
@@ -58,7 +59,10 @@ async function runtimeIsRunning(): Promise<boolean> {
 /** Reuses a live Aura API, including one whose DSH host is still starting. */
 async function ensureRuntime() {
   if (await runtimeIsRunning()) return;
-  ownedRuntime = await startAuraRuntime({
+  if (closingServices) return;
+  const { startAuraRuntime } = await import("@aura/runtime");
+  if (closingServices) return;
+  const runtime = await startAuraRuntime({
     root: repoRoot,
     defaultPluginsDirectory: development
       ? resolve(repoRoot, "plugins")
@@ -66,7 +70,9 @@ async function ensureRuntime() {
     host: "127.0.0.1",
     port: 4311,
   });
-  await ownedRuntime.ready();
+  if (closingServices) await runtime.close();
+  else ownedRuntime = runtime;
+  // The API reports DSH readiness itself; the window can already be used.
 }
 
 async function serveRenderer(): Promise<string> {
@@ -102,10 +108,8 @@ async function serveRenderer(): Promise<string> {
   return `http://127.0.0.1:${port}`;
 }
 
-/** Opens the Aura renderer after its local services are ready. */
+/** Displays the workbench while its local services warm in parallel. */
 async function openWorkbench() {
-  await ensureRuntime();
-  watchBorrowedRuntime();
   const url = await serveRenderer();
   const window = new BrowserWindow({
     width: 1360,
@@ -124,6 +128,16 @@ async function openWorkbench() {
     },
   });
   window.setMenu(null);
+  runtimeStartup = ensureRuntime().then(() => {
+    if (!closingServices) watchBorrowedRuntime();
+  });
+  void runtimeStartup.catch(() => {
+    if (!closingServices)
+      dialog.showErrorBox(
+        "Aura 服务启动失败",
+        "工作台已打开，请检查本地服务后重试。",
+      );
+  });
   window.webContents.on("preload-error", (_event, _path, error) => {
     console.error("Aura desktop bridge failed to load:", error.message);
   });
@@ -196,7 +210,10 @@ app.on("before-quit", (event) => {
   closingServices = true;
   if (runtimeWatch) clearInterval(runtimeWatch);
   renderer?.close();
-  void Promise.all([closeSiteHost(), ownedRuntime?.close()])
+  void Promise.all([
+    closeSiteHost(),
+    runtimeStartup?.catch(() => undefined).then(() => ownedRuntime?.close()),
+  ])
     .then(() => {
       finishingQuit = true;
       app.quit();

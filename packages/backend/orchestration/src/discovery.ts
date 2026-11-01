@@ -58,6 +58,7 @@ export class CodeDiscovery {
   private failures = new Map<string, string>();
   private issues = new Set<string>();
   private queue: Promise<void> = Promise.resolve();
+  private refreshTask: Promise<void> | undefined;
 
   constructor(
     loader: Loader,
@@ -78,7 +79,13 @@ export class CodeDiscovery {
   }
 
   refresh(): Promise<void> {
-    const task = this.queue.then(() => this.scan());
+    if (this.refreshTask) return this.refreshTask;
+    const task = this.queue
+      .then(() => this.scan())
+      .finally(() => {
+        this.refreshTask = undefined;
+      });
+    this.refreshTask = task;
     this.queue = task.catch(() => undefined);
     return task;
   }

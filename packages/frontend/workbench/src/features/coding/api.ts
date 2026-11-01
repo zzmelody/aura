@@ -6,16 +6,61 @@ import type {
   CodingFileDiff,
   CodingHistoryTurn,
   CodingProjectInfo,
+  CodingSkillInfo,
   CodingQuestionAnswer,
   CodingQuestionItem,
   AutomationHistory,
   AutomationTask,
   AutomationTaskInput,
   FlowMode,
+  WorkspaceTerminalInfo,
 } from "@aura/protocol/types";
 import { WorkflowApiError } from "../../workflowSessions";
 
 const base = (endpoint: string) => `${endpoint.replace(/\/$/, "")}/coding`;
+
+export const listTerminals = (
+  endpoint: string,
+  projectId: string,
+  signal?: AbortSignal,
+) =>
+  codingApi<WorkspaceTerminalInfo[]>(
+    endpoint,
+    `/terminals?projectId=${encodeURIComponent(projectId)}`,
+    "GET",
+    undefined,
+    signal,
+  );
+export const openTerminal = (endpoint: string, projectId: string) =>
+  codingApi<WorkspaceTerminalInfo>(endpoint, "/terminals", "POST", {
+    projectId,
+  });
+export const writeTerminal = (endpoint: string, id: string, data: string) =>
+  codingApi(endpoint, `/terminals/${encodeURIComponent(id)}/write`, "POST", {
+    data,
+  });
+export const resizeTerminal = (
+  endpoint: string,
+  id: string,
+  cols: number,
+  rows: number,
+) =>
+  codingApi(endpoint, `/terminals/${encodeURIComponent(id)}/resize`, "POST", {
+    cols,
+    rows,
+  });
+export const closeTerminal = (endpoint: string, id: string, force = false) =>
+  codingApi(
+    endpoint,
+    `/terminals/${encodeURIComponent(id)}${force ? "?force=true" : ""}`,
+    "DELETE",
+  );
+export const terminalEventsUrl = (
+  endpoint: string,
+  id: string,
+  cursor: number,
+) =>
+  `${base(endpoint)}/terminals/${encodeURIComponent(id)}/events?cursor=${cursor}`;
 
 async function codingApi<T>(
   endpoint: string,
@@ -47,6 +92,19 @@ export const listProjects = (endpoint: string, signal?: AbortSignal) =>
   codingApi<CodingProjectInfo[]>(
     endpoint,
     "/projects",
+    "GET",
+    undefined,
+    signal,
+  );
+
+export const listSkills = (
+  endpoint: string,
+  projectId: string,
+  signal?: AbortSignal,
+) =>
+  codingApi<CodingSkillInfo[]>(
+    endpoint,
+    `/projects/${encodeURIComponent(projectId)}/skills`,
     "GET",
     undefined,
     signal,
@@ -442,18 +500,40 @@ export async function conversationHistory(
   endpoint: string,
   sessionId: string,
   signal?: AbortSignal,
-): Promise<{ turns: CodingHistoryTurn[]; running: boolean }> {
+  page: { beforeSeq?: number; throughSeq?: number } = {},
+): Promise<{
+  turns: CodingHistoryTurn[];
+  running: boolean;
+  hasMore: boolean;
+  beforeSeq?: number;
+  throughSeq?: number;
+}> {
+  const query = new URLSearchParams({ page: "1" });
+  if (page.beforeSeq !== undefined && page.throughSeq !== undefined) {
+    query.set("beforeSeq", String(page.beforeSeq));
+    query.set("throughSeq", String(page.throughSeq));
+  }
   const value = await codingApi<unknown>(
     endpoint,
-    `/sessions/${encodeURIComponent(sessionId)}/history`,
+    `/sessions/${encodeURIComponent(sessionId)}/history?${query}`,
     "GET",
     undefined,
     signal,
   );
-  const body = value as { turns?: unknown; running?: unknown } | null;
+  const body = value as {
+    turns?: unknown;
+    running?: unknown;
+    hasMore?: unknown;
+    beforeSeq?: unknown;
+    throughSeq?: unknown;
+  } | null;
   const turns = Array.isArray(body?.turns) ? body.turns : [];
   return {
     running: body?.running === true,
+    hasMore: body?.hasMore === true,
+    beforeSeq: typeof body?.beforeSeq === "number" ? body.beforeSeq : undefined,
+    throughSeq:
+      typeof body?.throughSeq === "number" ? body.throughSeq : undefined,
     turns: turns.flatMap((raw) => {
       const turn = raw as Partial<Record<keyof CodingHistoryTurn, unknown>>;
       if (

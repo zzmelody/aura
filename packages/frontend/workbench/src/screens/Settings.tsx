@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Switch } from "@aura/ui/web";
 import {
+  Archive,
   Check,
   ChevronRight,
+  Clock3,
   Info,
   Monitor,
   Moon,
@@ -21,6 +23,7 @@ import type { WorkspaceController } from "../useWorkspace";
 import type { CodexAuthController } from "../useCodexAuth";
 import { CodexLoginButton } from "../CodexLoginButton";
 import { PluginDirectorySettings } from "./PluginDirectorySettings.tsx";
+import { PluginList } from "./Plugins.tsx";
 import { ModelServiceSettings } from "./ModelServiceSettings.tsx";
 import "./settings.css";
 
@@ -29,6 +32,7 @@ const sections = [
   { id: "models", label: "模型与账号", icon: Sparkles },
   { id: "connection", label: "连接", icon: Wifi },
   { id: "plugins", label: "插件", icon: PlugZap },
+  { id: "records", label: "会话记录", icon: Clock3 },
   { id: "about", label: "关于", icon: Info },
 ] as const;
 type SectionId = (typeof sections)[number]["id"];
@@ -111,12 +115,18 @@ export function SettingsScreen({
   codexAuth,
   systemReduced,
   section,
+  onHistory,
+  onArchived,
 }: {
   workspace: WorkspaceController;
   codexAuth: CodexAuthController;
   systemReduced: boolean;
-  /** Section to scroll to on open, e.g. from the plugins page. */
+  /** Section to scroll to on open, e.g. from the workbench home. */
   section?: SectionId;
+  /** Opens the full conversation log. */
+  onHistory(): void;
+  /** Opens the sidebar filtered to archived conversations. */
+  onArchived(): void;
 }) {
   const { colors } = useTheme();
   const [address, setAddress] = useState(
@@ -307,7 +317,11 @@ export function SettingsScreen({
                     workspace.setState((s) => ({ ...s, reduceMotion: value }))
                   }
                   trackColor={switchColors}
-                  thumbColor="#FFFFFF"
+                  thumbColor={
+                    workspace.state.reduceMotion || systemReduced
+                      ? colors.primaryText
+                      : colors.primary
+                  }
                 />
               </Row>
               <button
@@ -523,13 +537,53 @@ export function SettingsScreen({
             <header className="settings-section-head">
               <h2 id="settings-plugins-title">插件</h2>
               <p>
-                显式接入本机的 Action 与 Flow 目录。插件以完整 Node.js
-                权限运行。
+                启用插件，并显式接入本机的 Action 与 Flow 目录。插件以完整
+                Node.js 权限运行。
               </p>
             </header>
+            <PluginList
+              endpoint={workspace.state.endpoint || "http://127.0.0.1:4311"}
+            />
+            <h3 className="settings-subhead">插件目录</h3>
             <PluginDirectorySettings
               endpoint={workspace.state.endpoint || "http://127.0.0.1:4311"}
             />
+          </section>
+
+          <section
+            id="settings-records"
+            aria-labelledby="settings-records-title"
+          >
+            <header className="settings-section-head">
+              <h2 id="settings-records-title">会话记录</h2>
+              <p>对话和工作空间会话都保存在本机。</p>
+            </header>
+            <div className="settings-group">
+              <button
+                type="button"
+                className="settings-row settings-row-button"
+                onClick={onHistory}
+              >
+                <span className="settings-row-copy">
+                  <strong>全部记录</strong>
+                  <span>按时间浏览所有对话与工作空间会话</span>
+                </span>
+                <ChevronRight size={16} className="settings-chevron" />
+              </button>
+              <button
+                type="button"
+                className="settings-row settings-row-button"
+                onClick={onArchived}
+              >
+                <span className="settings-row-copy">
+                  <strong>已归档会话</strong>
+                  <span>
+                    在侧栏中查看已归档的会话，归档不影响已保存的执行记录
+                  </span>
+                </span>
+                <Archive size={16} className="settings-chevron" />
+              </button>
+            </div>
           </section>
 
           <section id="settings-about" aria-labelledby="settings-about-title">

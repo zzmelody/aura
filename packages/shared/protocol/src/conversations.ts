@@ -1,4 +1,31 @@
-import type { ChatMessage, CodingHistoryTurn } from "./types.ts";
+import type {
+  ChatMessage,
+  CodingConversationInfo,
+  CodingHistoryTurn,
+  CodingSideConversationInfo,
+} from "./types.ts";
+
+/** Reads legacy single-side metadata without migrating the stored record. */
+export function conversationSides(
+  conversation: Pick<
+    CodingConversationInfo,
+    "sideConversations" | "sideSessionId" | "sideModelConfig" | "createdAt"
+  >,
+): CodingSideConversationInfo[] {
+  if (conversation.sideConversations) return conversation.sideConversations;
+  return conversation.sideSessionId
+    ? [
+        {
+          id: conversation.sideSessionId,
+          title: "旁支对话",
+          createdAt: conversation.createdAt,
+          ...(conversation.sideModelConfig
+            ? { modelConfig: conversation.sideModelConfig }
+            : {}),
+        },
+      ]
+    : [];
+}
 
 const contextPrefix = "AURA_CONVERSATION_CONTEXT_V1\n";
 

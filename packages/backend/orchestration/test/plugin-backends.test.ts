@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -157,6 +164,32 @@ test("a backend opens once with settings, reaches built-ins and sees only its ow
     );
     await host.close();
     assert.equal((await log(dataRoot, "veya")).at(-1)?.hook, "close");
+  }));
+
+test("a backend receives a private scratch directory under the temp root", () =>
+  fixture(async (dir) => {
+    const dataRoot = join(dir, "data");
+    const tempRoot = join(dir, "scratch");
+    const host = new PluginBackends({ dataRoot, tempRoot });
+    const scratch = await plugin(
+      dir,
+      "scratch",
+      `import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { defineBackend } from ${JSON.stringify(backendApi)};
+export default defineBackend({ open(host) {
+  writeFileSync(join(host.dataDir, "paths.json"), JSON.stringify({ tempDir: host.tempDir }));
+  return {};
+} });
+`,
+    );
+    await host.replace([scratch]);
+    const paths = JSON.parse(
+      await readFile(join(dataRoot, "scratch", "paths.json"), "utf8"),
+    ) as { tempDir: string };
+    assert.equal(paths.tempDir, join(tempRoot, "scratch"));
+    assert.ok((await stat(paths.tempDir)).isDirectory());
+    await host.close();
   }));
 
 test("pages reach only their own backend's declared page operations", () =>

@@ -8,6 +8,7 @@ import type {
   ChatMessage,
   ChatWorkflowStart,
   ConversationModelConfig,
+  CodingSideConversationInfo,
 } from "@aura/protocol/types";
 import type { FlowImageReference } from "./flow-api.ts";
 import type {
@@ -37,6 +38,10 @@ export interface HostOptions {
   plugins?: AuraPluginStatus[];
   tripoCredentialPath?: string;
   tripoRegion?: "global" | "china";
+  /** Disposable scratch root. Defaults to `<root>/local/runtime`. */
+  tempDir?: string;
+  /** Directory for conversations without a project. Defaults to `<root>/.aura/workspace`. */
+  defaultWorkspace?: string;
   /**
    * Host `@aura/plugin-sdk/package.json`; plugins resolve the SDK from here.
    * Defaults to the SDK this package resolves.
@@ -274,6 +279,7 @@ export interface CodingConversation {
   updatedAt: number;
   archivedAt?: number;
   sideSessionId?: string;
+  sideConversations?: CodingSideConversationInfo[];
   modelConfig?: ConversationModelConfig;
   sideModelConfig?: ConversationModelConfig;
   sourceSessionId?: string;

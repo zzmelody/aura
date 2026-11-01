@@ -33,6 +33,8 @@ test(
       flowRoot,
       dshHome: join(root, "dsh"),
       modelURL: "http://127.0.0.1:9/v1",
+      defaultWorkspace: join(root, "conversations"),
+      tempDir: join(root, "scratch"),
     });
     try {
       const created = await host.createProject(first, "演示空间");
@@ -60,8 +62,12 @@ test(
 
       // Conversations outside any workspace get a built-in directory.
       assert.ok(
-        (await stat(join(root, ".aura", "workspace"))).isDirectory(),
-        "the host provisions the default workspace directory",
+        (await stat(join(root, "conversations"))).isDirectory(),
+        "the host provisions the configured default workspace directory",
+      );
+      assert.ok(
+        (await stat(join(root, "scratch"))).isDirectory(),
+        "the host provisions the configured scratch directory",
       );
 
       // A missing or relative directory never replaces the registration.

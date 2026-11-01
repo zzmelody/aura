@@ -4,8 +4,33 @@ import {
   conversationPrompt,
   conversationPromptText,
   legacyConversationTurns,
+  conversationSides,
 } from "../src/conversations.ts";
 import { validateConversationHistory } from "../src/index.ts";
+
+test("side metadata reads legacy records and keeps an explicit empty list empty", () => {
+  const legacy = {
+    createdAt: 123,
+    sideSessionId: "side-old",
+    sideModelConfig: { demo: { model: "saved" } },
+  };
+  const original = structuredClone(legacy);
+  assert.deepEqual(conversationSides(legacy), [
+    {
+      id: "side-old",
+      title: "旁支对话",
+      createdAt: 123,
+      modelConfig: legacy.sideModelConfig,
+    },
+  ]);
+  assert.deepEqual(legacy, original);
+  assert.deepEqual(conversationSides({ ...legacy, sideConversations: [] }), []);
+  const sides = [{ id: "side-new", title: "另一条思路", createdAt: 456 }];
+  assert.deepEqual(
+    conversationSides({ ...legacy, sideConversations: sides }),
+    sides,
+  );
+});
 
 test("context envelopes preserve the current prompt without duplicating imported messages", () => {
   const history = [

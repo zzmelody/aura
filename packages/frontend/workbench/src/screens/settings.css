@@ -72,6 +72,13 @@
   font-size: 12px;
   line-height: 20px;
 }
+/* Divides a long section into named parts, e.g. plugins and their directories. */
+.settings-subhead {
+  margin: 10px 0 -2px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
 
 /* Grouped rows: one bordered card, hairlines between rows. */
 .settings-group {

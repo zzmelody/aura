@@ -239,7 +239,7 @@
   margin-left: 4px;
   border-radius: 50%;
   background: var(--primary);
-  color: var(--primary-text) !important;
+  color: var(--primaryText) !important;
 }
 .chat-screen .send-button:disabled {
   background: color-mix(in srgb, var(--text) 10%, transparent);

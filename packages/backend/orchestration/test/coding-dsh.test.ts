@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -40,6 +40,12 @@ test(
     const { mkdir } = await import("node:fs/promises");
     await mkdir(project, { recursive: true });
     await mkdir(flowRoot, { recursive: true });
+    const skillDirectory = join(project, ".agents", "skills", "qa-skill");
+    await mkdir(skillDirectory, { recursive: true });
+    await writeFile(
+      join(skillDirectory, "SKILL.md"),
+      "---\nname: qa-skill\ndescription: Synthetic composer skill\ndisable-model-invocation: true\n---\nSYNTHETIC_SKILL_INSTRUCTIONS\n",
+    );
 
     const seenTools: string[][] = [];
     const requests: ModelRequest[] = [];
@@ -127,13 +133,22 @@ test(
       const projects = await host.projects();
       assert.ok(projects.some((item) => item.id === created.id));
       assert.equal(await host.projectStatus(created.id), "ok");
+      const skills = await host.skills(created.id);
+      assert.ok(skills.some((skill) => skill.name === "qa-skill"));
+      assert.ok(
+        skills.every((skill) =>
+          Object.keys(skill).every(
+            (key) => key === "name" || key === "description",
+          ),
+        ),
+      );
 
       const events: CodingStreamEvent[] = [];
       const result = await host.coding(
         {
           sessionId: "coding-session-1",
           projectId: created.id,
-          prompt: "WRITE_FILE please create notes.txt",
+          prompt: "/qa-skill WRITE_FILE please create notes.txt",
           mode: "demo",
           model: "deepseek-v4-flash",
           reasoningEffort: "off",
@@ -188,6 +203,7 @@ test(
       assert.match(diffs[0]!.path, /notes\.txt$/u);
       assert.match(diffs[0]!.newText, /written by the coding agent/u);
       assert.ok(result.model);
+      assert.match(JSON.stringify(requests), /SYNTHETIC_SKILL_INSTRUCTIONS/u);
 
       // The model saw the coding tools, not an empty set.
       const names = new Set(seenTools.flat());

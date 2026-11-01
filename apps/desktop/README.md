@@ -1,5 +1,7 @@
 # @aura/desktop
 
+桌面先创建窗口并加载 renderer，同时异步加载和启动本地 runtime；DSH 冷启动不阻塞窗口出现，API 自己报告就绪状态。退出时等待启动中的服务完成后统一关闭，避免在启动中关窗留下后台服务。
+
 Aura 的 Windows/macOS/Linux Electron 桌面入口。Vite renderer 复用 `@aura/workbench` 的 React Web 界面；主进程提供受限本地静态服务器，并通过正式 workspace 依赖嵌入 `@aura/runtime`。退出桌面应用时会回收由它启动的服务。
 
 主窗口默认 1360×860，使用 Electron 的 `titleBarStyle: hidden` 与 `titleBarOverlay` 将共用的应用菜单栏放入标题区；最小化、最大化与关闭保留原生控件。标题区留白可拖动窗口，菜单和导航按钮使用 no-drag。`window-host.ts` 仅接收主 frame 的深/浅色布尔设置，同步原生控件颜色。更改主进程或 preload 后需完全退出并重启桌面应用。实现依据 [Electron 自定义标题栏](https://www.electronjs.org/docs/latest/tutorial/custom-title-bar)。

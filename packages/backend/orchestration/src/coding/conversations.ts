@@ -48,7 +48,7 @@ export function conversationService(
       if (
         request.forkFrom &&
         (parent?.projectId !== projectId ||
-          parent.sideSessionId !== id ||
+          index.sideParent(id)?.id !== parentId ||
           !id.startsWith("side-"))
       )
         throw new FlowError("旁支已关闭或不属于当前项目。", 404);
@@ -81,6 +81,7 @@ export function conversationService(
           : (saved ?? {});
       // Explicit empty selection is saved by the model control endpoint.
       await index.selectModel(id, request.mode, selection);
+      if (request.forkFrom) await index.nameSide(id, request.prompt);
       const result = await driver.stream(
         {
           ...request,

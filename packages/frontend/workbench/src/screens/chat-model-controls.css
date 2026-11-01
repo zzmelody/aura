@@ -127,7 +127,7 @@
 .chat-model-menu-effort[aria-checked="true"] {
   border-color: transparent;
   background: var(--primary);
-  color: var(--primary-text);
+  color: var(--primaryText);
 }
 .chat-model-menu-note {
   margin: 4px 0 0;

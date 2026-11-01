@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import { z } from "zod";
+import { conversationSides } from "@aura/protocol/conversations";
 import { FlowError } from "../schema.ts";
 import type { CodingConversation, Table } from "../types.ts";
 import type {
   ChatMessage,
   ChatModelSelection,
   FlowMode,
+  CodingSideConversationInfo,
 } from "@aura/protocol/types";
 
 /**
@@ -49,6 +51,16 @@ const recordSchema = z.object({
   archivedAt: z.number().optional(),
   closedAt: z.number().optional(),
   sideSessionId: z.string().startsWith("side-").optional(),
+  sideConversations: z
+    .array(
+      z.object({
+        id: z.string().startsWith("side-"),
+        title: z.string(),
+        createdAt: z.number(),
+        modelConfig: modelConfigSchema.optional(),
+      }),
+    )
+    .optional(),
   sourceSessionId: z.string().optional(),
   history: z.array(conversationMessageSchema).max(200).optional(),
   modelConfig: modelConfigSchema.optional(),
@@ -123,7 +135,7 @@ export class CodingConversationIndex {
 
   modelConfig(id: string) {
     return id.startsWith("side-")
-      ? this.sideParent(id)?.sideModelConfig
+      ? this.side(this.sideParent(id), id)?.modelConfig
       : this.get(id)?.modelConfig;
   }
 
@@ -132,23 +144,82 @@ export class CodingConversationIndex {
     const parent = side ? this.sideParent(id) : this.get(id);
     if (!parent || parent.archivedAt !== undefined)
       throw new FlowError("对话不存在或已归档。", 404);
-    const field = side ? "sideModelConfig" : "modelConfig";
-    await this.table.update(parent.id, (current) => ({
-      ...current,
-      [field]: { ...current[field], [mode]: selection },
-    }));
+    await this.table.update(parent.id, (current) => {
+      if (current.closedAt !== undefined || current.archivedAt !== undefined)
+        throw new FlowError("对话不存在或已归档。", 404);
+      if (!side)
+        return {
+          ...current,
+          modelConfig: { ...current.modelConfig, [mode]: selection },
+        };
+      const sides = conversationSides(current);
+      if (!sides.some((item) => item.id === id))
+        throw new FlowError("旁支已关闭。", 404);
+      return withSides(
+        current,
+        sides.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                modelConfig: { ...item.modelConfig, [mode]: selection },
+              }
+            : item,
+        ),
+      );
+    });
   }
 
-  /** Allocates even an empty panel durably; repeated opens reuse its identity. */
+  private side(parent: CodingConversationRecord | undefined, id: string) {
+    return parent
+      ? conversationSides(parent).find((item) => item.id === id)
+      : undefined;
+  }
+
+  /** Every explicit creation allocates an independent, durable side chat. */
   async openSide(parentId: string): Promise<string> {
     if (!this.get(parentId)) throw new FlowError("主对话不存在或已关闭。", 404);
     const id = `side-${randomUUID()}`;
-    const record = await this.table.update(parentId, (current) => {
+    await this.table.update(parentId, (current) => {
       if (current.closedAt !== undefined || current.archivedAt !== undefined)
         throw new FlowError("主对话已关闭或归档。", 409);
-      return { ...current, sideSessionId: current.sideSessionId ?? id };
+      return withSides(current, [
+        ...conversationSides(current),
+        {
+          id,
+          title: "新侧边对话",
+          createdAt: Date.now(),
+        },
+      ]);
     });
-    return record.sideSessionId!;
+    return id;
+  }
+
+  /** The first submitted question names the branch in the sidebar. */
+  async nameSide(sessionId: string, prompt: string): Promise<void> {
+    const parent = this.sideParent(sessionId);
+    if (!parent) throw new FlowError("旁支已关闭。", 404);
+    await this.table.update(parent.id, (current) => {
+      if (
+        current.closedAt !== undefined ||
+        current.archivedAt !== undefined ||
+        !this.side(current, sessionId)
+      )
+        throw new FlowError("旁支已关闭。", 404);
+      return withSides(
+        current,
+        conversationSides(current).map((item) =>
+          item.id === sessionId &&
+          ["新旁支对话", "新侧边对话"].includes(item.title)
+            ? {
+                ...item,
+                title:
+                  prompt.replace(/\s+/gu, " ").trim().slice(0, 80) ||
+                  "图片对话",
+              }
+            : item,
+        ),
+      );
+    });
   }
 
   /** Only a still-open parent grants access to a side chat's stored log. */
@@ -159,7 +230,7 @@ export class CodingConversationIndex {
         (record) =>
           record.closedAt === undefined &&
           record.archivedAt === undefined &&
-          record.sideSessionId === sessionId,
+          this.side(record, sessionId) !== undefined,
       );
   }
 
@@ -167,13 +238,10 @@ export class CodingConversationIndex {
     const parent = this.sideParent(sessionId);
     if (!parent) return false;
     await this.table.update(parent.id, (current) => {
-      if (current.sideSessionId !== sessionId) return current;
-      const {
-        sideSessionId: _side,
-        sideModelConfig: _sideModelConfig,
-        ...rest
-      } = current;
-      return rest;
+      return withSides(
+        current,
+        conversationSides(current).filter((item) => item.id !== sessionId),
+      );
     });
     return true;
   }
@@ -186,6 +254,7 @@ export class CodingConversationIndex {
         archivedAt: _archived,
         sideSessionId: _side,
         sideModelConfig: _sideModelConfig,
+        sideConversations: _sideConversations,
         ...rest
       } = current;
       return archived ? { ...rest, archivedAt: Date.now() } : rest;
@@ -198,6 +267,7 @@ export class CodingConversationIndex {
       const {
         sideSessionId: _side,
         sideModelConfig: _sideModelConfig,
+        sideConversations: _sideConversations,
         ...rest
       } = current;
       return { ...rest, closedAt: Date.now() };
@@ -233,6 +303,9 @@ function conversation(record: CodingConversationRecord): CodingConversation {
       ? { archivedAt: record.archivedAt }
       : {}),
     ...(record.sideSessionId ? { sideSessionId: record.sideSessionId } : {}),
+    ...(conversationSides(record).length
+      ? { sideConversations: conversationSides(record) }
+      : {}),
     ...(record.modelConfig ? { modelConfig: record.modelConfig } : {}),
     ...(record.sideModelConfig
       ? { sideModelConfig: record.sideModelConfig }
@@ -241,4 +314,26 @@ function conversation(record: CodingConversationRecord): CodingConversation {
       ? { sourceSessionId: record.sourceSessionId }
       : {}),
   };
+}
+
+/** Keep legacy fields in sync on user actions; reads never rewrite records. */
+function withSides(
+  record: CodingConversationRecord,
+  sides: CodingSideConversationInfo[],
+): CodingConversationRecord {
+  const {
+    sideSessionId: _side,
+    sideModelConfig: _model,
+    sideConversations: _sides,
+    ...rest
+  } = record;
+  const first = sides[0];
+  return first
+    ? {
+        ...rest,
+        sideSessionId: first.id,
+        sideConversations: sides,
+        ...(first.modelConfig ? { sideModelConfig: first.modelConfig } : {}),
+      }
+    : rest;
 }

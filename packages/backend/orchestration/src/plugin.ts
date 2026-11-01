@@ -53,11 +53,15 @@ import type { ChatToolHost } from "./chat-tools.ts";
 import { codingService } from "./coding/session.ts";
 import { conversationService } from "./coding/conversations.ts";
 import { automationService } from "./coding/automation.ts";
-import { legacyConversationTurns } from "@aura/protocol/conversations";
+import {
+  conversationSides,
+  legacyConversationTurns,
+} from "@aura/protocol/conversations";
 import {
   historyTurns,
   lastTurnStatus,
   readSessionEvents,
+  readSessionEventPage,
 } from "./coding/history.ts";
 import {
   CodingConversationIndex,
@@ -67,6 +71,8 @@ import {
   type CodingConversationRecord,
 } from "./coding/index-record.ts";
 import { CodingProjects } from "./coding/projects.ts";
+import { WorkspaceTerminals } from "./coding/terminals.ts";
+import { codingSkills } from "./coding/skills.ts";
 import { CodingQuestions } from "./coding/questions.ts";
 import { chatModelCatalog, RejectedChatModels } from "./chat-models.ts";
 import { GptImageService, codexImageRequest } from "./gpt-image.ts";
@@ -283,6 +289,7 @@ export const inject = [
   "loader",
   "hmr",
   "tools",
+  "skills",
   "llm",
   "settings",
   "subprocess",
@@ -467,6 +474,11 @@ export async function apply(ctx: Context) {
       ".aura",
       "plugins",
     ),
+    tempRoot: resolve(
+      process.env.AURA_TEMP_DIR ??
+        resolve(process.env.AURA_FLOW_CWD ?? process.cwd(), "local", "runtime"),
+      "plugins",
+    ),
     media: {
       artifacts,
       saveImage: (input) => ctx.attachments.saveImage(input),
@@ -517,6 +529,13 @@ export async function apply(ctx: Context) {
   );
   const codingProjects = new CodingProjects(ctx, codingConversations);
   await codingProjects.defaultProject();
+  const terminals = new WorkspaceTerminals(ctx.subprocess, (id) =>
+    codingProjects.directory(id),
+  );
+  ctx.effect(
+    () => () => terminals.close(),
+    "aura-workspace-terminals.lifecycle",
+  );
   let reconfiguration: Promise<unknown> = Promise.resolve();
   const refreshFlows = async () => {
     await reconfiguration;
@@ -1043,6 +1062,73 @@ export async function apply(ctx: Context) {
           };
           break;
         }
+        case "coding/terminals/list":
+        case "coding/terminals/open":
+        case "coding/terminals/read":
+        case "coding/terminals/write":
+        case "coding/terminals/resize":
+        case "coding/terminals/close": {
+          const input = z
+            .object({
+              projectId: z.string().min(1).max(200).optional(),
+              terminalId: z
+                .string()
+                .startsWith("terminal-")
+                .max(100)
+                .optional(),
+              cols: z.number().int().min(2).max(500).default(80),
+              rows: z.number().int().min(1).max(200).default(24),
+              cursor: z
+                .number()
+                .int()
+                .min(0)
+                .max(Number.MAX_SAFE_INTEGER)
+                .default(0),
+              data: z.string().max(16_384).optional(),
+              force: z.boolean().default(false),
+            })
+            .safeParse(params);
+          if (!input.success) throw new FlowError("无效的终端请求。", 400);
+          const request = input.data;
+          if (
+            method === "coding/terminals/list" ||
+            method === "coding/terminals/open"
+          ) {
+            if (!request.projectId)
+              throw new FlowError("请选择工作空间。", 400);
+            data =
+              method === "coding/terminals/list"
+                ? terminals.list(request.projectId)
+                : await terminals.open(
+                    request.projectId,
+                    request.cols,
+                    request.rows,
+                  );
+          } else {
+            if (!request.terminalId) throw new FlowError("请选择终端。", 400);
+            if (method === "coding/terminals/read")
+              data = await terminals.read(request.terminalId, request.cursor);
+            if (method === "coding/terminals/write") {
+              if (request.data === undefined)
+                throw new FlowError("缺少终端输入。", 400);
+              await terminals.write(request.terminalId, request.data);
+              data = { updated: true };
+            }
+            if (method === "coding/terminals/resize") {
+              await terminals.resize(
+                request.terminalId,
+                request.cols,
+                request.rows,
+              );
+              data = { updated: true };
+            }
+            if (method === "coding/terminals/close") {
+              await terminals.closeTerminal(request.terminalId, request.force);
+              data = { closed: true };
+            }
+          }
+          break;
+        }
         case "coding/side/open": {
           if (typeof params.sessionId !== "string")
             throw new FlowError("无效的主对话。", 400);
@@ -1078,8 +1164,12 @@ export async function apply(ctx: Context) {
               parent.id,
               params.archived === true,
             );
-          if (parent.sideSessionId && (closing || params.archived === true))
-            await coding.closeSide(parent.sideSessionId);
+          if (closing || params.archived === true)
+            await Promise.all(
+              conversationSides(parent).map((side) =>
+                coding.closeSide(side.id),
+              ),
+            );
           if (closing) await coding.close(parent.id);
           data = { updated: true };
           break;
@@ -1127,6 +1217,18 @@ export async function apply(ctx: Context) {
           data = await automation.history(input.sessionId, input.id);
           break;
         }
+        case "coding/skills": {
+          const input = z
+            .object({ projectId: z.string().min(1).max(256) })
+            .strict()
+            .safeParse(params);
+          if (!input.success) throw new FlowError("无效的工作空间。", 400);
+          data = await codingSkills(
+            ctx.skills,
+            codingProjects.directory(input.data.projectId),
+          );
+          break;
+        }
         case "coding/projects":
           await codingProjects.defaultProject();
           data = codingProjects.list();
@@ -1164,16 +1266,20 @@ export async function apply(ctx: Context) {
             })
             .safeParse(params);
           if (!input.success) throw new FlowError("无效的项目目录。", 400);
-          data = await codingProjects.relocate(
+          const relocated = await codingProjects.relocate(
             input.data.id,
             input.data.directory,
           );
+          data = relocated;
+          if (relocated.id !== input.data.id)
+            await terminals.closeProject(input.data.id);
           break;
         }
         case "coding/projects/remove": {
           if (typeof params.id !== "string")
             throw new FlowError("无效的项目。", 400);
           data = await codingProjects.remove(params.id);
+          if (data) await terminals.closeProject(params.id);
           break;
         }
         case "coding/projects/status": {
@@ -1237,21 +1343,54 @@ export async function apply(ctx: Context) {
             throw new FlowError("对话不存在或已移除。", 404);
           const sessionId = SessionId(params.sessionId);
           const signal = AbortSignal.timeout(30_000);
-          const events = await readSessionEvents(
-            ctx.sessionController,
-            sessionId,
-            signal,
-          );
-          // The inherited context is for the model, not duplicate UI history.
           const record = codingConversations.get(params.sessionId);
+          const paged = params.page === true;
+          const beforeSeq = params.beforeSeq;
+          const throughSeq = params.throughSeq;
+          if (
+            (beforeSeq !== undefined &&
+              (!Number.isSafeInteger(beforeSeq) ||
+                (beforeSeq as number) < 0)) ||
+            (throughSeq !== undefined &&
+              (!Number.isSafeInteger(throughSeq) ||
+                (throughSeq as number) < 0)) ||
+            (beforeSeq === undefined) !== (throughSeq === undefined)
+          )
+            throw new FlowError("无效的历史分页游标。", 400);
+          const inherited =
+            paged && (side || record?.sourceSessionId)
+              ? (ctx.sessions.get(sessionId)?.inheritedEventCount ??
+                (
+                  await ctx.sessionController
+                    .inspect(sessionId, signal)
+                    .catch(() => undefined)
+                )?.inheritedEventCount ??
+                0)
+              : 0;
+          const page = paged
+            ? await readSessionEventPage(
+                ctx.sessionController,
+                sessionId,
+                signal,
+                {
+                  beforeSeq: beforeSeq as number | undefined,
+                  throughSeq: throughSeq as number | undefined,
+                  minimumSeq: inherited,
+                },
+              )
+            : undefined;
+          const events =
+            page?.events ??
+            (await readSessionEvents(ctx.sessionController, sessionId, signal));
+          // The inherited context is for the model, not duplicate UI history.
           const own =
-            (side || record?.sourceSessionId) && events
+            !paged && (side || record?.sourceSessionId) && events
               ? await ctx.sessionController.inspect(sessionId, signal)
               : undefined;
           const running = coding.running(params.sessionId);
           const turns = [
             ...legacyConversationTurns(
-              record?.history ?? [],
+              !page?.hasMore ? (record?.history ?? []) : [],
               record?.createdAt ?? 0,
             ),
             ...historyTurns(
@@ -1262,14 +1401,24 @@ export async function apply(ctx: Context) {
           // Questions still waiting carry the ids an answer must quote.
           const open = codingAnswers.open(params.sessionId);
           const last = turns.at(-1);
-          if (last && running)
+          if (last && running && beforeSeq === undefined)
             for (const item of open)
               last.events.push({
                 type: "question",
                 questionId: item.questionId,
                 questions: item.questions,
               });
-          data = { turns, running };
+          data = {
+            turns,
+            running,
+            ...(page
+              ? {
+                  hasMore: page.hasMore,
+                  beforeSeq: page.beforeSeq,
+                  throughSeq: page.throughSeq,
+                }
+              : {}),
+          };
           break;
         }
         case "action/get":
@@ -1302,6 +1451,7 @@ export async function apply(ctx: Context) {
           break;
         }
         case "shutdown":
+          await terminals.close();
           await engine.close();
           await actionRuns.close();
           await localAI.close();
@@ -1347,7 +1497,7 @@ export async function apply(ctx: Context) {
     const scan = setInterval(() => {
       void refreshFlows().catch(() => undefined);
       void pluginBackends.refresh().catch(() => undefined);
-    }, 1_000);
+    }, 5_000);
     return async () => {
       process.stdin.off("end", disconnected);
       process.stdin.off("error", disconnected);

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { formatHttpUrl } from "../src/http-server.ts";
 import {
@@ -40,6 +41,14 @@ test("runtime configuration resolves paths and validates network settings", () =
   assert.equal(config.pluginConfigPath, resolve(root, ".aura", "plugins.json"));
   assert.equal(config.defaultPluginsDirectory, resolve(root, "plugins"));
   assert.equal(
+    resolveRuntimeConfig({ root, tempDir: "scratch" }).tempDir,
+    resolve("scratch"),
+  );
+  assert.equal(
+    resolveRuntimeConfig({ root, defaultWorkspace: "chats" }).defaultWorkspace,
+    resolve("chats"),
+  );
+  assert.equal(
     resolveRuntimeConfig({ root, defaultPluginsDirectory: "installed/plugins" })
       .defaultPluginsDirectory,
     resolve("installed/plugins"),
@@ -65,4 +74,40 @@ test("runtime configuration resolves paths and validates network settings", () =
     else process.env.AURA_ROOT = previous;
   }
   assert.throws(() => resolveRuntimeConfig({ host: " " }), /cannot be empty/);
+});
+
+test("scratch space defaults under local/ and conversations default outside the root", () => {
+  const root = resolve("fixture-runtime-root");
+  const saved = {
+    temp: process.env.AURA_TEMP_DIR,
+    workspace: process.env.AURA_DEFAULT_WORKSPACE,
+  };
+  try {
+    delete process.env.AURA_TEMP_DIR;
+    delete process.env.AURA_DEFAULT_WORKSPACE;
+    const config = resolveRuntimeConfig({ root });
+    assert.equal(config.tempDir, resolve(root, "local", "runtime"));
+    assert.equal(
+      config.defaultWorkspace,
+      resolve(homedir(), "Documents", "Aura"),
+    );
+    // Cleaning the Aura root must never remove conversation files.
+    assert.ok(!config.defaultWorkspace.startsWith(root));
+
+    process.env.AURA_TEMP_DIR = resolve("env-scratch");
+    process.env.AURA_DEFAULT_WORKSPACE = resolve("env-chats");
+    assert.equal(resolveRuntimeConfig({ root }).tempDir, resolve("env-scratch"));
+    assert.equal(
+      resolveRuntimeConfig({ root }).defaultWorkspace,
+      resolve("env-chats"),
+    );
+  } finally {
+    for (const [name, value] of [
+      ["AURA_TEMP_DIR", saved.temp],
+      ["AURA_DEFAULT_WORKSPACE", saved.workspace],
+    ] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
 });

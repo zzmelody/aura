@@ -1,6 +1,12 @@
 # @aura/runtime
 
+`/coding/terminals` 提供工作区终端列表和创建，`/:id/write`、`/:id/resize`、`DELETE /:id` 转发受控操作；`/:id/events` 使用 SSE 输出 PTY 数据和状态，游标同时支持查询参数与 `Last-Event-ID`。连接断开只结束订阅，不终止 shell。所有路由沿用本机 / 同主机 Origin 策略，CORS 明确允许 DELETE 和重连游标。终端在 DSH 编排进程内持有，HTTP 边界不接收任意目录、shell 路径或环境变量，也不把 PTY 加入模型上下文。
+
+`GET /coding/sessions/:id/history?page=1` 返回最近的完整回合窗口，后续使用响应的 `beforeSeq` / `throughSeq` 成对读取较早历史。HTTP 边界拒绝非安全整数、不完整的游标；不携带分页参数的调用保留完整历史接口。读取不会触发模型请求或改写存储。
+
 Aura 的可嵌入后端组合根。`apps/server` 将它作为独立服务启动，`apps/desktop` 在 Electron 主进程内复用同一个生命周期；应用入口只负责宿主行为，不复制服务实现。
+
+对话快捷菜单通过只读的 `GET /coding/projects/:id/skills` 读取已注册工作空间的技能摘要，路由转交编排宿主验证项目身份，不接受目录或文件路径。
 
 Runtime 使用 TypeScript 源码并按职责拆分：
 
@@ -27,6 +33,11 @@ Tripo 3D 是独立的后端网络 provider，不属于 LLM/DSH 模型路由。Ru
 接口和凭据规则见 [Tripo 3D 接入](../../../docs/features/tripo.md)。
 
 流程执行委托给 [`@aura/orchestration`](../orchestration/README.md)：本包仅创建/关闭流程宿主、在 Origin 检查后转交 `/flows/*`，并为演示模式提供本地模型端点。代码 Flow 的发现/HMR、执行、不同 preset/session 的关联与汇总均不放在 runtime 或前端。
+
+## 临时目录与默认对话目录
+
+- 运行时临时目录：`AuraRuntimeOptions.tempDir` > 环境变量 `AURA_TEMP_DIR` > `<Aura root>/local/runtime`。只放可随时整体删除的中间文件；插件后端经 `host.tempDir` 拿到其中的 `plugins/<plugin-id>/` 子目录。
+- 默认对话工作目录（未选项目的对话）：`AuraRuntimeOptions.defaultWorkspace` > 环境变量 `AURA_DEFAULT_WORKSPACE` > `<用户主目录>/Documents/Aura`。它位于 Aura 根目录之外，清理 `local/` 或仓库不会影响对话文件。
 
 ## 本地 Aura 插件
 

@@ -1,6 +1,38 @@
 /** One rendered line of a file-change card. */
 export type DiffLine = { kind: "same" | "add" | "remove"; text: string };
 
+type FileDiff = { oldText: string | null; newText: string };
+const cachedDiffs = new WeakMap<
+  FileDiff,
+  {
+    lines: DiffLine[];
+    added: number;
+    removed: number;
+    oldText: string | null;
+    newText: string;
+  }
+>();
+
+/** Shared by collapsed summaries and expanded cards; released with the hunk. */
+export function fileDiff(diff: FileDiff) {
+  const cached = cachedDiffs.get(diff);
+  if (
+    cached &&
+    cached.oldText === diff.oldText &&
+    cached.newText === diff.newText
+  )
+    return cached;
+  const lines = diffLines(diff.oldText, diff.newText);
+  const result = {
+    lines,
+    ...diffStats(lines),
+    oldText: diff.oldText,
+    newText: diff.newText,
+  };
+  cachedDiffs.set(diff, result);
+  return result;
+}
+
 /** Above this many cells the card falls back to "all removed, all added". */
 const MAX_CELLS = 250_000;
 

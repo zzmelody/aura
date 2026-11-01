@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Check,
   Copy,
+  Menu,
   Moon,
   PanelLeft,
   Pencil,
@@ -100,11 +101,12 @@ export function WorkspaceMenubar({
         >
           <PanelLeft size={16} />
         </button>
-      </div>
-      <nav className="application-menus" aria-label="应用菜单">
+        {/* One menu holds what four did; the page title lives in the content
+            header, so the bar stays a thin strip of navigation. */}
         <WorkbenchMenu
-          label="文件"
-          className="menubar-button"
+          label="应用菜单"
+          tooltip="菜单"
+          className="icon-control"
           items={[
             {
               id: "new",
@@ -118,27 +120,7 @@ export function WorkspaceMenubar({
               icon: <FlowIcon size={15} />,
               action: () => navigate("flows"),
             },
-            {
-              id: "archive",
-              label: "已归档会话",
-              icon: <Archive size={15} />,
-              action: onArchived,
-            },
-            { id: "divider", separator: true },
-            {
-              id: "settings",
-              label: "设置",
-              icon: <Settings2 size={15} />,
-              action: () => navigate("settings"),
-            },
-          ]}
-        >
-          文件
-        </WorkbenchMenu>
-        <WorkbenchMenu
-          label="编辑"
-          className="menubar-button"
-          items={[
+            { id: "session-divider", separator: true },
             {
               id: "rename",
               label: "重命名会话",
@@ -154,31 +136,12 @@ export function WorkspaceMenubar({
               disabled: !active?.messages.length,
               action: copy,
             },
-          ]}
-        >
-          编辑
-        </WorkbenchMenu>
-        <WorkbenchMenu
-          label="视图"
-          className="menubar-button"
-          items={[
-            {
-              id: "sidebar",
-              label: sidebarVisible ? "收起侧栏" : "展开侧栏",
-              icon: <PanelLeft size={15} />,
-              action: toggleSidebar,
-            },
+            { id: "view-divider", separator: true },
             {
               id: "theme",
               label: dark ? "浅色外观" : "深色外观",
               icon: dark ? <Sun size={15} /> : <Moon size={15} />,
               action: toggleTheme,
-            },
-            { id: "divider", separator: true },
-            {
-              id: "history",
-              label: "全部记录",
-              action: () => navigate("history"),
             },
             {
               id: "archived",
@@ -186,26 +149,18 @@ export function WorkspaceMenubar({
               icon: <Archive size={15} />,
               action: onArchived,
             },
-          ]}
-        >
-          视图
-        </WorkbenchMenu>
-        <WorkbenchMenu
-          label="帮助"
-          className="menubar-button"
-          items={[
+            { id: "settings-divider", separator: true },
             {
               id: "settings",
-              label: "关于 Aura 与连接设置",
+              label: "设置",
               icon: <Settings2 size={15} />,
               action: () => navigate("settings"),
             },
           ]}
         >
-          帮助
+          <Menu size={16} />
         </WorkbenchMenu>
-      </nav>
-      <span className="menubar-title">Aura</span>
+      </div>
       {copyStatus ? (
         <span className="menubar-feedback" role="status">
           {copyStatus === "copied" ? (

@@ -543,6 +543,12 @@ export interface TripoTask {
 }
 
 /** A project directory a coding conversation runs in. */
+/** User-invocable DSH skills; instruction bodies and paths stay on the host. */
+export interface CodingSkillInfo {
+  name: string;
+  description: string;
+}
+
 export interface CodingProjectInfo {
   id: string;
   /** Canonical absolute directory; becomes the session's sandbox write root. */
@@ -554,6 +560,32 @@ export interface CodingProjectInfo {
   status?: "ok" | "missing-dir";
 }
 
+/** One independently resumable branch of a coding conversation. */
+export interface WorkspaceTerminalInfo {
+  id: string;
+  projectId: string;
+  title: string;
+  directory: string;
+  createdAt: number;
+  status: "running" | "exited" | "error";
+  activity: "idle" | "busy" | "unknown";
+  exitCode?: number;
+}
+
+export interface WorkspaceTerminalOutput {
+  terminal: WorkspaceTerminalInfo;
+  data: string;
+  cursor: number;
+  reset: boolean;
+}
+
+export interface CodingSideConversationInfo {
+  id: string;
+  title: string;
+  createdAt: number;
+  modelConfig?: ConversationModelConfig;
+}
+
 /** One coding conversation listed under a project. */
 export interface CodingConversationInfo {
   id: string;
@@ -562,8 +594,9 @@ export interface CodingConversationInfo {
   createdAt: number;
   updatedAt: number;
   archivedAt?: number;
-  /** The open side chat, retained until explicitly closed or its parent ends. */
+  /** Legacy first-side identity, retained for older clients and records. */
   sideSessionId?: string;
+  sideConversations?: CodingSideConversationInfo[];
   modelConfig?: ConversationModelConfig;
   sideModelConfig?: ConversationModelConfig;
   /** Source of an explicit continuation in a different project. */
@@ -641,6 +674,15 @@ export interface CodingHistoryTurn {
   error?: string;
   /** The same events a live turn streams, in log order. */
   events: Array<{ type: "delta"; text: string } | CodingActivity>;
+}
+
+/** A turn-aligned history window with an optional stable backwards cursor. */
+export interface CodingHistoryPage {
+  turns: CodingHistoryTurn[];
+  running: boolean;
+  hasMore: boolean;
+  beforeSeq?: number;
+  throughSeq?: number;
 }
 
 /** The user's answer to one question in a coding session. */

@@ -5,6 +5,17 @@ export function useAnchoredPopover(
   open: boolean,
   trigger: RefObject<HTMLElement | null>,
   menu: RefObject<HTMLElement | null>,
+  {
+    placement = "auto",
+    align = "end",
+    matchWidth = false,
+    maxHeight = 440,
+  }: {
+    placement?: "auto" | "above";
+    align?: "start" | "end";
+    matchWidth?: boolean;
+    maxHeight?: number;
+  } = {},
 ) {
   useLayoutEffect(() => {
     const popup = menu.current;
@@ -21,10 +32,14 @@ export function useAnchoredPopover(
         window.innerHeight - rect.bottom - gap - margin,
       );
       const upwards =
-        above >= Math.min(440, window.innerHeight * 0.6) || above >= below;
-      popup.style.maxHeight = `${Math.min(440, upwards ? above : below)}px`;
+        placement === "above" ||
+        above >= Math.min(maxHeight, window.innerHeight * 0.6) ||
+        above >= below;
+      popup.style.maxHeight = `${Math.min(maxHeight, upwards ? above : below)}px`;
+      if (matchWidth)
+        popup.style.width = `${Math.min(rect.width, window.innerWidth - margin * 2)}px`;
       const bounds = popup.getBoundingClientRect();
-      popup.style.left = `${Math.max(margin, Math.min(rect.right - bounds.width, window.innerWidth - bounds.width - margin))}px`;
+      popup.style.left = `${Math.max(margin, Math.min(align === "start" ? rect.left : rect.right - bounds.width, window.innerWidth - bounds.width - margin))}px`;
       popup.style.top = `${upwards ? rect.top - gap - bounds.height : rect.bottom + gap}px`;
     };
     position();
@@ -39,5 +54,5 @@ export function useAnchoredPopover(
       window.removeEventListener("scroll", position, true);
       popup.hidePopover();
     };
-  }, [open, menu, trigger]);
+  }, [open, menu, trigger, placement, align, matchWidth, maxHeight]);
 }

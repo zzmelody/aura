@@ -2,10 +2,28 @@
 
 /* DSH plugin manager cards: a vertical list, 48px artwork box, one-line
  * description and a trailing switch. */
-.plugins-group + .plugins-group {
-  margin-top: 32px;
+.plugins-manager {
+  display: grid;
+  gap: 16px;
 }
-.plugins-group h2 {
+.plugins-manager-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+/* Reads as a subhead beside its refresh button, like 插件目录 below it. */
+.plugins-manager-head > span {
+  flex: 1;
+  min-width: 160px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.plugins-group + .plugins-group {
+  margin-top: 8px;
+}
+.plugins-group h3 {
   margin: 0 0 8px;
   font-size: 14px;
   font-weight: 500;

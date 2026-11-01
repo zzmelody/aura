@@ -103,8 +103,6 @@ export async function provisionProfile(
   // scope that names it explicitly.
   const disabled = [
     "tool-jobs",
-    "skill-filesystem",
-    "tool-skill",
     "command-goal",
     "tool-goal",
     "compaction-basic",

@@ -18,6 +18,11 @@ export interface AuraRuntimeOptions {
   pluginConfigPath?: string;
   /** Trusted installed plugins; defaults to <root>/plugins. Separate from user data. */
   defaultPluginsDirectory?: string;
+  /** Disposable runtime scratch space; defaults to AURA_TEMP_DIR or <root>/local/runtime. */
+  tempDir?: string;
+  /** Working directory for conversations without a project; defaults to
+   * AURA_DEFAULT_WORKSPACE or <Documents>/Aura, outside the Aura root. */
+  defaultWorkspace?: string;
 }
 
 /** Handle owned by the server or desktop application entrypoint. */
@@ -40,6 +45,8 @@ export interface RuntimeConfig {
   tripoRegion: TripoRegion;
   pluginConfigPath: string;
   defaultPluginsDirectory: string;
+  tempDir: string;
+  defaultWorkspace: string;
 }
 
 /** Authorization capability consumed by the HTTP adapter. */

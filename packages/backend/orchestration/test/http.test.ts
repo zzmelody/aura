@@ -5,6 +5,26 @@ import { createFlowApp, type OrchestrationHost } from "../src/index.ts";
 import { FlowError } from "../src/schema.ts";
 import { Hono } from "hono";
 
+test("catalog validators suppress unchanged payloads and change with registered definitions", async () => {
+  let title = "First";
+  const app = createFlowApp({
+    request: async <T>() => ({ flows: [{ title }] }) as T,
+  });
+  const first = await app.request("/catalog");
+  const etag = first.headers.get("ETag")!;
+  const unchanged = await app.request("/catalog", {
+    headers: { "If-None-Match": etag },
+  });
+  assert.equal(unchanged.status, 304);
+  assert.equal(await unchanged.text(), "");
+  title = "Second";
+  const changed = await app.request("/catalog", {
+    headers: { "If-None-Match": etag },
+  });
+  assert.equal(changed.status, 200);
+  assert.notEqual(changed.headers.get("ETag"), etag);
+});
+
 test("mounted plugin binary routes retain their own upload limits and precede generic Flow routing", async () => {
   const flows = createFlowApp({
     request: async <T>() => ({ flows: [] }) as T,
@@ -67,7 +87,7 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
   const app = createFlowApp(host);
 
   const catalog = await app.request("/catalog");
-  assert.equal(catalog.headers.get("cache-control"), "no-store");
+  assert.equal(catalog.headers.get("cache-control"), "private, no-cache");
   assert.equal(
     ((await catalog.json()) as { flows: unknown[] }).flows.length,
     2,

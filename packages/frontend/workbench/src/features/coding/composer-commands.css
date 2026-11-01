@@ -1,0 +1,174 @@
+.composer-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 480px;
+  max-width: calc(100vw - 16px);
+  padding: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 18%);
+}
+.composer-menu-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 8px 4px;
+  color: var(--secondary);
+  font-size: 12px;
+}
+.composer-menu-header > svg {
+  color: var(--muted);
+}
+.composer-menu-hint {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.composer-menu-hint kbd {
+  font: inherit;
+  padding: 1px 3px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.composer-menu-back {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--secondary);
+}
+.composer-menu-back:hover {
+  background: var(--soft);
+}
+.composer-menu-search {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0 6px 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.composer-menu-search input {
+  min-width: 0;
+  width: 100%;
+  height: 32px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.composer-menu-search:focus-within {
+  border-color: var(--accent);
+}
+.composer-menu-list {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.composer-menu-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.composer-menu-option[aria-selected="true"],
+.composer-menu-option:hover {
+  background: var(--soft);
+}
+.composer-menu-option[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: default;
+}
+.composer-menu-icon {
+  display: flex;
+  flex: 0 0 18px;
+  color: var(--muted);
+}
+.composer-menu-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+.composer-menu-copy strong,
+.composer-menu-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-menu-copy strong {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+.composer-menu-copy > span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+.composer-menu-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.composer-menu-tail,
+.composer-menu-kind,
+.composer-menu-alias {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.composer-menu-empty {
+  margin: 0;
+  padding: 16px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.composer-menu-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.composer-menu-error button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+}
+.composer-menu button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+@media (max-width: 480px) {
+  .composer-menu-hint {
+    display: none;
+  }
+}

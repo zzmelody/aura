@@ -32,6 +32,26 @@ const definition: FlowDefinition = {
   run: async () => ({ report: "ok" }),
 };
 
+test("concurrent discovery refreshes share one scan and a later refresh sees new files", async () =>
+  withRoot(async (root) => {
+    const registry = new FlowRegistry();
+    const discovery = new FlowDiscovery(
+      loaderFor(registry).loader,
+      registry,
+      root,
+    );
+    try {
+      const first = discovery.refresh();
+      assert.equal(discovery.refresh(), first);
+      await first;
+      await addEntry(root, "later");
+      await discovery.refresh();
+      assert.equal(registry.catalog()[0]?.id, "later");
+    } finally {
+      await discovery.close();
+    }
+  }));
+
 function loaderFor(registry: FlowRegistry) {
   let nextId = 0;
   const created: FlowRegistrationConfig[] = [];

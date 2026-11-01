@@ -19,6 +19,8 @@ export function ConversationSplit({
   side,
   sideVisible = !!side,
   hidden = false,
+  mainHeader,
+  sideHeader,
 }: {
   main: React.ReactNode;
   side?: React.ReactNode;
@@ -26,6 +28,8 @@ export function ConversationSplit({
   sideVisible?: boolean;
   /** Another view covers the panes; they stay mounted so streams continue. */
   hidden?: boolean;
+  mainHeader?: React.ReactNode;
+  sideHeader?: React.ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const drag = useRef<{
@@ -74,13 +78,21 @@ export function ConversationSplit({
       className="coding-panes"
       hidden={hidden}
       data-stacked={(sideVisible && stacked) || undefined}
+      data-tools-only={(sideVisible && stacked && !!sideHeader) || undefined}
       style={
         {
           "--coding-side-width": `${containerWidth ? width : 0}px`,
         } as React.CSSProperties
       }
     >
-      {main}
+      {mainHeader ? (
+        <div className="coding-pane coding-main-column">
+          {mainHeader}
+          {main}
+        </div>
+      ) : (
+        main
+      )}
       {side ? (
         <>
           {sideVisible && !stacked ? (
@@ -88,12 +100,12 @@ export function ConversationSplit({
               className="coding-split-handle"
               role="separator"
               tabIndex={0}
-              aria-label="调整主对话与旁支对话宽度"
+              aria-label="调整主对话与工具面板宽度"
               aria-orientation="vertical"
               aria-valuemin={min}
               aria-valuemax={max}
               aria-valuenow={width}
-              aria-valuetext={`旁支对话 ${width} 像素`}
+              aria-valuetext={`工具面板 ${width} 像素`}
               title="拖拽调整宽度 · 双击恢复默认"
               onPointerDown={(event) => {
                 if (event.button !== 0 || drag.current) return;
@@ -157,7 +169,18 @@ export function ConversationSplit({
               }}
             />
           ) : null}
-          {side}
+          {sideHeader ? (
+            <aside
+              className="coding-side"
+              aria-label="工具面板"
+              hidden={!sideVisible}
+            >
+              {sideHeader}
+              {side}
+            </aside>
+          ) : (
+            side
+          )}
         </>
       ) : null}
     </div>

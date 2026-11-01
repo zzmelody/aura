@@ -293,7 +293,9 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
                           false: colors.border,
                           true: colors.primary,
                         }}
-                        thumbColor="#FFFFFF"
+                        thumbColor={
+                          entry.enabled ? colors.primaryText : colors.primary
+                        }
                       />
                     </View>
                   </View>

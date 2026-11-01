@@ -48,6 +48,7 @@ export const codingTools = [
   "present",
   "exit_plan_mode",
   "ask_user_question",
+  "skill",
   // DSH Schedule reminders: due occurrences arrive as follow-ups in this
   // session, so the agent itself drives them under the same allow-list.
   "schedule_create",

@@ -1,29 +1,22 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   AlarmClock,
-  Blocks,
-  ChartCandlestick,
   ChevronDown,
   ChevronRight,
   Ellipsis,
   Folder,
-  Clapperboard,
-  Newspaper,
-  Telescope,
-  PanelsTopLeft,
   Archive,
   ArchiveRestore,
   Check,
-  Clock3,
   FolderOpen,
   FolderPlus,
+  LayoutGrid,
   MessageCircle,
   PanelLeftClose,
   Search,
   Settings2,
   SlidersHorizontal,
   SquarePen,
-  Puzzle,
   X,
 } from "lucide-react";
 import { FlowIcon } from "./FlowIcon";
@@ -31,6 +24,8 @@ import { AuraMark } from "@aura/ui/components";
 import type { WorkspaceController } from "./useWorkspace";
 import type { Tab } from "./types";
 import type { PluginStudio } from "./usePluginPages";
+import { studioIcon } from "./studioIcons";
+import { isPluginTab } from "./pluginPages";
 import {
   groupSidebarSessions,
   sidebarSessionTitle,
@@ -49,22 +44,13 @@ import type { CodingProjectsController } from "./features/coding/useCodingProjec
 import { WorkspaceDialog } from "./features/coding/WorkspaceDialog";
 import { isActiveStatus } from "./features/coding/conversationStatus";
 
-/** DSH-style panel list: feature pages first, then Aura's own views. */
+/** Four destinations; plugins, archives and the full log live in Settings. */
 const tabs = [
-  { id: "plugins", label: "插件", icon: Blocks },
-  { id: "automation", label: "自动化任务", icon: AlarmClock },
   { id: "chat", label: "对话", icon: MessageCircle },
   { id: "flows", label: "工作流", icon: FlowIcon },
-  { id: "history", label: "全部记录", icon: Clock3 },
+  { id: "automation", label: "自动化任务", icon: AlarmClock },
+  { id: "studios", label: "工作台", icon: LayoutGrid },
 ] as const;
-const studioIcons: Record<string, typeof Puzzle> = {
-  ChartCandlestick,
-  Clapperboard,
-  Newspaper,
-  Telescope,
-  PanelsTopLeft,
-  MessageCircle,
-};
 
 export function WorkspaceSidebar({
   workspace,
@@ -81,6 +67,8 @@ export function WorkspaceSidebar({
   codingWorkspaces,
   offline,
   pluginStudios = [],
+  openedStudios = [],
+  closeStudio,
   scheduledIds,
 }: {
   workspace: WorkspaceController;
@@ -97,6 +85,10 @@ export function WorkspaceSidebar({
   codingWorkspaces: CodingProjectsController;
   offline: boolean;
   pluginStudios?: readonly PluginStudio[];
+  /** Studio tabs the user has opened; order here does not affect the list. */
+  openedStudios?: readonly string[];
+  /** Drops one studio from the sidebar shortcuts. */
+  closeStudio(id: string): void;
   /** Conversations with an active automation task. */
   scheduledIds?: ReadonlySet<string>;
 }) {
@@ -179,6 +171,17 @@ export function WorkspaceSidebar({
     navigate("studio:coding");
   };
   const now = Date.now();
+  /**
+   * Opened studios, in the order the plugins registered them. Which pages are
+   * listed changes as they are opened and closed, but a listed page never
+   * moves, so its row stays where the user last reached for it. The page in
+   * view is always listed, so the sidebar never highlights nothing.
+   */
+  const opened = new Set([
+    ...openedStudios,
+    ...(isPluginTab(tab) ? [tab] : []),
+  ]);
+  const shortcuts = pluginStudios.filter((studio) => opened.has(studio.id));
   const closeSearch = () => {
     setQuery("");
     setSearchOpen(false);
@@ -207,33 +210,50 @@ export function WorkspaceSidebar({
       </button>
       <nav className="workspace-nav panel-nav" aria-label="主导航">
         {tabs.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            className={tab === id ? "selected" : ""}
-            aria-current={tab === id ? "page" : undefined}
-            onClick={() => navigate(id)}
-          >
-            <Icon size={16} />
-            {label}
-          </button>
-        ))}
-      </nav>
-      <nav className="workspace-nav studio-nav" aria-label="工作台">
-        <span className="sidebar-group-label">工作台</span>
-        {pluginStudios.map(({ id, title, icon }) => {
-          const Icon = studioIcons[icon ?? ""] ?? Puzzle;
-          return (
+          <React.Fragment key={id}>
             <button
-              key={id}
               className={tab === id ? "selected" : ""}
               aria-current={tab === id ? "page" : undefined}
               onClick={() => navigate(id)}
             >
               <Icon size={16} />
-              {title}
+              {label}
             </button>
-          );
-        })}
+            {/* The pages the user has opened, nested under 工作台 in
+                registration order. Each closes on its own; 工作台 still
+                lists every page. */}
+            {id === "studios" && shortcuts.length ? (
+              <div className="workspace-nav-children">
+                {shortcuts.map((studio) => {
+                  const Glyph = studioIcon(studio.page.definition.icon);
+                  const selected = tab === studio.id;
+                  return (
+                    <div className="workspace-nav-child" key={studio.id}>
+                      <button
+                        className={selected ? "selected" : ""}
+                        aria-current={selected ? "page" : undefined}
+                        onClick={() => navigate(studio.id)}
+                      >
+                        <Glyph size={15} />
+                        <span>{studio.title}</span>
+                      </button>
+                      <Tooltip label="从侧栏移除">
+                        <button
+                          type="button"
+                          className="icon-control studio-close"
+                          aria-label={`从侧栏移除：${studio.title}`}
+                          onClick={() => closeStudio(studio.id)}
+                        >
+                          <X size={13} />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </React.Fragment>
+        ))}
       </nav>
       {/* DSH section header: muted label, then search, view options and
           add-workspace. Search expands inline over the label and actions. */}

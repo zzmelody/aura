@@ -31,6 +31,7 @@ export function usePluginPages(endpoint: string, enabled: boolean) {
       return;
     }
     let closed = false;
+    let timer: ReturnType<typeof setTimeout>;
     let handle: Awaited<ReturnType<typeof startPluginHost>> | undefined;
     const refresh = () => {
       if (!handle || closed) return;
@@ -38,26 +39,31 @@ export function usePluginPages(endpoint: string, enabled: boolean) {
       setResults([...handle.results.values()]);
       setFailures([...handle.failures]);
     };
-    void startPluginHost(endpoint, refresh, workbenchModule)
-      .then((started) => {
-        if (closed) {
-          void started.close().catch(() => undefined);
-          return;
-        }
-        handle = started;
-        refresh();
-      })
-      .catch((error: unknown) => {
-        if (closed) return;
-        setFailures([
-          {
-            id: "host",
-            message: error instanceof Error ? error.message : String(error),
-          },
-        ]);
-      });
+    const start = () => {
+      void startPluginHost(endpoint, refresh, workbenchModule)
+        .then((started) => {
+          if (closed) {
+            void started.close().catch(() => undefined);
+            return;
+          }
+          handle = started;
+          refresh();
+        })
+        .catch((error: unknown) => {
+          if (closed) return;
+          setFailures([
+            {
+              id: "host",
+              message: error instanceof Error ? error.message : String(error),
+            },
+          ]);
+          timer = setTimeout(start, 3000);
+        });
+    };
+    start();
     return () => {
       closed = true;
+      clearTimeout(timer);
       void handle?.close().catch(() => undefined);
     };
   }, [endpoint, enabled]);

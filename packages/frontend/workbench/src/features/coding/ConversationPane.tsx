@@ -1,11 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { legacyConversationTurns } from "@aura/protocol/conversations";
 import { extractFlowCode } from "../../flowDraft";
-import { slashQuery } from "../../flowPicker";
 import { NestedFlowRun } from "../../screens/WorkflowRun";
-import { ConversationFlows } from "./ConversationFlows";
-import { handlePickerKey } from "../../screens/FlowPicker";
-import { filterFlows } from "../../flowPicker";
+import { ComposerCommands, useComposerCommands } from "./ComposerCommands";
 import {
   ArrowUp,
   ChevronDown,
@@ -41,6 +45,7 @@ import {
   PackageCheck,
   Search,
   Square,
+  Terminal,
   SquareTerminal,
   MessageCircleQuestion,
   Wrench,
@@ -69,7 +74,8 @@ import {
   steerCodingTurn,
   stopCodingTurn,
 } from "./api";
-import { diffLines, diffStats } from "./diff";
+import { fileDiff } from "./diff";
+import { retainConversations } from "./conversation-cache";
 import {
   BINARY_KINDS,
   displayPath,
@@ -95,7 +101,7 @@ import {
 
 /** One file-change block inside an expanded step: path header, then lines. */
 function DiffCard({ diff }: { diff: CodingFileDiff }) {
-  const lines = diffLines(diff.oldText, diff.newText);
+  const { lines } = fileDiff(diff);
   return (
     <div className="coding-diff">
       <pre aria-label={`${diff.path} 的改动`}>
@@ -151,7 +157,7 @@ function ToolRow({ tool }: { tool: ToolEntry }) {
   const totals = tool.diffs?.length
     ? tool.diffs.reduce(
         (sum, diff) => {
-          const counts = diffStats(diffLines(diff.oldText, diff.newText));
+          const counts = fileDiff(diff);
           return {
             added: sum.added + counts.added,
             removed: sum.removed + counts.removed,
@@ -469,24 +475,27 @@ function steerings(turn: Turn): string[] {
   );
 }
 
-function TurnView({
+const TurnView = memo(function TurnView({
   turn,
-  now,
+  visible,
   directory,
   endpoint,
   onAnswer,
   onApplyFlow,
 }: {
   turn: Turn;
-  now: number;
+  visible: boolean;
   /** Runtime endpoint; sent images are served from it. */
   endpoint: string;
   /** Project directory; deliverable paths resolve against it. */
   directory: string;
-  onAnswer(questionId: string, answers: CodingQuestionAnswer[]): Promise<void>;
+  onAnswer(
+    turnId: string,
+    questionId: string,
+    answers: CodingQuestionAnswer[],
+  ): Promise<void>;
   onApplyFlow?(code: string): void;
 }) {
-  const elapsed = (turn.endedAt ?? now) - turn.startedAt;
   const running = turn.status === "running";
   const waiting = turn.questions.some((item) => !item.answered);
   // Like DSH, the process stays open while it runs and folds away once the
@@ -551,7 +560,7 @@ function TurnView({
               <span className="coding-process-state">{stateLabel}</span>
               <span className="coding-process-number">
                 {" "}
-                · {duration(elapsed)}
+                · <TurnDuration turn={turn} visible={visible} />
               </span>
               {turn.tools.length ? ` · ${turn.tools.length} 次操作` : ""}
             </span>
@@ -604,7 +613,7 @@ function TurnView({
           key={asked.questionId}
           asked={asked}
           live={running}
-          onAnswer={(answers) => onAnswer(asked.questionId, answers)}
+          onAnswer={(answers) => onAnswer(turn.id, asked.questionId, answers)}
         />
       ))}
       {/*
@@ -653,7 +662,7 @@ function TurnView({
       {!running ? <TurnSummaryView turn={turn} directory={directory} /> : null}
     </article>
   );
-}
+});
 
 /**
  * End-of-turn recap, after DSH's changed-files card: one line of what it did
@@ -824,9 +833,7 @@ function TurnSummaryView({
   directory: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const summary = summarizeTurn(turn, (diff) =>
-    diffStats(diffLines(diff.oldText, diff.newText)),
-  );
+  const summary = useMemo(() => summarizeTurn(turn, fileDiff), [turn]);
   if (!hasSummary(summary)) return null;
   const elapsed = (turn.endedAt ?? Date.now()) - turn.startedAt;
   const work = recapParts(summary);
@@ -928,6 +935,11 @@ function useTicker(active: boolean): number {
   return now;
 }
 
+function TurnDuration({ turn, visible }: { turn: Turn; visible: boolean }) {
+  const now = useTicker(turn.status === "running" && visible);
+  return duration((turn.endedAt ?? now) - turn.startedAt);
+}
+
 /** Sends one request; resolves with the finished turn, or nothing if refused. */
 export type ConversationSend = (
   text?: string,
@@ -941,6 +953,7 @@ export type ConversationSend = (
  */
 export function ConversationPane({
   endpoint,
+  visible = true,
   provider,
   projectId,
   directory,
@@ -952,6 +965,9 @@ export function ConversationPane({
   historyTime = 0,
   context,
   initialDraft,
+  onDraftChange,
+  onAttachmentsChange,
+  draftInsert,
   onApplyFlow,
   flows,
   flowsLoading = false,
@@ -973,6 +989,7 @@ export function ConversationPane({
   onTurns,
 }: {
   endpoint: string;
+  visible?: boolean;
   provider: Workspace["provider"];
   projectId: string;
   directory: string;
@@ -987,6 +1004,9 @@ export function ConversationPane({
   historyTime?: number;
   context?: string;
   initialDraft?: string;
+  onDraftChange?(draft: string): void;
+  onAttachmentsChange?(attached: boolean): void;
+  draftInsert?: { id: string; text: string };
   onApplyFlow?(code: string): void;
   flows?: FlowCatalogEntry[];
   flowsLoading?: boolean;
@@ -1014,8 +1034,8 @@ export function ConversationPane({
   onTurns?(turns: readonly Turn[]): void;
 }) {
   const [turns, setTurns] = useState<Record<string, Turn[]>>({});
-  const [draft, setDraft] = useState("");
-  const [flowActive, setFlowActive] = useState(0);
+  const [draft, setDraft] = useState(initialDraft ?? "");
+  const [modelOpenRequest, setModelOpenRequest] = useState(0);
   const [error, setError] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -1023,6 +1043,19 @@ export function ConversationPane({
   const fileInput = useRef<HTMLInputElement>(null);
   /** Conversations already read from the log; a live turn is never overwritten. */
   const loaded = useRef(new Set<string>());
+  const [historyPages, setHistoryPages] = useState<
+    Record<
+      string,
+      { hasMore: boolean; beforeSeq?: number; throughSeq?: number }
+    >
+  >({});
+  const [olderLoading, setOlderLoading] = useState(false);
+  const olderRequest = useRef<AbortController | undefined>(undefined);
+  const [historyWindow, setHistoryWindow] = useState<{
+    id: string;
+    end: number;
+  }>();
+  const nearBottom = useRef(true);
   /**
    * One stream per conversation. The pane is reused when switching
    * conversations, so a single controller would let "stop" in one
@@ -1032,6 +1065,8 @@ export function ConversationPane({
   const [stopping, setStopping] = useState(false);
   const [steering, setSteering] = useState(false);
   const transcript = useRef<HTMLDivElement>(null);
+  const composer = useRef<HTMLDivElement>(null);
+  const editor = useRef<HTMLTextAreaElement>(null);
 
   const imported = useMemo(
     () =>
@@ -1044,15 +1079,79 @@ export function ConversationPane({
     [history, historyTime, sessionId],
   );
   const shown = sessionId ? (turns[sessionId] ?? imported) : noTurns;
+  const windowEnd =
+    historyWindow && historyWindow.id === sessionId
+      ? Math.min(historyWindow.end, shown.length)
+      : shown.length;
+  const windowStart = Math.max(0, windowEnd - 40);
+  const visibleTurns = shown.slice(windowStart, windowEnd);
   const running = shown.some((turn) => turn.status === "running");
-  const now = useTicker(running);
   const offline = provider === "offline";
   const mode = providerMode(provider);
-  const slash = onRunFlow ? slashQuery(draft) : undefined;
+  const commands = useComposerCommands({
+    endpoint,
+    projectId,
+    draft,
+    setDraft,
+    flows: flows ?? [],
+    running,
+    enabled: !offline && !readOnly,
+    onFlow: onRunFlow,
+    editor,
+    onCommand(command) {
+      if (command === "model") setModelOpenRequest((value) => value + 1);
+      else if (command === "stop") void stop();
+      else editor.current?.focus();
+    },
+  });
   useEffect(() => setDraft(initialDraft ?? ""), [initialDraft, sessionId]);
+  useEffect(() => onDraftChange?.(draft), [draft, onDraftChange]);
+  useEffect(
+    () => onAttachmentsChange?.(images.attachments.length > 0),
+    [images.attachments.length, onAttachmentsChange],
+  );
+  const insertedDraft = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!draftInsert || insertedDraft.current === draftInsert.id) return;
+    insertedDraft.current = draftInsert.id;
+    setDraft((current) =>
+      current.trim() ? `${current}\n\n${draftInsert.text}` : draftInsert.text,
+    );
+    editor.current?.focus();
+  }, [draftInsert]);
 
   useEffect(() => onRunning?.(running), [running, onRunning]);
   useEffect(() => onTurns?.(shown), [shown, onTurns]);
+  useEffect(() => {
+    if (!sessionId) return;
+    nearBottom.current = true;
+    setHistoryWindow(undefined);
+    setOlderLoading(false);
+    setTurns((current) => {
+      if (!Object.hasOwn(current, sessionId)) return current;
+      const { [sessionId]: selected, ...rest } = current;
+      return { ...rest, [sessionId]: selected! };
+    });
+    return () => olderRequest.current?.abort();
+  }, [sessionId]);
+  useEffect(() => {
+    const retained = retainConversations(
+      turns,
+      sessionId,
+      controllers.current.keys(),
+    );
+    if (retained === turns) return;
+    const evicted = new Set(
+      Object.keys(turns).filter((id) => !Object.hasOwn(retained, id)),
+    );
+    for (const id of evicted) loaded.current.delete(id);
+    setTurns(retained);
+    setHistoryPages((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([id]) => !evicted.has(id)),
+      ),
+    );
+  }, [turns, sessionId]);
 
   // Opening a stored conversation reads its transcript back from the log, so
   // a reload or another device shows the same steps, diffs and answers.
@@ -1064,7 +1163,16 @@ export function ConversationPane({
     setLoadingHistory(true);
     conversationHistory(endpoint, id, abort.signal)
       .then((history) => {
+        if (abort.signal.aborted) return;
         loaded.current.add(id);
+        setHistoryPages((current) => ({
+          ...current,
+          [id]: {
+            hasMore: history.hasMore,
+            beforeSeq: history.beforeSeq,
+            throughSeq: history.throughSeq,
+          },
+        }));
         setTurns((current) =>
           // A turn sent while history was loading wins over the snapshot.
           current[id]?.length
@@ -1132,8 +1240,61 @@ export function ConversationPane({
   };
 
   useEffect(() => {
-    transcript.current?.scrollTo({ top: transcript.current.scrollHeight });
-  }, [shown]);
+    if (nearBottom.current && windowEnd === shown.length)
+      transcript.current?.scrollTo({ top: transcript.current.scrollHeight });
+  }, [shown, windowEnd]);
+
+  const older = async () => {
+    if (!sessionId || olderLoading) return;
+    if (windowStart > 0) {
+      setHistoryWindow({ id: sessionId, end: windowStart });
+      transcript.current?.scrollTo({ top: 0 });
+      return;
+    }
+    const page = historyPages[sessionId];
+    if (!page?.hasMore) return;
+    const id = sessionId;
+    const abort = new AbortController();
+    olderRequest.current?.abort();
+    olderRequest.current = abort;
+    setOlderLoading(true);
+    try {
+      const history = await conversationHistory(
+        endpoint,
+        id,
+        abort.signal,
+        page,
+      );
+      if (abort.signal.aborted) return;
+      const previous = turnsFromHistory(
+        `${id}:${history.beforeSeq}`,
+        history.turns,
+      );
+      setHistoryPages((current) => ({
+        ...current,
+        [id]: {
+          hasMore: history.hasMore,
+          beforeSeq: history.beforeSeq,
+          throughSeq: history.throughSeq,
+        },
+      }));
+      setTurns((current) => ({
+        ...current,
+        [id]: [...previous, ...(current[id] ?? [])],
+      }));
+      setHistoryWindow({ id, end: previous.length });
+      transcript.current?.scrollTo({ top: 0 });
+    } catch (reason) {
+      if (!abort.signal.aborted)
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "较早记录读取失败，请重试。",
+        );
+    } finally {
+      if (!abort.signal.aborted) setOlderLoading(false);
+    }
+  };
 
   const updateTurn = (
     id: string,
@@ -1148,12 +1309,23 @@ export function ConversationPane({
     }));
 
   /** Sends an answer; the card shows it once the backend accepted it. */
-  const answer =
-    (id: string, turnId: string) =>
-    async (questionId: string, answers: CodingQuestionAnswer[]) => {
-      await answerQuestion(endpoint, id, questionId, answers);
-      updateTurn(id, turnId, (turn) => answerTurn(turn, questionId, answers));
-    };
+  const answer = useCallback(
+    async (
+      turnId: string,
+      questionId: string,
+      answers: CodingQuestionAnswer[],
+    ) => {
+      if (!sessionId) return;
+      await answerQuestion(endpoint, sessionId, questionId, answers);
+      setTurns((current) => ({
+        ...current,
+        [sessionId]: (current[sessionId] ?? []).map((turn) =>
+          turn.id === turnId ? answerTurn(turn, questionId, answers) : turn,
+        ),
+      }));
+    },
+    [endpoint, sessionId],
+  );
 
   /**
    * Sends guidance into the running turn. DSH joins it to that turn, which
@@ -1286,8 +1458,11 @@ export function ConversationPane({
    * guidance, anything else starts a turn. Only the composer routes this way;
    * `send` stays the new-turn path its programmatic callers expect.
    */
-  const submit = () =>
-    running ? steer(draft, images.ready) : send().then(Boolean);
+  const submit = () => {
+    if (commands.submitCommand() || commands.slash !== undefined)
+      return Promise.resolve(false);
+    return running ? steer(draft, images.ready) : send().then(Boolean);
+  };
 
   // The host and the hand-off read the latest `send` through refs, so typing
   // does not re-run their effects.
@@ -1320,7 +1495,25 @@ export function ConversationPane({
           {error}
         </p>
       ) : null}
-      <div className="studio-scroll coding-transcript" ref={transcript}>
+      <div
+        className="studio-scroll coding-transcript"
+        ref={transcript}
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          nearBottom.current =
+            node.scrollHeight - node.clientHeight - node.scrollTop < 100;
+        }}
+      >
+        {windowStart > 0 || (sessionId && historyPages[sessionId]?.hasMore) ? (
+          <button
+            type="button"
+            className="tool-button"
+            disabled={olderLoading}
+            onClick={() => void older()}
+          >
+            {olderLoading ? "正在读取较早记录…" : "查看较早记录"}
+          </button>
+        ) : null}
         {!shown.length ? (
           loadingHistory || empty ? (
             <div className="coding-empty">
@@ -1328,18 +1521,44 @@ export function ConversationPane({
             </div>
           ) : null
         ) : (
-          shown.map((turn) => (
+          visibleTurns.map((turn) => (
             <TurnView
               key={turn.id}
               turn={turn}
-              now={now}
+              visible={visible}
               directory={directory}
               endpoint={endpoint}
-              onAnswer={answer(sessionId!, turn.id)}
+              onAnswer={answer}
               onApplyFlow={onApplyFlow}
             />
           ))
         )}
+        {windowEnd < shown.length && sessionId ? (
+          <div className="coding-history-navigation">
+            <button
+              type="button"
+              className="tool-button"
+              onClick={() =>
+                setHistoryWindow({
+                  id: sessionId,
+                  end: Math.min(shown.length, windowEnd + 40),
+                })
+              }
+            >
+              查看后续记录
+            </button>
+            <button
+              type="button"
+              className="tool-button"
+              onClick={() => {
+                nearBottom.current = true;
+                setHistoryWindow(undefined);
+              }}
+            >
+              返回最新
+            </button>
+          </div>
+        ) : null}
       </div>
       {readOnly ? (
         <p className="composer-footnote">这段对话已归档，取消归档后可继续。</p>
@@ -1349,6 +1568,7 @@ export function ConversationPane({
         style={readOnly ? { display: "none" } : undefined}
       >
         <div
+          ref={composer}
           className={`chat-composer${dragging ? " dragging" : ""}`}
           onPaste={(event) => {
             const files = pastedImages(event.clipboardData);
@@ -1414,33 +1634,29 @@ export function ConversationPane({
               松开以添加图片
             </div>
           ) : null}
+          <ComposerCommands
+            menu={commands}
+            anchor={composer}
+            flowsLoading={flowsLoading}
+          />
           <textarea
+            ref={editor}
             aria-label={label}
+            aria-controls={commands.visible ? commands.id : undefined}
+            aria-activedescendant={
+              commands.visible ? commands.activeId : undefined
+            }
             placeholder={placeholder}
             maxLength={80_000}
             value={draft}
             disabled={offline}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setFlowActive(0);
-            }}
+            onChange={(event) => commands.changeDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (
-                slash !== undefined &&
-                onRunFlow &&
-                handlePickerKey(
-                  event,
-                  filterFlows(flows ?? [], slash),
-                  flowActive,
-                  setFlowActive,
-                  (flow) => {
-                    setDraft("");
-                    onRunFlow(flow);
-                  },
-                  () => setDraft(""),
-                )
-              )
+              if (commands.handleKey(event)) return;
+              if (commands.slash !== undefined && event.key === "Enter") {
+                event.preventDefault();
                 return;
+              }
               if (
                 event.key === "Enter" &&
                 !event.shiftKey &&
@@ -1493,25 +1709,25 @@ export function ConversationPane({
               </select>
             </label>
             <span className="composer-spacer" />
-            {onRunFlow ? (
-              <ConversationFlows
-                keyboardActive={flowActive}
-                onKeyboardActive={setFlowActive}
-                flows={flows ?? []}
-                query={slash}
-                loading={flowsLoading}
-                onPick={onRunFlow}
-                onClose={() => {
-                  if (slash !== undefined) setDraft("");
-                }}
-              />
-            ) : null}
+            <button
+              type="button"
+              className="icon-control"
+              aria-label="命令、Skills 和 Flows"
+              title="命令、Skills 和 Flows（/）"
+              aria-expanded={commands.visible}
+              aria-haspopup="dialog"
+              disabled={offline}
+              onClick={commands.toggle}
+            >
+              <Terminal size={16} />
+            </button>
             {!offline ? (
               <ChatModelControls
                 endpoint={endpoint}
                 mode={mode}
                 selection={modelConfig}
                 disabled={running}
+                openRequest={modelOpenRequest}
                 onChange={onModelConfig}
               />
             ) : null}
@@ -1543,7 +1759,7 @@ export function ConversationPane({
                 steering ||
                 (!draft.trim() && !images.ready.length) ||
                 images.uploading ||
-                slash !== undefined
+                commands.slash !== undefined
               }
               onClick={() => void submit()}
             >

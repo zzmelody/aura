@@ -10,6 +10,8 @@ import {
   Square,
 } from "lucide-react";
 import { FlowIcon } from "../FlowIcon";
+import { useWorkflowRun } from "../useWorkflowRun";
+import { workflowRuns } from "../workflow-run-store";
 import { AuraMark } from "@aura/ui/components";
 import type {
   FlowHistory,
@@ -39,7 +41,6 @@ import {
 } from "../pluginResults";
 import {
   isWorkflowActive,
-  isWorkflowOpen,
   workflowApi,
   workflowPhaseLabels,
 } from "../workflowSessions";
@@ -67,34 +68,7 @@ export function NestedFlowRun({
   endpoint: string;
   runId: string;
 }) {
-  const [run, setRun] = useState<FlowRun>();
-  const [error, setError] = useState("");
-  useEffect(() => {
-    const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    async function poll() {
-      try {
-        const next = await workflowApi<FlowRun>(
-          endpoint,
-          `/runs/${encodeURIComponent(runId)}`,
-          undefined,
-          abort.signal,
-        );
-        if (abort.signal.aborted) return;
-        setRun(next);
-        setError("");
-        if (isWorkflowOpen(next.status)) timer = setTimeout(poll, 1200);
-      } catch (cause) {
-        if (!abort.signal.aborted)
-          setError(cause instanceof Error ? cause.message : "子工作流读取失败");
-      }
-    }
-    void poll();
-    return () => {
-      abort.abort();
-      clearTimeout(timer);
-    };
-  }, [endpoint, runId]);
+  const { run, error } = useWorkflowRun(endpoint, runId);
   if (error) return <p className="error">{error}</p>;
   if (!run) return <p className="muted">正在读取子工作流…</p>;
   return (
@@ -117,7 +91,7 @@ export function NestedFlowRun({
       <WorkflowControls
         endpoint={endpoint}
         run={run}
-        receive={(_endpoint, next) => setRun(next)}
+        receive={(source, next) => workflowRuns.publish(source, next)}
       />
       {run.steps.length ? (
         <div className="workflow-child-steps">
@@ -378,7 +352,7 @@ function StepStateIcon({ status }: { status: FlowStep["status"] }) {
 export function WorkflowRunResult({
   endpoint,
   message,
-  cached,
+  cached: previous,
   receive,
   input,
   index,
@@ -397,38 +371,15 @@ export function WorkflowRunResult({
   inputSchema?: JsonValue;
   onCancel(): void;
 }) {
-  const [error, setError] = useState("");
-  const [revision, setRevision] = useState(0);
   const [stepId, setStepId] = useState<string>();
   const results = usePluginResults();
   const id = message.workflowRunId!;
   const titleId = useId();
+  const { run: observed, error, refresh } = useWorkflowRun(endpoint, id);
+  const cached = observed ?? previous;
   useEffect(() => {
-    const abort = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    async function poll() {
-      try {
-        const run = await workflowApi<FlowRun>(
-          endpoint,
-          `/runs/${encodeURIComponent(id)}`,
-          undefined,
-          abort.signal,
-        );
-        if (abort.signal.aborted) return;
-        setError("");
-        receive(endpoint, run);
-        if (isWorkflowOpen(run.status)) timer = setTimeout(poll, 1800);
-      } catch (cause) {
-        if (!abort.signal.aborted)
-          setError(cause instanceof Error ? cause.message : "读取失败");
-      }
-    }
-    void poll();
-    return () => {
-      abort.abort();
-      clearTimeout(timer);
-    };
-  }, [endpoint, id, revision, receive]);
+    if (observed) receive(endpoint, observed);
+  }, [endpoint, observed, receive]);
   const phase = cached?.status ?? message.workflowPhase ?? "queued";
   const active = isWorkflowActive(phase);
   const progress = workflowProgress(cached);
@@ -580,10 +531,7 @@ export function WorkflowRunResult({
           {error ? (
             <div className="workflow-fetch-error" role="alert">
               {error}
-              <button
-                className="text-control"
-                onClick={() => setRevision((value) => value + 1)}
-              >
+              <button className="text-control" onClick={refresh}>
                 重试
               </button>
             </div>

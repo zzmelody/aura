@@ -6,7 +6,8 @@ export type Tab =
   | "flows"
   | StudioTab
   | `plugin:${string}`
+  /** Tile home listing every plugin-contributed page. */
+  | "studios"
   | "history"
-  | "plugins"
   | "automation"
   | "settings";

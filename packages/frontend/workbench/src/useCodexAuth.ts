@@ -67,8 +67,16 @@ export function useCodexAuth(workspace: WorkspaceController) {
   useEffect(() => {
     if (!workspace.ready) return;
     const abort = new AbortController();
-    void refresh(abort.signal);
-    return () => abort.abort();
+    let timer: ReturnType<typeof setTimeout>;
+    const read = async () => {
+      const result = await refresh(abort.signal);
+      if (!result && !abort.signal.aborted) timer = setTimeout(read, 3000);
+    };
+    void read();
+    return () => {
+      abort.abort();
+      clearTimeout(timer);
+    };
   }, [refresh, workspace.ready]);
 
   useEffect(() => {

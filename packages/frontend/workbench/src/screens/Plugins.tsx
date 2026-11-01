@@ -3,7 +3,7 @@ import type {
   AuraPluginSettingsEntry,
   AuraPluginSettingsState,
 } from "@aura/protocol/types";
-import { Blocks, FolderCog, RefreshCw } from "lucide-react";
+import { Blocks, RefreshCw } from "lucide-react";
 import {
   editablePluginEntries,
   readPluginSettings,
@@ -31,15 +31,10 @@ function pluginTags(entry: AuraPluginSettingsEntry): string[] {
 /**
  * DSH-style plugin manager: one card per plugin, grouped into the plugins that
  * ship with Aura and the ones added by directory. Toggling saves the shared
- * plugin configuration at once; directory management stays in Settings.
+ * plugin configuration at once. It sits in the Settings plugins section, above
+ * the directory editor, rather than on a navigation page of its own.
  */
-export function PluginsScreen({
-  endpoint,
-  onManageDirectories,
-}: {
-  endpoint: string;
-  onManageDirectories(): void;
-}) {
+export function PluginList({ endpoint }: { endpoint: string }) {
   const [state, setState] = useState<AuraPluginSettingsState>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string>();
@@ -102,32 +97,19 @@ export function PluginsScreen({
     : [];
 
   return (
-    <section className="dsh-page plugins-page" aria-labelledby="plugins-title">
-      <header className="dsh-page-head">
-        <div>
-          <h1 id="plugins-title">插件</h1>
-          <p>启用、停用 Aura 插件。插件以完整的本机 Node.js 权限运行。</p>
-        </div>
-        <div className="dsh-page-actions">
-          <button
-            type="button"
-            className="dsh-button"
-            disabled={loading}
-            onClick={() => void refresh()}
-          >
-            <RefreshCw size={13} />
-            刷新
-          </button>
-          <button
-            type="button"
-            className="dsh-button primary"
-            onClick={onManageDirectories}
-          >
-            <FolderCog size={13} />
-            管理插件目录
-          </button>
-        </div>
-      </header>
+    <div className="plugins-manager">
+      <div className="plugins-manager-head">
+        <span>已安装的插件</span>
+        <button
+          type="button"
+          className="dsh-button"
+          disabled={loading}
+          onClick={() => void refresh()}
+        >
+          <RefreshCw size={13} />
+          刷新
+        </button>
+      </div>
       {error ? (
         <p className="dsh-page-notice" role="alert">
           {error}
@@ -150,7 +132,7 @@ export function PluginsScreen({
           className="plugins-group"
           aria-labelledby={`plugins-${group.id}`}
         >
-          <h2 id={`plugins-${group.id}`}>{group.title}</h2>
+          <h3 id={`plugins-${group.id}`}>{group.title}</h3>
           <ul className="plugins-list">
             {group.items.map((entry) => {
               const title = pluginTitle(entry);
@@ -200,6 +182,6 @@ export function PluginsScreen({
           </ul>
         </section>
       ))}
-    </section>
+    </div>
   );
 }

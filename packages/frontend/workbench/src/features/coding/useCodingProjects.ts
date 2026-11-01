@@ -6,6 +6,7 @@ import type {
   FlowMode,
 } from "@aura/protocol/types";
 import type { SessionStatus } from "../../sidebarSessions";
+import { conversationSides } from "@aura/protocol/conversations";
 import {
   archiveConversation,
   closeConversation,
@@ -42,7 +43,7 @@ export type CodingProjectsController = {
   open(projectId: string, conversationId?: string): void;
   refresh(signal?: AbortSignal): Promise<CodingProjectInfo[]>;
   refreshConversations(projectId: string, signal?: AbortSignal): Promise<void>;
-  openSide(projectId: string, parentId: string): Promise<void>;
+  openSide(projectId: string, parentId: string): Promise<string>;
   closeSide(projectId: string, sessionId: string): Promise<void>;
   archive(
     projectId: string,
@@ -76,6 +77,8 @@ export function useCodingProjects(
     branchFrom?: string;
   }>({});
   const [error, setError] = useState("");
+  // Ignore lists requested before a successful mutation changed these rows.
+  const versions = useRef(new Map<string, number>());
   /**
    * Live statuses reported by the open pane. They are fresher than the list
    * for the conversation on screen. Other entries are kept until the next list
@@ -106,7 +109,9 @@ export function useCodingProjects(
 
   const refreshConversations = useCallback(
     async (projectId: string, signal?: AbortSignal) => {
+      const version = versions.current.get(projectId);
       const list = await listConversations(endpoint, projectId, signal);
+      if (version !== versions.current.get(projectId)) return;
       setConversations((current) => ({ ...current, [projectId]: list }));
       // The list now carries authoritative statuses for these rows, so live
       // values survive only for the conversation still on screen.
@@ -164,11 +169,19 @@ export function useCodingProjects(
       return;
     }
     const abort = new AbortController();
-    refresh(abort.signal).catch((reason: unknown) => {
-      if (!abort.signal.aborted)
-        setError(reason instanceof Error ? reason.message : String(reason));
-    });
-    return () => abort.abort();
+    let timer: ReturnType<typeof setTimeout>;
+    const read = () =>
+      refresh(abort.signal).catch((reason: unknown) => {
+        if (!abort.signal.aborted) {
+          setError(reason instanceof Error ? reason.message : String(reason));
+          timer = setTimeout(read, 3000);
+        }
+      });
+    void read();
+    return () => {
+      abort.abort();
+      clearTimeout(timer);
+    };
   }, [enabled, refresh]);
 
   // Turns run on the server whether or not their conversation is open, so the
@@ -214,6 +227,10 @@ export function useCodingProjects(
     async (projectId: string, action: () => Promise<unknown>) => {
       try {
         await action();
+        versions.current.set(
+          projectId,
+          (versions.current.get(projectId) ?? 0) + 1,
+        );
         await refreshConversations(projectId);
         setError("");
       } catch (reason) {
@@ -225,14 +242,79 @@ export function useCodingProjects(
   );
 
   const openSide = useCallback(
-    (projectId: string, parentId: string) =>
-      mutate(projectId, () => openSideChat(endpoint, parentId)),
-    [endpoint, mutate],
+    async (projectId: string, parentId: string) => {
+      try {
+        const { sessionId } = await openSideChat(endpoint, parentId);
+        versions.current.set(
+          projectId,
+          (versions.current.get(projectId) ?? 0) + 1,
+        );
+        setConversations((current) => ({
+          ...current,
+          [projectId]: (current[projectId] ?? []).map((item) =>
+            item.id === parentId
+              ? {
+                  ...item,
+                  sideConversations: [
+                    ...conversationSides(item),
+                    {
+                      id: sessionId,
+                      title: "新旁支对话",
+                      createdAt: Date.now(),
+                    },
+                  ],
+                }
+              : item,
+          ),
+        }));
+        setError("");
+        // Creation has succeeded even if this follow-up list is unavailable.
+        void refreshConversations(projectId).catch(() => {
+          setError(
+            "旁支已创建，但列表刷新失败。请检查服务连接后重新打开会话。",
+          );
+        });
+        return sessionId;
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+        throw reason;
+      }
+    },
+    [endpoint, refreshConversations],
   );
   const closeSide = useCallback(
-    (projectId: string, sessionId: string) =>
-      mutate(projectId, () => closeSideChat(endpoint, sessionId)),
-    [endpoint, mutate],
+    async (projectId: string, sessionId: string) => {
+      try {
+        await closeSideChat(endpoint, sessionId);
+        versions.current.set(
+          projectId,
+          (versions.current.get(projectId) ?? 0) + 1,
+        );
+        setConversations((current) => ({
+          ...current,
+          [projectId]: (current[projectId] ?? []).map((item) => {
+            const sides = conversationSides(item).filter(
+              (side) => side.id !== sessionId,
+            );
+            return {
+              ...item,
+              sideConversations: sides,
+              sideSessionId: sides[0]?.id,
+              sideModelConfig: sides[0]?.modelConfig,
+            };
+          }),
+        }));
+        setError("");
+        // A failed refresh must never put a successfully closed panel back.
+        void refreshConversations(projectId).catch(() => {
+          setError("旁支已关闭，但列表刷新失败。请检查服务连接。");
+        });
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+        throw reason;
+      }
+    },
+    [endpoint, refreshConversations],
   );
   const archive = useCallback(
     (projectId: string, sessionId: string, archived: boolean) =>
@@ -275,16 +357,35 @@ export function useCodingProjects(
       const parent = Object.values(conversations)
         .flat()
         .find(
-          (item) => item.id === sessionId || item.sideSessionId === sessionId,
+          (item) =>
+            item.id === sessionId ||
+            conversationSides(item).some((side) => side.id === sessionId),
         );
       if (!parent)
         return Promise.reject(new Error("对话尚未保存，请稍后再试。"));
-      const field = parent.id === sessionId ? "modelConfig" : "sideModelConfig";
       setConversations((current) => ({
         ...current,
         [parent.projectId]: (current[parent.projectId] ?? []).map((item) =>
           item.id === parent.id
-            ? { ...item, [field]: { ...item[field], [mode]: selection } }
+            ? parent.id === sessionId
+              ? {
+                  ...item,
+                  modelConfig: { ...item.modelConfig, [mode]: selection },
+                }
+              : {
+                  ...item,
+                  sideConversations: conversationSides(item).map((side) =>
+                    side.id === sessionId
+                      ? {
+                          ...side,
+                          modelConfig: {
+                            ...side.modelConfig,
+                            [mode]: selection,
+                          },
+                        }
+                      : side,
+                  ),
+                }
             : item,
         ),
       }));

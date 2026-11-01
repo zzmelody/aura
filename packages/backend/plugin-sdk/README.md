@@ -42,6 +42,9 @@ input, signal)`; operations not listed are refused before `invoke` runs.
 
 - `host.dataDir` is the plugin's private directory under
   `.aura/plugins/<plugin-id>/`.
+- `host.tempDir` is the plugin's scratch directory under the runtime temp root
+  (`<tempDir>/plugins/<plugin-id>/`, default `<root>/local/runtime`). It may be
+  deleted at any time; put render intermediates there, never durable state.
 - `host.settings` is the plugin entry's `settings` from `plugins.json`, passed
   through uninterpreted.
 - `host.runs` reads only this plugin's Flow Runs.

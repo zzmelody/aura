@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 import type { AuraRuntimeOptions, RuntimeConfig } from "./types.ts";
@@ -53,6 +54,17 @@ export function resolveRuntimeConfig(
     ),
     defaultPluginsDirectory: resolve(
       options.defaultPluginsDirectory ?? join(root, "plugins"),
+    ),
+    // Scratch files only; the whole directory may be deleted between runs.
+    tempDir: resolve(
+      options.tempDir ??
+        (process.env.AURA_TEMP_DIR?.trim() || join(root, "local", "runtime")),
+    ),
+    // User conversations must survive cleaning the Aura root, so keep them outside it.
+    defaultWorkspace: resolve(
+      options.defaultWorkspace ??
+        (process.env.AURA_DEFAULT_WORKSPACE?.trim() ||
+          join(homedir(), "Documents", "Aura")),
     ),
   };
 }

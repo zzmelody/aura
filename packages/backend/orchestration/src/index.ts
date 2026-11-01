@@ -5,7 +5,7 @@ import {
   PLUGIN_SDK_ENV,
 } from "./plugin-sdk-resolution.ts";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { artifactResponse, type ArtifactFile } from "./artifacts/http.ts";
@@ -16,6 +16,8 @@ import type {
   ActionRun,
   ChatModelCatalog,
   ChatModelSelection,
+  CodingSkillInfo,
+  CodingHistoryPage,
   FlowCatalog,
   FlowMode,
   FlowRun,
@@ -41,7 +43,6 @@ import type {
   ChatStreamEvent,
   ChatTurn,
   CodingConversation,
-  CodingHistoryTurn,
   CodingProject,
   CodingQuestionAnswer,
   CodingStreamEvent,
@@ -229,8 +230,12 @@ export class OrchestrationHost {
       ...(this.options.actionRoots ?? []),
     ];
     // Conversations outside any workspace run in this built-in directory.
-    const defaultWorkspace = join(root, ".aura", "workspace");
+    const defaultWorkspace =
+      this.options.defaultWorkspace ?? join(root, ".aura", "workspace");
     await mkdir(defaultWorkspace, { recursive: true });
+    // Disposable scratch space handed to Actions and plugin backends.
+    const tempDir = this.options.tempDir ?? join(root, "local", "runtime");
+    await mkdir(tempDir, { recursive: true });
     await provisionProfile(
       dshHome,
       flowRoots.map((entry) => entry.pluginRoot ?? entry.root),
@@ -253,6 +258,7 @@ export class OrchestrationHost {
           DSH_TELEMETRY_DISABLED: "1",
           AURA_FLOW_CWD: root,
           AURA_DEFAULT_WORKSPACE: defaultWorkspace,
+          AURA_TEMP_DIR: tempDir,
           AURA_FLOW_ROOT: flowRoot,
           AURA_ACTION_ROOT: actionRoot,
           AURA_FLOW_ROOTS: JSON.stringify(flowRoots),
@@ -465,6 +471,10 @@ export class OrchestrationHost {
     return this.request<CodingProject[]>("coding/projects");
   }
 
+  skills(projectId: string): Promise<CodingSkillInfo[]> {
+    return this.request<CodingSkillInfo[]>("coding/skills", { projectId });
+  }
+
   createProject(directory: string, title?: string): Promise<CodingProject> {
     return this.request<CodingProject>("coding/projects/create", {
       directory,
@@ -596,11 +606,14 @@ export class OrchestrationHost {
   /** A coding conversation rebuilt from its stored session log. */
   codingHistory(
     sessionId: string,
-  ): Promise<{ turns: CodingHistoryTurn[]; running: boolean }> {
-    return this.request<{ turns: CodingHistoryTurn[]; running: boolean }>(
-      "coding/history",
-      { sessionId },
-    );
+    options: { page?: boolean; beforeSeq?: number; throughSeq?: number } = {},
+  ): Promise<Omit<CodingHistoryPage, "hasMore"> & { hasMore?: boolean }> {
+    return this.request<
+      Omit<CodingHistoryPage, "hasMore"> & { hasMore?: boolean }
+    >("coding/history", {
+      sessionId,
+      ...options,
+    });
   }
 
   selectConversationModel(
@@ -815,9 +828,15 @@ export function createFlowApp(
     }
   });
 
-  app.get("/catalog", async (context) =>
-    context.json(await host.request("catalog")),
-  );
+  app.get("/catalog", async (context) => {
+    const body = JSON.stringify(await host.request("catalog"));
+    const etag = `"${createHash("sha256").update(body).digest("hex")}"`;
+    context.header("ETag", etag);
+    context.header("Cache-Control", "private, no-cache");
+    if (context.req.header("If-None-Match") === etag)
+      return context.body(null, 304);
+    return context.body(body, 200, { "Content-Type": "application/json" });
+  });
   app.get("/services", async (context) => {
     const catalog = await host.request<FlowCatalog>("catalog");
     return context.json({

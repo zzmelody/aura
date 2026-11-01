@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import { workflowRuns } from "./workflow-run-store";
+import { retainConversations } from "./features/coding/conversation-cache";
 import type { Workspace, Message, Session } from "@aura/core/types";
 import type {
   FlowCatalogEntry,
@@ -32,14 +34,53 @@ export function useWorkflowSessions(
   const submittingRef = useRef(new Set<string>());
   const receive = useCallback(
     (source: string, run: FlowRun) => {
-      setRuns((current) => ({
-        ...current,
-        [workflowRunKey(source, run.id)]: run,
-      }));
+      workflowRuns.publish(source, run);
+      setRuns((current) =>
+        current[workflowRunKey(source, run.id)] === run
+          ? current
+          : retainConversations(
+              {
+                ...current,
+                [workflowRunKey(source, run.id)]: run,
+              },
+              workflowRunKey(source, run.id),
+              Object.entries(current)
+                .filter(([, value]) => isWorkflowOpen(value.status))
+                .map(([key]) => key),
+              50,
+            ),
+      );
       setState((current) => applyWorkflowRun(current, source, run));
     },
     [setState],
   );
+  const activeRuns = state.sessions
+    .flatMap((session) =>
+      session.messages.flatMap((message) => {
+        const source = messageEndpoint(session, message);
+        return message.workflowRunId &&
+          source &&
+          isWorkflowOpen(message.workflowPhase)
+          ? [JSON.stringify([source, message.workflowRunId])]
+          : [];
+      }),
+    )
+    .sort()
+    .join("\n");
+  useEffect(() => {
+    if (!ready || !activeRuns) return;
+    const stops = [...new Set(activeRuns.split("\n"))].map((key) => {
+      const [source, id] = JSON.parse(key) as [string, string];
+      const update = () => {
+        const run = workflowRuns.snapshot(source, id).run;
+        if (run) receive(source, run);
+      };
+      const stop = workflowRuns.subscribe(source, id, update);
+      update();
+      return stop;
+    });
+    return () => stops.forEach((stop) => stop());
+  }, [ready, activeRuns, receive]);
   useEffect(() => {
     if (!ready) return;
     const abort = new AbortController();
@@ -59,19 +100,6 @@ export function useWorkflowSessions(
               session.workflow.pending) ||
             session.pendingWorkflow?.endpoint === endpoint,
         );
-        const activeIds = new Set(
-          stateRef.current.sessions.flatMap((session) =>
-            session.messages
-              .filter(
-                (message) =>
-                  message.workflowRunId &&
-                  messageEndpoint(session, message) === endpoint &&
-                  (isWorkflowOpen(message.workflowPhase) ||
-                    message.status === "streaming"),
-              )
-              .map((message) => message.workflowRunId),
-          ),
-        );
         setState((current) =>
           mergeWorkflowRuns(
             current,
@@ -80,23 +108,10 @@ export function useWorkflowSessions(
             !pending && submittingRef.current.size === 0,
           ),
         );
-        await Promise.allSettled(
-          summaries
-            .filter((run) => activeIds.has(run.id))
-            .map(async (summary) => {
-              const run = await workflowApi<FlowRun>(
-                endpoint,
-                `/runs/${encodeURIComponent(summary.id)}`,
-                undefined,
-                abort.signal,
-              );
-              if (!abort.signal.aborted) receive(endpoint, run);
-            }),
-        );
       } catch {
         /* Session details expose retryable errors without hiding local history. */
       }
-      if (!abort.signal.aborted) timer = setTimeout(poll, 2000);
+      if (!abort.signal.aborted) timer = setTimeout(poll, 15_000);
     };
     void poll();
     return () => {

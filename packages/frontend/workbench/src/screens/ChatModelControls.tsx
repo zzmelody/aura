@@ -23,12 +23,15 @@ export function ChatModelControls({
   mode,
   selection,
   disabled,
+  openRequest,
   onChange,
 }: {
   endpoint: string;
   mode: FlowMode;
   selection: ChatModelSelection;
   disabled: boolean;
+  /** Opens the same model menu when invoked through the command palette. */
+  openRequest?: number;
   onChange(selection: ChatModelSelection): void;
 }) {
   const key = `${endpoint}/${mode}`;
@@ -39,6 +42,9 @@ export function ChatModelControls({
   }>();
   const [revision, setRevision] = useState(0);
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (openRequest) setOpen(true);
+  }, [openRequest]);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);

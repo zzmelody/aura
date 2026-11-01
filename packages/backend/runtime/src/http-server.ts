@@ -67,6 +67,7 @@ const honoCors = cors({
     "Range",
     "If-Range",
     "If-None-Match",
+    "Last-Event-ID",
   ],
   exposeHeaders: [
     "Content-Length",
@@ -75,7 +76,7 @@ const honoCors = cors({
     "ETag",
     "Accept-Ranges",
   ],
-  allowMethods: ["GET", "HEAD", "POST", "OPTIONS"],
+  allowMethods: ["GET", "HEAD", "POST", "DELETE", "OPTIONS"],
 });
 
 /** Rejects foreign browser origins while admitting Aura's fixed Capacitor origin. */

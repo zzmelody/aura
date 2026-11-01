@@ -122,6 +122,8 @@ export async function startAuraRuntime(
       ...contributions(plugins),
       tripoCredentialPath: config.tripoCredentialPath,
       tripoRegion: config.tripoRegion,
+      tempDir: config.tempDir,
+      defaultWorkspace: config.defaultWorkspace,
       pluginSdkPackage,
     });
     let activePageRoots = plugins.pageRoots;

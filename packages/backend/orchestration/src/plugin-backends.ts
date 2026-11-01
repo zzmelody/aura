@@ -50,6 +50,7 @@ export interface BackendMedia {
 export class PluginBackends {
   readonly #builtins: AuraCapabilityClient | undefined;
   readonly #dataRoot: string;
+  readonly #tempRoot: string;
   readonly #log: Log;
   readonly #media: BackendMedia | undefined;
   readonly #plugins = new Map<string, OpenPlugin>();
@@ -74,6 +75,8 @@ export class PluginBackends {
   constructor(options: {
     builtins?: AuraCapabilityClient;
     dataRoot: string;
+    /** Parent of per-plugin scratch directories. Defaults to `<dataRoot>/../tmp`. */
+    tempRoot?: string;
     log?: Log;
     media?: BackendMedia;
     host?: {
@@ -85,6 +88,8 @@ export class PluginBackends {
   }) {
     this.#builtins = options.builtins;
     this.#dataRoot = options.dataRoot;
+    this.#tempRoot =
+      options.tempRoot ?? join(dirname(options.dataRoot), "tmp");
     this.#log = options.log ?? (() => undefined);
     this.#media = options.media;
     this.#host = options.host;
@@ -217,6 +222,8 @@ export class PluginBackends {
     const pluginId = root.plugin!.id;
     const dataDir = join(this.#dataRoot, pluginId);
     await mkdir(dataDir, { recursive: true, mode: 0o700 });
+    const tempDir = join(this.#tempRoot, pluginId);
+    await mkdir(tempDir, { recursive: true, mode: 0o700 });
     const module = (await this.#modules.import(
       root.root,
       root.pluginRoot ?? dirname(root.root),
@@ -227,7 +234,7 @@ export class PluginBackends {
         `${pluginId} backend must default-export defineBackend(...).`,
       );
     const backend = await module.default.open(
-      this.#backendHost(pluginId, dataDir, root),
+      this.#backendHost(pluginId, dataDir, tempDir, root),
     );
     if (!backend || typeof backend !== "object")
       throw new Error(`${pluginId} backend open() must return an object.`);
@@ -259,6 +266,7 @@ export class PluginBackends {
   #backendHost(
     pluginId: string,
     dataDir: string,
+    tempDir: string,
     root: BackendRoot,
   ): BackendHost {
     const host = this.#host;
@@ -271,6 +279,7 @@ export class PluginBackends {
     return Object.freeze({
       pluginId,
       dataDir,
+      tempDir,
       workspace: Object.freeze({ cwd: this.#host?.cwd ?? dataDir }),
       get storage() {
         if (!host) throw new Error("plugin_storage_unavailable");

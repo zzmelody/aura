@@ -7,6 +7,7 @@ import { serve, type ServerType } from "@hono/node-server";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { OrchestrationHost } from "../src/index.ts";
+import type { WorkspaceTerminalInfo } from "@aura/protocol/types";
 
 const nodeMajor = Number(process.versions.node.split(".")[0]);
 
@@ -63,6 +64,30 @@ test(
     let host = new OrchestrationHost(options);
     try {
       const space = await host.createProject(project);
+      const terminal = await host.request<WorkspaceTerminalInfo>(
+        "coding/terminals/open",
+        { projectId: space.id, cols: 80, rows: 24 },
+      );
+      assert.equal(terminal.projectId, space.id);
+      const terminalList = await host.request<WorkspaceTerminalInfo[]>(
+        "coding/terminals/list",
+        { projectId: space.id },
+      );
+      assert.equal(terminalList[0]?.id, terminal.id);
+      assert.equal(terminalList[0]?.status, "running");
+      await host.request("coding/terminals/resize", {
+        terminalId: terminal.id,
+        cols: 100,
+        rows: 30,
+      });
+      await host.request("coding/terminals/close", {
+        terminalId: terminal.id,
+        force: true,
+      });
+      assert.deepEqual(
+        await host.request("coding/terminals/list", { projectId: space.id }),
+        [],
+      );
       const turn = (sessionId: string, prompt: string, forkFrom?: string) =>
         host.coding(
           {
@@ -81,15 +106,20 @@ test(
       await turn("main-b", "OTHER_PARENT_CONTEXT");
       const { sessionId: sideA } = await host.openCodingSide("main-a");
       const { sessionId: blankSide } = await host.openCodingSide("main-b");
-      assert.equal((await host.openCodingSide("main-a")).sessionId, sideA);
-      assert.deepEqual(await host.codingHistory(blankSide), {
-        turns: [],
-        running: false,
-      });
+      const { sessionId: sibling } = await host.openCodingSide("main-a");
+      assert.notEqual(sibling, sideA);
+      const blankHistory = await host.codingHistory(blankSide);
+      assert.deepEqual(blankHistory.turns, []);
+      assert.equal(blankHistory.running, false);
       await turn(sideA, "SIDE_ONLY_CONTEXT", "main-a");
       assert.ok(
         JSON.stringify(requests.at(-1)).includes("PARENT_ONLY_CONTEXT"),
       );
+      await turn(sibling, "SIBLING_ONLY_CONTEXT", "main-a");
+      assert.ok(
+        JSON.stringify(requests.at(-1)).includes("PARENT_ONLY_CONTEXT"),
+      );
+      assert.ok(!JSON.stringify(requests.at(-1)).includes("SIDE_ONLY_CONTEXT"));
       assert.deepEqual(
         (await host.codingHistory(sideA)).turns.map((item) => item.prompt),
         ["SIDE_ONLY_CONTEXT"],
@@ -106,6 +136,12 @@ test(
         restored.find((item) => item.id === "main-a")?.sideSessionId,
         sideA,
       );
+      assert.deepEqual(
+        restored
+          .find((item) => item.id === "main-a")
+          ?.sideConversations?.map((item) => item.id),
+        [sideA, sibling],
+      );
       assert.equal(
         restored.find((item) => item.id === "main-b")?.sideSessionId,
         blankSide,
@@ -119,7 +155,15 @@ test(
       assert.ok(resumed.includes("PARENT_ONLY_CONTEXT"));
       assert.ok(resumed.includes("SIDE_ONLY_CONTEXT"));
       assert.ok(!resumed.includes("OTHER_PARENT_CONTEXT"));
+      assert.ok(!resumed.includes("SIBLING_ONLY_CONTEXT"));
       assert.equal((await host.codingHistory(sideA)).turns.length, 2);
+      const paged = await host.codingHistory(sideA, { page: true });
+      assert.deepEqual(
+        paged.turns.map((item) => item.prompt),
+        ["SIDE_ONLY_CONTEXT", "SIDE_AFTER_RESTART"],
+      );
+      assert.equal(paged.hasMore, false);
+      assert.equal(typeof paged.throughSeq, "number");
 
       // Cold closure works even if no side agent has been resumed in this host.
       assert.equal((await host.closeCodingSide(blankSide)).closed, true);
@@ -131,6 +175,7 @@ test(
 
       await host.archiveCodingConversation("main-a", true);
       await assert.rejects(host.codingHistory(sideA));
+      await assert.rejects(host.codingHistory(sibling));
       await assert.rejects(host.openCodingSide("main-a"));
       await host.archiveCodingConversation("main-a", false);
       assert.equal(

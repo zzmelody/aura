@@ -46,7 +46,7 @@ Aura 只有一套 React Web 界面。`@aura/workbench` 负责页面、状态与 
 
 Site 页面与站点运行后端属于独立的 `plugins/site-launcher`。目录/脚本解析、端口检查、进程组和就绪验证位于插件 `backend/`，构建成 ESM，由插件后端持有；Electron 只提供原生目录选择与本机预览窗口，前端通过插件后端声明的页面操作管理进程。`site-project.ts`、`site-network.ts`、`site-process.ts`、`site-runner.ts` 分别管理配置、网络与进程归属、子进程和生命周期；共享类型放在 protocol。已识别的直接开发命令先检查系统监听表并尝试绑定 loopback 端口，以排除 Windows 未显示为监听者的保留端口，再把明确端口传给开发服务器并从输出同步真实地址。自定义脚本冲突拒绝启动；不能仅凭某个地址能响应就判定启动成功，必须同时验证监听者属于本次进程树。子进程在启动时退出会立即更新为错误状态并保留诊断输出。停用插件或关闭所属 runtime 时清理插件启动的项目；切换页面只取消状态轮询，项目继续运行。站点列表的原有 Web Storage 键保持不变。
 
-Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动页面服务和 Aura runtime，解决页面存在但 4311 服务缺失的问题。`scripts/dev-renderer.ts` 在根开发工具层统一启动 Web / Desktop / Mobile 的 Vite 服务（Web 固定 8081，Desktop 与 Mobile 默认 8082），应用配置继续留在各自入口。Desktop 开发模式加载 Vite URL，静态预览仍由 Electron 使用 Hono 提供构建产物。根工具的 Vite 插件只在开发期注入 HTTP 版本检查，Vite WebSocket 不可用时以整页刷新恢复；HTTP 路由通过 Hono 官方适配器接入 Vite Connect，不进入发布产物，也不引入 frontend → backend 依赖。Electron 主进程会先检查并启动 runtime，再显示 renderer；开发入口和窗口退出时回收自己启动的服务。Capacitor 原生应用不能内嵌 Node/DSH，真机通过设置中的局域网地址连接电脑端 runtime。后端 Origin 策略仅额外接受 Capacitor 固定的 `https://localhost` / `capacitor://localhost` 来源。
+Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动页面服务和 Aura runtime，解决页面存在但 4311 服务缺失的问题。`scripts/dev-renderer.ts` 在根开发工具层统一启动 Web / Desktop / Mobile 的 Vite 服务（Web 固定 8081，Desktop 与 Mobile 默认 8082），应用配置继续留在各自入口。Desktop 开发模式加载 Vite URL，静态预览仍由 Electron 使用 Hono 提供构建产物。根工具的 Vite 插件只在开发期注入 HTTP 版本检查，Vite WebSocket 不可用时以整页刷新恢复；HTTP 路由通过 Hono 官方适配器接入 Vite Connect，不进入发布产物，也不引入 frontend → backend 依赖。Electron 主进程先显示 renderer，同时异步检查并启动 runtime；DSH 就绪状态由 API 报告；开发入口和窗口退出时回收自己启动的服务。Capacitor 原生应用不能内嵌 Node/DSH，真机通过设置中的局域网地址连接电脑端 runtime。后端 Origin 策略仅额外接受 Capacitor 固定的 `https://localhost` / `capacitor://localhost` 来源。
 
 ## 后端 Agent 流程编排
 
@@ -88,6 +88,10 @@ Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Sessi
 运行入口创建带 `workflow` 绑定的工作区会话，输入、结果和步骤记录都在会话内查看。绑定保存工作流 ID、标题、服务 origin 和输入 Schema，每个结果引用原有后端 run ID；不会把工作流输入提交到普通 `/chat` 链路。同一会话支持多次独立运行，后台轮询同步状态，原有服务端运行记录自动进入历史列表。前端按 run ID 将原有输入/结果消息配成对话轮次，不改变存储格式；用户输入右对齐，工作流步骤、状态和结果在中间输出区随轮询连续更新。富文本及结构化数据由 workbench 的浏览器组件渲染，Markdown 依赖随工作流会话按需加载。执行表单作为对话流末尾的内联编辑块按需展开，确认接收后收起，不阻塞历史浏览和页面滚动。标量 Schema 字段使用结构化控件，字符串枚举数组使用多选控件并遵守 `minItems` / `maxItems`；其他复杂嵌套输入仍回退为 JSON。待确认提交保留 requestId，网络失败后重试复用同一请求；本地删除会话记录隐藏 run ID，避免轮询重新导入。工作流回复提供暂停/继续、checkpoint 输入、未知结果处理、attempt 历史和恢复记录；图是代码的只读静态投影，运行记录另行展示实际执行路径。
 
 在线会话的生命周期、目录绑定和模型配置由后端持有，前端首页与工作空间共用 `ConversationPane` 和会话控制器。`coding/conversations.ts` 负责身份、目录、来源及配置准入；`coding/session.ts` 只负责 DSH 驱动、工具和事件；HTTP 边界只校验和转发。`/chat/*` 保留为旧协议适配，不再创建短期聊天 Agent。旧浏览器聊天在继续时以稳定的 `legacy-<id>` 导入一次，原始记录保留，后续请求不重复回灌历史。跨项目延续通过 DSH fork 新建带来源关系的会话，不修改已有 session 的 cwd。Flow 的 durable Run、步骤配置和存储保持独立。
+
+每个主会话支持多个 DSH fork 旁支。右侧旁支栏负责新建、切换和单独关闭；收起只改变本机界面状态，网络失败不阻塞收起，隐藏面板保持挂载。索引在原 domain 与版本内增加可选旁支列表，旧单旁支字段兼容读取，不在启动或刷新时迁移用户数据。各旁支的模型设置和历史独立，关闭或归档主会话释放其全部旁支；底层 DSH 日志不删除。
+
+工作空间通过对齐的单行顶栏和通用工具标签容纳侧边对话与真实终端。终端属于工作区，侧边对话属于主会话，两者的生命周期独立。`orchestration/coding/terminals.ts` 在 DSH 编排进程中组合公开 subprocess PTY 接口，拥有终端身份、有界输出游标和关闭流程；runtime 的 Hono 路由转发 RPC，并通过 SSE 发布输出，前端按需加载 xterm.js。网络断开或页面刷新重新附着同一 PTY，重启服务则释放进程且不重放命令。工作区目录由已注册记录解析，不接收任意客户端 cwd / env；DSH 原生过滤父环境凭据。关闭可能仍有任务的终端需要显式确认；收起面板立即生效且保留任务。「带回主对话」只填入草稿，不自动调用模型或关闭来源对话。
 
 Codex 默认模型是 `gpt-6.1-sol`，推理档位为 `xhigh`（Extra high），传输为 SSE。`@aura/dsh-auth` 用公开 DSH 模型配置补充当前目录缺少的型号，并保留原有目录；授权组合与编排 profile 共享这份 provider 配置。部署可以通过 `AURA_CODEX_MODEL` 选择目录中存在的其他模型，Flow 还可按 Agent 覆盖；未知模型或不支持的思考档位报错，不回退到演示。当前锁定 Codex 适配器不向上游转发 `maxTokens`，不能把配置值当成实际输出硬上限，因此 Flow 在 Codex 模式拒绝此选项。Demo 链路支持 token 参数透传，默认 4096。温度由具体模型决定是否接受，未设置时沿用供应商默认；Agent 的 `timeoutMs` 独立限制每次 attempt 时长。
 

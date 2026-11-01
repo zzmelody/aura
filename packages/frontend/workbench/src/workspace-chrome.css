@@ -21,8 +21,7 @@
   user-select: none;
   position: relative;
 }
-.window-navigation,
-.application-menus {
+.window-navigation {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -31,26 +30,9 @@
   width: 28px;
   height: 27px;
 }
-.menubar-button {
-  border: 0;
-  border-radius: 5px;
-  background: none;
-  color: var(--secondary);
-  font-size: 12px !important;
-  padding: 5px 9px;
-}
-.menubar-button:hover,
-.menubar-button.menu-open {
-  color: var(--text);
-  background: var(--elevated);
-}
-.menubar-title {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 11px;
-  color: var(--muted);
-  pointer-events: none;
+/* The menu trigger sits apart from back / forward / sidebar. */
+.window-navigation > .icon-control[aria-haspopup="menu"] {
+  margin-left: 6px;
 }
 .menubar-feedback {
   display: flex;
@@ -187,15 +169,84 @@
   color: var(--text);
   background: var(--soft);
 }
-.sidebar-group-label {
-  padding: 7px 11px 4px;
-  font:
-    11px/18px var(--font-text),
-    sans-serif;
-  letter-spacing: 0;
+/* Recently opened studios, indented under 工作台 and a touch quieter. */
+.workspace-nav-children {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 2px 16px;
+  padding-left: 8px;
+  border-left: 0.5px solid var(--hairline);
 }
-.workspace-nav.studio-nav {
-  padding-bottom: 8px;
+.workspace-nav-child {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.workspace-nav-child > button:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 30px;
+  /* Room for the close button, so a long title never slides under it. */
+  padding: 5px 32px 5px 9px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--secondary);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+}
+.workspace-nav-child > button:first-child > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.workspace-nav-child > button:first-child:hover,
+.workspace-nav-child > button:first-child.selected {
+  color: var(--text);
+  background: var(--soft);
+}
+.workspace-nav-child > button:first-child.selected > svg {
+  color: var(--accent);
+}
+.workspace-nav-child > button:first-child > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Appears on hover or keyboard focus, like the session rows' archive button. */
+.studio-close {
+  position: absolute;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 110ms ease;
+}
+.workspace-nav-child:is(:hover, :focus-within) .studio-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+.studio-close:hover,
+.studio-close:focus-visible {
+  background: var(--elevated);
+  color: var(--text);
+}
+@media (hover: none) {
+  /* Touch has no hover, so the close button stays visible. */
+  .studio-close {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-close {
+    transition: none;
+  }
 }
 /* DSH section header: 36px, muted 14/20 label, 28px icon buttons. */
 .session-heading {
@@ -339,9 +390,13 @@
     opacity: 1;
   }
 }
+/* The scrollbar belongs against the sidebar's edge, so the list spans the
+ * sidebar's full width and carries its horizontal padding on its own rows
+ * rather than sitting inside it. */
 .session-list {
+  margin-inline: -8px;
+  padding-inline: 8px;
   padding-bottom: 12px;
-  scrollbar-gutter: stable;
 }
 .session-row {
   display: grid;
@@ -718,13 +773,6 @@
     height: 36px;
     gap: 5px;
     padding-inline: 8px;
-  }
-  .menubar-title {
-    display: none;
-  }
-  .menubar-button {
-    padding-inline: 7px;
-    font-size: 11px !important;
   }
   .workspace-header {
     padding-inline: 12px;

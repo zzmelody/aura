@@ -4,6 +4,7 @@ import type { OrchestrationHost } from "@aura/orchestration";
 import { FlowError } from "@aura/orchestration";
 import { isRecord, validCodingImages } from "./validation.ts";
 import { validateChatModelSelection } from "@aura/protocol";
+import { createTerminalApp } from "./terminal-routes.ts";
 
 /**
  * Project management and coding turns for coding mode. The host owns the
@@ -23,8 +24,17 @@ export function createCodingApp(host: OrchestrationHost) {
       onError: (context) => context.text("请求内容过大。", 413),
     }),
   );
+  app.route("/terminals", createTerminalApp(host));
 
   app.get("/projects", async (context) => context.json(await host.projects()));
+
+  app.get("/projects/:id/skills", async (context) => {
+    try {
+      return context.json(await host.skills(context.req.param("id")));
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
 
   app.post("/projects", async (context) => {
     const body = await context.req.json().catch(() => undefined);
@@ -81,7 +91,25 @@ export function createCodingApp(host: OrchestrationHost) {
   // The full transcript of one conversation, read back from its session log.
   app.get("/sessions/:id/history", async (context) => {
     try {
-      return context.json(await host.codingHistory(context.req.param("id")));
+      const before = context.req.query("beforeSeq");
+      const through = context.req.query("throughSeq");
+      if (
+        (before !== undefined &&
+          (!/^\d+$/u.test(before) || !Number.isSafeInteger(Number(before)))) ||
+        (through !== undefined &&
+          (!/^\d+$/u.test(through) ||
+            !Number.isSafeInteger(Number(through)))) ||
+        (before === undefined) !== (through === undefined)
+      )
+        return context.json({ message: "无效的历史分页游标。" }, 400);
+      return context.json(
+        await host.codingHistory(context.req.param("id"), {
+          page: context.req.query("page") === "1",
+          ...(before !== undefined && through !== undefined
+            ? { beforeSeq: Number(before), throughSeq: Number(through) }
+            : {}),
+        }),
+      );
     } catch (error) {
       return failure(context, error);
     }

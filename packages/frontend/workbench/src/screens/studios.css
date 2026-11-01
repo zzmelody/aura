@@ -1,0 +1,106 @@
+@import "./feature-page.css";
+
+/* Tile home for plugin pages. These entries have no thumbnail to show, so the
+ * glyph carries the visual weight (as in Raycast's extension list or macOS
+ * Launchpad): a narrow golden-ratio card, a large icon anchoring the top and
+ * the label block anchoring the bottom. Narrow columns keep the 1.618 card
+ * small enough that the content fills it instead of floating in a void. */
+.studios-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.studios-tile {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  width: 100%;
+  /* The card's shape, not its content, sets the height. */
+  aspect-ratio: 1.618;
+  padding: 17px;
+  /* --hairline nearly vanishes on the light palette's white surface, so the
+   * card's own edge gets the stronger border token. */
+  border: 0.5px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  transition:
+    background 130ms ease,
+    border-color 130ms ease;
+}
+.studios-tile:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--hairline));
+  background: var(--elevated);
+}
+.studios-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.studios-tile-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* The glyph carries no colour of its own; it reads as text, not as a badge. */
+.studios-tile-icon {
+  color: var(--secondary);
+  stroke-width: 1.5;
+}
+.studios-tile:hover .studios-tile-icon {
+  color: var(--text);
+}
+/* The description's two lines are reserved whether or not the page declares
+ * one, so every title in a row sits on the same baseline. */
+.studios-tile-copy {
+  display: grid;
+  grid-row: 3;
+  grid-template-rows: auto 32px;
+  gap: 2px;
+  min-width: 0;
+}
+.studios-tile-copy strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 20px;
+  letter-spacing: -0.1px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Up to two lines, bounded so a long description cannot push past the card. */
+.studios-tile-copy span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 16px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* Points out that the tile navigates; quiet until the pointer arrives. */
+.studios-tile-go {
+  flex-shrink: 0;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 130ms ease;
+}
+.studios-tile:hover .studios-tile-go,
+.studios-tile:focus-visible .studios-tile-go {
+  opacity: 1;
+}
+@media (hover: none) {
+  .studios-tile-go {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studios-tile,
+  .studios-tile-icon,
+  .studios-tile-go {
+    transition: none;
+  }
+}

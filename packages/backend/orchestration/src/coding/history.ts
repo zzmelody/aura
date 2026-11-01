@@ -102,6 +102,114 @@ function isNotFound(error: unknown): boolean {
   );
 }
 
+/** Reads a turn-aligned window using DSH's stable log cut, without replaying older turns. */
+export async function readSessionEventPage(
+  controller: Pick<SessionController, "follow" | "page">,
+  sessionId: SessionId,
+  signal: AbortSignal,
+  options: {
+    beforeSeq?: number;
+    throughSeq?: number;
+    minimumSeq?: number;
+  } = {},
+): Promise<{
+  events: StoredEvent[];
+  beforeSeq?: number;
+  throughSeq: number;
+  hasMore: boolean;
+}> {
+  const address = { kind: "session" as const, sessionId };
+  const turnWindow = { minMessages: 20, minTurns: 10 };
+  let records: readonly SessionHistoryRecord[];
+  let hasMore: boolean;
+  let throughSeq = options.throughSeq ?? 0;
+  if (options.beforeSeq !== undefined && options.throughSeq !== undefined) {
+    const page = await controller.page(
+      {
+        address,
+        throughSeq,
+        beforeSeq: options.beforeSeq,
+        maxMessages: PAGE_MESSAGES,
+        turnWindow,
+      },
+      signal,
+    );
+    records = page.records;
+    hasMore = page.hasMore;
+  } else {
+    const abort = new AbortController();
+    const stream = controller.follow(
+      { address, maxMessages: PAGE_MESSAGES, turnWindow },
+      AbortSignal.any([signal, abort.signal]),
+    );
+    const frames = stream[Symbol.asyncIterator]();
+    try {
+      const first = await frames.next();
+      if (first.done || first.value.type !== "snapshot")
+        return { events: [], throughSeq, hasMore: false };
+      records = first.value.records;
+      hasMore = first.value.hasMore;
+      throughSeq = first.value.cursor;
+    } catch (error) {
+      if (isNotFound(error)) return { events: [], throughSeq, hasMore: false };
+      throw error;
+    } finally {
+      abort.abort();
+      await frames.return?.().catch(() => undefined);
+    }
+  }
+  const minimum = options.minimumSeq ?? 0;
+  for (let pages = 1; hasMore && pages < MAX_PAGES; pages++) {
+    if (
+      records.some(
+        (record) =>
+          record.event.type === "turn/start" && record.event.seq >= minimum,
+      )
+    )
+      break;
+    const first = records[0];
+    if (!first || first.event.seq <= minimum) break;
+    const older = await controller.page(
+      {
+        address,
+        throughSeq,
+        beforeSeq: first.event.seq,
+        maxMessages: PAGE_MESSAGES,
+        turnWindow,
+      },
+      signal,
+    );
+    if (!older.records.length) {
+      hasMore = false;
+      break;
+    }
+    records = [...older.records, ...records];
+    hasMore = older.hasMore;
+  }
+  const start = records.findIndex(
+    (record) =>
+      record.event.type === "turn/start" && record.event.seq >= minimum,
+  );
+  const selected =
+    start < 0
+      ? []
+      : records.slice(start).filter((record) => record.event.seq >= minimum);
+  const beforeSeq = selected[0]?.event.seq;
+  return {
+    events: selected.map(({ event }) => ({
+      type: event.type,
+      time: event.time,
+      data: event.data,
+    })),
+    beforeSeq,
+    throughSeq,
+    hasMore:
+      beforeSeq !== undefined &&
+      hasMore &&
+      (records[0]?.event.seq ?? minimum) > minimum,
+  };
+}
+
 /** One stored session event, as DSH's wire DTO carries it. */
 export interface StoredEvent {
   type: string;
