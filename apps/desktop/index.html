@@ -5,9 +5,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0C0B10" />
     <title>Aura · 个人工作台</title>
+    <link rel="stylesheet" href="/src/startup.css" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root" inert aria-hidden="true"></div>
+    <section
+      class="desktop-startup"
+      id="desktop-startup"
+      aria-label="正在打开 Aura"
+    >
+      <div class="desktop-startup-drag" aria-hidden="true"></div>
+      <div class="desktop-startup-grid" aria-hidden="true"></div>
+      <div class="desktop-startup-brand" aria-hidden="true">AURA</div>
+      <div
+        class="desktop-startup-scene"
+        id="desktop-startup-scene"
+        aria-hidden="true"
+      >
+        <div class="desktop-startup-fallback">
+          <span class="desktop-startup-orbit"></span>
+          <span
+            class="desktop-startup-orbit desktop-startup-orbit-secondary"
+          ></span>
+          <span class="desktop-startup-core"></span>
+        </div>
+        <canvas id="desktop-startup-field"></canvas>
+      </div>
+      <div class="desktop-startup-wordmark">
+        <h1>aura</h1>
+        <p>你的个人智能助手</p>
+      </div>
+      <div class="desktop-startup-status">
+        <p id="desktop-startup-message" role="status" aria-live="polite">
+          正在打开工作台
+        </p>
+        <button id="desktop-startup-reload" type="button" hidden>
+          重新加载
+        </button>
+      </div>
+      <noscript>需要启用 JavaScript 才能打开 Aura。</noscript>
+    </section>
     <script type="module" src="/src/renderer.tsx"></script>
   </body>
 </html>

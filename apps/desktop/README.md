@@ -2,6 +2,8 @@
 
 桌面先创建窗口并加载 renderer，同时异步加载和启动本地 runtime；DSH 冷启动不阻塞窗口出现，API 自己报告就绪状态。退出时等待启动中的服务完成后统一关闭，避免在启动中关窗留下后台服务。
 
+启动页直接写在 renderer HTML 中，使用本地 CSS 和 Canvas 显示紫色光核与轨道，不加载视频、字体或网络素材。轻量入口先启动动画，再动态加载 React 工作台；工作台恢复本地状态并提交首屏后自动收起，不等待后端服务，也不强制播放完整时长。可见的 Aura 侧栏图标作为收束目标，侧栏隐藏时淡出；系统和应用内「减少动态效果」设置均使用静态标记并立即退场。加载较慢时提供手动重新加载，模块或渲染失败时保留明确提示；退场和页面关闭都会回收画布、定时器及监听器。
+
 Aura 的 Windows/macOS/Linux Electron 桌面入口。Vite renderer 复用 `@aura/workbench` 的 React Web 界面；主进程提供受限本地静态服务器，并通过正式 workspace 依赖嵌入 `@aura/runtime`。退出桌面应用时会回收由它启动的服务。
 
 主窗口默认 1360×860，使用 Electron 的 `titleBarStyle: hidden` 与 `titleBarOverlay` 将共用的应用菜单栏放入标题区；最小化、最大化与关闭保留原生控件。标题区留白可拖动窗口，菜单和导航按钮使用 no-drag。`window-host.ts` 仅接收主 frame 的深/浅色布尔设置，同步原生控件颜色。更改主进程或 preload 后需完全退出并重启桌面应用。实现依据 [Electron 自定义标题栏](https://www.electronjs.org/docs/latest/tutorial/custom-title-bar)。

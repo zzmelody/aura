@@ -102,7 +102,16 @@ const WorkflowChat = React.lazy(() =>
   })),
 );
 
-export default function App() {
+export interface WorkbenchReadyState {
+  dark: boolean;
+  reduced: boolean;
+}
+
+interface AppProps {
+  onReady?: (state: WorkbenchReadyState) => void;
+}
+
+export default function App({ onReady }: AppProps) {
   const workspace = useWorkspace();
   const codexAuth = useCodexAuth(workspace);
   const flowDraft = useFlowDraft();
@@ -807,6 +816,13 @@ export default function App() {
                       onClose={() => setSessionDialog(undefined)}
                     />
                   ) : null}
+                  {onReady ? (
+                    <WorkbenchReady
+                      onReady={onReady}
+                      dark={dark}
+                      reduced={reduced}
+                    />
+                  ) : null}
                 </>
               )}
             </React.Suspense>
@@ -815,4 +831,14 @@ export default function App() {
       </ThemeContext.Provider>
     </PluginResultsProvider>
   );
+}
+
+/** Inside Suspense so lazy first-screen content must commit before notifying. */
+function WorkbenchReady({
+  onReady,
+  dark,
+  reduced,
+}: WorkbenchReadyState & Required<AppProps>) {
+  useEffect(() => onReady({ dark, reduced }), [onReady, dark, reduced]);
+  return null;
 }
