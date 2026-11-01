@@ -43,12 +43,15 @@
 }
 .coding-tool-tabs {
   display: flex;
-  flex: 1;
+  flex: 0 1 auto;
   align-self: stretch;
   align-items: stretch;
   gap: 3px;
   min-width: 0;
   overflow: hidden;
+}
+.coding-tools-spacer {
+  flex: 1;
 }
 .coding-tool-tab {
   display: flex;

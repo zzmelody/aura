@@ -1,4 +1,10 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowLeft,
   ChevronDown,
@@ -137,6 +143,7 @@ export function CodingStudio({
     Record<string, Partial<Record<FlowMode, ChatModelSelection>>>
   >({});
   const sideToggle = useRef<HTMLButtonElement>(null);
+  const restoreToolFocus = useRef(false);
   const closingSides = useRef(new Set<string>());
   const selection = useRef({ conversationId, mainRunning });
   selection.current = { conversationId, mainRunning };
@@ -171,6 +178,12 @@ export function CodingStudio({
     !!project &&
     toolVisibility[toolKey] !== false &&
     (toolVisibility[toolKey] === true || tabs.length > 0);
+  useEffect(() => {
+    if (!sideVisible && restoreToolFocus.current) {
+      restoreToolFocus.current = false;
+      sideToggle.current?.focus();
+    }
+  }, [sideVisible]);
   const selectTool = (id: string) =>
     setToolSelections((current) => ({ ...current, [toolKey]: id }));
   const title = conversation?.title ?? legacy?.title ?? "新对话";
@@ -359,18 +372,18 @@ ${summary}`,
         </WorkbenchMenu>
       ) : null}
       {headerActions}
-      {project ? (
+      {project && !sideVisible ? (
         <button
           ref={sideToggle}
           type="button"
           className="icon-control"
           aria-label="工具面板"
           aria-expanded={sideVisible}
-          title={sideVisible ? "收起工具面板" : "打开工具面板"}
+          title="打开工具面板"
           onClick={() =>
             setToolVisibility((current) => ({
               ...current,
-              [toolKey]: !sideVisible,
+              [toolKey]: true,
             }))
           }
         >
@@ -428,11 +441,11 @@ ${summary}`,
                 onTerminal={() => void createTerminal()}
                 onClose={(tab) => void closeTool(tab)}
                 onHide={() => {
+                  restoreToolFocus.current = true;
                   setToolVisibility((current) => ({
                     ...current,
                     [toolKey]: false,
                   }));
-                  sideToggle.current?.focus();
                 }}
               />
             }

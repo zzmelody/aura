@@ -113,24 +113,6 @@ export function ToolTabs({
         ))}
         {!tabs.length ? <span className="coding-tools-label">工具</span> : null}
       </div>
-      {tabs.length > 1 ? (
-        <WorkbenchMenu
-          label="切换工具"
-          items={tabs.map((tab) => ({
-            id: tab.id,
-            label: `${tab.id === selectedId ? "✓ " : ""}${tab.title}`,
-            icon:
-              tab.kind === "chat" ? (
-                <MessageSquare size={14} />
-              ) : (
-                <SquareTerminal size={14} />
-              ),
-            action: () => onSelect(tab.id),
-          }))}
-        >
-          <ChevronDown size={14} />
-        </WorkbenchMenu>
-      ) : null}
       <WorkbenchMenu
         label="打开工具"
         items={[
@@ -156,6 +138,25 @@ export function ToolTabs({
           <Plus size={15} />
         )}
       </WorkbenchMenu>
+      <div className="coding-tools-spacer" />
+      {tabs.length > 1 ? (
+        <WorkbenchMenu
+          label="切换工具"
+          items={tabs.map((tab) => ({
+            id: tab.id,
+            label: `${tab.id === selectedId ? "✓ " : ""}${tab.title}`,
+            icon:
+              tab.kind === "chat" ? (
+                <MessageSquare size={14} />
+              ) : (
+                <SquareTerminal size={14} />
+              ),
+            action: () => onSelect(tab.id),
+          }))}
+        >
+          <ChevronDown size={14} />
+        </WorkbenchMenu>
+      ) : null}
       <button
         type="button"
         className="icon-control"
