@@ -7,16 +7,18 @@ description: Aura 仓库的目录规范、应用与包放置、三层依赖方�
 
 本仓库是 Aura 宿主。pnpm workspace 只收 `apps/*` 与 `packages/{frontend,backend,shared}/*`（见 `pnpm-workspace.yaml`）；根 `plugins/*` 随产品发布但不属于 workspace。个人业务插件在独立仓库 aura-studio。
 
-完整架构背景见 [架构](../../../docs/architecture.md)，各包的文件级职责见 [模块职责](../../../docs/development/module-boundaries.md)。改动包放置或依赖方向前读前者。
+本规范自包含，禁止依赖项目外的规范或指引，不链接、调用或要求加载其他 skill。支持文件只放在本 skill 目录内，内部文件可以互相引用。项目源码、工具配置及记录是事实输入，不是外置规则。
+
+各包文件级职责见本 skill 内的[模块职责](references/module-boundaries.md)。
 
 ## 三层与依赖方向
 
-| 位置                  | 放置内容                                         | 允许依赖                      |
-| --------------------- | ------------------------------------------------ | ----------------------------- |
-| `apps/*`              | 可运行、可发布的入口与平台生命周期               | 按平台使用下列 library        |
-| `packages/frontend/*` | 可复用 React Web 界面、交互状态、导航、宿主适配  | frontend、shared              |
-| `packages/backend/*`  | HTTP 服务、凭据、授权、DSH 进程、文件与网络能力  | backend library、shared       |
-| `packages/shared/*`   | 与运行环境无关的类型、校验、存储格式和纯流程逻辑 | 其他 shared                   |
+| 位置                  | 放置内容                                         | 允许依赖                |
+| --------------------- | ------------------------------------------------ | ----------------------- |
+| `apps/*`              | 可运行、可发布的入口与平台生命周期               | 按平台使用下列 library  |
+| `packages/frontend/*` | 可复用 React Web 界面、交互状态、导航、宿主适配  | frontend、shared        |
+| `packages/backend/*`  | HTTP 服务、凭据、授权、DSH 进程、文件与网络能力  | backend library、shared |
+| `packages/shared/*`   | 与运行环境无关的类型、校验、存储格式和纯流程逻辑 | 其他 shared             |
 
 - `apps/*` 现有 `web`、`mobile`、`desktop`、`server`。声明 `aura.kind: app` 与 `aura.platform`，不声明 `aura.layer`。Web 与 Capacitor mobile 依赖 frontend/shared，server 依赖 backend/shared，Electron desktop 可组合 frontend/backend/shared。应用保持薄宿主，只拥有运行、构建与平台生命周期。
 - `packages/*` 下每个包声明 `aura.kind: library` 和与目录一致的 `aura.layer`。
@@ -52,7 +54,7 @@ description: Aura 仓库的目录规范、应用与包放置、三层依赖方�
 - **TypeScript。** Aura 的 JavaScript 运行时代码用 TypeScript 写：应用、包、脚本和测试源码用 `.ts`（JSX 用 `.tsx`），不新增也不直接使用 `.mjs`，不写手写实现加 `.d.ts` 的成对文件。保持 Node.js 24 可直接擦除执行的语法，除非明确需要构建产物。
 - **HTTP 用 Hono** 及其官方运行时适配器。不要直接用 `node:http` 搭应用的 HTTP server、路由、body parser、静态文件服务或流式协议；裸 Node HTTP 只保留给框架适配器或有文档记录的互操作需求。
 - **Web-first。** 可复用 UI 用 React DOM，Web renderer 用 Vite，桌面宿主用 Electron，移动宿主用 Capacitor。不添加 Expo、React Native、React Native Web 或 Metro 依赖。浏览器、Electron renderer 与 Capacitor 共用同一套 DOM 实现。
-- **DSH 作为已发布依赖使用**，Aura 行为通过它的插件和服务缝隙接入，不复制也不修改 DSH、pi-ai 的源码或 `node_modules` 下的文件。模型 provider 与交互式授权必须经过 DSH（见根 [AGENTS.md](../../../AGENTS.md)）。
+- **DSH 作为已发布依赖使用**，Aura 行为通过它的插件和服务缝隙接入，不复制也不修改 DSH、pi-ai 的源码或 `node_modules` 下的文件。模型 provider 与交互式授权必须经过 DSH。
 - **pnpm。** 从仓库根使用，保持唯一的 `pnpm-lock.yaml`，workspace 依赖用 `workspace:*`，不添加 npm 或 Yarn 的 lockfile。根开发工具依赖放根 `devDependencies`，应用和库依赖放实际使用它的 workspace。
 - **单份 React 运行时。** React、React DOM 及 renderer 级 UI 运行时在可复用 frontend UI 库中声明为 peer dependency，由应用提供唯一一份。
 
@@ -79,12 +81,20 @@ description: Aura 仓库的目录规范、应用与包放置、三层依赖方�
 
 - 插件自带业务后端、前端、Actions、Flows、presets 和 HTTP adapter。宿主只保留通用的工作流执行、模型与凭据中介、存储和插件生命周期端口；不要为某个插件新增常驻的宿主 facade。
 - `plugins/` 是默认的受信任发现根。发现递归进入分类目录，遇到 `aura.plugin.json` 即停止下探，跳过隐藏/生成/依赖目录和目录链接。`.aura/plugins.json` 的显式条目按路径或插件 ID 覆盖，包含停用状态和插件自有设置。源码迁移绝不改写用户配置。
-- 把插件搬目录或改 ID 时，原有的 domain 名称、存储格式和 ID 靠显式 compatibility 授权保留（见根 [AGENTS.md](../../../AGENTS.md)），不靠改写用户配置或数据。
-
-编写插件代码本身用 [aura-plugin-development](../aura-plugin-development/SKILL.md) skill。
+- 把插件搬目录或改 ID 时，原有的 domain 名称、存储格式和 ID 靠显式 compatibility 授权保留，不靠改写用户配置或数据。
 
 ## 外部业务插件
 
-- 两个仓库之间唯一的耦合是插件 manifest 的 `engines.pluginSdk` 与宿主 `@aura/plugin-sdk` 版本（当前 1.4.0）的 semver 范围检查。宿主在加载时提供 `@aura/plugin-sdk`，工作台向页面 bundle 注入 React、`@aura/plugin-ui` 和 `@aura/workbench/*`；插件不打包这些。
+- 两个仓库之间唯一的耦合是插件 manifest 的 `engines.pluginSdk` 与宿主 `@aura/plugin-sdk` 版本（以本仓库 `packages/backend/plugin-sdk/package.json` 的版本为准）的 semver 范围检查。宿主在加载时提供 `@aura/plugin-sdk`，工作台向页面 bundle 注入 React、`@aura/plugin-ui` 和 `@aura/workbench/*`；插件不打包这些。
 - 改动 SDK 公开契约时同步更新其版本与 README，并说明对 aura-studio 的影响。不要为了迁就某个 studio 插件把业务逻辑搬回宿主。
 - 在本仓库写文档或注释时，指向 aura-studio 的插件要写明它在独立仓库，不要写成 `plugins/` 下的路径。
+
+## 临时文件与正式产物
+
+- Agent 临时脚本、一次性工具、日志、截图、调试输出和下载物统一放项目根 `local/`，按需创建，可按任务建子目录。
+- 不得在源码、文档、规则目录或项目根散落写入临时文件。`local/` 可整体删除，不存放需要保留或交付的内容。
+- 源码、构建配置和正式文档不得引用或依赖 `local/`。长期工具进入正式工具目录，正式交付文件放约定位置。
+- 测试使用框架管理或系统隔离的临时目录并自行清理，不依赖仓库 `local/`，不修改真实用户数据。
+- 框架管理的构建产物、缓存和用户明确指定的输出位置沿用其既有约定。
+
+根 `/local/` 已被 Git 忽略；长期工具放 `scripts/`。

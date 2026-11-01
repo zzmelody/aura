@@ -1,7 +1,7 @@
 # Aura 插件 JavaScript 规范
 
-外部插件的 Flow、Action、插件后端、辅助模块和测试采用 [Airbnb JavaScript Style Guide](https://github.com/airbnb/javascript) 为基础。
-新增或修改插件 JavaScript 前必须阅读本页及插件自己的 `AGENTS.md`。项目约定和公共 SDK 契约优先于上游建议。
+外部插件的 Flow、Action、插件后端、辅助模块和测试采用 Airbnb JavaScript Style Guide 为基础。
+新增或修改插件 JavaScript 时使用本页及目标插件的实际工具配置。项目约定和公共 SDK 契约优先于上游建议。
 本页适用于外部插件；Aura 宿主、内置贡献和其他仓库代码继续遵守现有 TypeScript 及工具配置。
 
 ## 排版和质量

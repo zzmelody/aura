@@ -24,7 +24,10 @@ contract for complete workbench pages. Verify the checked-out host and `@aura/pl
 - A page shares the browser realm and a backend is trusted local Node.js code;
   an ErrorBoundary and operation allowlist do not constitute a security sandbox.
 - Development setup and builds are explicit commands. Aura startup never installs
-  dependencies or builds packages. Failed revisions retain the last working version.
+  dependencies or builds packages.
+- The runtime watches enabled built bundles and sends graph updates over SSE;
+  backend revisions include static local helpers and switch when calls and
+  plugin Flow Runs are idle. Failed revisions retain the last working version.
   A frontend replacement remounts that plugin page. Use a separate explicit
   build watch command during authoring; never turn host discovery into a build.
 
@@ -32,7 +35,7 @@ contract for complete workbench pages. Verify the checked-out host and `@aura/pl
   adapters and `@aura/workbench/transport` Run/media transports. The renderer seeds
   these modules in DSH; runtime graph externals must list them. Business JSON goes
   through the plugin's own backend; existing binary upload/download streams and
-  generic durable Run controls remain bounded public host APIs.
+  generic durable Run controls remain bounded public host APIs. Do not import workbench private source paths.
 
 ## Run result renderers
 
@@ -45,13 +48,15 @@ ctx.auraWorkbench.result(
   defineResult({
     id: "video-composition",
     match: ({ output }) => isComposition(output),
-    render: ({ endpoint, output }) => <VideoResult endpoint={endpoint} value={output} />,
+    render: ({ endpoint, output }) => (
+      <VideoResult endpoint={endpoint} value={output} />
+    ),
   }),
 );
 ```
 
 - `match(context)` receives `{ endpoint, pluginId, run: { id, flowId,
-  flowPluginId?, status, input? }, output }`. Keep it cheap and side-effect
+flowPluginId?, status, input? }, output }`. Keep it cheap and side-effect
   free; match on the output shape or on your own Flow IDs.
 - Renderers are asked in registration order and the first match wins. A
   throwing `match` counts as no match; a throwing `render` falls back to the

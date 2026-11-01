@@ -5,7 +5,13 @@ description: Aura 的测试规范：node:test 用法、测试文件放置与命�
 
 # Aura 测试规范
 
+本规范自包含，禁止依赖项目外的规范或指引，不链接、调用或要求加载其他 skill。支持文件只放在本 skill 目录内，内部文件可以互相引用。项目源码、工具配置及记录是事实输入，不是外置规则。
+
 测试用 Node.js 内置 `node:test` 与 `node:assert/strict`，不引入第三方测试框架、断言库或 mock 库。
+
+- 以聚焦、轻量的单元或接口测试验证实际行为，避免引入重度测试任务。
+- 默认在功能形成可验证单元后集中检查；定位故障、复现 bug 和必要的阶段验证可以运行最小集合。
+- 集合已通过且没有相关变更、失败或新疑点时不重复运行，不在每次编辑后运行全量检查。
 
 ## 放置与运行
 
@@ -21,7 +27,7 @@ description: Aura 的测试规范：node:test 用法、测试文件放置与命�
 - 测试名是一句说明被验证行为的话，描述行为而非实现：`"Action host capabilities are limited to manifest grants"`，不是 `"actionCapabilities works"`。
 - 断言一律 `import assert from "node:assert/strict"`。
 - 导入被测模块用相对路径加扩展名（`../src/actions.ts`），跨包用包名。
-- 测试代码同样遵守 [aura-code-style](../aura-code-style/SKILL.md)；测试 mock 需要 `any` 时用针对具体规则的行级禁用并说明原因。
+- 测试使用项目 TypeScript strict、类型专用导入、双引号和 Prettier 配置；mock 优先明确类型与 `unknown`。确需 `any` 时仅用针对具体规则的行级禁用并说明原因。
 
 ## 隔离与清理
 
@@ -40,9 +46,13 @@ description: Aura 的测试规范：node:test 用法、测试文件放置与命�
 用 `test(name, { skip: <reason | false> }, fn)` 表达条件跳过，理由写成人能读懂的一句话：
 
 ```ts
-test("DSH agent loop streams events", {
-  skip: nodeMajor < 24 ? "DSH requires Node >=24" : false,
-}, async () => {});
+test(
+  "DSH agent loop streams events",
+  {
+    skip: nodeMajor < 24 ? "DSH requires Node >=24" : false,
+  },
+  async () => {},
+);
 ```
 
 - 依赖真实账号、付费模型或本机外部服务的测试默认跳过，用 `AURA_TEST_*` 环境变量显式开启（现有 `AURA_TEST_COMFY_WORKFLOW`、`AURA_TEST_LOCAL_AI`、`AURA_TEST_LOCAL_AI_ACTION`）。新增同类测试沿用这个命名。
@@ -71,8 +81,10 @@ test("DSH agent loop streams events", {
 | 改动 `plugins/*`       | `pnpm run check:product-plugins`                                    |
 | 跨包结构或工具规则改动 | `pnpm run check`                                                    |
 
-`pnpm run check` 依次执行产品插件检查、格式、Lint、workspace 边界、类型检查和测试，与 CI 同一入口。格式与 Lint 的细分命令见 [代码规范](../aura-code-style/SKILL.md)。
+`pnpm run check` 依次执行产品插件检查、格式、Lint、workspace 边界、类型检查和测试。定向格式检查可用 `pnpm exec prettier --check <files>`；定向严格 Lint 可用 `pnpm run lint:strict <file>`。
 
-非平凡行为变化同时更新所属包的 README、相关功能文档和聚焦测试。包内 README 说明该包的职责、公共接口与检查方式；跨包架构和用户功能文档在 `docs/`，新增文档同时更新 [文档目录](../../../docs/README.md)。
+非平凡行为变化同时更新所属包的 README、相关功能文档和聚焦测试。包内 README 说明该包的职责、公共接口与检查方式；跨包架构和用户功能文档在 `docs/`，新增文档同时更新项目的 `docs/README.md` 导航。
 
 验证记录只写实际执行过的结果：跳过的写明跳过，失败的贴输出，没跑的说没跑。不把合成样本或未执行的检查写成通过，不把"应该能过"写成通过。
+
+纯规范文档调整只检查本次 Markdown 格式、链接、skill frontmatter 和依赖边界，不因此运行产品构建或业务测试。测试之外的 Agent 临时文件放根 `local/`。
