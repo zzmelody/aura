@@ -131,6 +131,8 @@ export type Turn = {
   /** When each steering message arrived. */
   steers: number[];
   status: "running" | "complete" | "stopped" | "error";
+  /** Local admission only; no model request has been sent yet. */
+  waitingForService?: boolean;
   error?: string;
   startedAt: number;
   endedAt?: number;

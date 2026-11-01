@@ -30,7 +30,7 @@ function storedReducedMotion(): boolean {
   }
 }
 
-/** Leaves when the workbench reports its initial data ready or an actionable error. */
+/** Leaves when the initial interface is committed; backend preparation is separate. */
 export function startDesktopStartup(): DesktopStartup {
   const surface = startupElement("desktop-startup");
   const root = startupElement("root");
@@ -50,8 +50,7 @@ export function startDesktopStartup(): DesktopStartup {
   const retry = () => location.reload();
   const slow = setTimeout(() => {
     if (state !== "loading") return;
-    message.textContent =
-      "正在准备界面、工作空间和模型，你可以继续等待或重新加载。";
+    message.textContent = "界面加载较慢，你可以继续等待或重新加载。";
     reload.hidden = false;
   }, 10_000);
 

@@ -88,8 +88,7 @@ export class PluginBackends {
   }) {
     this.#builtins = options.builtins;
     this.#dataRoot = options.dataRoot;
-    this.#tempRoot =
-      options.tempRoot ?? join(dirname(options.dataRoot), "tmp");
+    this.#tempRoot = options.tempRoot ?? join(dirname(options.dataRoot), "tmp");
     this.#log = options.log ?? (() => undefined);
     this.#media = options.media;
     this.#host = options.host;

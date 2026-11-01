@@ -6,6 +6,7 @@ import type {
 } from "@aura/protocol/types";
 import type { WorkspaceController } from "./useWorkspace";
 import { openExternal, platform } from "./platform";
+import { startupFetch } from "./startup-fetch";
 
 const localRuntime = "http://127.0.0.1:4311";
 
@@ -36,9 +37,10 @@ export function useCodexAuth(workspace: WorkspaceController) {
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       try {
-        const response = await fetch(`${endpoint}/auth/codex/status`, {
+        const response = await startupFetch(
+          `${endpoint}/auth/codex/status`,
           signal,
-        });
+        );
         if (!response.ok) throw new Error("status unavailable");
         const next = (await response.json()) as CodexAuthStatus;
         setStatus(next);
@@ -58,7 +60,7 @@ export function useCodexAuth(workspace: WorkspaceController) {
           model: "gpt-6.1-sol",
         });
       } finally {
-        setLoading(false);
+        if (!signal?.aborted) setLoading(false);
       }
     },
     [endpoint, setState],
@@ -66,6 +68,7 @@ export function useCodexAuth(workspace: WorkspaceController) {
 
   useEffect(() => {
     if (!workspace.ready) return;
+    setLoading(true);
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const read = async () => {

@@ -280,19 +280,6 @@ textarea {
   background: var(--surface);
   border-right: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 58px;
-  flex-shrink: 0;
-  padding: 0 10px;
-}
-.sidebar-brand > strong {
-  font-size: 23px;
-  font-weight: 600;
-  letter-spacing: -0.8px;
-}
 .icon-control {
   display: inline-flex;
   width: 30px;
@@ -2982,12 +2969,6 @@ textarea {
   .workflow-input-directory {
     grid-column: auto;
   }
-}
-.sidebar-brand-actions {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  margin-left: auto;
 }
 .workspace-sidebar .selected {
   color: var(--text);

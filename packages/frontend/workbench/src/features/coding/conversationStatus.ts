@@ -3,6 +3,7 @@ import type { SessionStatus } from "../../sidebarSessions.ts";
 import type { Turn } from "./turns.ts";
 
 const RUNNING: SessionStatus = { kind: "running", label: "正在执行" };
+const CONNECTING: SessionStatus = { kind: "queued", label: "连接服务中" };
 const WAITING: SessionStatus = { kind: "waiting", label: "等待你的回答" };
 const COMPLETED: SessionStatus = { kind: "completed", label: "已完成" };
 const STOPPED: SessionStatus = { kind: "stopped", label: "已停止" };
@@ -42,6 +43,7 @@ export function codingConversationStatus(
 ): SessionStatus | undefined {
   const last = turns.at(-1);
   if (!last) return undefined;
+  if (last.status === "running" && last.waitingForService) return CONNECTING;
   if (last.status === "running")
     return last.questions.some((item) => !item.answered) ? WAITING : RUNNING;
   if (last.status === "complete") return COMPLETED;

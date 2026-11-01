@@ -21,6 +21,23 @@ test("no turns means no sidebar status", () => {
   assert.equal(codingConversationStatus([]), undefined);
 });
 
+test("a locally queued turn reports connecting without claiming model execution", () => {
+  const turn = { ...newTurn("queued", "任务", 1), waitingForService: true };
+  assert.deepEqual(codingConversationStatus([turn]), {
+    kind: "queued",
+    label: "连接服务中",
+  });
+  assert.equal(isActiveStatus(codingConversationStatus([turn])), false);
+  assert.equal(
+    codingConversationStatus([{ ...turn, waitingForService: false }])?.kind,
+    "running",
+  );
+  assert.equal(
+    codingConversationStatus([finishTurn(turn, "stopped", 2)])?.kind,
+    "stopped",
+  );
+});
+
 test("a finished turn reports completed, stopped or failed", () => {
   assert.deepEqual(codingConversationStatus([settled("complete")]), {
     kind: "completed",

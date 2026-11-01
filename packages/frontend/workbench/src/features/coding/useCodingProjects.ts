@@ -4,9 +4,13 @@ import type {
   CodingProjectInfo,
   ChatModelSelection,
   FlowMode,
+  PersonalAssistantInfo,
 } from "@aura/protocol/types";
 import type { SessionStatus } from "../../sidebarSessions";
-import { conversationSides } from "@aura/protocol/conversations";
+import {
+  conversationSides,
+  PERSONAL_ASSISTANT_SESSION_ID,
+} from "@aura/protocol/conversations";
 import {
   archiveConversation,
   closeConversation,
@@ -15,9 +19,11 @@ import {
   listProjects,
   openSideChat,
   saveConversationModel,
+  personalAssistant,
 } from "./api";
 import { conversationInfoStatus, isActiveStatus } from "./conversationStatus";
 import { conversationProject } from "./conversation-project";
+import { startupCache } from "../../startup-cache.ts";
 
 /** How often the sidebar re-reads statuses while some turn is still running. */
 const ACTIVE_POLL_MS = 3000;
@@ -25,8 +31,13 @@ const ACTIVE_POLL_MS = 3000;
 export type CodingProjectsController = {
   endpoint: string;
   projects: CodingProjectInfo[];
+  ready: boolean;
+  assistant?: PersonalAssistantInfo;
+  assistantLoading: boolean;
+  loadAssistant(create?: boolean, signal?: AbortSignal): Promise<boolean>;
   /** Conversations of each workspace, most recently active first. */
   conversations: Record<string, CodingConversationInfo[]>;
+  conversationErrors: Record<string, string>;
   /** The workspace coding mode works in; the sidebar and studio share it. */
   selectedId?: string;
   /** The open conversation; undefined starts a new one in the workspace. */
@@ -43,7 +54,11 @@ export type CodingProjectsController = {
   /** Opens a conversation, or a new one when `conversationId` is omitted. */
   open(projectId: string, conversationId?: string): void;
   refresh(signal?: AbortSignal): Promise<CodingProjectInfo[]>;
-  refreshConversations(projectId: string, signal?: AbortSignal): Promise<void>;
+  refreshConversations(
+    projectId: string,
+    signal?: AbortSignal,
+    metadataOnly?: boolean,
+  ): Promise<void>;
   openSide(projectId: string, parentId: string): Promise<string>;
   closeSide(projectId: string, sessionId: string): Promise<void>;
   archive(
@@ -67,17 +82,29 @@ export type CodingProjectsController = {
 export function useCodingProjects(
   endpoint: string,
   enabled: boolean,
+  statusesEnabled = true,
 ): CodingProjectsController {
-  const [projects, setProjects] = useState<CodingProjectInfo[]>([]);
+  const [restored] = useState(() => startupCache.sidebar(endpoint));
+  const [projects, setProjects] = useState(restored.projects);
+  const [dataEndpoint, setDataEndpoint] = useState(endpoint);
+  const [readyEndpoint, setReadyEndpoint] = useState<string>();
   const [conversations, setConversations] = useState<
     Record<string, CodingConversationInfo[]>
+  >(restored.conversations);
+  const [conversationErrors, setConversationErrors] = useState<
+    Record<string, string>
   >({});
   const [selection, setSelection] = useState<{
     projectId?: string;
     conversationId?: string;
     branchFrom?: string;
-  }>({});
+  }>({ projectId: conversationProject(restored.projects)?.id });
   const [error, setError] = useState("");
+  const [assistantProject, setAssistantProject] = useState<{
+    endpoint: string;
+    project: CodingProjectInfo;
+  }>();
+  const [assistantRequests, setAssistantRequests] = useState(0);
   // Ignore lists requested before a successful mutation changed these rows.
   const versions = useRef(new Map<string, number>());
   /**
@@ -109,11 +136,55 @@ export function useCodingProjects(
   );
 
   const refreshConversations = useCallback(
-    async (projectId: string, signal?: AbortSignal) => {
+    async (projectId: string, signal?: AbortSignal, metadataOnly = false) => {
       const version = versions.current.get(projectId);
-      const list = await listConversations(endpoint, projectId, signal);
+      let list: CodingConversationInfo[];
+      try {
+        list = await listConversations(
+          endpoint,
+          projectId,
+          signal,
+          !metadataOnly,
+        );
+      } catch (reason) {
+        if (!signal?.aborted && version === versions.current.get(projectId))
+          setConversationErrors((current) => ({
+            ...current,
+            [projectId]: "对话列表加载失败。",
+          }));
+        throw reason;
+      }
+      if (signal?.aborted) return;
       if (version !== versions.current.get(projectId)) return;
-      setConversations((current) => ({ ...current, [projectId]: list }));
+      startupCache.saveConversations(endpoint, projectId, list);
+      setConversationErrors((current) => {
+        if (!current[projectId]) return current;
+        const next = { ...current };
+        delete next[projectId];
+        return next;
+      });
+      setConversations((current) => {
+        if (!metadataOnly) return { ...current, [projectId]: list };
+        const previous = new Map(
+          (current[projectId] ?? []).map((item) => [item.id, item]),
+        );
+        return {
+          ...current,
+          [projectId]: list.map((item) => {
+            const saved = previous.get(item.id);
+            return {
+              ...(saved?.lastTurnStatus
+                ? { lastTurnStatus: saved.lastTurnStatus }
+                : {}),
+              ...(saved?.waitingForAnswer
+                ? { waitingForAnswer: true as const }
+                : {}),
+              ...item,
+            };
+          }),
+        };
+      });
+      if (metadataOnly) return;
       // The list now carries authoritative statuses for these rows, so live
       // values survive only for the conversation still on screen.
       const listed = new Set(list.map((item) => item.id));
@@ -127,6 +198,49 @@ export function useCodingProjects(
       });
     },
     [endpoint],
+  );
+
+  const loadAssistant = useCallback(
+    async (create = false, signal?: AbortSignal) => {
+      setAssistantRequests((current) => current + 1);
+      try {
+        const info = await personalAssistant(endpoint, create, signal);
+        if (signal?.aborted || !info) return false;
+        versions.current.set(
+          info.project.id,
+          (versions.current.get(info.project.id) ?? 0) + 1,
+        );
+        setAssistantProject({ endpoint, project: info.project });
+        setProjects((current) =>
+          current.some((project) => project.id === info.project.id)
+            ? current
+            : [...current, info.project],
+        );
+        setConversations((current) => ({
+          ...current,
+          [info.project.id]: [
+            info.conversation,
+            ...(current[info.project.id] ?? []).filter(
+              (conversation) => conversation.id !== info.conversation.id,
+            ),
+          ],
+        }));
+        // A list started before the assistant opened is now stale. Read a new
+        // one so the other tasks remain visible even during initial restore.
+        void refreshConversations(info.project.id, signal, true).catch(
+          () => {},
+        );
+        setError("");
+        return true;
+      } catch (reason) {
+        if (!signal?.aborted)
+          setError(reason instanceof Error ? reason.message : String(reason));
+        return false;
+      } finally {
+        setAssistantRequests((current) => current - 1);
+      }
+    },
+    [endpoint, refreshConversations],
   );
 
   /** Server status for every listed row, overlaid with the pane's live status. */
@@ -143,19 +257,30 @@ export function useCodingProjects(
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       const list = await listProjects(endpoint, signal);
+      if (signal?.aborted) return list;
+      startupCache.saveProjects(endpoint, list);
       setProjects(list);
+      const projectIds = new Set(list.map((project) => project.id));
+      setConversations((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([id]) => projectIds.has(id)),
+        ),
+      );
       setError("");
       setSelection((current) =>
-        current.projectId && list.some((item) => item.id === current.projectId)
+        current.conversationId ||
+        (current.projectId &&
+          list.some((item) => item.id === current.projectId))
           ? current
           : {
               projectId: conversationProject(list)?.id,
             },
       );
+      setReadyEndpoint(endpoint);
       // A workspace whose conversations fail to load still shows as a folder.
       await Promise.all(
         list.map((item) =>
-          refreshConversations(item.id, signal).catch(() => {}),
+          refreshConversations(item.id, signal, true).catch(() => {}),
         ),
       );
       return list;
@@ -167,8 +292,17 @@ export function useCodingProjects(
     if (!enabled) {
       setProjects([]);
       setConversations({});
+      setConversationErrors({});
+      setReadyEndpoint(undefined);
       return;
     }
+    const saved = startupCache.sidebar(endpoint);
+    setDataEndpoint(endpoint);
+    setProjects(saved.projects);
+    setSelection({ projectId: conversationProject(saved.projects)?.id });
+    setConversations(saved.conversations);
+    setConversationErrors({});
+    setReadyEndpoint(undefined);
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const read = () =>
@@ -183,7 +317,29 @@ export function useCodingProjects(
       abort.abort();
       clearTimeout(timer);
     };
-  }, [enabled, refresh]);
+  }, [enabled, refresh, endpoint]);
+
+  // Opening a workspace needs its records, not a scan of every task's log.
+  // Status enrichment starts only after the boot-critical model read settles.
+  useEffect(() => {
+    if (!enabled || !statusesEnabled || readyEndpoint !== endpoint) return;
+    const abort = new AbortController();
+    const timer = setTimeout(() => {
+      for (const project of projects)
+        void refreshConversations(project.id, abort.signal).catch(() => {});
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      abort.abort();
+    };
+  }, [
+    enabled,
+    statusesEnabled,
+    readyEndpoint,
+    endpoint,
+    projects,
+    refreshConversations,
+  ]);
 
   // Turns run on the server whether or not their conversation is open, so the
   // sidebar polls the projects that have one until each settles.
@@ -199,7 +355,7 @@ export function useCodingProjects(
     [conversations],
   );
   useEffect(() => {
-    if (!enabled || !activeProjects) return;
+    if (!enabled || !statusesEnabled || !activeProjects) return;
     const abort = new AbortController();
     const timer = setInterval(() => {
       for (const projectId of activeProjects.split("\n"))
@@ -209,7 +365,7 @@ export function useCodingProjects(
       clearInterval(timer);
       abort.abort();
     };
-  }, [enabled, activeProjects, refreshConversations]);
+  }, [enabled, statusesEnabled, activeProjects, refreshConversations]);
 
   const select = useCallback(
     (projectId: string | undefined) =>
@@ -334,13 +490,31 @@ export function useCodingProjects(
     [endpoint, mutate],
   );
 
+  const assistantConversation =
+    assistantProject?.endpoint === endpoint
+      ? conversations[assistantProject.project.id]?.find(
+          (item) => item.id === PERSONAL_ASSISTANT_SESSION_ID,
+        )
+      : undefined;
   return {
     endpoint,
-    projects,
-    conversations,
-    selectedId: selection.projectId,
-    conversationId: selection.conversationId,
-    branchFrom: selection.branchFrom,
+    projects: dataEndpoint === endpoint ? projects : [],
+    ready: readyEndpoint === endpoint,
+    assistant:
+      assistantConversation && assistantProject
+        ? {
+            conversation: assistantConversation,
+            project: assistantProject.project,
+          }
+        : undefined,
+    assistantLoading: assistantRequests > 0,
+    loadAssistant,
+    conversations: dataEndpoint === endpoint ? conversations : {},
+    conversationErrors: dataEndpoint === endpoint ? conversationErrors : {},
+    selectedId: dataEndpoint === endpoint ? selection.projectId : undefined,
+    conversationId:
+      dataEndpoint === endpoint ? selection.conversationId : undefined,
+    branchFrom: dataEndpoint === endpoint ? selection.branchFrom : undefined,
     continueIn: (projectId) =>
       setSelection((current) =>
         current.projectId === projectId
@@ -405,7 +579,7 @@ export function useCodingProjects(
     closeSide,
     archive,
     close,
-    statuses,
+    statuses: dataEndpoint === endpoint ? statuses : {},
     reportStatus,
     error,
   };

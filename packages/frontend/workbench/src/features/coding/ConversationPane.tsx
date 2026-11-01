@@ -77,6 +77,7 @@ import type {
 } from "@aura/protocol/types";
 import { WorkflowRichText } from "../../screens/WorkflowValue";
 import { ChatModelControls } from "../../screens/ChatModelControls";
+import { modelCatalogs } from "../../model-catalog-store";
 import { WorkbenchMenu } from "../../WorkbenchMenu";
 import "./composer.css";
 import { writeClipboard } from "../../clipboard";
@@ -89,6 +90,7 @@ import {
   answerQuestion,
   steerCodingTurn,
   stopCodingTurn,
+  prepareCodingTurn,
 } from "./api";
 import { fileDiff } from "./diff";
 import { retainConversations } from "./conversation-cache";
@@ -753,9 +755,11 @@ const TurnView = memo(function TurnView({
   const workflows = new Map(turn.workflows?.map((run) => [run.runId, run]));
   const hasSteps = turn.tools.length > 0 || !!turn.progress?.total;
   const stateLabel = running
-    ? waiting
-      ? "等待你的回答"
-      : "执行中"
+    ? turn.waitingForService
+      ? "正在连接本地服务，可停止等待"
+      : waiting
+        ? "等待你的回答"
+        : "执行中"
     : turn.status === "complete"
       ? "执行完成"
       : turn.status === "stopped"
@@ -1243,6 +1247,7 @@ export type ConversationSend = (
 export function ConversationPane({
   endpoint,
   visible = true,
+  preparing = false,
   provider,
   projectId,
   directory = "",
@@ -1281,6 +1286,8 @@ export function ConversationPane({
 }: {
   endpoint: string;
   visible?: boolean;
+  /** A restored workspace can accept a request while its service starts. */
+  preparing?: boolean;
   provider: Workspace["provider"];
   /** Missing while workspaces load; history and draft remain available. */
   projectId?: string;
@@ -1314,7 +1321,7 @@ export function ConversationPane({
   empty?: React.ReactNode;
   footnote?: React.ReactNode;
   /** A new conversation got its id. */
-  onOpen?(sessionId: string): void;
+  onOpen?(sessionId: string, selection?: ChatModelSelection): void;
   /** A turn started or ended, so listings may have changed. */
   onSettled?(): void;
   onProvider(provider: Workspace["provider"]): void;
@@ -1345,12 +1352,26 @@ export function ConversationPane({
   );
   const [modelOpenRequest, setModelOpenRequest] = useState(0);
   const [error, setError] = useState("");
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyRequest, setHistoryRequest] = useState<{
+    id: string;
+    state: "loading" | "error";
+    message?: string;
+  }>();
+  const [historyRetry, setHistoryRetry] = useState(0);
+  const awaitingService = useRef(new Set<string>());
   const [dragging, setDragging] = useState(false);
   const images = useImageAttachments(endpoint, draftKey);
   const fileInput = useRef<HTMLInputElement>(null);
   /** Conversations already read from the log; a live turn is never overwritten. */
   const loaded = useRef(new Set<string>());
+  const historyBlocked = !!sessionId && !loaded.current.has(sessionId);
+  const historyError =
+    historyBlocked &&
+    historyRequest?.id === sessionId &&
+    historyRequest.state === "error"
+      ? historyRequest.message
+      : undefined;
+  const loadingHistory = historyBlocked && !historyError;
   const [historyPages, setHistoryPages] = useState<
     Record<
       string,
@@ -1527,7 +1548,7 @@ export function ConversationPane({
     if (!sessionId || loaded.current.has(sessionId)) return;
     const id = sessionId;
     const abort = new AbortController();
-    setLoadingHistory(true);
+    setHistoryRequest({ id, state: "loading" });
     conversationHistory(endpoint, id, abort.signal)
       .then((history) => {
         if (abort.signal.aborted) return;
@@ -1559,13 +1580,25 @@ export function ConversationPane({
           loaded.current.add(id);
           return;
         }
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setHistoryRequest({
+          id,
+          state: "error",
+          message:
+            reason instanceof Error && reason.message.includes("读取超时")
+              ? "会话历史读取超时，草稿已保留，请重试。"
+              : "会话历史读取失败，草稿已保留，请重试。",
+        });
       })
       .finally(() => {
-        if (!abort.signal.aborted) setLoadingHistory(false);
+        if (!abort.signal.aborted)
+          setHistoryRequest((current) =>
+            current?.id === id && current.state === "loading"
+              ? undefined
+              : current,
+          );
       });
     return () => abort.abort();
-  }, [endpoint, sessionId, forkFrom, imported]);
+  }, [endpoint, sessionId, forkFrom, imported, historyRetry]);
 
   // Stop in-flight turns when the pane unmounts.
   useEffect(() => {
@@ -1587,6 +1620,7 @@ export function ConversationPane({
     setError("");
     controllers.current.get(id)?.abort();
     try {
+      if (awaitingService.current.has(id)) return;
       await stopCodingTurn(endpoint, id);
       // A turn restored from history has no stream to settle it.
       setTurns((current) => ({
@@ -1720,6 +1754,7 @@ export function ConversationPane({
     if (
       !projectId ||
       !sessionId ||
+      awaitingService.current.has(sessionId) ||
       steering ||
       (!text.trim() && !attached.length)
     )
@@ -1762,7 +1797,7 @@ export function ConversationPane({
       (!prompt && !attached.length) ||
       running ||
       images.uploading ||
-      loadingHistory ||
+      historyBlocked ||
       readOnly ||
       sending.current.has(draftKey) ||
       !projectId ||
@@ -1783,7 +1818,18 @@ export function ConversationPane({
       });
       images.moveTo(id);
     }
-    onOpen?.(id);
+    // Freeze exactly the model shown at submit time, including cached defaults.
+    const catalog = modelCatalogs.snapshot(endpoint, mode).catalog;
+    const chosenModel = modelConfig.model ?? catalog?.defaultModel;
+    const chosenEffort =
+      modelConfig.reasoningEffort ??
+      catalog?.models.find((model) => model.id === chosenModel)
+        ?.defaultReasoningEffort;
+    const submittedConfig = {
+      ...(chosenModel ? { model: chosenModel } : {}),
+      ...(chosenEffort ? { reasoningEffort: chosenEffort } : {}),
+    };
+    onOpen?.(id, submittedConfig);
     setError("");
     if (!options?.preserveDraft) {
       setDraft("");
@@ -1791,6 +1837,7 @@ export function ConversationPane({
     }
     // Mirrors the state updates so the finished turn can be returned.
     let latest = newTurn(turnId, prompt, Date.now(), attached);
+    if (preparing) latest.waitingForService = true;
     const change = (next: (turn: Turn) => Turn) => {
       latest = next(latest);
       updateTurn(id, turnId, next);
@@ -1804,6 +1851,16 @@ export function ConversationPane({
     // The sidebar lists the conversation as soon as its session exists.
     const listed = setTimeout(() => onSettled?.(), 1_500);
     try {
+      if (preparing) {
+        awaitingService.current.add(id);
+        try {
+          await prepareCodingTurn(endpoint, projectId, abort.signal);
+        } finally {
+          awaitingService.current.delete(id);
+        }
+        change((turn) => ({ ...turn, waitingForService: false }));
+      }
+      abort.signal.throwIfAborted();
       for await (const chunk of codingTurn(
         endpoint,
         {
@@ -1818,7 +1875,7 @@ export function ConversationPane({
           ...(history ? { history } : {}),
           ...(context ? { context } : {}),
           mode,
-          modelConfig,
+          modelConfig: submittedConfig,
         },
         abort.signal,
       ))
@@ -1893,6 +1950,18 @@ export function ConversationPane({
         <p className="coding-notice" role="alert">
           {error}
         </p>
+      ) : null}
+      {historyError ? (
+        <div className="coding-notice" role="alert">
+          <span>{historyError}</span>{" "}
+          <button
+            type="button"
+            className="tool-button"
+            onClick={() => setHistoryRetry((value) => value + 1)}
+          >
+            重试读取
+          </button>
+        </div>
       ) : null}
       <div
         className="studio-scroll coding-transcript"
@@ -1986,7 +2055,7 @@ export function ConversationPane({
             initialMode={flowForm.mode}
             locked={
               running ||
-              loadingHistory ||
+              historyBlocked ||
               images.uploading ||
               !projectId ||
               offline
@@ -1997,7 +2066,7 @@ export function ConversationPane({
             onSubmit={(input, runMode) => {
               if (
                 running ||
-                loadingHistory ||
+                historyBlocked ||
                 images.uploading ||
                 !projectId ||
                 offline
@@ -2176,19 +2245,17 @@ export function ConversationPane({
               {composerLeading}
             </div>
             <div className="composer-trailing">
-              {!offline ? (
-                <ChatModelControls
-                  endpoint={endpoint}
-                  mode={mode}
-                  selection={modelConfig}
-                  disabled={running}
-                  openRequest={modelOpenRequest}
-                  onChange={onModelConfig}
-                  onModeChange={(next) =>
-                    onProvider(next === "demo" ? "offline" : next)
-                  }
-                />
-              ) : null}
+              <ChatModelControls
+                endpoint={endpoint}
+                mode={mode}
+                selection={modelConfig}
+                disabled={running}
+                openRequest={modelOpenRequest}
+                onChange={onModelConfig}
+                onModeChange={(next) =>
+                  onProvider(next === "demo" ? "offline" : next)
+                }
+              />
               {/*
                * Stop is its own control while a turn runs, so the send button
                * stays send: text typed during a turn steers it instead of
@@ -2219,9 +2286,12 @@ export function ConversationPane({
                   disabled={
                     offline ||
                     !projectId ||
-                    loadingHistory ||
+                    historyBlocked ||
                     readOnly ||
                     steering ||
+                    (running &&
+                      !!sessionId &&
+                      awaitingService.current.has(sessionId)) ||
                     !!pendingApproval ||
                     (!draft.trim() && !images.ready.length) ||
                     images.uploading ||

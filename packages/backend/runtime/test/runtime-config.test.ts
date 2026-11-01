@@ -96,7 +96,10 @@ test("scratch space defaults under local/ and conversations default outside the 
 
     process.env.AURA_TEMP_DIR = resolve("env-scratch");
     process.env.AURA_DEFAULT_WORKSPACE = resolve("env-chats");
-    assert.equal(resolveRuntimeConfig({ root }).tempDir, resolve("env-scratch"));
+    assert.equal(
+      resolveRuntimeConfig({ root }).tempDir,
+      resolve("env-scratch"),
+    );
     assert.equal(
       resolveRuntimeConfig({ root }).defaultWorkspace,
       resolve("env-chats"),

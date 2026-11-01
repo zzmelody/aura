@@ -1,5 +1,9 @@
 # @aura/orchestration
 
+`personalAssistant(create = false)` 读取 Aura 专属主会话与其工作空间；只有显式传入 `true` 才在缺失时创建。索引对并发打开合并处理，固定身份为协议定义的 `coding-aura-personal-assistant`，沿用现有 domain 与 DSH 日志。再次打开不改写已有记录、不触发模型、不更换目录，重启后继续原上下文和模型配置。普通会话的关闭、归档和删除接口拒绝结束此主会话；普通任务保持独立。所属工作空间不可用时返回冲突，不自动重建或迁移用户数据。
+
+`conversations(projectId, includeStatus = true)` 默认沿用历史状态投影；启动时传入 `false` 仅返回索引元数据和当前进程的运行、等待回答状态，不逐项读取 DSH 日志。`coding/conversation-list.ts` 拥有该投影，历史日志失败不隐藏会话，旧日志中尚未结束的回合仍在完整查询时投影为已停止；不改写任何索引或日志。
+
 目录读取直接投影已加载的最后可用定义，不触发磁盘扫描；HTTP 目录提供 ETag / 304。发现保留 Cordis HMR，新增/移除的兜底扫描为 5 秒，并合并同一发现器上并发的扫描请求。创建 Run 的版本固定与 revision 校验保持原有路径。
 
 在线对话通过 `aura_flow_catalog` 读取所有可用 Flow 的公开输入 Schema，通过 `aura_run_flow` 调用相同的 durable 引擎，通过 `aura_flow_status` 读取原 Run 的当前输入与结果。明确的重复执行生成新 Run；同一工具 call ID 沿用原算法的稳定 requestId，保留旧执行的幂等身份。未知提交或读取结果阻止本轮自动重新启动，已接收运行的引用仍进入工具结果以便历史恢复。新运行可带可选 `conversationId`，在原 Run 格式中附加归属，列表同步返回，避免工作台重复导入为另一段会话；不迁移或重写旧记录。模型和执行仍经 DSH，停止聊天不会自动取消独立 Run。
@@ -11,6 +15,8 @@
 Aura 的 durable workflow script 引擎。脚本负责控制流；Graph 是只读静态投影。恢复从 `run()` 入口重放，完成的关键调用返回存档结果。运行时不保存 JS 栈、闭包、Promise 或任意局部变量。
 
 对话的 `skills(projectId)` RPC 通过 DSH skill registry 读取已注册工作空间的用户可调用技能，只返回名称与描述。文件系统 provider 与技能加载器沿用 DSH 组合，对话工具白名单允许 `skill` 并支持原生 `/name` 显式调用。Flow Agent 的工具白名单保持不变，DSH 按实际工具可见性发布技能目录。HTTP 边界为 `GET /coding/projects/:id/skills`，客户端不能提交任意扫描路径。
+
+对话发送或引导中附带图片时，DSH 若在接收消息前判定模型不支持图片，返回安全的 422 提示，要求用户更换支持图片的模型或移除附件后自行发送。该拒绝不启动模型回合，不自动丢弃图片、切换模型或重发请求。
 
 工作空间对话的 `openCodingSide(parentId)` 每次显式调用都创建独立旁支，`closeCodingSide(id)` 仅关闭指定旁支。多个旁支分别通过 DSH fork/resume 继承主对话并保存自己的上下文和模型设置；首条提问成为旁支列表标题。关闭或归档主对话会释放它的全部旁支。索引在原 `aura_coding_conversations` domain 中添加可选 `sideConversations` 元数据，保留原 ID、domain 版本和旧字段；单旁支历史只在读取时投影，不扫描、迁移或重写用户数据。DSH 日志保持原样。
 

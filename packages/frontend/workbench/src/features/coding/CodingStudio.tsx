@@ -15,7 +15,10 @@ import {
   MessageSquare,
   SquareTerminal,
 } from "lucide-react";
-import { conversationSides } from "@aura/protocol/conversations";
+import {
+  conversationSides,
+  PERSONAL_ASSISTANT_SESSION_ID,
+} from "@aura/protocol/conversations";
 import type { ChatImage, Session, Workspace } from "@aura/core/types";
 import { providerMode } from "@aura/core";
 import type {
@@ -64,6 +67,7 @@ export type CodingHandoff = {
 export function CodingStudio({
   endpoint,
   visible = true,
+  personalAssistant = false,
   provider,
   workspaces,
   handoff,
@@ -83,6 +87,7 @@ export function CodingStudio({
 }: {
   endpoint: string;
   visible?: boolean;
+  personalAssistant?: boolean;
   provider: Workspace["provider"];
   /** Workspace tree state shared with the sidebar. */
   workspaces: CodingProjectsController;
@@ -104,14 +109,20 @@ export function CodingStudio({
 }) {
   const {
     projects,
-    selectedId: projectId,
+    selectedId,
     conversationId: selectedConversationId,
     open,
     refreshConversations,
   } = workspaces;
-  const conversationId = legacy
-    ? `legacy-${legacy.id}`
-    : selectedConversationId;
+  const projectId = personalAssistant
+    ? workspaces.assistant?.project.id
+    : selectedId;
+  const conversationId = personalAssistant
+    ? PERSONAL_ASSISTANT_SESSION_ID
+    : legacy
+      ? `legacy-${legacy.id}`
+      : selectedConversationId;
+  const branchFrom = personalAssistant ? undefined : workspaces.branchFrom;
   const history = useMemo(
     () =>
       legacy
@@ -171,7 +182,9 @@ export function CodingStudio({
     [reportStatus],
   );
 
-  const project = projects.find((item) => item.id === projectId);
+  const project = personalAssistant
+    ? workspaces.assistant?.project
+    : projects.find((item) => item.id === projectId);
   const conversation = project
     ? workspaces.conversations[project.id]?.find(
         (item) => item.id === conversationId,
@@ -196,12 +209,15 @@ export function CodingStudio({
   }, [sideVisible]);
   const selectTool = (id: string) =>
     setToolSelections((current) => ({ ...current, [toolKey]: id }));
-  const title = conversation?.title ?? legacy?.title ?? "新对话";
+  const title = personalAssistant
+    ? "Aura"
+    : (conversation?.title ?? legacy?.title ?? "新任务");
   const offline = provider === "offline";
   const refresh = useCallback(() => {
     if (project) void refreshConversations(project.id).catch(() => {});
   }, [project, refreshConversations]);
   const initialSend =
+    !personalAssistant &&
     handoff &&
     project &&
     (!handoff.projectId || project.id === handoff.projectId)
@@ -210,10 +226,7 @@ export function CodingStudio({
   const mode = providerMode(provider);
   const source = Object.values(workspaces.conversations)
     .flat()
-    .find(
-      (item) =>
-        item.id === (workspaces.branchFrom ?? conversation?.sourceSessionId),
-    );
+    .find((item) => item.id === (branchFrom ?? conversation?.sourceSessionId));
   const configKey = conversationId ?? `draft:${projectId}`;
   const modelConfig =
     initialSend?.modelConfig ??
@@ -458,10 +471,13 @@ ${summary}`,
               <ConversationPane
                 endpoint={endpoint}
                 visible={visible && view === "chat"}
+                preparing={!workspaces.ready}
                 provider={provider}
                 projectId={project?.id}
                 directory={project?.directory}
-                label="工作空间请求输入框"
+                label={
+                  personalAssistant ? "Aura 助手输入框" : "工作空间请求输入框"
+                }
                 {...(conversationId ? { sessionId: conversationId } : {})}
                 readOnly={
                   conversation?.archivedAt !== undefined ||
@@ -472,7 +488,7 @@ ${summary}`,
                     ? "描述你想讨论或完成的事情…"
                     : `在「${project.title}」中描述要完成的事情…`
                 }
-                branchFrom={workspaces.branchFrom}
+                branchFrom={branchFrom}
                 history={history}
                 historyTime={legacy?.updatedAt}
                 context={context}
@@ -490,7 +506,7 @@ ${summary}`,
                     label="选择工作空间"
                     className="composer-context"
                     title={project?.title ?? "选择工作空间"}
-                    disabled={mainRunning}
+                    disabled={mainRunning || personalAssistant}
                     items={[
                       ...projects.map((item) => ({
                         id: item.id,
@@ -522,17 +538,20 @@ ${summary}`,
                     ? "工作空间需要连接 Aura 服务，请切换到 Codex 订阅或其他模式"
                     : !project
                       ? "工作空间暂不可用，仍可查看历史和编辑草稿；选择或新建工作空间后可继续发送。"
-                      : undefined
+                      : !workspaces.ready
+                        ? "服务正在连接，你可以先提交任务。"
+                        : undefined
                 }
-                onOpen={(id) => {
+                onOpen={(id, submittedConfig) => {
                   if (!project) return;
+                  if (personalAssistant) return;
                   if (id !== configKey)
                     setModelConfigs((current) => {
                       const next = {
                         ...current,
                         [id]: {
                           ...current[configKey],
-                          [mode]: modelConfig,
+                          [mode]: submittedConfig ?? modelConfig,
                         },
                       };
                       delete next[configKey];

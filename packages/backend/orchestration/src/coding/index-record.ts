@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import { z } from "zod";
-import { conversationSides } from "@aura/protocol/conversations";
+import {
+  conversationSides,
+  PERSONAL_ASSISTANT_SESSION_ID,
+} from "@aura/protocol/conversations";
 import { FlowError } from "../schema.ts";
 import type { CodingConversation, Table } from "../types.ts";
 import type {
@@ -77,9 +80,32 @@ export const codingDomainSpec = defineDomain({
 /** Durable index of coding conversations, keyed by the coding session id. */
 export class CodingConversationIndex {
   private readonly table: Table<CodingConversationRecord>;
+  private assistantOpening?: Promise<CodingConversation>;
 
   constructor(table: Table<CodingConversationRecord>) {
     this.table = table;
+  }
+
+  getAssistant(): CodingConversation | undefined {
+    const record = this.get(PERSONAL_ASSISTANT_SESSION_ID);
+    return record ? conversation(record) : undefined;
+  }
+
+  /** Only an explicit open creates the singleton; repeated opens never fork it. */
+  openAssistant(projectId: string): Promise<CodingConversation> {
+    const existing = this.getAssistant();
+    if (existing) return Promise.resolve(existing);
+    if (!this.assistantOpening)
+      this.assistantOpening = this.open(
+        PERSONAL_ASSISTANT_SESSION_ID,
+        projectId,
+        "Aura",
+      )
+        .then(conversation)
+        .finally(() => {
+          this.assistantOpening = undefined;
+        });
+    return this.assistantOpening;
   }
 
   /**
@@ -248,6 +274,8 @@ export class CodingConversationIndex {
 
   /** Archiving or closing a parent forgets its side, never its DSH logs. */
   async archive(id: string, archived: boolean): Promise<void> {
+    if (archived && id === PERSONAL_ASSISTANT_SESSION_ID)
+      throw new FlowError("Aura 个人助手是固定会话，不能归档。", 409);
     if (!this.get(id)) throw new FlowError("对话不存在或已关闭。", 404);
     await this.table.update(id, (current) => {
       const {
@@ -262,6 +290,8 @@ export class CodingConversationIndex {
   }
 
   async close(id: string): Promise<void> {
+    if (id === PERSONAL_ASSISTANT_SESSION_ID)
+      throw new FlowError("Aura 个人助手是固定会话，不能关闭。", 409);
     if (!this.get(id)) return;
     await this.table.update(id, (current) => {
       const {
@@ -288,6 +318,8 @@ export class CodingConversationIndex {
 
   /** Drops the index entry; the DSH session log stays readable. */
   async remove(id: string): Promise<void> {
+    if (id === PERSONAL_ASSISTANT_SESSION_ID)
+      throw new FlowError("Aura 个人助手是固定会话，不能删除。", 409);
     await this.table.delete(id);
   }
 }

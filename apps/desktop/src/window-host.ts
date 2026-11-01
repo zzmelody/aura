@@ -12,7 +12,8 @@ export function installWindowHost() {
       return;
     if (process.platform !== "darwin")
       window.setTitleBarOverlay({
-        color: dark ? "#1d1d20" : "#ffffff",
+        // The renderer paints one continuous title bar beneath native controls.
+        color: "#00000000",
         symbolColor: dark ? "#b5b5c0" : "#62626c",
         height: 38,
       });

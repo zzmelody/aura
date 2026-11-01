@@ -18,6 +18,7 @@ import type {
   ChatModelSelection,
   CodingSkillInfo,
   CodingHistoryPage,
+  PersonalAssistantInfo,
   FlowCatalog,
   FlowMode,
   FlowRun,
@@ -471,6 +472,10 @@ export class OrchestrationHost {
     return this.request<CodingProject[]>("coding/projects");
   }
 
+  personalAssistant(create = false): Promise<PersonalAssistantInfo | null> {
+    return this.request("coding/assistant", { create });
+  }
+
   skills(projectId: string): Promise<CodingSkillInfo[]> {
     return this.request<CodingSkillInfo[]>("coding/skills", { projectId });
   }
@@ -624,9 +629,13 @@ export class OrchestrationHost {
     return this.request("coding/model", { sessionId, mode, selection });
   }
 
-  conversations(projectId: string): Promise<CodingConversation[]> {
+  conversations(
+    projectId: string,
+    includeStatus = true,
+  ): Promise<CodingConversation[]> {
     return this.request<CodingConversation[]>("coding/conversations", {
       projectId,
+      ...(includeStatus ? {} : { includeStatus: false }),
     });
   }
 

@@ -1,4 +1,5 @@
 import type { AiCustomProvider, AiModelSettings } from "@aura/protocol/types";
+import { modelCatalogs } from "./model-catalog-store.ts";
 
 /** Redacted backend view of `/ai/services`; keys never appear here. */
 export interface ModelServicesState {
@@ -46,6 +47,7 @@ async function request(
       (result && "message" in result && result.message) ||
         `模型服务设置不可用（${response.status}）。`,
     );
+  if (body !== undefined) modelCatalogs.invalidate(endpoint);
   return result as ModelServicesState;
 }
 

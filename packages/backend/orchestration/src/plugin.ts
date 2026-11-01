@@ -71,6 +71,7 @@ import {
   type CodingConversationRecord,
 } from "./coding/index-record.ts";
 import { CodingProjects } from "./coding/projects.ts";
+import { conversationList } from "./coding/conversation-list.ts";
 import { WorkspaceTerminals } from "./coding/terminals.ts";
 import { codingSkills } from "./coding/skills.ts";
 import { CodingQuestions } from "./coding/questions.ts";
@@ -1233,6 +1234,35 @@ export async function apply(ctx: Context) {
           );
           break;
         }
+        case "coding/assistant": {
+          const input = z
+            .object({ create: z.boolean().default(false) })
+            .strict()
+            .safeParse(params);
+          if (!input.success) throw new FlowError("无效的助手请求。", 400);
+          const existing = codingConversations.getAssistant();
+          const assistant =
+            existing ??
+            (input.data.create
+              ? await codingConversations.openAssistant(
+                  (await codingProjects.defaultProject()).id,
+                )
+              : undefined);
+          if (!assistant) {
+            data = null;
+            break;
+          }
+          const project = codingProjects
+            .list()
+            .find((item) => item.id === assistant.projectId);
+          if (!project)
+            throw new FlowError(
+              "Aura 助手所属工作空间不可用，请恢复该工作空间。",
+              409,
+            );
+          data = { conversation: assistant, project };
+          break;
+        }
         case "coding/projects":
           await codingProjects.defaultProject();
           data = codingProjects.list();
@@ -1296,31 +1326,19 @@ export async function apply(ctx: Context) {
           if (typeof params.projectId !== "string")
             throw new FlowError("无效的项目。", 400);
           const list = codingProjects.conversationsOf(params.projectId);
+          if (
+            params.includeStatus !== undefined &&
+            typeof params.includeStatus !== "boolean"
+          )
+            throw new FlowError("无效的对话状态选项。", 400);
           const signal = AbortSignal.timeout(10_000);
-          data = await Promise.all(
-            list.map(async (conv) => {
-              // The live process is authoritative for running turns; the log
-              // alone cannot tell an open turn from one a restart cut off.
-              if (coding.running(conv.id))
-                return {
-                  ...conv,
-                  lastTurnStatus: "running" as const,
-                  ...(codingAnswers.open(conv.id).length
-                    ? { waitingForAnswer: true as const }
-                    : {}),
-                };
-              const stored = await lastTurnStatus(
-                ctx.sessionController,
-                SessionId(conv.id),
-                signal,
-              ).catch(() => undefined);
-              if (stored === undefined) return conv;
-              return {
-                ...conv,
-                lastTurnStatus: stored === "running" ? "stopped" : stored,
-              };
-            }),
-          );
+          data = await conversationList(list, {
+            includeStatus: params.includeStatus !== false,
+            running: (id) => coding.running(id),
+            waitingForAnswer: (id) => codingAnswers.open(id).length > 0,
+            readStatus: (id) =>
+              lastTurnStatus(ctx.sessionController, SessionId(id), signal),
+          });
           break;
         }
         case "coding/answer": {

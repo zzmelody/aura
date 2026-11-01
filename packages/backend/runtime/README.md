@@ -1,5 +1,9 @@
 # @aura/runtime
 
+`GET /coding/assistant` 只读返回 Aura 固定主会话与已注册工作空间，未创建时为 `null`；`POST /coding/assistant` 表达用户显式打开意图，缺失时创建、已存在时返回同一身份。路由不接受客户端指定目录，不发送模型请求，身份与持久化由编排宿主持有。
+
+`GET /coding/projects/:id/conversations` 默认包含历史状态；`?status=metadata` 用于快速恢复会话基础记录和内存中的活动状态，不触发旧会话日志扫描。只接受 `metadata` / `full`，旧调用行为保持不变。
+
 `/coding/terminals` 提供工作区终端列表和创建，`/:id/write`、`/:id/resize`、`DELETE /:id` 转发受控操作；`/:id/events` 使用 SSE 输出 PTY 数据和状态，游标同时支持查询参数与 `Last-Event-ID`。连接断开只结束订阅，不终止 shell。所有路由沿用本机 / 同主机 Origin 策略，CORS 明确允许 DELETE 和重连游标。终端在 DSH 编排进程内持有，HTTP 边界不接收任意目录、shell 路径或环境变量，也不把 PTY 加入模型上下文。
 
 `GET /coding/sessions/:id/history?page=1` 返回最近的完整回合窗口，后续使用响应的 `beforeSeq` / `throughSeq` 成对读取较早历史。HTTP 边界拒绝非安全整数、不完整的游标；不携带分页参数的调用保留完整历史接口。读取不会触发模型请求或改写存储。

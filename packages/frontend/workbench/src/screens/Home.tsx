@@ -6,6 +6,7 @@ import { sidebarSessionStatus, sidebarSessionTitle } from "../sidebarSessions";
 import { SessionActions, type SessionDialogRequest } from "../SessionActions";
 import { SessionStatus } from "../SessionStatus";
 import type { CodingProjectsController } from "../features/coding/useCodingProjects";
+import { PERSONAL_ASSISTANT_SESSION_ID } from "@aura/protocol/conversations";
 
 export function HistoryScreen({
   workspace,
@@ -27,7 +28,9 @@ export function HistoryScreen({
   const remote =
     workspace.state.provider === "offline"
       ? []
-      : Object.values(conversations.conversations).flat();
+      : Object.values(conversations.conversations)
+          .flat()
+          .filter((item) => item.id !== PERSONAL_ASSISTANT_SESSION_ID);
   const remoteIds = new Set(remote.map((item) => item.id));
   const matches = (item: { title: string; archivedAt?: number }) =>
     (filter === "all" ||

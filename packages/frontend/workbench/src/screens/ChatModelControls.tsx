@@ -1,13 +1,10 @@
 import { useAnchoredPopover } from "../useAnchoredPopover";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronDown, RotateCcw } from "lucide-react";
-import type {
-  ChatModelCatalog,
-  ChatModelSelection,
-  FlowMode,
-} from "@aura/protocol/types";
+import type { ChatModelSelection, FlowMode } from "@aura/protocol/types";
 import { groupModelsByVendor } from "@aura/protocol/models";
 import { selectChatModel } from "../chatModels";
+import { useChatModels } from "../useChatModels";
 import "./chat-model-controls.css";
 
 const effortName = (effort: { id: string; name: string }) =>
@@ -43,13 +40,10 @@ export function ChatModelControls({
   onChange(selection: ChatModelSelection): void;
   onModeChange?(mode: FlowMode): void;
 }) {
-  const key = `${endpoint}/${mode}`;
-  const [result, setResult] = useState<{
-    key: string;
-    catalog?: ChatModelCatalog;
-    error?: string;
-  }>();
-  const [revision, setRevision] = useState(0);
+  const { catalog, error, refresh, restored, loading } = useChatModels(
+    endpoint,
+    mode,
+  );
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (openRequest) setOpen(true);
@@ -59,23 +53,6 @@ export function ChatModelControls({
   const menu = useRef<HTMLDivElement>(null);
   const menuId = useId();
   useAnchoredPopover(open, trigger, menu);
-  useEffect(() => {
-    const abort = new AbortController();
-    setResult(undefined);
-    void fetch(`${endpoint}/chat/models?mode=${mode}`, { signal: abort.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("模型目录暂时不可用");
-        return (await response.json()) as ChatModelCatalog;
-      })
-      .then((catalog) => {
-        if (!abort.signal.aborted) setResult({ key, catalog });
-      })
-      .catch(() => {
-        if (!abort.signal.aborted)
-          setResult({ key, error: "模型目录暂时不可用" });
-      });
-    return () => abort.abort();
-  }, [endpoint, mode, key, revision]);
   // Close on outside pointer, Escape, or when the composer becomes busy.
   useEffect(() => {
     if (!open) return;
@@ -107,8 +84,6 @@ export function ChatModelControls({
       ?.focus();
   }, [open]);
 
-  const catalog = result?.key === key ? result.catalog : undefined;
-  const error = result?.key === key ? result.error : undefined;
   const modelId = selection.model ?? catalog?.defaultModel;
   const model = catalog?.models.find(({ id }) => id === modelId);
   const effort = selection.reasoningEffort;
@@ -120,8 +95,7 @@ export function ChatModelControls({
     (!model ||
       (effort && !model.reasoningEfforts.some(({ id }) => id === effort))),
   );
-  const label =
-    model?.name ?? selection.model ?? (error ? "模型不可用" : "读取模型…");
+  const label = model?.name ?? modelId ?? (error ? "模型不可用" : "读取模型…");
 
   /** Arrow keys move between menu items; Home/End jump to the ends. */
   function moveFocus(event: React.KeyboardEvent) {
@@ -209,6 +183,11 @@ export function ChatModelControls({
           ) : null}
           {catalog ? (
             <>
+              {restored && loading ? (
+                <div className="chat-model-menu-heading" role="status">
+                  正在更新模型列表…
+                </div>
+              ) : null}
               <div className="chat-model-menu-heading">模型</div>
               <div
                 className="chat-model-menu-list"
@@ -312,7 +291,7 @@ export function ChatModelControls({
                   <button
                     type="button"
                     className="chat-model-menu-retry"
-                    onClick={() => setRevision((value) => value + 1)}
+                    onClick={refresh}
                   >
                     <RotateCcw size={13} aria-hidden="true" />
                     重试

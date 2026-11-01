@@ -62,7 +62,7 @@
   bottom: 0;
   left: 3px;
   width: 1px;
-  background: var(--border);
+  background: var(--workspace-divider);
 }
 .coding-split-handle:hover::after,
 .coding-split-handle:focus-visible::after,
@@ -88,7 +88,7 @@
   max-width: none;
 }
 .coding-panes[data-stacked] > .coding-side {
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--workspace-divider);
 }
 .coding-side[hidden] {
   display: none;

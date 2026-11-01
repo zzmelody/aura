@@ -11,16 +11,14 @@ import {
   FolderOpen,
   FolderPlus,
   LayoutGrid,
-  MessageCircle,
-  PanelLeftClose,
   Search,
-  Settings2,
   SlidersHorizontal,
   SquarePen,
   X,
 } from "lucide-react";
 import { FlowIcon } from "./FlowIcon";
-import { AuraMark } from "@aura/ui/components";
+import { AuraAssistantIcon } from "./AuraAssistantIcon";
+import { PERSONAL_ASSISTANT_SESSION_ID } from "@aura/protocol/conversations";
 import type { WorkspaceController } from "./useWorkspace";
 import type { Tab } from "./types";
 import type { PluginStudio } from "./usePluginPages";
@@ -37,6 +35,7 @@ import { SessionStatus } from "./SessionStatus";
 import { sessionMenuItems, type SessionDialogRequest } from "./SessionActions";
 import { WorkbenchContextMenu } from "./WorkbenchContextMenu";
 import { WorkbenchMenu } from "./WorkbenchMenu";
+import { WorkspaceMenu } from "./WorkspaceMenu";
 import { Tooltip } from "./Tooltip";
 import { useToast } from "./toast";
 import type { CodingProjectInfo } from "@aura/protocol/types";
@@ -44,9 +43,8 @@ import type { CodingProjectsController } from "./features/coding/useCodingProjec
 import { WorkspaceDialog } from "./features/coding/WorkspaceDialog";
 import { isActiveStatus } from "./features/coding/conversationStatus";
 
-/** Four destinations; plugins, archives and the full log live in Settings. */
+/** Task-independent destinations; archives and the full log live in Settings. */
 const tabs = [
-  { id: "chat", label: "对话", icon: MessageCircle },
   { id: "flows", label: "工作流", icon: FlowIcon },
   { id: "automation", label: "自动化任务", icon: AlarmClock },
   { id: "studios", label: "工作台", icon: LayoutGrid },
@@ -55,8 +53,10 @@ const tabs = [
 export function WorkspaceSidebar({
   workspace,
   tab,
-  wide,
-  onCollapse,
+  dark,
+  toggleTheme,
+  onOpenArchived,
+  onAssistant,
   navigate,
   start,
   open,
@@ -73,8 +73,10 @@ export function WorkspaceSidebar({
 }: {
   workspace: WorkspaceController;
   tab: Tab;
-  wide: boolean;
-  onCollapse(): void;
+  dark: boolean;
+  toggleTheme(): void;
+  onOpenArchived(): void;
+  onAssistant(): void;
   navigate(tab: Tab): void;
   start(): void;
   open(id: string): void;
@@ -147,6 +149,7 @@ export function WorkspaceSidebar({
   const spaceFolders = codingWorkspaces.projects.flatMap((space) => {
     const all = (codingWorkspaces.conversations[space.id] ?? []).filter(
       (item) =>
+        item.id !== PERSONAL_ASSISTANT_SESSION_ID &&
         (item.archivedAt !== undefined) === showArchived &&
         (!onlyRunning || isActiveStatus(codingWorkspaces.statuses[item.id])),
     );
@@ -189,26 +192,29 @@ export function WorkspaceSidebar({
   };
   return (
     <aside className="workspace-sidebar" aria-label="工作区与会话">
-      <div className="sidebar-brand">
-        <AuraMark size={22} />
-        <strong>aura</strong>
-        <div className="sidebar-brand-actions">
-          <Tooltip label={wide ? "收起侧栏" : "关闭会话列表"}>
-            <button
-              className="icon-control"
-              aria-label={wide ? "收起侧栏" : "关闭会话列表"}
-              onClick={onCollapse}
-            >
-              {wide ? <PanelLeftClose size={16} /> : <X size={16} />}
-            </button>
-          </Tooltip>
-        </div>
-      </div>
       <button className="new-session" onClick={start}>
         <SquarePen size={14} />
-        新对话
+        新任务
       </button>
       <nav className="workspace-nav panel-nav" aria-label="主导航">
+        <button
+          className={`aura-assistant-entry${tab === "assistant" ? " selected" : ""}`}
+          aria-label="打开 Aura 个人助手"
+          aria-current={tab === "assistant" ? "page" : undefined}
+          aria-busy={codingWorkspaces.assistantLoading}
+          disabled={codingWorkspaces.assistantLoading}
+          title="Aura · 持续使用同一段对话的个人助手"
+          onClick={onAssistant}
+        >
+          <AuraAssistantIcon
+            running={
+              isActiveStatus(
+                codingWorkspaces.statuses[PERSONAL_ASSISTANT_SESSION_ID],
+              ) || codingWorkspaces.assistantLoading
+            }
+          />
+          <span>Aura</span>
+        </button>
         {tabs.map(({ id, label, icon: Icon }) => (
           <React.Fragment key={id}>
             <button
@@ -535,7 +541,24 @@ export function WorkspaceSidebar({
                   })}
                   {!conversations.length ? (
                     <div className="sidebar-empty workspace-folder-empty">
-                      还没有对话
+                      {codingWorkspaces.conversationErrors[space.id] ? (
+                        <button
+                          type="button"
+                          className="text-control"
+                          onClick={() =>
+                            void codingWorkspaces
+                              .refreshConversations(space.id, undefined, true)
+                              .catch(() => {})
+                          }
+                        >
+                          加载失败，点击重试
+                        </button>
+                      ) : codingWorkspaces.conversations[space.id] ===
+                        undefined ? (
+                        "正在加载对话…"
+                      ) : (
+                        "还没有对话"
+                      )}
                     </div>
                   ) : null}
                 </div>
@@ -755,17 +778,15 @@ export function WorkspaceSidebar({
         />
       ) : null}
       <footer className="sidebar-footer">
-        <button
-          className={`sidebar-workspace${tab === "settings" ? " selected" : ""}`}
-          onClick={() => navigate("settings")}
-          aria-label="设置"
-        >
-          <span className="sidebar-avatar">
-            <AuraMark size={18} />
-          </span>
-          <span>本地工作区</span>
-          <Settings2 size={16} />
-        </button>
+        <WorkspaceMenu
+          workspace={workspace}
+          dark={dark}
+          settingsSelected={tab === "settings"}
+          toggleTheme={toggleTheme}
+          navigate={navigate}
+          onArchived={onOpenArchived}
+          onDialog={onDialog}
+        />
       </footer>
     </aside>
   );

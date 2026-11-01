@@ -1,5 +1,6 @@
 /* Shallow chrome, compact rows and one reading column. */
 .workbench {
+  --workspace-divider: color-mix(in srgb, var(--border) 40%, transparent);
   flex-direction: column;
 }
 .workspace-body {
@@ -15,11 +16,26 @@
   flex-shrink: 0;
   height: 38px;
   padding: 0 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  border-bottom: 1px solid var(--workspace-divider);
   background: color-mix(in srgb, var(--surface) 84%, var(--background));
   color: var(--secondary);
   user-select: none;
   position: relative;
+}
+.workspace-navigation-space {
+  flex-shrink: 0;
+  height: 36px;
+}
+.sidebar-dialog .workspace-menubar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  width: 100vw;
+  height: 36px;
+}
+.sidebar-dialog .workspace-sidebar {
+  padding-top: calc(36px + env(safe-area-inset-top));
 }
 .window-navigation {
   display: flex;
@@ -29,18 +45,6 @@
 .window-navigation .icon-control {
   width: 28px;
   height: 27px;
-}
-/* The menu trigger sits apart from back / forward / sidebar. */
-.window-navigation > .icon-control[aria-haspopup="menu"] {
-  margin-left: 6px;
-}
-.menubar-feedback {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--secondary);
 }
 [data-platform="desktop"] .workspace-menubar {
   -webkit-app-region: drag;
@@ -111,27 +115,69 @@
 /* DSH desktop sidebar: tinted fill, 0.5px hairline, 12px-radius rows. */
 .workspace-sidebar {
   padding: 6px 8px;
-  border-right: 0.5px solid var(--hairline);
+  border-right: 0.5px solid var(--workspace-divider);
   background: var(--sidebar);
   font-size: 14px;
 }
-.sidebar-brand {
-  min-height: 52px;
-  padding: 0 0 0 8px;
-  gap: 5px;
+.aura-assistant-orb {
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 22px;
+  place-items: center;
+  width: 22px;
+  height: 22px;
 }
-.sidebar-brand > strong {
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+.aura-assistant-halo,
+.aura-assistant-orbit,
+.aura-assistant-core {
+  position: absolute;
+  border-radius: 50%;
 }
-.sidebar-brand .icon-control {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+.aura-assistant-halo {
+  inset: 0;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  animation: aura-assistant-breathe 4s ease-in-out infinite;
 }
-.sidebar-brand .icon-control:hover {
-  background: var(--soft);
+.aura-assistant-core {
+  inset: 6px;
+  background: linear-gradient(135deg, var(--accent), #b58bff);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.aura-assistant-orbit {
+  inset: 2px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  animation: aura-assistant-turn 12s linear infinite;
+}
+.aura-assistant-orbit > span {
+  position: absolute;
+  top: -2px;
+  left: 6px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.aura-assistant-orb[data-running] .aura-assistant-orbit {
+  animation-duration: 2s;
+}
+@keyframes aura-assistant-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes aura-assistant-breathe {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+[data-reduced="true"] .aura-assistant-orb > span {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aura-assistant-orb > span {
+    animation: none;
+  }
 }
 .workspace-sidebar > .new-session {
   display: flex;
@@ -471,7 +517,7 @@
   height: 48px;
   padding: 0 18px;
   gap: 12px;
-  border-bottom-color: color-mix(in srgb, var(--border) 65%, transparent);
+  border-bottom-color: var(--workspace-divider);
 }
 .workspace-heading {
   display: flex;
@@ -498,7 +544,7 @@
 .header-divider {
   width: 1px;
   height: 16px;
-  background: var(--border);
+  background: var(--workspace-divider);
   margin: 0 3px;
 }
 .header-archived {
@@ -523,6 +569,7 @@
 }
 .sidebar-footer {
   padding: 7px 0;
+  border-top-color: var(--workspace-divider);
 }
 .sidebar-footer .sidebar-workspace {
   min-height: 36px;

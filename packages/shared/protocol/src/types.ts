@@ -614,6 +614,11 @@ export interface CodingConversationInfo {
   waitingForAnswer?: true;
 }
 
+export interface PersonalAssistantInfo {
+  conversation: CodingConversationInfo;
+  project: CodingProjectInfo;
+}
+
 /** One entry in the coding activity stream. */
 export type CodingActivity =
   | ({ type: "workflow" } & ChatWorkflowStart)

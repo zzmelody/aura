@@ -5,6 +5,9 @@ import type {
   CodingSideConversationInfo,
 } from "./types.ts";
 
+/** One persistent personal-assistant main session per Aura backend storage. */
+export const PERSONAL_ASSISTANT_SESSION_ID = "coding-aura-personal-assistant";
+
 /** Reads legacy single-side metadata without migrating the stored record. */
 export function conversationSides(
   conversation: Pick<

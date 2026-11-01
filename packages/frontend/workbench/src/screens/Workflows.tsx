@@ -14,8 +14,14 @@ import type { FlowCatalogEntry } from "@aura/protocol/types";
 import type { FlowCatalogController } from "../flowCatalog";
 import type { FlowDraftController } from "../flowDraft";
 import { useFlowSource } from "../flowSource";
-import { FlowGraphView } from "./FlowGraphView";
-import { FlowStudio } from "./FlowStudio";
+const FlowGraphView = React.lazy(() =>
+  import("./FlowGraphView").then((module) => ({
+    default: module.FlowGraphView,
+  })),
+);
+const FlowStudio = React.lazy(() =>
+  import("./FlowStudio").then((module) => ({ default: module.FlowStudio })),
+);
 
 function WorkflowPreview({
   flow,
@@ -43,7 +49,11 @@ function WorkflowPreview({
         <span>滚轮缩放 · 双指平移 / 捏合</span>
       </div>
       {source ? (
-        <FlowGraphView code={source.code} onOpenCode={onEdit} embedded />
+        <React.Suspense
+          fallback={<div className="flow-preview-empty">正在加载节点图…</div>}
+        >
+          <FlowGraphView code={source.code} onOpenCode={onEdit} embedded />
+        </React.Suspense>
       ) : (
         <div
           className="flow-preview-empty"
@@ -117,21 +127,25 @@ export function Workflows({
   );
   if (editing !== null)
     return (
-      <FlowStudio
-        key={editing}
-        flowId={editing}
-        initialLine={initialLine}
-        endpoint={endpoint}
-        catalogState={catalogState}
-        draft={draft}
-        editorRevision={0}
-        onAsk={onAsk}
-        onRun={onRun}
-        onBack={() => {
-          setEditing(null);
-          onDetailChange(false);
-        }}
-      />
+      <React.Suspense
+        fallback={<div className="workspace-loading">正在加载编辑器…</div>}
+      >
+        <FlowStudio
+          key={editing}
+          flowId={editing}
+          initialLine={initialLine}
+          endpoint={endpoint}
+          catalogState={catalogState}
+          draft={draft}
+          editorRevision={0}
+          onAsk={onAsk}
+          onRun={onRun}
+          onBack={() => {
+            setEditing(null);
+            onDetailChange(false);
+          }}
+        />
+      </React.Suspense>
     );
   return (
     <section className="workflow-library-page" aria-label="工作流列表">

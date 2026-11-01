@@ -26,6 +26,21 @@ export function createCodingApp(host: OrchestrationHost) {
   );
   app.route("/terminals", createTerminalApp(host));
 
+  app.get("/assistant", async (context) => {
+    try {
+      return context.json(await host.personalAssistant(false));
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+  app.post("/assistant", async (context) => {
+    try {
+      return context.json(await host.personalAssistant(true));
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
   app.get("/projects", async (context) => context.json(await host.projects()));
 
   app.get("/projects/:id/skills", async (context) => {
@@ -299,8 +314,16 @@ export function createCodingApp(host: OrchestrationHost) {
   });
 
   app.get("/projects/:id/conversations", async (context) => {
+    const status = context.req.query("status");
+    if (status !== undefined && status !== "metadata" && status !== "full")
+      return context.json({ message: "无效的对话状态选项。" }, 400);
     try {
-      return context.json(await host.conversations(context.req.param("id")));
+      return context.json(
+        await host.conversations(
+          context.req.param("id"),
+          status !== "metadata",
+        ),
+      );
     } catch (error) {
       return failure(context, error);
     }

@@ -1,6 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { serve, type ServerType } from "@hono/node-server";
+import type { ServerType } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { app, BrowserWindow, dialog, shell } from "electron";
 import { Hono } from "hono";
@@ -10,6 +10,7 @@ import { closeSiteHost, installSiteHost } from "./site-host.ts";
 import { installWorkflowFileHost } from "./workflow-file-host.ts";
 import { installWindowHost } from "./window-host.ts";
 import { installFileRevealHost } from "./file-reveal-host.ts";
+import { startRendererServer } from "./renderer-server.ts";
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(sourceDir, "..");
@@ -94,18 +95,12 @@ async function serveRenderer(): Promise<string> {
   );
   rendererApp.notFound((context) => context.text("Not found", 404));
 
-  const port = await new Promise<number>((resolvePort, reject) => {
-    renderer = serve(
-      {
-        fetch: rendererApp.fetch,
-        hostname: "127.0.0.1",
-        port: 0,
-      },
-      (info) => resolvePort(info.port),
-    );
-    renderer.once("error", reject);
-  });
-  return `http://127.0.0.1:${port}`;
+  const running = await startRendererServer(
+    rendererApp.fetch,
+    resolve(app.getPath("userData"), "Cache", "renderer-port"),
+  );
+  renderer = running.server;
+  return running.url;
 }
 
 /** Displays the workbench while its local services warm in parallel. */
@@ -119,7 +114,7 @@ async function openWorkbench() {
     backgroundColor: "#171719",
     title: "Aura",
     titleBarStyle: "hidden",
-    titleBarOverlay: { color: "#1d1d20", symbolColor: "#b5b5c0", height: 38 },
+    titleBarOverlay: { color: "#00000000", symbolColor: "#b5b5c0", height: 38 },
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

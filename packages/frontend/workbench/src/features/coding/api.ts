@@ -14,8 +14,10 @@ import type {
   AutomationTaskInput,
   FlowMode,
   WorkspaceTerminalInfo,
+  PersonalAssistantInfo,
 } from "@aura/protocol/types";
-import { WorkflowApiError } from "../../workflowSessions";
+import { WorkflowApiError } from "../../workflowSessions.ts";
+import { startupFetch } from "../../startup-fetch.ts";
 
 const base = (endpoint: string) => `${endpoint.replace(/\/$/, "")}/coding`;
 
@@ -69,16 +71,18 @@ async function codingApi<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const response = await fetch(`${base(endpoint)}${path}`, {
-    method,
-    signal,
-    ...(body === undefined
-      ? {}
-      : {
-          body: JSON.stringify(body),
-          headers: { "Content-Type": "application/json" },
-        }),
-  });
+  const response = await (path === "/projects" && method === "GET"
+    ? startupFetch(`${base(endpoint)}${path}`, signal)
+    : fetch(`${base(endpoint)}${path}`, {
+        method,
+        signal,
+        ...(body === undefined
+          ? {}
+          : {
+              body: JSON.stringify(body),
+              headers: { "Content-Type": "application/json" },
+            }),
+      }));
   const value = await response.json().catch(() => null);
   if (!response.ok)
     throw new WorkflowApiError(
@@ -93,6 +97,19 @@ export const listProjects = (endpoint: string, signal?: AbortSignal) =>
     endpoint,
     "/projects",
     "GET",
+    undefined,
+    signal,
+  );
+
+export const personalAssistant = (
+  endpoint: string,
+  create = false,
+  signal?: AbortSignal,
+) =>
+  codingApi<PersonalAssistantInfo | null>(
+    endpoint,
+    "/assistant",
+    create ? "POST" : "GET",
     undefined,
     signal,
   );
@@ -164,10 +181,11 @@ export const listConversations = (
   endpoint: string,
   projectId: string,
   signal?: AbortSignal,
+  includeStatus = true,
 ) =>
   codingApi<CodingConversationInfo[]>(
     endpoint,
-    `/projects/${encodeURIComponent(projectId)}/conversations`,
+    `/projects/${encodeURIComponent(projectId)}/conversations${includeStatus ? "" : "?status=metadata"}`,
     "GET",
     undefined,
     signal,
@@ -181,6 +199,30 @@ export type CodingChunk = { type: "delta"; text: string } | CodingActivity;
  * entries, then a single `done` or `error`. A stream that ends without `done`
  * was cut off, so it is reported rather than treated as a finished turn.
  */
+/** A cached workspace is only a hint; validate it before a queued turn can run. */
+export async function prepareCodingTurn(
+  endpoint: string,
+  projectId: string,
+  signal: AbortSignal,
+) {
+  const waiting = AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
+  let projects: CodingProjectInfo[];
+  try {
+    projects = await listProjects(endpoint, waiting);
+  } catch (error) {
+    signal.throwIfAborted();
+    if (waiting.aborted)
+      throw new Error("服务仍未就绪，已停止等待；请在连接恢复后重新发送。", {
+        cause: error,
+      });
+    throw error;
+  }
+  signal.throwIfAborted();
+  const project = projects.find((item) => item.id === projectId);
+  if (!project || project.status === "missing-dir")
+    throw new Error("工作空间已不可用，请重新选择工作空间后发送。");
+}
+
 export async function* codingTurn(
   endpoint: string,
   turn: {
@@ -513,13 +555,22 @@ export async function conversationHistory(
     query.set("beforeSeq", String(page.beforeSeq));
     query.set("throughSeq", String(page.throughSeq));
   }
-  const value = await codingApi<unknown>(
-    endpoint,
-    `/sessions/${encodeURIComponent(sessionId)}/history?${query}`,
-    "GET",
-    undefined,
-    signal,
-  );
+  const timeout = AbortSignal.timeout(8_000);
+  let value: unknown;
+  try {
+    value = await codingApi<unknown>(
+      endpoint,
+      `/sessions/${encodeURIComponent(sessionId)}/history?${query}`,
+      "GET",
+      undefined,
+      signal ? AbortSignal.any([signal, timeout]) : timeout,
+    );
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (timeout.aborted)
+      throw new Error("会话历史读取超时，请重试。", { cause: error });
+    throw error;
+  }
   const body = value as {
     turns?: unknown;
     running?: unknown;

@@ -3,6 +3,7 @@ export type StudioTab = "studio:coding";
 /** Navigation belongs to the client, not the shared conversation model. */
 export type Tab =
   | "chat"
+  | "assistant"
   | "flows"
   | StudioTab
   | `plugin:${string}`

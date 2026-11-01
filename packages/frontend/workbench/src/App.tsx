@@ -25,9 +25,9 @@ import "./workflow-output.css";
 import { ThemeContext } from "@aura/ui/components";
 import { fonts, palettes } from "@aura/ui/theme";
 import { useWorkspace } from "./useWorkspace";
+import { providerMode } from "@aura/core";
+import { useChatModels } from "./useChatModels";
 import { useCodexAuth } from "./useCodexAuth";
-import { CodexLoginButton } from "./CodexLoginButton";
-import { ModelServiceBadge } from "./ModelServiceBadge";
 import { useScheduledConversations } from "./useScheduledConversations";
 import { useFlowCatalog } from "./flowCatalog";
 import type { FlowConversationRequest } from "./flow-conversation";
@@ -50,23 +50,20 @@ import { isPluginTab } from "./pluginPages";
 import { PluginResultsProvider } from "./pluginResults";
 import { PluginPageBoundary } from "./PluginPageBoundary";
 import "./workspace-chrome.css";
+import { StudiosScreen } from "./screens/Studios";
+import { Workflows } from "./screens/Workflows";
 
 const HistoryScreen = React.lazy(() =>
   import("./screens/Home").then((module) => ({
     default: module.HistoryScreen,
   })),
 );
-const ChatScreen = React.lazy(() =>
-  import("./screens/Chat").then((module) => ({ default: module.ChatScreen })),
-);
+const loadChatScreen = () =>
+  import("./screens/Chat").then((module) => ({ default: module.ChatScreen }));
+const ChatScreen = React.lazy(loadChatScreen);
 const SettingsScreen = React.lazy(() =>
   import("./screens/Settings").then((module) => ({
     default: module.SettingsScreen,
-  })),
-);
-const StudiosScreen = React.lazy(() =>
-  import("./screens/Studios").then((module) => ({
-    default: module.StudiosScreen,
   })),
 );
 const AutomationScreen = React.lazy(() =>
@@ -74,19 +71,14 @@ const AutomationScreen = React.lazy(() =>
     default: module.AutomationScreen,
   })),
 );
-const Workflows = React.lazy(() =>
-  import("./screens/Workflows").then((module) => ({
-    default: module.Workflows,
-  })),
-);
-
-const CodingStudio = React.lazy(() =>
+const loadCodingStudio = () =>
   import("./features/coding/CodingStudio").then((module) => ({
     default: module.CodingStudio,
-  })),
-);
+  }));
+const CodingStudio = React.lazy(loadCodingStudio);
 const tabTitles: Record<Tab, string> = {
-  chat: "对话",
+  chat: "新任务",
+  assistant: "Aura",
   flows: "工作流",
   "studio:coding": "工作空间",
   studios: "工作台",
@@ -117,9 +109,37 @@ export default function App({ onReady }: AppProps) {
   const codexAuth = useCodexAuth(workspace);
   const flowDraft = useFlowDraft();
   const catalogState = useFlowCatalog(codexAuth.endpoint);
+  const [tab, setTab] = useState<Tab>("chat");
+  const online = workspace.state.provider !== "offline" || tab === "assistant";
+  const startupModels = useChatModels(
+    codexAuth.endpoint,
+    providerMode(workspace.state.provider),
+    workspace.ready && online,
+  );
+  const [readySurface, setReadySurface] = useState<"online" | "offline">();
+  const startupSurface = online ? "online" : "offline";
+  useEffect(() => {
+    if (!workspace.ready || !onReady) return;
+    let current = true;
+    void (online ? loadCodingStudio : loadChatScreen)().then(
+      () => {
+        if (current) setReadySurface(startupSurface);
+      },
+      () => {
+        // The lazy boundary reports module errors to the host's startup UI.
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [workspace.ready, onReady, online, startupSurface]);
   const codingWorkspaces = useCodingProjects(
     codexAuth.endpoint,
-    workspace.ready && workspace.state.provider !== "offline",
+    workspace.ready &&
+      (workspace.state.provider !== "offline" || tab === "assistant"),
+    Boolean(
+      (startupModels.catalog && !startupModels.restored) || startupModels.error,
+    ),
   );
   const pluginPages = usePluginPages(codexAuth.endpoint, workspace.ready);
   const runningCount = new Set([
@@ -138,7 +158,6 @@ export default function App({ onReady }: AppProps) {
   const canLeaveStudio = () =>
     !studioDirty || window.confirm("工作台有未保存修改，确认离开？");
   const [workflowBrowseRevision, setWorkflowBrowseRevision] = useState(0);
-  const [tab, setTab] = useState<Tab>("chat");
   const [flowsOpened, setFlowsOpened] = useState(false);
   useEffect(() => {
     if (tab === "flows") setFlowsOpened(true);
@@ -163,6 +182,28 @@ export default function App({ onReady }: AppProps) {
     { tab: "chat", sessionId: null },
   ]);
   const [navigationIndex, setNavigationIndex] = useState(0);
+  const navigationIntent = useRef(0);
+  const assistantViewRestored = useRef(false);
+  const assistantViewKey = `aura.assistant.view:${codexAuth.endpoint}`;
+  useEffect(() => {
+    if (!workspace.ready || assistantViewRestored.current) return;
+    assistantViewRestored.current = true;
+    try {
+      if (localStorage.getItem(assistantViewKey) === "assistant") {
+        navigation.current = [{ tab: "assistant", sessionId: null }];
+        setTab("assistant");
+      }
+    } catch {
+      /* Navigation still works when browser storage is unavailable. */
+    }
+  }, [workspace.ready, assistantViewKey]);
+  const { loadAssistant } = codingWorkspaces;
+  useEffect(() => {
+    if (tab !== "assistant") return;
+    const abort = new AbortController();
+    void loadAssistant(false, abort.signal);
+    return () => abort.abort();
+  }, [tab, loadAssistant]);
   const [systemReduced, setSystemReduced] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -206,11 +247,14 @@ export default function App({ onReady }: AppProps) {
         (tab in tabTitles
           ? tabTitles[tab as keyof typeof tabTitles]
           : "工作台"));
-  const activeConversation = codingWorkspaces.selectedId
-    ? codingWorkspaces.conversations[codingWorkspaces.selectedId]?.find(
-        (item) => item.id === codingWorkspaces.conversationId,
-      )
-    : undefined;
+  const activeConversation =
+    tab === "assistant"
+      ? codingWorkspaces.assistant?.conversation
+      : codingWorkspaces.selectedId
+        ? codingWorkspaces.conversations[codingWorkspaces.selectedId]?.find(
+            (item) => item.id === codingWorkspaces.conversationId,
+          )
+        : undefined;
   const documentTitle = `Aura · ${currentTitle}`;
   useEffect(() => {
     const media = matchMedia("(prefers-reduced-motion: reduce)");
@@ -239,10 +283,25 @@ export default function App({ onReady }: AppProps) {
   }, [dark]);
   useEffect(() => {
     if (!wide && sidebarOpen) dialog.current?.showModal();
-    else dialog.current?.close();
+    else if (dialog.current?.open) {
+      dialog.current.close();
+      document
+        .querySelector<HTMLButtonElement>(
+          '.workspace-menubar button[title="切换侧栏"]',
+        )
+        ?.focus();
+    }
   }, [wide, sidebarOpen]);
 
   const remember = (next: Tab, sessionId = workspace.active?.id ?? null) => {
+    navigationIntent.current++;
+    try {
+      if (next === "assistant")
+        localStorage.setItem(assistantViewKey, "assistant");
+      else localStorage.removeItem(assistantViewKey);
+    } catch {
+      /* In-memory navigation remains available. */
+    }
     const current = navigation.current[navigationIndex];
     if (current.tab === next && current.sessionId === sessionId) return;
     navigation.current = [
@@ -255,6 +314,14 @@ export default function App({ onReady }: AppProps) {
     const index = navigationIndex + direction;
     const next = navigation.current[index];
     if (!next || !canLeaveStudio()) return;
+    navigationIntent.current++;
+    try {
+      if (next.tab === "assistant")
+        localStorage.setItem(assistantViewKey, "assistant");
+      else localStorage.removeItem(assistantViewKey);
+    } catch {
+      /* In-memory navigation remains available. */
+    }
     setStudioDirty(false);
     setNavigationIndex(index);
     setTab(next.tab);
@@ -337,12 +404,22 @@ export default function App({ onReady }: AppProps) {
     setAssistantOpen(false);
     setSidebarOpen(false);
   };
+  const openPersonalAssistant = async () => {
+    if (!canLeaveStudio()) return;
+    const intent = ++navigationIntent.current;
+    if ((await loadAssistant(true)) && intent === navigationIntent.current) {
+      workspace.newChat();
+      navigate("assistant");
+    }
+  };
   const sidebar = (
     <WorkspaceSidebar
       workspace={workspace}
       tab={tab}
-      wide={wide}
-      onCollapse={() => (wide ? setCollapsed(true) : setSidebarOpen(false))}
+      dark={dark}
+      toggleTheme={toggleTheme}
+      onOpenArchived={openArchived}
+      onAssistant={() => void openPersonalAssistant()}
       navigate={navigate}
       start={() => start()}
       open={open}
@@ -360,6 +437,7 @@ export default function App({ onReady }: AppProps) {
   );
   const showChat =
     tab === "chat" ||
+    tab === "assistant" ||
     tab === "studio:coding" ||
     (tab === "flows" &&
       workflowDetail &&
@@ -370,60 +448,60 @@ export default function App({ onReady }: AppProps) {
     tab === "chat" &&
     workflowDiscussionId !== workspace.active?.id;
   const codingHeader =
-    workspace.state.provider !== "offline" &&
-    (tab === "studio:coding" || (tab === "chat" && !showWorkflowChat));
-  const headerActions = (
-    <div className="header-actions">
-      {tab === "chat" && workspace.active ? (
-        <>
-          <SessionStatus
-            status={sidebarSessionStatus(
-              workspace.active,
-              workspace.runningIds.includes(workspace.active.id),
+    tab === "assistant" ||
+    (workspace.state.provider !== "offline" &&
+      (tab === "studio:coding" || (tab === "chat" && !showWorkflowChat)));
+  const headerActions =
+    (tab === "chat" && workspace.active) ||
+    (tab === "flows" && workflowDetail) ? (
+      <div className="header-actions">
+        {tab === "chat" && workspace.active ? (
+          <>
+            <SessionStatus
+              status={sidebarSessionStatus(
+                workspace.active,
+                workspace.runningIds.includes(workspace.active.id),
+              )}
+              text={wide}
+            />
+            <SessionActions
+              session={workspace.active}
+              workspace={workspace}
+              onDialog={setSessionDialog}
+              className="icon-control header-session-more"
+            />
+          </>
+        ) : null}
+        {tab === "flows" && workflowDetail ? (
+          <button
+            className={`tool-button${assistantOpen ? " active" : ""}`}
+            aria-pressed={assistantOpen}
+            onClick={() => {
+              if (workspace.active?.workflow) workspace.newChat();
+              setAssistantOpen(!assistantOpen);
+            }}
+          >
+            {assistantOpen ? (
+              <PanelRightClose size={15} />
+            ) : (
+              <PanelRightOpen size={15} />
             )}
-            text={wide}
-          />
-          <SessionActions
-            session={workspace.active}
-            workspace={workspace}
-            onDialog={setSessionDialog}
-            className="icon-control header-session-more"
-          />
-          <span className="header-divider" />
-        </>
-      ) : null}
-      {tab === "flows" && workflowDetail ? (
-        <button
-          className={`tool-button${assistantOpen ? " active" : ""}`}
-          aria-pressed={assistantOpen}
-          onClick={() => {
-            if (workspace.active?.workflow) workspace.newChat();
-            setAssistantOpen(!assistantOpen);
-          }}
-        >
-          {assistantOpen ? (
-            <PanelRightClose size={15} />
-          ) : (
-            <PanelRightOpen size={15} />
-          )}
-          <span>生成助手</span>
-        </button>
-      ) : null}
-      {workspace.state.provider === "lumina" ||
-      workspace.state.provider === "custom" ? (
-        !codingHeader ? (
-          <ModelServiceBadge
-            endpoint={codexAuth.endpoint}
-            provider={workspace.state.provider}
-            compact={!wide}
-            onOpen={() => navigate("settings")}
-          />
-        ) : null
-      ) : (
-        <CodexLoginButton auth={codexAuth} compact={!wide} />
-      )}
-    </div>
+            <span>生成助手</span>
+          </button>
+        ) : null}
+      </div>
+    ) : undefined;
+  const navigationBar = (
+    <WorkspaceMenubar
+      sidebarVisible={wide ? !collapsed : sidebarOpen}
+      canBack={navigationIndex > 0}
+      canForward={navigationIndex < navigation.current.length - 1}
+      back={() => travel(-1)}
+      forward={() => travel(1)}
+      toggleSidebar={toggleSidebar}
+    />
   );
+  const navigationInDrawer = !wide && sidebarOpen;
   return (
     <PluginResultsProvider results={pluginPages.results}>
       <ThemeContext.Provider value={{ colors, dark, reduced }}>
@@ -448,21 +526,11 @@ export default function App({ onReady }: AppProps) {
                 </div>
               ) : (
                 <>
-                  <WorkspaceMenubar
-                    workspace={workspace}
-                    dark={dark}
-                    sidebarVisible={wide ? !collapsed : sidebarOpen}
-                    canBack={navigationIndex > 0}
-                    canForward={navigationIndex < navigation.current.length - 1}
-                    back={() => travel(-1)}
-                    forward={() => travel(1)}
-                    toggleSidebar={toggleSidebar}
-                    toggleTheme={toggleTheme}
-                    navigate={navigate}
-                    start={() => start()}
-                    onDialog={setSessionDialog}
-                    onArchived={openArchived}
-                  />
+                  {navigationInDrawer ? (
+                    <div className="workspace-navigation-space" />
+                  ) : (
+                    navigationBar
+                  )}
                   <div className="workspace-body">
                     {wide && !collapsed ? (
                       <ResizableSidebar
@@ -488,6 +556,7 @@ export default function App({ onReady }: AppProps) {
                             setSidebarOpen(false);
                         }}
                       >
+                        {navigationInDrawer ? navigationBar : null}
                         {sidebar}
                       </dialog>
                     ) : null}
@@ -504,7 +573,7 @@ export default function App({ onReady }: AppProps) {
                               {tab === "chat"
                                 ? workspace.active
                                   ? sidebarSessionTitle(workspace.active)
-                                  : (activeConversation?.title ?? "新对话")
+                                  : (activeConversation?.title ?? "新任务")
                                 : currentTitle}
                             </strong>
                             {tab === "chat" && workspace.active?.archivedAt ? (
@@ -519,292 +588,306 @@ export default function App({ onReady }: AppProps) {
                           {workspace.saveError}
                         </div>
                       ) : null}
-                      <div
-                        className={`workspace-deck${tab === "flows" && showChat && split ? " split" : ""}`}
-                        hidden={
-                          tab !== "flows" &&
-                          tab !== "chat" &&
-                          tab !== "studio:coding"
+                      <React.Suspense
+                        fallback={
+                          <div className="workspace-loading" role="status">
+                            正在加载内容…
+                          </div>
                         }
                       >
                         <div
-                          className="flow-area"
-                          hidden={tab !== "flows" || (!split && showChat)}
+                          className={`workspace-deck${tab === "flows" && showChat && split ? " split" : ""}`}
+                          hidden={
+                            tab !== "flows" &&
+                            tab !== "chat" &&
+                            tab !== "assistant" &&
+                            tab !== "studio:coding"
+                          }
                         >
-                          {flowsOpened ? (
-                            <Workflows
-                              browseRevision={workflowBrowseRevision}
-                              endpoint={codexAuth.endpoint}
-                              catalogState={catalogState}
-                              onDetailChange={setWorkflowDetail}
-                              onRun={(flow) => {
-                                if (workspace.state.provider === "offline") {
-                                  const sessionId = workspace.newWorkflowChat(
-                                    flow,
-                                    codexAuth.endpoint,
+                          <div
+                            className="flow-area"
+                            hidden={tab !== "flows" || (!split && showChat)}
+                          >
+                            {flowsOpened || tab === "flows" ? (
+                              <Workflows
+                                browseRevision={workflowBrowseRevision}
+                                endpoint={codexAuth.endpoint}
+                                catalogState={catalogState}
+                                onDetailChange={setWorkflowDetail}
+                                onRun={(flow) => {
+                                  if (workspace.state.provider === "offline") {
+                                    const sessionId = workspace.newWorkflowChat(
+                                      flow,
+                                      codexAuth.endpoint,
+                                    );
+                                    remember("chat", sessionId);
+                                  } else {
+                                    workspace.newChat();
+                                    setFlowRequest({
+                                      id: crypto.randomUUID(),
+                                      flow,
+                                    });
+                                    remember("chat", null);
+                                  }
+                                  setTab("chat");
+                                  setAssistantOpen(false);
+                                }}
+                                draft={flowDraft}
+                                editorRevision={editorRevision}
+                                onAsk={() => {
+                                  if (workspace.active?.workflow)
+                                    workspace.newChat();
+                                  setAssistantOpen(true);
+                                  workspace.setDraft(
+                                    "帮我完善当前工作流，检查步骤拆分、输入输出与异常处理。",
                                   );
-                                  remember("chat", sessionId);
-                                } else {
-                                  workspace.newChat();
-                                  setFlowRequest({
-                                    id: crypto.randomUUID(),
-                                    flow,
-                                  });
-                                  remember("chat", null);
-                                }
-                                setTab("chat");
-                                setAssistantOpen(false);
-                              }}
-                              draft={flowDraft}
-                              editorRevision={editorRevision}
-                              onAsk={() => {
-                                if (workspace.active?.workflow)
-                                  workspace.newChat();
-                                setAssistantOpen(true);
-                                workspace.setDraft(
-                                  "帮我完善当前工作流，检查步骤拆分、输入输出与异常处理。",
-                                );
-                              }}
-                            />
-                          ) : null}
-                        </div>
-                        <div
-                          className={`assistant-area${tab === "chat" ? " standalone" : ""}`}
-                          hidden={!showChat}
-                        >
-                          {tab === "flows" ? (
-                            <div className="assistant-heading">
-                              <span>
-                                <MessageCircle size={15} />
-                                生成助手
-                              </span>
-                              <div>
-                                <button
-                                  className="icon-control"
-                                  aria-label="新建助手会话"
-                                  onClick={() => workspace.newChat()}
-                                >
-                                  <Plus size={15} />
-                                </button>
-                                <button
-                                  className="icon-control"
-                                  aria-label="返回工作流编辑器"
-                                  onClick={() => setAssistantOpen(false)}
-                                >
-                                  <X size={15} />
-                                </button>
+                                }}
+                              />
+                            ) : null}
+                          </div>
+                          <div
+                            className={`assistant-area${tab === "chat" || tab === "assistant" ? " standalone" : ""}`}
+                            hidden={!showChat}
+                          >
+                            {tab === "flows" ? (
+                              <div className="assistant-heading">
+                                <span>
+                                  <MessageCircle size={15} />
+                                  生成助手
+                                </span>
+                                <div>
+                                  <button
+                                    className="icon-control"
+                                    aria-label="新建助手会话"
+                                    onClick={() => workspace.newChat()}
+                                  >
+                                    <Plus size={15} />
+                                  </button>
+                                  <button
+                                    className="icon-control"
+                                    aria-label="返回工作流编辑器"
+                                    onClick={() => setAssistantOpen(false)}
+                                  >
+                                    <X size={15} />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ) : null}
-                          {workspace.state.provider !== "offline" ? (
-                            <div
-                              className="studio-area"
-                              style={
-                                showWorkflowChat
-                                  ? { display: "none" }
-                                  : undefined
-                              }
-                            >
+                            ) : null}
+                            {workspace.state.provider !== "offline" ||
+                            tab === "assistant" ? (
+                              <div
+                                className="studio-area"
+                                style={
+                                  showWorkflowChat
+                                    ? { display: "none" }
+                                    : undefined
+                                }
+                              >
+                                <React.Suspense
+                                  fallback={
+                                    <div className="workspace-loading">
+                                      正在打开对话…
+                                    </div>
+                                  }
+                                >
+                                  <CodingStudio
+                                    personalAssistant={tab === "assistant"}
+                                    visible={showChat && !showWorkflowChat}
+                                    key={codexAuth.endpoint}
+                                    endpoint={codexAuth.endpoint}
+                                    provider={workspace.state.provider}
+                                    workspaces={codingWorkspaces}
+                                    handoff={codingHandoff}
+                                    onHandoffTaken={takeHandoff}
+                                    legacy={
+                                      tab === "chat" &&
+                                      workspace.active &&
+                                      !showWorkflowChat
+                                        ? workspace.active
+                                        : undefined
+                                    }
+                                    onOpened={() => {
+                                      workspace.setDraft("");
+                                      workspace.newChat();
+                                    }}
+                                    context={
+                                      tab === "flows"
+                                        ? flowContext(flowDraft.code)
+                                        : undefined
+                                    }
+                                    initialDraft={
+                                      tab === "flows"
+                                        ? workspace.draft
+                                        : undefined
+                                    }
+                                    onApplyFlow={
+                                      tab === "flows"
+                                        ? (code) => {
+                                            flowDraft.update(code);
+                                            setEditorRevision(
+                                              (value) => value + 1,
+                                            );
+                                            if (!split) setAssistantOpen(false);
+                                          }
+                                        : undefined
+                                    }
+                                    flows={catalogState.catalog?.flows}
+                                    flowsLoading={
+                                      !catalogState.catalog &&
+                                      !catalogState.error
+                                    }
+                                    flowRequest={flowRequest}
+                                    onFlowRequestTaken={takeFlowRequest}
+                                    onProvider={(provider) =>
+                                      workspace.setState((current) => ({
+                                        ...current,
+                                        provider,
+                                      }))
+                                    }
+                                    headerActions={
+                                      codingHeader ? headerActions : undefined
+                                    }
+                                    onBack={
+                                      tab === "chat" || tab === "assistant"
+                                        ? undefined
+                                        : () => navigate("chat")
+                                    }
+                                  />
+                                </React.Suspense>
+                              </div>
+                            ) : null}
+                            {showWorkflowChat ? (
                               <React.Suspense
                                 fallback={
                                   <div className="workspace-loading">
-                                    正在打开对话…
+                                    正在打开执行记录…
                                   </div>
                                 }
                               >
-                                <CodingStudio
-                                  visible={showChat && !showWorkflowChat}
-                                  key={codexAuth.endpoint}
-                                  endpoint={codexAuth.endpoint}
-                                  provider={workspace.state.provider}
-                                  workspaces={codingWorkspaces}
-                                  handoff={codingHandoff}
-                                  onHandoffTaken={takeHandoff}
-                                  legacy={
-                                    tab === "chat" &&
-                                    workspace.active &&
-                                    !showWorkflowChat
-                                      ? workspace.active
+                                <WorkflowChat
+                                  key={workspace.active?.id}
+                                  workspace={workspace}
+                                  onContinue={
+                                    workspace.state.provider !== "offline" &&
+                                    workspace.active?.workflow?.endpoint ===
+                                      codexAuth.endpoint
+                                      ? () =>
+                                          setWorkflowDiscussionId(
+                                            workspace.active?.id,
+                                          )
                                       : undefined
                                   }
-                                  onOpened={() => {
-                                    workspace.setDraft("");
-                                    workspace.newChat();
-                                  }}
-                                  context={
-                                    tab === "flows"
-                                      ? flowContext(flowDraft.code)
-                                      : undefined
-                                  }
-                                  initialDraft={
-                                    tab === "flows"
-                                      ? workspace.draft
-                                      : undefined
-                                  }
-                                  onApplyFlow={
-                                    tab === "flows"
-                                      ? (code) => {
-                                          flowDraft.update(code);
-                                          setEditorRevision(
-                                            (value) => value + 1,
-                                          );
-                                          if (!split) setAssistantOpen(false);
-                                        }
-                                      : undefined
-                                  }
-                                  flows={catalogState.catalog?.flows}
-                                  flowsLoading={
-                                    !catalogState.catalog && !catalogState.error
-                                  }
-                                  flowRequest={flowRequest}
-                                  onFlowRequestTaken={takeFlowRequest}
-                                  onProvider={(provider) =>
-                                    workspace.setState((current) => ({
-                                      ...current,
-                                      provider,
-                                    }))
-                                  }
-                                  headerActions={
-                                    codingHeader ? headerActions : undefined
-                                  }
-                                  onBack={
-                                    tab === "chat"
-                                      ? undefined
-                                      : () => navigate("chat")
-                                  }
+                                  flow={catalogState.catalog?.flows.find(
+                                    (flow) =>
+                                      flow.id ===
+                                        workspace.active?.workflow?.id &&
+                                      workspace.active.workflow.endpoint ===
+                                        codexAuth.endpoint,
+                                  )}
                                 />
                               </React.Suspense>
-                            </div>
-                          ) : null}
-                          {showWorkflowChat ? (
+                            ) : workspace.state.provider === "offline" &&
+                              tab !== "assistant" ? (
+                              <ChatScreen
+                                workspace={workspace}
+                                connecting={codexAuth.loading}
+                                context={
+                                  tab === "flows"
+                                    ? flowContext(flowDraft.code)
+                                    : undefined
+                                }
+                                onApplyFlow={(code) => {
+                                  remember("flows");
+                                  setTab("flows");
+                                  flowDraft.update(code);
+                                  setEditorRevision((value) => value + 1);
+                                  if (!split) setAssistantOpen(false);
+                                }}
+                              />
+                            ) : null}
+                          </div>
+                        </div>
+                        {isStudio(tab) && tab !== "studio:coding" ? (
+                          <div className="studio-area">
                             <React.Suspense
                               fallback={
                                 <div className="workspace-loading">
-                                  正在打开执行记录…
+                                  正在打开{currentTitle}…
                                 </div>
                               }
                             >
-                              <WorkflowChat
-                                key={workspace.active?.id}
-                                workspace={workspace}
-                                onContinue={
-                                  workspace.state.provider !== "offline" &&
-                                  workspace.active?.workflow?.endpoint ===
-                                    codexAuth.endpoint
-                                    ? () =>
-                                        setWorkflowDiscussionId(
-                                          workspace.active?.id,
-                                        )
-                                    : undefined
-                                }
-                                flow={catalogState.catalog?.flows.find(
-                                  (flow) =>
-                                    flow.id ===
-                                      workspace.active?.workflow?.id &&
-                                    workspace.active.workflow.endpoint ===
-                                      codexAuth.endpoint,
-                                )}
-                              />
+                              {isPluginTab(tab) ? (
+                                pluginStudio ? (
+                                  <PluginPageBoundary
+                                    key={pluginStudio.id}
+                                    label={pluginStudio.title}
+                                    renderPage={() =>
+                                      pluginStudio.page.definition.render({
+                                        endpoint: codexAuth.endpoint,
+                                        pluginId: pluginStudio.pluginId,
+                                        invoke: invokePluginPage!,
+                                        onDirtyChange: setStudioDirty,
+                                        onBack: () => navigate("chat"),
+                                      })
+                                    }
+                                  />
+                                ) : (
+                                  <div className="workspace-loading">
+                                    {pluginPages.failures[0]?.message ??
+                                      "插件工作台尚未就绪。"}
+                                  </div>
+                                )
+                              ) : null}
                             </React.Suspense>
-                          ) : workspace.state.provider === "offline" ? (
-                            <ChatScreen
-                              workspace={workspace}
-                              context={
-                                tab === "flows"
-                                  ? flowContext(flowDraft.code)
-                                  : undefined
-                              }
-                              onApplyFlow={(code) => {
-                                remember("flows");
-                                setTab("flows");
-                                flowDraft.update(code);
-                                setEditorRevision((value) => value + 1);
-                                if (!split) setAssistantOpen(false);
-                              }}
-                            />
-                          ) : null}
-                        </div>
-                      </div>
-                      {isStudio(tab) && tab !== "studio:coding" ? (
-                        <div className="studio-area">
-                          <React.Suspense
-                            fallback={
-                              <div className="workspace-loading">
-                                正在打开{currentTitle}…
-                              </div>
-                            }
-                          >
-                            {isPluginTab(tab) ? (
-                              pluginStudio ? (
-                                <PluginPageBoundary
-                                  key={pluginStudio.id}
-                                  label={pluginStudio.title}
-                                  renderPage={() =>
-                                    pluginStudio.page.definition.render({
-                                      endpoint: codexAuth.endpoint,
-                                      pluginId: pluginStudio.pluginId,
-                                      invoke: invokePluginPage!,
-                                      onDirtyChange: setStudioDirty,
-                                      onBack: () => navigate("chat"),
-                                    })
-                                  }
-                                />
-                              ) : (
-                                <div className="workspace-loading">
-                                  {pluginPages.failures[0]?.message ??
-                                    "插件工作台尚未就绪。"}
-                                </div>
-                              )
-                            ) : null}
-                          </React.Suspense>
-                        </div>
-                      ) : null}
-                      {tab === "history" ? (
-                        <HistoryScreen
-                          workspace={workspace}
-                          start={start}
-                          open={open}
-                          onDialog={setSessionDialog}
-                          conversations={codingWorkspaces}
-                          openConversation={(projectId, id) => {
-                            codingWorkspaces.open(projectId, id);
-                            workspace.newChat();
-                            navigate("studio:coding");
-                          }}
-                        />
-                      ) : null}
-                      {tab === "studios" ? (
-                        <StudiosScreen
-                          studios={pluginPages.studios}
-                          failures={pluginPages.failures}
-                          navigate={navigate}
-                          onManagePlugins={() => {
-                            navigate("settings");
-                            setSettingsSection("plugins");
-                          }}
-                        />
-                      ) : null}
-                      {tab === "automation" ? (
-                        <AutomationScreen
-                          endpoint={codexAuth.endpoint}
-                          conversations={codingWorkspaces}
-                          openConversation={(projectId, id) => {
-                            codingWorkspaces.open(projectId, id);
-                            workspace.newChat();
-                            navigate("studio:coding");
-                          }}
-                        />
-                      ) : null}
-                      {tab === "settings" ? (
-                        <SettingsScreen
-                          workspace={workspace}
-                          codexAuth={codexAuth}
-                          systemReduced={systemReduced}
-                          section={settingsSection}
-                          onHistory={() => navigate("history")}
-                          onArchived={openArchived}
-                        />
-                      ) : null}
+                          </div>
+                        ) : null}
+                        {tab === "history" ? (
+                          <HistoryScreen
+                            workspace={workspace}
+                            start={start}
+                            open={open}
+                            onDialog={setSessionDialog}
+                            conversations={codingWorkspaces}
+                            openConversation={(projectId, id) => {
+                              codingWorkspaces.open(projectId, id);
+                              workspace.newChat();
+                              navigate("studio:coding");
+                            }}
+                          />
+                        ) : null}
+                        {tab === "studios" ? (
+                          <StudiosScreen
+                            studios={pluginPages.studios}
+                            failures={pluginPages.failures}
+                            navigate={navigate}
+                            onManagePlugins={() => {
+                              navigate("settings");
+                              setSettingsSection("plugins");
+                            }}
+                          />
+                        ) : null}
+                        {tab === "automation" ? (
+                          <AutomationScreen
+                            endpoint={codexAuth.endpoint}
+                            conversations={codingWorkspaces}
+                            openConversation={(projectId, id) => {
+                              codingWorkspaces.open(projectId, id);
+                              workspace.newChat();
+                              navigate("studio:coding");
+                            }}
+                          />
+                        ) : null}
+                        {tab === "settings" ? (
+                          <SettingsScreen
+                            workspace={workspace}
+                            codexAuth={codexAuth}
+                            systemReduced={systemReduced}
+                            section={settingsSection}
+                            onHistory={() => navigate("history")}
+                            onArchived={openArchived}
+                          />
+                        ) : null}
+                      </React.Suspense>
                       <footer className="workspace-status">
                         <span>
                           <span
@@ -812,7 +895,15 @@ export default function App({ onReady }: AppProps) {
                           />
                           {runningCount
                             ? `${runningCount} 个会话生成中`
-                            : "工作区就绪"}
+                            : online &&
+                                (codingWorkspaces.error || startupModels.error)
+                              ? "服务连接需要处理"
+                              : codexAuth.loading ||
+                                  (online &&
+                                    (!codingWorkspaces.ready ||
+                                      !startupModels.catalog))
+                                ? "正在准备本地服务…"
+                                : "工作区就绪"}
                         </span>
                         <span>
                           {flowDraft.saveError
@@ -830,7 +921,7 @@ export default function App({ onReady }: AppProps) {
                       onClose={() => setSessionDialog(undefined)}
                     />
                   ) : null}
-                  {onReady ? (
+                  {onReady && readySurface === startupSurface ? (
                     <WorkbenchReady
                       onReady={onReady}
                       dark={dark}
@@ -847,7 +938,7 @@ export default function App({ onReady }: AppProps) {
   );
 }
 
-/** Inside Suspense so lazy first-screen content must commit before notifying. */
+/** The shell can be used while its backend services prepare in parallel. */
 function WorkbenchReady({
   onReady,
   dark,

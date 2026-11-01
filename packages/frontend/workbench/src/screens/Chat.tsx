@@ -142,10 +142,12 @@ function MessageView({
 /** Local demo and legacy records only; online conversations use ConversationPane. */
 export function ChatScreen({
   workspace,
+  connecting = false,
   context,
   onApplyFlow,
 }: {
   workspace: WorkspaceController;
+  connecting?: boolean;
   context?: string;
   onApplyFlow?(code: string): void;
 }) {
@@ -157,6 +159,7 @@ export function ChatScreen({
     scroll.current?.scrollTo({ top: scroll.current.scrollHeight });
   }, [messages]);
   const send = () => {
+    if (connecting) return;
     void workspace.send(workspace.draft, false, context);
   };
   return (
@@ -172,7 +175,7 @@ export function ChatScreen({
               key={message.id}
               message={message}
               endpoint={workspace.workflows.endpoint}
-              retry={() => workspace.retry(context)}
+              retry={connecting ? undefined : () => workspace.retry(context)}
               onApplyFlow={onApplyFlow}
             />
           ))
@@ -188,6 +191,7 @@ export function ChatScreen({
               placeholder="发送消息…"
               value={workspace.draft}
               maxLength={4000}
+              disabled={connecting}
               onChange={(event) => workspace.setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (
@@ -223,7 +227,7 @@ export function ChatScreen({
               <button
                 className="send-button"
                 aria-label={running ? "停止生成" : "发送消息"}
-                disabled={!running && !workspace.draft.trim()}
+                disabled={!running && (connecting || !workspace.draft.trim())}
                 onClick={running ? workspace.stop : send}
               >
                 {running ? <Square size={14} /> : <ArrowUp size={18} />}
