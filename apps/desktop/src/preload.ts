@@ -3,13 +3,22 @@ import type { WorkflowPathKind } from "@aura/workbench/file-picker";
 
 contextBridge.exposeInMainWorld("auraHost", {
   platform: "desktop" as const,
+  os: process.platform,
   chrome: {
     setTheme: (dark: boolean) =>
       ipcRenderer.invoke("aura:window:theme", dark) as Promise<void>,
   },
   files: {
-    reveal: (root: string, path: string) =>
-      ipcRenderer.invoke("aura:files:reveal", root, path) as Promise<void>,
+    reveal: async (root: string, path: string): Promise<void> => {
+      const result: unknown = await ipcRenderer
+        .invoke("aura:files:reveal", root, path)
+        .catch(() => ({ error: "无法在文件夹中显示，请重试。" }));
+      if (typeof result === "object" && result !== null && "error" in result) {
+        if (result.error === null) return;
+        if (typeof result.error === "string") throw new Error(result.error);
+      }
+      throw new Error("无法在文件夹中显示，请重试。");
+    },
   },
   workflowFiles: {
     choose: (kind: WorkflowPathKind) =>

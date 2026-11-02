@@ -509,6 +509,18 @@ export default function App({ onReady }: AppProps) {
           className="aura-root workbench"
           data-reduced={reduced}
           data-platform={platform()}
+          data-os={window.auraHost?.os}
+          data-titlebar-layout={
+            platform() === "desktop" &&
+            window.auraHost?.os === "darwin" &&
+            wide &&
+            !workspace.saveError
+              ? codingHeader
+                ? "conversation"
+                : "page"
+              : undefined
+          }
+          data-sidebar-collapsed={(wide && collapsed) || undefined}
           style={
             Object.fromEntries(
               Object.entries(colors).map(([key, value]) => [`--${key}`, value]),

@@ -691,7 +691,6 @@ function DeliverableItem({
       <FileText size={13} />
       <code title={full}>{path}</code>
       <span className="coding-report-actions">
-        {note ? <span role="status">{note}</span> : null}
         <button
           className="icon-control"
           aria-label={`复制 ${path} 的完整路径`}
@@ -711,6 +710,11 @@ function DeliverableItem({
           </button>
         ) : null}
       </span>
+      {note ? (
+        <span className="coding-report-note" role="status">
+          {note}
+        </span>
+      ) : null}
     </li>
   );
 }

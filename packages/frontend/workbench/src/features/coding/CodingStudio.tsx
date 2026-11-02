@@ -421,16 +421,6 @@ ${summary}`,
       className={`coding-studio chat-screen studio-main${sideVisible ? " with-side" : ""}`}
       aria-label="工作空间对话"
     >
-      {workspaces.error ? (
-        <p className="coding-notice" role="alert">
-          {workspaces.error}
-        </p>
-      ) : null}
-      {workspaces.branchFrom ? (
-        <p className="coding-notice">
-          将继承来源对话的上下文，在「{project?.title}」中继续。
-        </p>
-      ) : null}
       <ConversationSplit
         mainHeader={mainHeader}
         sideHeader={
@@ -459,6 +449,16 @@ ${summary}`,
         }
         main={
           <>
+            {workspaces.error ? (
+              <p className="coding-notice" role="alert">
+                {workspaces.error}
+              </p>
+            ) : null}
+            {workspaces.branchFrom ? (
+              <p className="coding-notice">
+                将继承来源对话的上下文，在「{project?.title}」中继续。
+              </p>
+            ) : null}
             {view === "trajectory" ? (
               <div className="studio-scroll coding-trajectory">
                 <TrajectoryView turns={mainTurns} />

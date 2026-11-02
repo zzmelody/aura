@@ -114,7 +114,14 @@ async function openWorkbench() {
     backgroundColor: "#171719",
     title: "Aura",
     titleBarStyle: "hidden",
-    titleBarOverlay: { color: "#00000000", symbolColor: "#b5b5c0", height: 38 },
+    titleBarOverlay: {
+      color: "#00000000",
+      symbolColor: "#b5b5c0",
+      height: process.platform === "darwin" ? 48 : 38,
+    },
+    ...(process.platform === "darwin"
+      ? { trafficLightPosition: { x: 12, y: 17 } }
+      : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

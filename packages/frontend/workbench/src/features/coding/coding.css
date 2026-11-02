@@ -522,15 +522,18 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
 }
 .coding-report ul {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .coding-report li {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   font-size: 13px;
 }
 .coding-report code {
@@ -538,7 +541,6 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
 }
 
 .coding-report li code {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -551,6 +553,13 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   gap: 4px;
   color: var(--muted);
   font-size: 12px;
+}
+.coding-report-note {
+  grid-column: 2 / -1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 /* Questions the agent asks; the turn waits until one is answered. */

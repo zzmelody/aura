@@ -8,6 +8,7 @@ import { buildDesktopPreload } from "../scripts/build-desktop-preload.ts";
 
 interface PreloadHost {
   platform: "desktop";
+  os: string;
   directories: { choose(): Promise<string | null> };
   previews: { open(url: string, id: string, title: string): Promise<void> };
   files: { reveal(root: string, path: string): Promise<unknown> };
@@ -18,16 +19,26 @@ test("built desktop preload exposes native dialogs/previews without owning site 
   t.after(() => rm(directory, { recursive: true, force: true }));
   const output = await buildDesktopPreload(join(directory, "preload.cjs"));
   const requests: unknown[][] = [];
+  let revealError: string | null = null;
+  let disconnected = false;
   let host: PreloadHost | undefined;
   const ipcRenderer = {
     invoke: async (...args: unknown[]) => {
       requests.push(args);
       if (args[0] === "aura:directories:choose") return "/tmp/site";
+      if (args[0] === "aura:files:reveal") {
+        if (disconnected)
+          throw new Error(
+            "Error invoking remote method 'aura:files:reveal': internal details",
+          );
+        return { error: revealError };
+      }
     },
   };
   // Like a sandboxed preload: no import/Node loader, only Electron's limited require.
   runInNewContext(await readFile(output, "utf8"), {
     exports: {},
+    process: { platform: process.platform },
     require: (name: string) => {
       assert.equal(
         name,
@@ -48,15 +59,24 @@ test("built desktop preload exposes native dialogs/previews without owning site 
   });
   assert.ok(host);
   assert.equal(host.platform, "desktop");
+  assert.equal(host.os, process.platform);
   assert.equal(await host.directories.choose(), "/tmp/site");
   assert.equal("site" in host, false);
   await host.previews.open("http://127.0.0.1:5000/", "/tmp/site", "Site");
   // Coding deliverables are revealed through their own channel, with the
-  // project root so the main process can confine the path.
+  // project root so the main process can resolve relative paths.
   await host.files.reveal("/tmp/project", "src/a.ts");
   assert.deepEqual(requests, [
     ["aura:directories:choose"],
     ["aura:previews:open", "http://127.0.0.1:5000/", "/tmp/site", "Site"],
     ["aura:files:reveal", "/tmp/project", "src/a.ts"],
   ]);
+  revealError = "文件不存在或已被移动。";
+  await assert.rejects(host.files.reveal("/tmp/project", "/outside.txt"), {
+    message: revealError,
+  });
+  disconnected = true;
+  await assert.rejects(host.files.reveal("/tmp/project", "src/a.ts"), {
+    message: "无法在文件夹中显示，请重试。",
+  });
 });

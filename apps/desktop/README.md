@@ -10,7 +10,7 @@ Aura 的 Windows/macOS/Linux Electron 桌面入口。Vite renderer 复用 `@aura
 
 静态 renderer 的本机 HTTP 服务复用上次成功监听的端口，使 Chromium 的 origin、界面偏好与目录缓存能跨应用重启保留。端口号保存在 Electron `userData/Cache/renderer-port`，只是可丢弃的启动提示，不改写 `.aura/` 用户配置；端口占用时由系统另选空闲端口并更新提示，缓存损坏或不可写不阻止打开界面。开发模式继续使用 Vite 的固定端口。
 
-主窗口默认 1360×860，使用 Electron 的 `titleBarStyle: hidden` 与 `titleBarOverlay` 将共用的应用菜单栏放入标题区；最小化、最大化与关闭保留原生控件。原生控件叠层使用透明底色，整条标题栏由 renderer 连续绘制，避免按钮区域与左侧顶栏出现色差或分界。标题区留白可拖动窗口，菜单和导航按钮使用 no-drag。`window-host.ts` 仅接收主 frame 的深/浅色布尔设置，同步原生控件颜色。更改主进程或 preload 后需完全退出并重启桌面应用。实现依据 [Electron 自定义标题栏](https://www.electronjs.org/docs/latest/tutorial/custom-title-bar)。
+主窗口默认 1360×860，使用 Electron 的 `titleBarStyle: hidden` 与 `titleBarOverlay` 将共用的应用菜单栏放入标题区；最小化、最大化与关闭保留原生控件。原生控件叠层使用透明底色，整条标题栏由 renderer 连续绘制，避免按钮区域与左侧顶栏出现色差或分界。macOS 使用 48px 标题区，红绿灯定位到 `{ x: 12, y: 17 }`；preload 仅将 `process.platform` 作为 `auraHost.os` 提供给界面。宽窗口将导航、当前页标题和工具页签放在同一行，侧栏收起时为原生按钮与导航预留左侧位置。其他系统保持原有标题栏尺寸。标题区留白可拖动窗口，菜单和导航按钮使用 no-drag。`window-host.ts` 仅接收主 frame 的深/浅色布尔设置，同步原生控件颜色。更改主进程或 preload 后需完全退出并重启桌面应用。实现依据 [Electron 自定义标题栏](https://www.electronjs.org/docs/latest/tutorial/custom-title-bar)。
 
 在仓库根运行 `.\scripts\aura.ps1 run desktop`。命令先生成桌面 renderer，再打开原生窗口。Codex OAuth 始终交给 DSH；桌面壳只把授权页交给系统浏览器，不接触 token。
 
@@ -23,3 +23,5 @@ Aura 的 Windows/macOS/Linux Electron 桌面入口。Vite renderer 复用 `@aura
 启动前同时检查 IPv4/IPv6 loopback 端口。直接调用 `vite`、`next dev/start`、`ng serve`、`vue-cli-service serve` 的简单脚本会剥掉脚本里原有的 `--host`/`--port`，由 Aura 先从系统监听表选择可用端口，再把这个明确端口传给开发服务器并使用严格端口模式。复合命令、环境变量包装器及自定义脚本不盲目改写；冲突时拒绝启动，需同时调整脚本监听端口和预览地址。
 
 识别输出中的本机 `Local:` / `listening` 地址以跟随开发服务器实际监听的端口；端口预检会把 `127.0.0.1`、`0.0.0.0` 和 IPv6 通配监听都视为占用。预览前同时要求 HTTP 响应成功和请求地址对应的监听端点属于本次启动的进程树；不接管、更不会结束已有的其他服务。手动打开也重新校验归属。macOS 使用 `ps` + `lsof`，Linux 使用 `ps` + `lsof`（缺失时回退 `ss`），Windows 使用 PowerShell 的 `Get-NetTCPConnection` 与进程查询；工具不可用时不会冒险打开。就绪超时保留「停止项目」，运行中禁止修改配置。停止/重启按顺序执行，POSIX 先结束进程组、必要时强制回收；退出应用等待清理完成。修改这些主进程逻辑后需完全退出，再运行 `pnpm desktop`。
+
+交付文件定位支持任意本机目录中的已存在普通文件：绝对路径直接定位，相对路径按项目目录解析，支持 `..` 和文件符号链接；拒绝目录、不存在的文件和失效链接。定位只在系统文件管理器中选中文件，不会打开或执行文件，不需要按输出目录维护白名单。定位失败通过结构化 IPC 结果返回简短提示，preload 隐去 Electron 远程调用包装与底层异常。更改此逻辑后需完全退出并重启桌面应用。

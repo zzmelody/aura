@@ -18,7 +18,7 @@ const run = promisify(execFile);
 // This is a browser layout regression, not a source-text assertion. Other hosts
 // can opt in with CHROME_BIN without adding a browser automation dependency.
 test(
-  "conversation content, approval and input stay aligned around wide code, tables and diffs",
+  "conversation content, file actions, approval and input stay bounded around long paths, code, tables and diffs",
   {
     skip:
       !chrome || !existsSync(chrome)
@@ -48,6 +48,24 @@ test(
     const code = `<pre><code>${line}</code></pre>`;
     const table = `<div class="workflow-table-scroll"><table><tr>${"<th>Long table heading</th>".repeat(12)}</tr><tr>${"<td>Long table content</td>".repeat(12)}</tr></table></div>`;
     const diff = `<div class="coding-diffs"><div class="coding-diff"><pre><span class="coding-diff-line add">${line}</span></pre></div></div>`;
+    const paths = [
+      "image.png",
+      "/Users/example/workspace/aura/.aura/local-ai/outputs/gpt-73cf12b5027608cb/image.png",
+      `${"long-filename".repeat(50)}.png`,
+      ["C:", "Users", "example", "嵌套目录".repeat(20), "image.png"].join("\\"),
+    ];
+    const notes = [
+      "",
+      "已复制",
+      "文件不存在或已被移动。",
+      "很长的操作失败提示".repeat(40),
+    ];
+    const report = `<section class="coding-report" aria-label="交付文件"><h3>交付文件</h3><ul>${paths
+      .map(
+        (path, index) =>
+          `<li><svg width="13" height="13"></svg><code title="${path}">${path}</code><span class="coding-report-actions"><button class="icon-control" aria-label="复制完整路径"><svg width="13" height="13"></svg></button><button class="icon-control" aria-label="在文件夹中显示"><svg width="13" height="13"></svg></button></span>${notes[index] ? `<span class="coding-report-note" role="status">${notes[index]}</span>` : ""}</li>`,
+      )
+      .join("")}</ul></section>`;
     const fixture = join(temporary, "layout.html");
     await writeFile(
       fixture,
@@ -56,7 +74,7 @@ test(
 <script>
 const root = document.querySelector(".coding-panes");
 const results = [];
-const pane = (content) => '<div class="coding-pane"><div class="studio-scroll coding-transcript"><article class="coding-turn"><div class="coding-prompt">检查长内容</div><div class="coding-reply"><div class="workflow-rich-text">' + content + '</div></div><section class="coding-recap">本轮小结</section></article></div><div class="chat-composer-area"><div class="coding-approval"><div class="coding-approval-strip">等待审批</div><div class="coding-approval-body">允许运行构建吗？</div><div class="coding-approval-actions"><button>拒绝</button><button>允许这一次</button></div></div><div class="chat-composer"><textarea>检查宽度</textarea><div class="composer-tools coding-composer-tools"><div class="composer-leading"><button class="icon-control composer-add-trigger">+</button></div><div class="composer-trailing"><div class="chat-model-picker"><button class="chat-model-trigger"><span class="chat-model-name">a-very-long-model-name</span><span class="chat-model-effort">High</span></button></div><button class="icon-control composer-stop">■</button><button class="send-button">↑</button></div></div></div></div></div>';
+const pane = (content) => '<div class="coding-pane"><div class="studio-scroll coding-transcript"><article class="coding-turn"><div class="coding-prompt">检查长内容</div><div class="coding-reply"><div class="workflow-rich-text">' + content + '</div></div>' + ${JSON.stringify(report)} + '<section class="coding-recap">本轮小结</section></article></div><div class="chat-composer-area"><div class="coding-approval"><div class="coding-approval-strip">等待审批</div><div class="coding-approval-body">允许运行构建吗？</div><div class="coding-approval-actions"><button>拒绝</button><button>允许这一次</button></div></div><div class="chat-composer"><textarea>检查宽度</textarea><div class="composer-tools coding-composer-tools"><div class="composer-leading"><button class="icon-control composer-add-trigger">+</button></div><div class="composer-trailing"><div class="chat-model-picker"><button class="chat-model-trigger"><span class="chat-model-name">a-very-long-model-name</span><span class="chat-model-effort">High</span></button></div><button class="icon-control composer-stop">■</button><button class="send-button">↑</button></div></div></div></div></div>';
 for (const content of ${JSON.stringify([code, table, code + table, diff])}) {
   for (const width of [1200, 920, 700, 648, 600, 375])
   for (const stale of [false, true]) {
@@ -75,6 +93,20 @@ for (const content of ${JSON.stringify([code, table, code + table, diff])}) {
       panes: Array.from(root.children).filter(node => !node.classList.contains('coding-split-handle')).map(node => node.getBoundingClientRect().width),
       transcripts: transcripts.map(node => ({ client: node.clientWidth, scroll: node.scrollWidth })),
       blocks: blocks.map(node => ({ client: node.clientWidth, scroll: node.scrollWidth, overflow: getComputedStyle(node).overflowX })),
+      files: Array.from(root.querySelectorAll('.coding-report li')).map(row => {
+        const card = row.closest('.coding-report').getBoundingClientRect();
+        const path = row.querySelector('code');
+        const note = row.querySelector('.coding-report-note')?.getBoundingClientRect();
+        const buttons = Array.from(row.querySelectorAll('button')).map(button => button.getBoundingClientRect());
+        return {
+          cardRight: card.right, rowRight: row.getBoundingClientRect().right,
+          pathClient: path.clientWidth, pathScroll: path.scrollWidth,
+          pathText: path.textContent, pathTitle: path.title,
+          pathBottom: path.getBoundingClientRect().bottom,
+          note: note ? { top: note.top, right: note.right } : null,
+          buttons: buttons.map(button => ({ left: button.left, right: button.right, width: button.width })),
+        };
+      }),
       turns: Array.from(root.querySelectorAll('.coding-turn')).map(node => ({ width: node.getBoundingClientRect().width, children: Array.from(node.children).map(child => child.getBoundingClientRect().width) })),
       columns: Array.from(root.querySelectorAll('.chat-composer-area')).map(area => {
         const conversation = area.parentElement;
@@ -126,6 +158,17 @@ document.getElementById('layout-result').textContent = JSON.stringify(results);
       panes: number[];
       transcripts: Array<{ client: number; scroll: number }>;
       blocks: Array<{ client: number; scroll: number; overflow: string }>;
+      files: Array<{
+        cardRight: number;
+        rowRight: number;
+        pathClient: number;
+        pathScroll: number;
+        pathText: string;
+        pathTitle: string;
+        pathBottom: number;
+        note: { top: number; right: number } | null;
+        buttons: Array<{ left: number; right: number; width: number }>;
+      }>;
       turns: Array<{ width: number; children: number[] }>;
       columns: Array<{
         textLeft: number;
@@ -158,6 +201,37 @@ document.getElementById('layout-result').textContent = JSON.stringify(results);
           transcript.scroll <= transcript.client + 1,
           `At ${layout.width}px, transcript overflowed to ${transcript.scroll}px inside ${transcript.client}px`,
         );
+      for (const file of layout.files) {
+        assert.ok(
+          file.rowRight <= file.cardRight,
+          `At ${layout.width}px, a delivered file row overflowed its card`,
+        );
+        assert.equal(
+          file.pathTitle,
+          file.pathText,
+          "Keep the full path available",
+        );
+        assert.ok(file.pathClient > 0, "Keep the file path visible");
+        if (file.note) {
+          assert.ok(
+            file.note.top >= file.pathBottom,
+            "Place feedback below the file path",
+          );
+          assert.ok(
+            file.note.right <= file.cardRight,
+            "Keep long feedback inside the card",
+          );
+        }
+        for (const button of file.buttons) {
+          assert.ok(button.width >= 24, "Keep file actions usable");
+          assert.ok(
+            button.right <= file.cardRight,
+            "Keep file actions inside the card",
+          );
+        }
+        if (file.pathText.length > 100)
+          assert.ok(file.pathScroll > file.pathClient, "Truncate long paths");
+      }
       for (const turn of layout.turns)
         for (const child of turn.children)
           assert.ok(

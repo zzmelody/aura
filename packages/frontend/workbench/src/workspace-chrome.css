@@ -57,6 +57,63 @@
 [data-platform="desktop"] .workspace-menubar :is(button, nav) {
   -webkit-app-region: no-drag;
 }
+/* macOS keeps native traffic lights at the left of a 48px title bar. */
+[data-platform="desktop"][data-os="darwin"] {
+  --window-navigation-inset: max(90px, calc(env(titlebar-area-x, 84px) + 6px));
+  --window-navigation-width: calc(var(--window-navigation-inset) + 100px);
+}
+[data-platform="desktop"][data-os="darwin"] .workspace-menubar {
+  height: 48px;
+  padding-left: var(--window-navigation-inset);
+  padding-right: 10px;
+}
+[data-platform="desktop"][data-os="darwin"] .workspace-navigation-space {
+  height: 48px;
+}
+[data-platform="desktop"][data-os="darwin"] .sidebar-dialog .workspace-sidebar {
+  padding-top: calc(48px + env(safe-area-inset-top));
+}
+/* Navigation occupies the sidebar's top edge; page headers share its row. */
+.workbench[data-titlebar-layout] {
+  position: relative;
+}
+[data-titlebar-layout] > .workspace-menubar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  width: var(--window-navigation-width);
+  border-bottom: 0;
+  background: transparent;
+}
+[data-titlebar-layout] .resizable-sidebar {
+  padding-top: 48px;
+}
+[data-titlebar-layout] .resizable-sidebar::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 48px;
+  border-bottom: 1px solid var(--workspace-divider);
+  background: var(--sidebar);
+  -webkit-app-region: drag;
+}
+[data-titlebar-layout] .workspace-header {
+  -webkit-app-region: drag;
+}
+[data-titlebar-layout] .workspace-header :is(button, a, input, nav) {
+  -webkit-app-region: no-drag;
+}
+[data-titlebar-layout="page"][data-sidebar-collapsed] .workspace-header,
+[data-titlebar-layout="conversation"][data-sidebar-collapsed]
+  .coding-main-column
+  > .coding-header,
+[data-titlebar-layout="conversation"][data-sidebar-collapsed]
+  .coding-panes[data-tools-only]
+  > .coding-side
+  > .coding-tools-header {
+  padding-left: calc(var(--window-navigation-width) + 10px);
+}
 .resizable-sidebar {
   position: relative;
   flex: 0 0 var(--sidebar-width);
