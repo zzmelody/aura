@@ -31,17 +31,71 @@ body,
 body,
 button,
 input,
-textarea {
+textarea,
+select {
   font-family: var(--font-text);
 }
 
 button,
 input,
-textarea {
+textarea,
+select {
   color: inherit;
 }
 
+body {
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 .aura-root {
+  font-family: var(--font-text);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Interaction effects derive from the active palette, including in popovers. */
+  --focus-border: var(--accent);
+  --focus-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 0 16px color-mix(in srgb, var(--glow) 14%, transparent);
+  --focus-wash: radial-gradient(
+    ellipse at 0 0,
+    color-mix(in srgb, var(--accent) 7%, transparent),
+    transparent 75%
+  );
+  --highlight-fill: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--soft) 86%, var(--accent)),
+    color-mix(in srgb, var(--soft) 72%, transparent) 65%,
+    color-mix(in srgb, var(--soft) 28%, transparent)
+  );
+  --highlight-sheen: inset 0 1px 0
+    color-mix(in srgb, var(--accent) 14%, transparent);
+  --control-fill: linear-gradient(
+    135deg,
+    var(--primary),
+    color-mix(in srgb, var(--primary) 86%, var(--glow))
+  );
+  --control-hover-fill: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--primary) 92%, var(--accent)),
+    var(--primary)
+  );
+  --control-pressed-fill: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--primary) 86%, #000),
+    color-mix(in srgb, var(--primary) 94%, #000)
+  );
+  --pressed-fill: linear-gradient(
+    110deg,
+    var(--pressed),
+    color-mix(in srgb, var(--soft) 65%, transparent)
+  );
+  --button-hover-shadow:
+    var(--highlight-sheen),
+    0 0 12px color-mix(in srgb, var(--glow) 14%, transparent);
+  --button-pressed-shadow: inset 0 2px 4px rgb(0 0 0 / 16%);
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -63,7 +117,7 @@ textarea {
 
 .aura-pressable:focus-visible,
 .aura-switch:focus-visible {
-  outline: 2px solid #bda1ff;
+  outline: 2px solid var(--accent, #bda1ff);
   outline-offset: 2px;
 }
 
@@ -80,9 +134,14 @@ textarea {
   margin: 0;
 }
 
-.aura-input::placeholder {
-  color: var(--aura-placeholder);
+.aura-input::placeholder,
+.workbench :where(input, textarea)::placeholder {
+  color: var(--aura-placeholder, var(--muted));
   opacity: 1;
+}
+
+.aura-root :where(strong, b, h1, h2, h3, h4, h5, h6) {
+  font-weight: 600;
 }
 
 .aura-spinner {
@@ -162,6 +221,9 @@ textarea {
   cursor: pointer;
   font: inherit;
 }
+.workbench :where(input, textarea, select) {
+  font-weight: 400;
+}
 .workbench button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -180,6 +242,290 @@ textarea {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+/* Button variants supply fills; common states keep native and shared controls aligned. */
+.workbench
+  :is(
+    .primary-button,
+    .send-button,
+    .dsh-button.primary,
+    .aura-button.primary,
+    .chat-model-menu-effort[aria-checked="true"],
+    .automation-pills button[aria-pressed="true"],
+    .automation-weekdays button[aria-pressed="true"]
+  ) {
+  --button-hover-fill: var(--control-hover-fill);
+  --button-pressed-fill: var(--control-pressed-fill);
+  --button-selected-fill: var(--control-fill);
+}
+.workbench
+  :is(
+    .primary-button,
+    .send-button,
+    .dsh-button.primary,
+    .aura-button.primary
+  ):not(:disabled):not([aria-disabled="true"]) {
+  background-image: var(--button-rest-fill, var(--control-fill));
+}
+.workbench :is(button, .aura-pressable).danger:not([aria-disabled="true"]) {
+  --button-rest-fill: none;
+  --button-hover-fill: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--danger) 12%, transparent),
+    color-mix(in srgb, var(--danger) 3%, transparent)
+  );
+  --button-pressed-fill: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--danger) 22%, transparent),
+    color-mix(in srgb, var(--danger) 8%, transparent)
+  );
+  --button-hover-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--danger) 16%, transparent),
+    0 0 12px color-mix(in srgb, var(--danger) 12%, transparent);
+  --button-pressed-shadow: inset 0 2px 4px
+    color-mix(in srgb, var(--danger) 24%, transparent);
+  --button-focus-color: var(--danger);
+  --button-focus-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--danger) 16%, transparent);
+}
+.workbench
+  :is(button, .aura-pressable):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    [aria-checked="true"],
+    .selected,
+    .menu-open
+  ):not(:disabled):not([aria-disabled="true"]):not(
+    :where([role="switch"], .row-control)
+  ) {
+  background-image: var(--button-selected-fill, var(--highlight-fill));
+  box-shadow: var(--highlight-sheen);
+}
+@media (hover: hover) {
+  .workbench
+    :is(button, .aura-pressable):hover:not(:disabled):not(
+      [aria-disabled="true"]
+    ):not(:where([role="switch"], .row-control)) {
+    background-image: var(--button-hover-fill, var(--highlight-fill));
+    box-shadow: var(--button-hover-shadow);
+  }
+}
+.workbench
+  :is(button, .aura-pressable):focus-visible:not(:disabled):not(
+    [aria-disabled="true"]
+  ):not(:where([role="switch"], .row-control)) {
+  outline: 2px solid var(--button-focus-color, var(--accent));
+  outline-offset: 2px;
+  background-image: var(--button-hover-fill, var(--highlight-fill));
+  box-shadow: var(--button-focus-shadow, var(--focus-shadow));
+}
+.workbench
+  :is(button, .aura-pressable):active:not(:disabled):not(
+    [aria-disabled="true"]
+  ):not(:where([role="switch"], .row-control)) {
+  background-image: var(--button-pressed-fill, var(--pressed-fill));
+  box-shadow: var(--button-pressed-shadow);
+}
+/* Composite rows paint once; their title and utility actions stay transparent. */
+.workbench [data-row-highlight] :is(button, .aura-pressable).row-control {
+  background: transparent;
+  box-shadow: none;
+}
+.workbench [data-row-highlight] .row-control:focus-visible {
+  outline: none;
+}
+.workbench
+  [data-row-highlight]:is(
+    :hover,
+    :focus-within,
+    .selected,
+    .active,
+    .menu-open,
+    :where(:has(.row-control.menu-open))
+  ):has(.row-control:not(:disabled):not([aria-disabled="true"])) {
+  background-image: var(--highlight-fill);
+  box-shadow: var(--highlight-sheen);
+}
+.workbench
+  [data-row-highlight]:has(
+    .row-control:focus-visible:not(:disabled):not([aria-disabled="true"])
+  ) {
+  outline: 2px solid var(--focus-border);
+  outline-offset: -2px;
+  box-shadow: var(--focus-shadow);
+}
+.workbench
+  [data-row-highlight]:has(
+    .row-control:active:not(:disabled):not([aria-disabled="true"])
+  ) {
+  background-image: var(--pressed-fill);
+  box-shadow: var(--button-pressed-shadow);
+}
+/* All three switch shapes retain their own dimensions and thumb positions. */
+.workbench .aura-switch[aria-checked="true"],
+.workbench :is(.workflow-switch, .dsh-switch):has(input:checked) {
+  --switch-hover-fill: var(--control-hover-fill);
+  --switch-pressed-fill: var(--control-pressed-fill);
+}
+.workbench .aura-switch[aria-checked="true"],
+.workbench :is(.workflow-switch, .dsh-switch) input:checked + span {
+  background-image: var(--control-fill);
+  box-shadow: var(--highlight-sheen);
+}
+.workbench :is(.workflow-switch, .dsh-switch) > span {
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+@media (hover: hover) {
+  .workbench .aura-switch:hover:not(:disabled),
+  .workbench
+    :is(.workflow-switch, .dsh-switch):hover:has(input:enabled)
+    > span {
+    background-image: var(--switch-hover-fill, var(--highlight-fill));
+    box-shadow: var(--button-hover-shadow);
+  }
+}
+.workbench .aura-switch:focus-visible,
+.workbench :is(.workflow-switch, .dsh-switch) input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: var(--focus-shadow);
+}
+.workbench .aura-switch:active:not(:disabled),
+.workbench :is(.workflow-switch, .dsh-switch):active:has(input:enabled) > span {
+  background-image: var(--switch-pressed-fill, var(--pressed-fill));
+  box-shadow: var(--button-pressed-shadow);
+}
+.workbench .aura-switch:disabled,
+.workbench :is(.workflow-switch, .dsh-switch):has(input:disabled) > span {
+  box-shadow: none;
+}
+/* Standalone fields own focus; composite fields delegate it to their shell. */
+.workbench
+  :is(input, textarea, select):focus:enabled:not(
+    :where(
+      [type="checkbox"],
+      [type="radio"],
+      [type="file"],
+      [type="range"],
+      [readonly],
+      [aria-invalid="true"],
+      .xterm-helper-textarea
+    )
+  ) {
+  border-color: var(--focus-border);
+  outline: none;
+  background-image: var(--focus-wash);
+  box-shadow: var(--focus-shadow);
+}
+.workbench
+  :is(
+    .chat-composer,
+    .workflow-card-search,
+    .workflow-path-input,
+    .automation-search,
+    .session-search,
+    .composer-menu-search
+  )
+  :is(input, textarea):focus:enabled {
+  border-color: transparent;
+  outline: none;
+  background-image: none;
+  box-shadow: none;
+}
+.workbench :is(input, textarea, select)[aria-invalid="true"]:focus,
+.aura-root.workbench
+  :is(
+    .chat-composer,
+    .workflow-card-search,
+    .workflow-path-input,
+    .automation-search,
+    .session-search,
+    .composer-menu-search
+  ):has([aria-invalid="true"]):focus-within {
+  border-color: var(--danger);
+  outline: 1px solid var(--danger);
+  background-image: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.workbench :is(input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--primary);
+}
+.workbench :where(input, textarea, select) {
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.aura-root[data-reduced="true"]
+  :is(
+    input,
+    textarea,
+    select,
+    button,
+    .aura-pressable,
+    summary,
+    .chat-composer,
+    .workflow-path-input,
+    .workflow-card-search,
+    .composer-menu-search,
+    .automation-search,
+    .session-search
+  ) {
+  transition: none;
+}
+.aura-root[data-reduced="true"]
+  :is(.aura-switch, .workflow-switch, .dsh-switch)
+  > span,
+.aura-root[data-reduced="true"]
+  :is(.workflow-switch, .dsh-switch)
+  > span::after {
+  transition: none;
+}
+@media (forced-colors: active) {
+  .aura-root {
+    --focus-border: Highlight;
+    --focus-shadow: none;
+    --focus-wash: none;
+    --highlight-fill: none;
+    --highlight-sheen: none;
+    --control-fill: Highlight;
+    --control-hover-fill: none;
+    --control-pressed-fill: none;
+    --pressed-fill: none;
+    --button-hover-shadow: none;
+    --button-pressed-shadow: none;
+  }
+  .workbench
+    :is(button, .aura-pressable):focus-visible:not(:disabled):not(
+      [aria-disabled="true"]
+    ):not(:where(.row-control)) {
+    outline: 2px solid Highlight;
+    box-shadow: none;
+  }
+  .workbench :is(input, textarea, select):focus:enabled,
+  .workbench
+    :is(
+      .chat-composer,
+      .workflow-card-search,
+      .workflow-path-input,
+      .automation-search,
+      .session-search,
+      .composer-menu-search
+    ):focus-within {
+    outline: 1px solid Highlight;
+    outline-offset: 2px;
+  }
+  .workbench
+    :is(.workbench-menu-item, .composer-menu-option, .chat-model-menu-item):is(
+      :hover,
+      :focus-visible,
+      [aria-selected="true"],
+      [aria-checked="true"]
+    ):not([aria-disabled="true"]):not(:disabled) {
+    outline: 1px solid Highlight;
+    outline-offset: -2px;
+  }
+}
 .workbench :is(h1, h2, h3, p) {
   margin: 0;
 }
@@ -189,7 +535,9 @@ textarea {
 .workbench :is(button, select) {
   transition:
     background-color 120ms ease,
-    color 120ms ease;
+    color 120ms ease,
+    box-shadow 120ms ease,
+    border-color 120ms ease;
 }
 /* Quiet, rounded scrollbars with no visible track. Keep a faint thumb at
  * rest so overflow is discoverable, then increase contrast on interaction. */
@@ -332,7 +680,8 @@ textarea {
 }
 .workbench .selected {
   color: var(--accent);
-  background: var(--soft);
+  background: var(--highlight-fill);
+  box-shadow: var(--highlight-sheen);
 }
 .session-heading {
   display: flex;
@@ -359,7 +708,8 @@ textarea {
 }
 .text-control[aria-pressed="true"] {
   color: var(--accent);
-  background: var(--soft);
+  background: var(--highlight-fill);
+  box-shadow: var(--highlight-sheen);
 }
 .session-list {
   flex: 1;
@@ -422,6 +772,7 @@ textarea {
   border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 .workspace-main {
+  container: workspace / inline-size;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -460,7 +811,8 @@ textarea {
 .tool-button.active,
 .tool-button.accent {
   color: var(--accent);
-  background: var(--soft);
+  background: var(--highlight-fill);
+  box-shadow: var(--highlight-sheen);
   border-color: transparent;
 }
 .workspace-deck {
@@ -599,8 +951,10 @@ textarea {
   font-size: 11px;
   white-space: nowrap;
 }
-.flow-more-menu button:hover {
-  background: var(--elevated);
+.flow-more-menu button:hover:not(:disabled),
+.flow-more-menu button:focus-visible {
+  background: var(--highlight-fill);
+  box-shadow: var(--highlight-sheen);
 }
 .flow-preview-empty {
   display: flex;
@@ -1229,7 +1583,9 @@ textarea {
   padding: 8px;
 }
 .chat-composer:focus-within {
-  border-color: var(--accent);
+  border-color: var(--focus-border);
+  background-image: var(--focus-wash);
+  box-shadow: var(--focus-shadow);
 }
 .chat-composer textarea {
   display: block;
@@ -1483,7 +1839,7 @@ textarea {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 38px clamp(20px, 5vw, 72px) 32px;
+  padding: 38px clamp(16px, 4cqi, 48px) 32px;
 }
 .workflow-page-heading,
 .workflow-page-tools,
@@ -1494,10 +1850,15 @@ textarea {
   align-items: center;
 }
 .workflow-page-heading {
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 20px;
   max-width: 1040px;
   margin: 0 auto 28px;
+}
+.workflow-page-heading > div {
+  flex: 1 1 220px;
+  min-width: 0;
 }
 .workflow-page-heading h1 {
   margin: 0 0 9px;
@@ -1512,10 +1873,12 @@ textarea {
   line-height: 1.7;
 }
 .workflow-page-heading > button {
+  flex-shrink: 0;
   min-height: 35px;
   padding: 7px 12px;
 }
 .workflow-page-tools {
+  flex-wrap: wrap;
   max-width: 1040px;
   margin: 0 auto 18px;
   gap: 12px;
@@ -1526,8 +1889,9 @@ textarea {
   display: flex;
   align-items: center;
   gap: 9px;
-  width: 300px;
-  max-width: 65%;
+  flex: 0 1 300px;
+  min-width: 0;
+  max-width: 100%;
   background: var(--input);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1544,7 +1908,9 @@ textarea {
   font-size: 12px;
 }
 .workflow-card-search:focus-within {
-  border-color: var(--accent);
+  border-color: var(--focus-border);
+  background-image: var(--focus-wash);
+  box-shadow: var(--focus-shadow);
 }
 .workflow-page-tools > .icon-control {
   margin-left: auto;
@@ -1821,7 +2187,7 @@ textarea {
 }
 .workflow-input-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 16px 14px;
 }
 .workflow-input-field {
@@ -1888,13 +2254,14 @@ textarea {
 .workflow-input-field > input:not([type="checkbox"]):focus,
 .workflow-input-field > select:focus,
 .workflow-path-input:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--focus-border);
+  background-image: var(--focus-wash);
+  box-shadow: var(--focus-shadow);
 }
 .workflow-input-field > input::placeholder,
 .workflow-input-field > textarea::placeholder,
 .workflow-path-input input::placeholder {
-  color: color-mix(in srgb, var(--muted) 72%, transparent);
+  color: var(--muted);
 }
 .workflow-input-field > textarea {
   resize: vertical;
@@ -1985,8 +2352,9 @@ textarea {
     color 120ms ease;
 }
 .workflow-option.selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--input));
+  border-color: var(--focus-border);
+  background: var(--highlight-fill);
+  box-shadow: var(--highlight-sheen);
   color: var(--text);
 }
 .workflow-option:focus-within {
@@ -2028,7 +2396,8 @@ textarea {
   width: 12px;
   height: 12px;
   content: "";
-  background: var(--text);
+  background: var(--primaryText);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 20%);
   border-radius: 50%;
   transition: transform 120ms ease;
 }
@@ -2083,7 +2452,7 @@ textarea {
   font-size: 12px;
   line-height: 1.6;
 }
-@media (max-width: 700px) {
+@container workspace (max-width: 700px) {
   .workflow-library-page {
     padding: 26px 16px;
   }
@@ -2414,9 +2783,13 @@ textarea {
 .workflow-rich-text {
   color: var(--text);
   font-size: 13px;
+  font-weight: 400;
   line-height: 1.85;
   overflow-wrap: anywhere;
   min-width: 0;
+}
+.workflow-rich-text :is(strong, b) {
+  font-weight: 600;
 }
 .workflow-rich-text > :first-child {
   margin-top: 0;
@@ -2947,7 +3320,7 @@ textarea {
 [data-reduced="true"] .workflow-spinner {
   animation: none;
 }
-@media (max-width: 700px) {
+@container workspace (max-width: 700px) {
   .workflow-chat-title {
     padding: 12px 16px;
   }

@@ -502,36 +502,38 @@ ${summary}`,
                 flowRequest={flowRequest}
                 onFlowRequestTaken={onFlowRequestTaken}
                 composerLeading={
-                  <WorkbenchMenu
-                    label="选择工作空间"
-                    className="composer-context"
-                    title={project?.title ?? "选择工作空间"}
-                    disabled={mainRunning || personalAssistant}
-                    items={[
-                      ...projects.map((item) => ({
-                        id: item.id,
-                        label: `${item.id === project?.id ? "✓ " : ""}${item.title}`,
-                        icon: <FolderOpen size={14} />,
-                        action: () => {
-                          if (legacy) workspaces.select(item.id);
-                          else workspaces.continueIn(item.id);
+                  !conversationId ? (
+                    <WorkbenchMenu
+                      label="选择工作空间"
+                      className="composer-context"
+                      title={project?.title ?? "选择工作空间"}
+                      disabled={mainRunning || personalAssistant}
+                      items={[
+                        ...projects.map((item) => ({
+                          id: item.id,
+                          label: `${item.id === project?.id ? "✓ " : ""}${item.title}`,
+                          icon: <FolderOpen size={14} />,
+                          action: () => {
+                            if (legacy) workspaces.select(item.id);
+                            else workspaces.continueIn(item.id);
+                          },
+                        })),
+                        ...(projects.length
+                          ? [{ id: "separator", separator: true as const }]
+                          : []),
+                        {
+                          id: "create",
+                          label: "新建工作空间",
+                          icon: <FolderPlus size={14} />,
+                          action: () => setCreating(true),
                         },
-                      })),
-                      ...(projects.length
-                        ? [{ id: "separator", separator: true as const }]
-                        : []),
-                      {
-                        id: "create",
-                        label: "新建工作空间",
-                        icon: <FolderPlus size={14} />,
-                        action: () => setCreating(true),
-                      },
-                    ]}
-                  >
-                    <FolderOpen size={14} />
-                    <span>{project?.title ?? "工作空间"}</span>
-                    <ChevronDown size={12} />
-                  </WorkbenchMenu>
+                      ]}
+                    >
+                      <FolderOpen size={14} />
+                      <span>{project?.title ?? "工作空间"}</span>
+                      <ChevronDown size={12} />
+                    </WorkbenchMenu>
+                  ) : undefined
                 }
                 footnote={
                   offline

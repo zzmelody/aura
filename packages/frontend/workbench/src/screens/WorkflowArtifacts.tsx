@@ -142,11 +142,11 @@ function Thumbnail({
   ) : (
     <span className="artifact-card-placeholder">
       {artifact.kind === "model" ? (
-        <Box size={34} strokeWidth={1} />
+        <Box size={34} className="aura-icon--display" />
       ) : artifact.kind === "video" ? (
-        <Play size={34} strokeWidth={1} />
+        <Play size={34} className="aura-icon--display" />
       ) : (
-        <ImageIcon size={30} strokeWidth={1} />
+        <ImageIcon size={30} className="aura-icon--display" />
       )}
     </span>
   );
@@ -276,7 +276,7 @@ function InlineModel({
           />
         ) : (
           <div className="artifact-stage-message">
-            <Box size={30} strokeWidth={1} />
+            <Box size={30} className="aura-icon--display" />
             <span>
               {artifact.status === "unsupported"
                 ? "此模型暂不支持在线预览，可下载查看。"

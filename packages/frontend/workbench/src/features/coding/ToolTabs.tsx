@@ -74,10 +74,12 @@ export function ToolTabs({
           <div
             key={tab.id}
             className={`coding-tool-tab${selectedId === tab.id ? " active" : ""}`}
+            data-row-highlight
           >
             <button
               type="button"
               role="tab"
+              className="row-control"
               aria-selected={selectedId === tab.id}
               title={tab.title}
               aria-controls={`tool-panel-${tab.id}`}
@@ -97,7 +99,7 @@ export function ToolTabs({
             </button>
             <button
               type="button"
-              className="icon-control"
+              className="icon-control row-control"
               aria-label={`关闭工具：${tab.title}`}
               title={`关闭${tab.title}`}
               disabled={closing.includes(tab.id)}

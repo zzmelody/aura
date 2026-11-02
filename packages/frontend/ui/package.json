@@ -10,6 +10,7 @@
   "exports": {
     "./components": "./src/components.tsx",
     "./theme": "./src/theme.ts",
+    "./icons.css": "./src/icons.css",
     "./web": "./src/web.tsx"
   },
   "scripts": {

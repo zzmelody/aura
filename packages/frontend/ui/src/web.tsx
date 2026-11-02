@@ -526,7 +526,7 @@ export function Switch({
       onClick={() => onValueChange?.(!value)}
       role="switch"
       style={{
-        background: value ? trackColor?.true : trackColor?.false,
+        backgroundColor: value ? trackColor?.true : trackColor?.false,
         opacity: disabled ? 0.5 : 1,
       }}
       type="button"

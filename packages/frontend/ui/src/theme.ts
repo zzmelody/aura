@@ -1,6 +1,8 @@
 /** Shared React Web design tokens. */
 import type { TextStyle } from "./web.tsx";
 
+const softWhite = "rgb(234, 235, 238)";
+
 /**
  * Aura's purple palette: neutral surfaces, violet accents and purple primary
  * actions. Shared by both themes and every `var(--key)` consumer; DSH-inspired
@@ -13,9 +15,9 @@ export const palettes = {
     elevated: "rgb(44, 44, 46)",
     border: "rgba(255, 255, 255, 0.16)",
     hairline: "rgba(255, 255, 255, 0.12)",
-    text: "rgb(249, 250, 251)",
-    secondary: "rgb(207, 211, 214)",
-    muted: "rgb(173, 178, 184)",
+    text: softWhite,
+    secondary: "rgb(198, 201, 207)",
+    muted: "rgb(166, 170, 178)",
     caption: "rgb(129, 133, 140)",
     accent: "#BDA1FF",
     primary: "#8052EA",
@@ -30,6 +32,7 @@ export const palettes = {
     glow: "#5E2CB0",
     user: "#302B3C",
     tooltip: "rgb(67, 69, 74)",
+    tooltipText: softWhite,
   },
   light: {
     background: "rgb(255, 255, 255)",
@@ -54,6 +57,7 @@ export const palettes = {
     glow: "#D7C6F5",
     user: "#EEEBF6",
     tooltip: "rgb(44, 44, 46)",
+    tooltipText: softWhite,
   },
 } as const;
 export type Palette = { [K in keyof typeof palettes.dark]: string };
@@ -78,11 +82,22 @@ export const type = {
     fontWeight: 500,
     lineHeight: "28px",
   },
-  body: { fontFamily: fonts.body, fontSize: 14, lineHeight: "22px" },
-  small: { fontFamily: fonts.body, fontSize: 12, lineHeight: "18px" },
+  body: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    fontWeight: 400,
+    lineHeight: "22px",
+  },
+  small: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    fontWeight: 400,
+    lineHeight: "18px",
+  },
   label: {
     fontFamily: fonts.body,
     fontSize: 12,
+    fontWeight: 400,
     lineHeight: "18px",
   },
 } satisfies Record<string, TextStyle>;

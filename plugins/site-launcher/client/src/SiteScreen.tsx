@@ -331,7 +331,7 @@ function ProjectDetail({
 function EmptyDetail({ onAdd }: { onAdd(): void }) {
   return (
     <main className="site-detail site-detail-empty">
-      <Globe2 size={40} />
+      <Globe2 size={40} className="aura-icon--display aura-icon--muted" />
       <h2>选择一个项目</h2>
       <p>从左侧添加或选择一个前端项目，开始本地预览。</p>
       <button className="primary-button" onClick={onAdd}>

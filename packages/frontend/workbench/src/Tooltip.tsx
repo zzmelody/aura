@@ -47,6 +47,15 @@ export function Tooltip({
     setOpen(false);
   }, []);
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("resize", hide);
+    document.addEventListener("scroll", hide, true);
+    return () => {
+      window.removeEventListener("resize", hide);
+      document.removeEventListener("scroll", hide, true);
+    };
+  }, [open, hide]);
 
   useLayoutEffect(() => {
     const target = anchor.current?.getBoundingClientRect();

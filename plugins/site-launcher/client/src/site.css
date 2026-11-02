@@ -1,8 +1,9 @@
 .site-page {
+  container: site-page / inline-size;
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 38px clamp(18px, 5vw, 72px) 28px;
+  padding: clamp(24px, 4%, 38px) clamp(16px, 5%, 48px) 28px;
   background:
     radial-gradient(
       circle at 82% 10%,
@@ -24,6 +25,7 @@
   margin-bottom: 28px;
 }
 .site-hero-copy {
+  min-width: 0;
   max-width: 680px;
 }
 .site-eyebrow,
@@ -37,7 +39,7 @@
 .site-hero h1 {
   margin: 11px 0 10px;
   color: var(--text);
-  font-size: clamp(24px, 3vw, 34px);
+  font-size: clamp(24px, 3cqi, 34px);
   font-weight: 550;
   letter-spacing: -1px;
   line-height: 1.22;
@@ -114,6 +116,9 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
+}
+.site-card-heading > div {
+  min-width: 0;
 }
 .site-card-heading h2 {
   max-width: 360px;
@@ -370,61 +375,56 @@
     9px var(--font-mono),
     monospace;
 }
-@media (max-width: 899px) {
-  .site-page {
-    padding: 28px 16px;
-  }
-}
-@media (max-width: 899px) {
+@container site-page (max-width: 899px) {
   .site-hero {
     align-items: flex-start;
   }
 }
-@media (max-width: 899px) {
+@container site-page (max-width: 899px) {
   .site-signal {
     width: 92px;
     height: 92px;
     flex-basis: 92px;
   }
 }
-@media (max-width: 899px) {
+@container site-page (max-width: 899px) {
   .site-signal > span {
     bottom: 12px;
     font-size: 6px;
   }
 }
-@media (max-width: 899px) {
+@container site-page (max-width: 899px) {
   .site-layout {
     grid-template-columns: 1fr;
   }
 }
-@media (max-width: 700px) {
+@container site-page (max-width: 700px) {
   .site-hero h1 {
     font-size: 24px;
   }
 }
-@media (max-width: 700px) {
+@container site-page (max-width: 700px) {
   .site-hero p {
     font-size: 11px;
   }
 }
-@media (max-width: 700px) {
+@container site-page (max-width: 700px) {
   .site-signal {
     display: none;
   }
 }
-@media (max-width: 700px) {
+@container site-page (max-width: 700px) {
   .site-project-card,
   .site-run-card {
     padding: 18px;
   }
 }
-@media (max-width: 700px) {
+@container site-page (max-width: 700px) {
   .site-fields {
     grid-template-columns: 1fr;
   }
 }
-@media (max-width: 700px) {
+@container site-page (max-width: 700px) {
   .site-footnote {
     flex-direction: column;
     line-height: 1.6;
@@ -726,8 +726,6 @@
 }
 .site-detail-empty > svg {
   margin-bottom: 13px;
-  color: var(--accent);
-  opacity: 0.8;
 }
 .site-detail-empty h2 {
   color: var(--text);
@@ -739,65 +737,65 @@
   color: var(--muted);
   font-size: 11px;
 }
-@media (max-width: 760px) {
+@container site-page (max-width: 760px) {
   .site-hero-compact {
     align-items: flex-start;
   }
 }
-@media (max-width: 760px) {
+@container site-page (max-width: 760px) {
   .site-hero-stats {
     min-width: 132px;
   }
 }
-@media (max-width: 760px) {
+@container site-page (max-width: 760px) {
   .site-console {
     grid-template-columns: 1fr;
   }
 }
-@media (max-width: 760px) {
+@container site-page (max-width: 760px) {
   .site-project-list {
     max-height: 218px;
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
 }
-@media (max-width: 760px) {
+@container site-page (max-width: 760px) {
   .site-list-items {
     grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
   }
 }
-@media (max-width: 760px) {
+@container site-page (max-width: 760px) {
   .site-list-note {
     display: none;
   }
 }
-@media (max-width: 760px) {
+@container site-page (max-width: 760px) {
   .site-detail-grid {
     grid-template-columns: 1fr;
   }
 }
-@media (max-width: 480px) {
+@container site-page (max-width: 480px) {
   .site-hero-compact {
     display: block;
   }
 }
-@media (max-width: 480px) {
+@container site-page (max-width: 480px) {
   .site-hero-stats {
     width: fit-content;
     margin-top: 18px;
   }
 }
-@media (max-width: 480px) {
+@container site-page (max-width: 480px) {
   .site-detail {
     padding: 20px 16px 14px;
   }
 }
-@media (max-width: 480px) {
+@container site-page (max-width: 480px) {
   .site-detail-title h2 {
     font-size: 20px;
   }
 }
-@media (max-width: 480px) {
+@container site-page (max-width: 480px) {
   .site-detail-footer {
     flex-direction: column;
     line-height: 1.5;

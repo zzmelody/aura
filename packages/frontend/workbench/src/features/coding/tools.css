@@ -48,7 +48,6 @@
 }
 .coding-tool-tab.active {
   border-bottom-color: var(--accent);
-  background: var(--soft);
   color: var(--text);
 }
 .coding-tool-tab > [role="tab"] {

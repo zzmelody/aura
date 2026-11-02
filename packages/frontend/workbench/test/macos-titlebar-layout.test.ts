@@ -77,6 +77,11 @@ for (const side of [false, true]) {
   results.push({
     os, width, collapsed, layout, side, integrated,
     nav: rect(nav), headers: headers.map(rect),
+    navigationRegion: getComputedStyle(root.querySelector('.window-navigation')).webkitAppRegion,
+    sidebarBackgroundRegion: root.querySelector('.resizable-sidebar') ? getComputedStyle(root.querySelector('.resizable-sidebar'), '::before').webkitAppRegion : null,
+    sidebarDragLeft: root.querySelector('.resizable-sidebar') ? parseFloat(getComputedStyle(root.querySelector('.resizable-sidebar'), '::after').left) : null,
+    headerRegions: headers.map(node => getComputedStyle(node).webkitAppRegion),
+    headerDragLeft: headers.map(node => node.getBoundingClientRect().left + parseFloat(getComputedStyle(node, '::before').left)),
     contentTop: root.querySelector('.coding-notice')?.getBoundingClientRect().top,
     controls: controls.map(node => {
       const box = node.getBoundingClientRect();
@@ -121,6 +126,11 @@ document.querySelector('#result').textContent = JSON.stringify(results);
       side: boolean;
       nav: Box;
       headers: Box[];
+      navigationRegion: string;
+      sidebarBackgroundRegion: string | null;
+      sidebarDragLeft: number | null;
+      headerRegions: string[];
+      headerDragLeft: Array<number | null>;
       contentTop?: number;
       controls: Array<
         Box & { region: string; clickable: boolean; navigation: boolean }
@@ -133,6 +143,24 @@ document.querySelector('#result').textContent = JSON.stringify(results);
     for (const layout of layouts) {
       const label = JSON.stringify(layout);
       assert.ok(layout.scroll <= layout.client + 1, label);
+      if (layout.os !== "web")
+        assert.equal(layout.navigationRegion, "no-drag", label);
+      if (layout.integrated && layout.sidebar) {
+        assert.notEqual(layout.sidebarBackgroundRegion, "drag", label);
+        assert.ok(
+          layout.sidebarDragLeft !== null &&
+            layout.sidebarDragLeft >= layout.nav.right,
+          label,
+        );
+      }
+      if (layout.integrated && layout.collapsed)
+        layout.headers.forEach((header, index) => {
+          if (header.left < layout.nav.right) {
+            assert.equal(layout.headerRegions[index], "no-drag", label);
+            const left = layout.headerDragLeft[index];
+            assert.ok(left != null && left >= layout.nav.right, label);
+          }
+        });
       for (const header of layout.headers) {
         assert.equal(
           header.top,

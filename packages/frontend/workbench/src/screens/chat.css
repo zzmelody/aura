@@ -191,8 +191,9 @@
   transition: border-color 110ms ease;
 }
 .chat-screen .chat-composer:focus-within {
-  border-color: var(--border);
-  box-shadow: none;
+  border-color: var(--focus-border);
+  background-image: var(--focus-wash);
+  box-shadow: var(--focus-shadow);
 }
 .chat-screen .chat-composer textarea {
   min-height: 40px;

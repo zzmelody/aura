@@ -90,9 +90,9 @@ export function HistoryScreen({
       </div>
       <div className="history-list">
         {remoteSessions.map((item) => (
-          <div key={item.id} className="history-row">
+          <div key={item.id} className="history-row" data-row-highlight>
             <button
-              className="history-session"
+              className="history-session row-control"
               aria-label={`打开会话：${item.title}`}
               onClick={() => openConversation(item.projectId, item.id)}
             >
@@ -111,7 +111,7 @@ export function HistoryScreen({
               <SessionStatus status={conversations.statuses[item.id]} text />
             </button>
             <button
-              className="icon-control"
+              className="icon-control row-control"
               aria-label={`${item.archivedAt ? "取消归档" : "归档"}：${item.title}`}
               onClick={() =>
                 void conversations
@@ -126,9 +126,9 @@ export function HistoryScreen({
         {sessions.map((session) => {
           const title = sidebarSessionTitle(session);
           return (
-            <div key={session.id} className="history-row">
+            <div key={session.id} className="history-row" data-row-highlight>
               <button
-                className="history-session"
+                className="history-session row-control"
                 onClick={() => open(session.id)}
                 aria-label={`打开会话：${title}`}
               >
@@ -164,7 +164,7 @@ export function HistoryScreen({
                 session={session}
                 workspace={workspace}
                 onDialog={onDialog}
-                className="icon-control"
+                className="icon-control row-control"
               />
             </div>
           );

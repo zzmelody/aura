@@ -7,7 +7,7 @@
   padding: 3px 7px;
   border-radius: 8px;
   background: var(--tooltip);
-  color: #fff;
+  color: var(--tooltipText);
   font-size: 13px;
   line-height: 20px;
   white-space: pre-line;

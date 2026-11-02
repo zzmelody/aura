@@ -37,6 +37,83 @@ contract for complete workbench pages. Verify the checked-out host and `@aura/pl
   through the plugin's own backend; existing binary upload/download streams and
   generic durable Run controls remain bounded public host APIs. Do not import workbench private source paths.
 
+## Shared visual styles
+
+Plugin pages and Run result views inherit Aura's shared styles in the same document.
+The host already loads `@aura/ui/icons.css`; use its classes and variables directly
+inside the supplied viewport. Keep plugin CSS focused on its own layout and
+business content. Shared styles belong to the host lifecycle; do not inject a
+second copy or import private workbench CSS. Standalone previews may import the
+public stylesheet with a declared `@aura/ui` dependency and supply an `.aura-root`
+with the theme variables.
+
+- Inherit the host's font stack. Use `--font-text` and `--font-mono` where an
+  explicit family is needed. Regular text and inputs use weight 400; emphasis
+  and headings default to 600, with 500 available for intermediate hierarchy.
+- Use `--text`, `--secondary`, `--muted` and `--caption` for text hierarchy;
+  `--accent`, `--danger`, `--success` and `--warning` for semantic states.
+  Surfaces and edges use `--background`, `--surface`, `--elevated`, `--input`,
+  `--border` and `--hairline`. Primary actions use `--primary` / `--primaryText`.
+  Input placeholders use `--muted` with opacity 1.
+- Focus and selection can reuse `--focus-border`, `--focus-wash`,
+  `--focus-shadow`, `--highlight-fill` and `--highlight-sheen`. Primary action
+  gradients use `--control-fill`, `--control-hover-fill` and
+  `--control-pressed-fill`. Keep compound rows visually continuous by painting
+  the shared background on the row.
+
+Lucide icons automatically receive Aura's line weight and retain their parent's
+`currentColor`. Custom line SVGs opt in with `aura-icon`, a 24×24 `viewBox`,
+`fill="none"` and `stroke="currentColor"`.
+
+| Use | Shared class | Stroke or size |
+| --- | --- | --- |
+| Ordinary line icon | Lucide default or `aura-icon` | 1.6 |
+| Main action | `aura-icon--emphasis` | 1.8 |
+| Large placeholder | `aura-icon--display` | 1.25 |
+| Filled symbol | `aura-icon--filled`, with the required SVG `fill` | 0 |
+| Shared sizes | `aura-icon--xs`, `aura-icon--sm`, `aura-icon--md`, `aura-icon--lg` | 12/14/16/20px |
+| Custom drawing | `aura-icon--custom` | Preserve its own geometry |
+
+Tone classes are `aura-icon--secondary`, `--muted`, `--text`, `--accent`,
+`--danger`, `--success` and `--on-primary` (each uses the `aura-icon` prefix).
+When using a tone class, leave Lucide's `color` prop unset so its SVG stroke
+follows `currentColor`. Let the outer control own disabled opacity rather than
+dimming the icon again. Hover and selection change the control's colors and
+background, not its stroke weight. Provide an accessible label for icon-only
+buttons and mark their decorative SVGs `aria-hidden`.
+
+```tsx
+<>
+  <button type="button" aria-label="搜索" className="plugin-search-button">
+    <Search size={16} className="aura-icon--secondary" aria-hidden />
+  </button>
+  <Globe2
+    size={40}
+    className="aura-icon--display aura-icon--muted"
+    aria-hidden
+  />
+  <svg
+    className="aura-icon aura-icon--muted aura-icon--sm"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    aria-hidden
+  >
+    <path d="M4 12h16M12 4v16" />
+  </svg>
+</>
+```
+
+Public variables include `--aura-icon-stroke`, `--aura-icon-stroke-emphasis`,
+`--aura-icon-stroke-display`, the sizes `--aura-icon-size-xs`,
+`--aura-icon-size-sm`, `--aura-icon-size-md`, `--aura-icon-size-lg`, and the tone
+aliases `--aura-icon-color`, `--aura-icon-muted`, `--aura-icon-active`.
+A local `--aura-icon-stroke-width` override is available for a justified
+exception; prefer the shared classes for ordinary UI.
+Charts, flow connectors, logos and media canvases retain their own drawing rules.
+Check the current public exports and stylesheet before relying on these features
+when targeting an older Aura host.
+
 ## Run result renderers
 
 A page bundle MAY also render the output area of Flow Runs, so plugin-specific

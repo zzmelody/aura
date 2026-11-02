@@ -7,7 +7,7 @@
  * small enough that the content fills it instead of floating in a void. */
 .studios-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(196px, 100%), 1fr));
   gap: 12px;
   margin: 0;
   padding: 0;
@@ -48,7 +48,6 @@
 /* The glyph carries no colour of its own; it reads as text, not as a badge. */
 .studios-tile-icon {
   color: var(--secondary);
-  stroke-width: 1.5;
 }
 .studios-tile:hover .studios-tile-icon {
   color: var(--text);

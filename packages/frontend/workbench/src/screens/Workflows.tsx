@@ -208,9 +208,9 @@ export function Workflows({
             className={`workflow-card${expanded === flow.id ? " expanded" : ""}`}
             key={flow.id}
           >
-            <div className="workflow-card-summary">
+            <div className="workflow-card-summary" data-row-highlight>
               <button
-                className="workflow-card-open"
+                className="workflow-card-open row-control"
                 aria-label={`${expanded === flow.id ? "收起" : "展开"}工作流：${flow.title}`}
                 aria-expanded={expanded === flow.id}
                 aria-controls={`preview-${flow.id}`}
@@ -219,7 +219,7 @@ export function Workflows({
                 }
               >
                 <span className="workflow-card-icon">
-                  <FlowIcon size={22} strokeWidth={1.5} />
+                  <FlowIcon size={22} />
                 </span>
                 <span className="workflow-card-copy">
                   <strong>{flow.title}</strong>
@@ -236,7 +236,7 @@ export function Workflows({
                   {flow.available ? "可运行" : "不可用"}
                 </span>
                 <button
-                  className="icon-control"
+                  className="icon-control row-control"
                   aria-label={`编辑工作流：${flow.title}`}
                   title="编辑工作流"
                   onClick={() => edit(flow.id)}
@@ -244,7 +244,7 @@ export function Workflows({
                   <Pencil size={17} />
                 </button>
                 <button
-                  className="icon-control workflow-run-icon"
+                  className="icon-control workflow-run-icon row-control"
                   disabled={!flow.available}
                   aria-label={`运行工作流：${flow.title}`}
                   title="运行工作流"

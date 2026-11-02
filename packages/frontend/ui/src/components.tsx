@@ -54,23 +54,20 @@ export function IconButton({
   const { colors } = useTheme();
   return (
     <Pressable
+      className="aura-icon-button"
       accessibilityLabel={label}
       accessibilityState={{ disabled, selected: active }}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [
+      style={[
         styles.iconButton,
         {
           backgroundColor: active ? colors.soft : "transparent",
-          opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
+          opacity: disabled ? 0.4 : 1,
         },
       ]}
     >
-      <Icon
-        size={20}
-        strokeWidth={1.7}
-        color={active ? colors.accent : colors.secondary}
-      />
+      <Icon size={20} color={active ? colors.accent : colors.secondary} />
     </Pressable>
   );
 }
@@ -96,6 +93,7 @@ export function Button({
   return (
     <View style={[style, { opacity: disabled ? 0.4 : 1 }]}>
       <Pressable
+        className={`aura-button ${secondary ? "secondary" : "primary"}`}
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={onPress}
@@ -124,7 +122,6 @@ export function Button({
         <Icon
           size={18}
           color={secondary ? colors.accent : colors.primaryText}
-          strokeWidth={1.6}
         />
       </Pressable>
     </View>

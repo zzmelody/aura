@@ -8,6 +8,7 @@ import {
   SlidersHorizontal,
   Square,
   Terminal,
+  X,
 } from "lucide-react";
 import type { CodingSkillInfo, FlowCatalogEntry } from "@aura/protocol/types";
 import { FlowIcon } from "../../FlowIcon";
@@ -259,7 +260,6 @@ export function ComposerCommands({
   useAnchoredPopover(menu.visible, anchor, popup, {
     placement: "above",
     align: "start",
-    matchWidth: true,
     maxHeight: 320,
   });
   useEffect(() => {
@@ -302,15 +302,18 @@ export function ComposerCommands({
           >
             <ArrowLeft size={14} />
           </button>
-        ) : (
-          <Terminal size={14} aria-hidden="true" />
-        )}
-        <span>
+        ) : null}
+        <span className="composer-menu-title">
           {menu.group ? composerGroups[menu.group].title : "快捷入口"}
         </span>
-        <span className="composer-menu-hint">
-          <kbd>↑↓</kbd> 选择 <kbd>↵</kbd> 确认 <kbd>Esc</kbd> 关闭
-        </span>
+        <button
+          type="button"
+          className="composer-menu-close"
+          aria-label="关闭快捷入口"
+          onClick={close}
+        >
+          <X size={14} />
+        </button>
       </div>
       {menu.searchable ? (
         <label className="composer-menu-search">
@@ -357,9 +360,11 @@ export function ComposerCommands({
             </span>
             {entry.kind === "group" ? (
               <span className="composer-menu-tail">
-                {entry.group === "skills" && menu.skillsLoading
-                  ? "…"
-                  : entry.count}
+                <span className="composer-menu-count">
+                  {entry.group === "skills" && menu.skillsLoading
+                    ? "…"
+                    : entry.count}
+                </span>
                 <ChevronRight size={14} aria-hidden="true" />
               </span>
             ) : entry.kind === "command" ? (
@@ -389,6 +394,18 @@ export function ComposerCommands({
           </button>
         </div>
       ) : null}
+      <div className="composer-menu-footer" aria-hidden="true">
+        <span>
+          <kbd>↑</kbd>
+          <kbd>↓</kbd> 选择
+        </span>
+        <span>
+          <kbd>↵</kbd> 确认
+        </span>
+        <span className="composer-menu-dismiss">
+          <kbd>Esc</kbd> 关闭
+        </span>
+      </div>
     </div>
   );
 }

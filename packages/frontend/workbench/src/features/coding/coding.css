@@ -407,7 +407,6 @@ button.coding-tool-row {
 .coding-tool-leading svg {
   width: 14px;
   height: 14px;
-  stroke-width: 1.5px;
   transition: opacity 0.1s;
 }
 .coding-tool-chevron {
@@ -533,6 +532,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   gap: 6px;
   min-width: 0;
   font-size: 13px;
+  border-radius: 8px;
 }
 .coding-report code {
   overflow-wrap: anywhere;
@@ -790,7 +790,8 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
 }
 .coding-recap-file-row:hover,
 .coding-recap-file[data-open] .coding-recap-file-row {
-  background: var(--soft);
+  background: var(--highlight-fill);
+  box-shadow: var(--highlight-sheen);
 }
 /* Kind icon: a small tinted square, one hue per kind of file. */
 .coding-recap-file-icon {

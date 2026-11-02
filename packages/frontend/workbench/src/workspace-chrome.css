@@ -54,7 +54,9 @@
   );
   padding-left: calc(env(titlebar-area-x, 0px) + 10px);
 }
-[data-platform="desktop"] .workspace-menubar :is(button, nav) {
+[data-platform="desktop"]
+  .workspace-menubar
+  :is(button, nav, .window-navigation) {
   -webkit-app-region: no-drag;
 }
 /* macOS keeps native traffic lights at the left of a 48px title bar. */
@@ -96,6 +98,14 @@
   height: 48px;
   border-bottom: 1px solid var(--workspace-divider);
   background: var(--sidebar);
+}
+/* Native drag regions must not overlap navigation, even behind its z-index. */
+[data-titlebar-layout] .resizable-sidebar::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto min(100%, var(--window-navigation-width));
+  height: 48px;
+  pointer-events: none;
   -webkit-app-region: drag;
 }
 [data-titlebar-layout] .workspace-header {
@@ -113,6 +123,22 @@
   > .coding-side
   > .coding-tools-header {
   padding-left: calc(var(--window-navigation-width) + 10px);
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+[data-titlebar-layout="page"][data-sidebar-collapsed] .workspace-header::before,
+[data-titlebar-layout="conversation"][data-sidebar-collapsed]
+  .coding-main-column
+  > .coding-header::before,
+[data-titlebar-layout="conversation"][data-sidebar-collapsed]
+  .coding-panes[data-tools-only]
+  > .coding-side
+  > .coding-tools-header::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 var(--window-navigation-width);
+  pointer-events: none;
+  -webkit-app-region: drag;
 }
 .resizable-sidebar {
   position: relative;
@@ -270,7 +296,8 @@
 .workspace-nav button:hover,
 .workspace-sidebar .workspace-nav .selected {
   color: var(--text);
-  background: var(--soft);
+  background: var(--highlight-fill);
+  box-shadow: var(--highlight-sheen);
 }
 /* Recently opened studios, indented under 工作台 and a touch quieter. */
 .workspace-nav-children {
@@ -284,6 +311,7 @@
   position: relative;
   display: flex;
   align-items: center;
+  border-radius: 10px;
 }
 .workspace-nav-child > button:first-child {
   display: flex;
@@ -308,7 +336,6 @@
 .workspace-nav-child > button:first-child:hover,
 .workspace-nav-child > button:first-child.selected {
   color: var(--text);
-  background: var(--soft);
 }
 .workspace-nav-child > button:first-child.selected > svg {
   color: var(--accent);
@@ -417,7 +444,9 @@
   }
 }
 .session-heading .session-search:focus-within {
-  border-color: var(--accent);
+  border-color: var(--focus-border);
+  background-image: var(--focus-wash);
+  box-shadow: var(--focus-shadow);
 }
 .session-heading .session-search input {
   flex: 1;
@@ -511,11 +540,6 @@
   position: relative;
   margin: 1px 0;
 }
-.session-row:hover,
-.session-row:focus-within,
-.session-row.selected {
-  background: var(--soft);
-}
 .session-row .session-item {
   min-width: 0;
   width: 100%;
@@ -523,10 +547,6 @@
   margin: 0;
   padding: 6px 5px 6px 28px;
   gap: 6px;
-  background: transparent;
-}
-.session-row .session-item.selected,
-.session-row .session-item:hover {
   background: transparent;
 }
 .session-name {
@@ -635,7 +655,7 @@
 .workbench-menu {
   position: fixed;
   z-index: 100;
-  min-width: 204px;
+  min-width: min(204px, calc(100vw - 16px));
   max-width: min(300px, calc(100vw - 16px));
   max-height: calc(100dvh - 16px);
   overflow-y: auto;
@@ -663,13 +683,16 @@
 }
 .workbench-menu-item > span {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .workbench-menu-item > svg {
   color: var(--muted);
 }
-.workbench-menu-item:hover,
+.workbench-menu-item:hover:not(:disabled),
 .workbench-menu-item:focus-visible {
-  background: var(--soft);
+  background: var(--highlight-fill);
+  box-shadow: var(--highlight-sheen);
 }
 .workbench-menu-item.danger,
 .workbench-menu-item.danger > svg {
@@ -688,6 +711,8 @@
 }
 .session-dialog {
   width: min(420px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -706,8 +731,13 @@
   margin-bottom: 16px;
 }
 .session-dialog-heading h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 15px;
   font-weight: 600;
+}
+.session-dialog-heading > .icon-control {
+  flex-shrink: 0;
 }
 .session-title-field {
   display: grid;
@@ -732,6 +762,7 @@
 }
 .session-dialog-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 20px;
@@ -746,18 +777,23 @@
 }
 .history-screen {
   min-height: 0;
+  min-width: 0;
   flex: 1;
   overflow: auto;
-  padding: 28px clamp(20px, 5vw, 60px) 40px;
+  padding: 28px clamp(16px, 4cqi, 48px) 40px;
 }
 .history-heading,
 .history-controls {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   max-width: 960px;
   margin-inline: auto;
+}
+.history-heading {
+  flex-wrap: wrap;
 }
 .history-heading h1 {
   font-size: 21px;
@@ -789,15 +825,22 @@
 }
 .history-filters button[aria-pressed="true"] {
   color: var(--text);
-  background: var(--elevated);
+  background: var(--highlight-fill);
+  box-shadow: var(--highlight-sheen);
 }
 .history-search {
   display: flex;
+  flex: 0 1 210px;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: 7px;
   color: var(--muted);
 }
 .history-search input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
   max-width: 190px;
   height: 32px;
   border: 1px solid var(--border);
@@ -817,9 +860,6 @@
   gap: 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
   padding-right: 6px;
-}
-.history-row:hover {
-  background: var(--surface);
   border-radius: 8px;
 }
 .history-session {
@@ -884,6 +924,8 @@
   .sidebar-dialog {
     width: 300px;
   }
+}
+@container workspace (max-width: 700px) {
   .history-screen {
     padding: 20px 16px;
   }
@@ -955,9 +997,6 @@
   opacity: 0;
   pointer-events: none;
 }
-.session-row.menu-open {
-  background: var(--elevated);
-}
 .session-archive:hover,
 .session-archive:focus-visible {
   background: transparent;
@@ -981,6 +1020,7 @@
 }
 .workspace-folder-head {
   position: relative;
+  border-radius: 12px;
 }
 .workspace-folder-head .session-folder-heading {
   padding-right: 64px;

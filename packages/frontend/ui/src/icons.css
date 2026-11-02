@@ -1,0 +1,73 @@
+/* Loaded once by Aura; plugin pages inherit these tokens and utilities. */
+:where(.aura-root, .aura-modal) {
+  --aura-icon-stroke: 1.6;
+  --aura-icon-stroke-emphasis: 1.8;
+  --aura-icon-stroke-display: 1.25;
+  --aura-icon-size-xs: 12px;
+  --aura-icon-size-sm: 14px;
+  --aura-icon-size-md: 16px;
+  --aura-icon-size-lg: 20px;
+  --aura-icon-color: var(--secondary);
+  --aura-icon-muted: var(--muted);
+  --aura-icon-active: var(--accent);
+}
+
+/* Match line icons, so charts, logos and other SVG artwork keep their geometry. */
+:where(.aura-root, .aura-modal)
+  :where(svg.lucide, svg.aura-icon):not(:where(.aura-icon--custom)) {
+  flex-shrink: 0;
+  stroke-width: var(--aura-icon-stroke-width, var(--aura-icon-stroke));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+:where(.aura-root, .aura-modal) .aura-icon--emphasis {
+  --aura-icon-stroke-width: var(--aura-icon-stroke-emphasis);
+}
+:where(.aura-root, .aura-modal) .aura-icon--display {
+  --aura-icon-stroke-width: var(--aura-icon-stroke-display);
+}
+:where(.aura-root, .aura-modal) .aura-icon--filled {
+  --aura-icon-stroke-width: 0;
+}
+
+/* Without a tone class, icons retain their parent's currentColor or SVG stroke. */
+:where(.aura-root, .aura-modal) .aura-icon--secondary {
+  color: var(--aura-icon-color);
+}
+:where(.aura-root, .aura-modal) .aura-icon--muted {
+  color: var(--aura-icon-muted);
+}
+:where(.aura-root, .aura-modal) .aura-icon--text {
+  color: var(--text);
+}
+:where(.aura-root, .aura-modal) .aura-icon--accent {
+  color: var(--aura-icon-active);
+}
+:where(.aura-root, .aura-modal) .aura-icon--danger {
+  color: var(--danger);
+}
+:where(.aura-root, .aura-modal) .aura-icon--success {
+  color: var(--success);
+}
+:where(.aura-root, .aura-modal) .aura-icon--on-primary {
+  color: var(--primaryText);
+}
+
+/* Sizes are opt-in; existing size props and component geometry remain useful. */
+:where(.aura-root, .aura-modal) .aura-icon--xs {
+  width: var(--aura-icon-size-xs);
+  height: var(--aura-icon-size-xs);
+}
+:where(.aura-root, .aura-modal) .aura-icon--sm {
+  width: var(--aura-icon-size-sm);
+  height: var(--aura-icon-size-sm);
+}
+:where(.aura-root, .aura-modal) .aura-icon--md {
+  width: var(--aura-icon-size-md);
+  height: var(--aura-icon-size-md);
+}
+:where(.aura-root, .aura-modal) .aura-icon--lg {
+  width: var(--aura-icon-size-lg);
+  height: var(--aura-icon-size-lg);
+}

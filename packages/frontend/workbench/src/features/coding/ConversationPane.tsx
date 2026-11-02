@@ -687,12 +687,12 @@ function DeliverableItem({
     }
   };
   return (
-    <li>
+    <li data-row-highlight>
       <FileText size={13} />
       <code title={full}>{path}</code>
       <span className="coding-report-actions">
         <button
-          className="icon-control"
+          className="icon-control row-control"
           aria-label={`复制 ${path} 的完整路径`}
           title="复制完整路径"
           onClick={() => void run(() => writeClipboard(full), "已复制")}
@@ -701,7 +701,7 @@ function DeliverableItem({
         </button>
         {reveal ? (
           <button
-            className="icon-control"
+            className="icon-control row-control"
             aria-label={`在文件夹中显示 ${path}`}
             title="在文件夹中显示"
             onClick={() => void run(() => reveal(directory, path), "已定位")}
@@ -1048,7 +1048,7 @@ function RecapFile({
       data-kind={kind}
       data-open={open || undefined}
     >
-      <div className="coding-recap-file-row">
+      <div className="coding-recap-file-row" data-row-highlight>
         <span className="coding-recap-file-icon" aria-hidden="true">
           <Icon size={15} />
         </span>
@@ -1077,7 +1077,7 @@ function RecapFile({
               {!binary && diffs.length ? (
                 <button
                   type="button"
-                  className="icon-control"
+                  className="icon-control row-control"
                   aria-label={`${open ? "收起" : "查看"} ${fileName(shown)} 的改动`}
                   aria-expanded={open}
                   title={open ? "收起改动" : "查看改动"}
@@ -1088,7 +1088,7 @@ function RecapFile({
               ) : null}
               <button
                 type="button"
-                className="icon-control"
+                className="icon-control row-control"
                 aria-label={`复制 ${fileName(shown)} 的完整路径`}
                 title="复制完整路径"
                 onClick={() => actions.copy(path)}
@@ -1098,7 +1098,7 @@ function RecapFile({
               {actions.reveal ? (
                 <button
                   type="button"
-                  className="icon-control"
+                  className="icon-control row-control"
                   aria-label={`在文件夹中显示 ${fileName(shown)}`}
                   title="在文件夹中显示"
                   onClick={() => actions.reveal?.(path)}
@@ -2285,7 +2285,7 @@ export function ConversationPane({
                   <Square
                     size={14}
                     fill="currentColor"
-                    strokeWidth={0}
+                    className="aura-icon--filled"
                     aria-hidden="true"
                   />
                 </button>
@@ -2310,7 +2310,11 @@ export function ConversationPane({
                   }
                   onClick={() => void submit()}
                 >
-                  <ArrowUp size={16} strokeWidth={2.5} aria-hidden="true" />
+                  <ArrowUp
+                    size={16}
+                    className="aura-icon--emphasis"
+                    aria-hidden="true"
+                  />
                 </button>
               )}
             </div>

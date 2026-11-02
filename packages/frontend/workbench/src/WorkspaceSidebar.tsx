@@ -234,9 +234,13 @@ export function WorkspaceSidebar({
                   const Glyph = studioIcon(studio.page.definition.icon);
                   const selected = tab === studio.id;
                   return (
-                    <div className="workspace-nav-child" key={studio.id}>
+                    <div
+                      className={`workspace-nav-child${selected ? " selected" : ""}`}
+                      key={studio.id}
+                      data-row-highlight
+                    >
                       <button
-                        className={selected ? "selected" : ""}
+                        className={`row-control${selected ? " selected" : ""}`}
                         aria-current={selected ? "page" : undefined}
                         onClick={() => navigate(studio.id)}
                       >
@@ -246,7 +250,7 @@ export function WorkspaceSidebar({
                       <Tooltip label="从侧栏移除">
                         <button
                           type="button"
-                          className="icon-control studio-close"
+                          className="icon-control studio-close row-control"
                           aria-label={`从侧栏移除：${studio.title}`}
                           onClick={() => closeStudio(studio.id)}
                         >
@@ -396,13 +400,13 @@ export function WorkspaceSidebar({
               key={key}
               aria-label={`工作空间：${space.title}`}
             >
-              <div className="workspace-folder-head">
+              <div className="workspace-folder-head" data-row-highlight>
                 <Tooltip
                   label={`${space.title}\n${space.directory}`}
                   side="right"
                 >
                   <button
-                    className={`session-folder-heading${current ? " current" : ""}`}
+                    className={`session-folder-heading row-control${current ? " current" : ""}`}
                     aria-label={`${expanded ? "收起" : "展开"}工作空间：${space.title}`}
                     aria-expanded={expanded}
                     onClick={() => toggleFolder(key)}
@@ -422,7 +426,7 @@ export function WorkspaceSidebar({
                   <WorkbenchMenu
                     label={`工作区“${space.title}”的操作`}
                     tooltip="更多操作"
-                    className="icon-control"
+                    className="icon-control row-control"
                     items={[
                       {
                         id: "configure",
@@ -437,7 +441,7 @@ export function WorkspaceSidebar({
                   <Tooltip label="新会话">
                     <button
                       type="button"
-                      className="icon-control"
+                      className="icon-control row-control"
                       aria-label={`在“${space.title}”中新建会话`}
                       onClick={() => openSpace(space.id)}
                     >
@@ -458,6 +462,7 @@ export function WorkspaceSidebar({
                     return (
                       <div
                         className={`session-row${selected ? " selected" : ""}`}
+                        data-row-highlight
                         key={item.id}
                         onContextMenu={(event) => {
                           event.preventDefault();
@@ -470,7 +475,7 @@ export function WorkspaceSidebar({
                         }}
                       >
                         <button
-                          className={`session-item${selected ? " selected" : ""}`}
+                          className={`session-item row-control${selected ? " selected" : ""}`}
                           aria-current={selected ? "true" : undefined}
                           aria-label={`打开工作空间对话：${item.title}`}
                           aria-description={`${new Date(item.updatedAt).toLocaleString("zh-CN")}${status ? ` · ${status.label}` : ""}${item.archivedAt !== undefined ? " · 已归档" : ""}`}
@@ -509,7 +514,7 @@ export function WorkspaceSidebar({
                           >
                             <button
                               type="button"
-                              className="icon-control session-archive"
+                              className="icon-control session-archive row-control"
                               aria-label={`${item.archivedAt !== undefined ? "取消归档" : "归档"}：${item.title}`}
                               onClick={() =>
                                 void codingWorkspaces
@@ -603,6 +608,7 @@ export function WorkspaceSidebar({
                     return (
                       <div
                         className={`session-row${selected ? " selected" : ""}${context?.sessionId === session.id ? " menu-open" : ""}`}
+                        data-row-highlight
                         key={session.id}
                         onContextMenu={(event) => {
                           event.preventDefault();
@@ -631,7 +637,7 @@ export function WorkspaceSidebar({
                       >
                         <button
                           key={session.id}
-                          className={`session-item${selected ? " selected" : ""}`}
+                          className={`session-item row-control${selected ? " selected" : ""}`}
                           aria-current={selected ? "true" : undefined}
                           aria-label={`打开会话：${label}`}
                           aria-description={`${new Date(session.updatedAt).toLocaleString("zh-CN")} · ${status.label}${session.archivedAt ? " · 已归档" : ""}`}
@@ -667,7 +673,7 @@ export function WorkspaceSidebar({
                           >
                             <button
                               type="button"
-                              className="icon-control session-archive"
+                              className="icon-control session-archive row-control"
                               aria-label={`${session.archivedAt ? "取消归档" : "归档"}：${label}`}
                               onClick={() => archiveWithUndo(session, label)}
                             >

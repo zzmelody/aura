@@ -16,8 +16,9 @@
   transition: border-color 120ms ease;
 }
 .coding-studio .coding-pane .chat-composer:focus-within {
-  border-color: color-mix(in srgb, var(--muted) 55%, transparent);
-  box-shadow: none;
+  border-color: var(--focus-border);
+  background-image: var(--focus-wash);
+  box-shadow: var(--focus-shadow);
 }
 .coding-studio .coding-pane .chat-composer.dragging {
   border-color: var(--accent);

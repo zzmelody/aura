@@ -38,19 +38,27 @@ export function WorkbenchMenu({
   const menu = useRef<HTMLDivElement>(null);
   const id = useId();
   useLayoutEffect(() => {
-    if (!open || !trigger.current || !menu.current) return;
-    const button = trigger.current.getBoundingClientRect();
-    const panel = menu.current.getBoundingClientRect();
-    menu.current.style.left = `${Math.max(8, Math.min(button.left, innerWidth - panel.width - 8))}px`;
-    menu.current.style.top = `${Math.max(
-      8,
-      button.bottom + panel.height + 8 > innerHeight
-        ? button.top - panel.height - 5
-        : button.bottom + 5,
-    )}px`;
-    menu.current
+    const button = trigger.current;
+    const panel = menu.current;
+    if (!open || !button || !panel) return;
+    const position = () => {
+      const anchor = button.getBoundingClientRect();
+      const bounds = panel.getBoundingClientRect();
+      panel.style.left = `${Math.max(8, Math.min(anchor.left, innerWidth - bounds.width - 8))}px`;
+      panel.style.top = `${Math.max(
+        8,
+        Math.min(
+          anchor.bottom + bounds.height + 8 > innerHeight
+            ? anchor.top - bounds.height - 5
+            : anchor.bottom + 5,
+          innerHeight - bounds.height - 8,
+        ),
+      )}px`;
+    };
+    position();
+    panel
       .querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')
-      ?.focus();
+      ?.focus({ preventScroll: true });
     const away = (event: PointerEvent) => {
       if (
         !menu.current?.contains(event.target as Node) &&
@@ -61,14 +69,19 @@ export function WorkbenchMenu({
     const scroll = (event: Event) => {
       if (!menu.current?.contains(event.target as Node)) setOpen(false);
     };
-    const resize = () => setOpen(false);
+    const observer = new ResizeObserver(position);
+    observer.observe(button);
+    observer.observe(panel);
+    const owner = button.closest(".workspace-main, .workspace-sidebar");
+    if (owner) observer.observe(owner);
     document.addEventListener("pointerdown", away);
     document.addEventListener("scroll", scroll, true);
-    window.addEventListener("resize", resize);
+    window.addEventListener("resize", position);
     return () => {
+      observer.disconnect();
       document.removeEventListener("pointerdown", away);
       document.removeEventListener("scroll", scroll, true);
-      window.removeEventListener("resize", resize);
+      window.removeEventListener("resize", position);
     };
   }, [open]);
   const close = () => {

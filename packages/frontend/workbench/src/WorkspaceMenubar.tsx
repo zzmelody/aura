@@ -41,7 +41,7 @@ export function WorkspaceMenubar({
           className="icon-control"
           aria-label={sidebarVisible ? "收起侧栏" : "展开会话列表"}
           title="切换侧栏"
-          aria-pressed={sidebarVisible}
+          aria-expanded={sidebarVisible}
           onClick={toggleSidebar}
         >
           <PanelLeft size={16} />

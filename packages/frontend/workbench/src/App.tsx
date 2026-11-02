@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { FlowIcon } from "./FlowIcon";
+import "@aura/ui/icons.css";
 import "./styles.css";
 import "./shell.css";
 import "./workflow-output.css";

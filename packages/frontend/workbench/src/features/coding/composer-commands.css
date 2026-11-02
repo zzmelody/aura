@@ -6,99 +6,112 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  width: 480px;
+  width: 400px;
   max-width: calc(100vw - 16px);
-  padding: 4px;
+  padding: 6px;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 0.5px solid var(--hairline);
+  border-radius: 16px;
   background: var(--elevated);
   color: var(--text);
-  box-shadow: 0 12px 36px rgb(0 0 0 / 18%);
+  box-shadow:
+    0 12px 36px rgb(0 0 0 / 18%),
+    0 2px 8px rgb(0 0 0 / 8%);
 }
 .composer-menu-header {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding: 0 8px 4px;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 4px 4px 10px;
   color: var(--secondary);
   font-size: 12px;
 }
-.composer-menu-header > svg {
-  color: var(--muted);
+.composer-menu-title {
+  flex: 1;
+  font-weight: 500;
 }
-.composer-menu-hint {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 10px;
-  white-space: nowrap;
-}
-.composer-menu-hint kbd {
-  font: inherit;
-  padding: 1px 3px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-.composer-menu-back {
+.composer-menu-back,
+.composer-menu-close {
   display: grid;
+  flex: none;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
-  color: var(--secondary);
+  color: var(--muted);
 }
-.composer-menu-back:hover {
+.composer-menu-back {
+  margin-left: -6px;
+}
+.composer-menu-back:hover,
+.composer-menu-close:hover {
   background: var(--soft);
+  color: var(--text);
 }
 .composer-menu-search {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
-  margin: 0 6px 4px;
-  border-bottom: 1px solid var(--border);
+  margin: 0 4px 6px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--input);
   color: var(--muted);
 }
 .composer-menu-search input {
   min-width: 0;
   width: 100%;
-  height: 32px;
+  height: 34px;
+  padding: 0;
   border: 0;
-  outline: none;
   background: transparent;
   color: var(--text);
   font: inherit;
   font-size: 12px;
 }
+.composer-menu-search input::placeholder {
+  color: var(--muted);
+}
+/* The containing search field owns focus, including the icon and rounded edge. */
+.composer-menu .composer-menu-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 .composer-menu-search:focus-within {
-  border-color: var(--accent);
+  border-color: var(--focus-border);
+  background-image: var(--focus-wash);
+  box-shadow: var(--focus-shadow);
 }
 .composer-menu-list {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 .composer-menu-option {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  min-height: 46px;
-  padding: 6px 10px;
+  min-height: 52px;
+  padding: 8px 10px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--text);
   text-align: left;
 }
-.composer-menu-option[aria-selected="true"],
-.composer-menu-option:hover {
-  background: var(--soft);
+.composer-menu-option[aria-selected="true"]:not([aria-disabled="true"]),
+.composer-menu-option:hover:not([aria-disabled="true"]) {
+  background: var(--highlight-fill);
+  box-shadow: var(--highlight-sheen);
 }
 .composer-menu-option[aria-disabled="true"] {
   color: var(--muted);
@@ -107,7 +120,13 @@
 .composer-menu-icon {
   display: flex;
   flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
   color: var(--muted);
+}
+.composer-menu-option[aria-selected="true"]:not([aria-disabled="true"])
+  .composer-menu-icon {
+  color: var(--accent);
 }
 .composer-menu-copy {
   display: grid;
@@ -143,9 +162,18 @@
   color: var(--muted);
   font-size: 11px;
 }
+.composer-menu-count,
+.composer-menu-alias {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.composer-menu-count {
+  min-width: 16px;
+  text-align: right;
+}
 .composer-menu-empty {
   margin: 0;
-  padding: 16px 10px;
+  padding: 20px 10px;
   color: var(--muted);
   font-size: 12px;
 }
@@ -154,7 +182,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 8px;
+  padding: 8px 10px;
   color: var(--muted);
   font-size: 11px;
 }
@@ -163,12 +191,55 @@
   background: transparent;
   color: var(--accent);
 }
+.composer-menu-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 4px 0;
+  padding: 8px 6px 2px;
+  border-top: 0.5px solid var(--hairline);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 16px;
+}
+.composer-menu-footer > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.composer-menu-dismiss {
+  margin-left: auto;
+}
+.composer-menu-footer kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border: 0.5px solid var(--hairline);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
 .composer-menu button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-@media (max-width: 480px) {
-  .composer-menu-hint {
+@media (pointer: coarse) {
+  .composer-menu-back,
+  .composer-menu-close {
+    width: 40px;
+    height: 40px;
+  }
+  .composer-menu-search input {
+    height: 40px;
+    font-size: 16px;
+  }
+  .composer-menu-footer {
     display: none;
   }
 }

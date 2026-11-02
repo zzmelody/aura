@@ -340,7 +340,7 @@ export function FlowStudio({
             className="flow-preview-empty"
             role={source.error ? "alert" : "status"}
           >
-            <Workflow size={28} strokeWidth={1.3} />
+            <Workflow size={28} className="aura-icon--display" />
             <strong>
               {!selectedFlow
                 ? "这个 Flow 已从目录移除"
