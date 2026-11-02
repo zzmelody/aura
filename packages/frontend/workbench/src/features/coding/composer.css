@@ -130,8 +130,8 @@
   color: var(--secondary) !important;
 }
 .coding-studio .coding-composer-tools .send-button {
-  background: var(--accent);
-  color: #fff !important;
+  background: var(--primary);
+  color: var(--primaryText) !important;
 }
 .coding-studio .coding-composer-tools :is(.send-button, .composer-stop) > svg {
   display: block;

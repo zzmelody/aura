@@ -383,7 +383,7 @@ export function WorkspaceSidebar({
         {spaceFolders.map(({ space, conversations }) => {
           const key = `space:${space.id}`;
           const expanded = Boolean(query.trim() || !closed.has(key));
-          // DSH paints the folder blue while it holds the open conversation.
+          // Highlight the folder containing the open conversation with the accent.
           const current =
             (tab === "studio:coding" ||
               (tab === "chat" && !workspace.active)) &&

@@ -392,7 +392,7 @@
   margin-top: 4px;
 }
 /* DSH folder row: 34px, 12px radius, 16px folder glyph that turns into a
- * caret on hover; blue while it holds the open conversation. */
+ * caret on hover; accented while it holds the open conversation. */
 .session-folder-heading {
   min-height: 34px;
   padding: 0 8px 0 9px;

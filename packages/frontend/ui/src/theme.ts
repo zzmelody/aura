@@ -2,9 +2,9 @@
 import type { TextStyle } from "./web.tsx";
 
 /**
- * Semantic palette following DSH desktop: blue-grey neutrals, a blue accent
- * and a near-black / near-white primary button. Keys stay Aura's, so every
- * `var(--key)` consumer keeps working.
+ * Aura's purple palette: neutral surfaces, violet accents and purple primary
+ * actions. Shared by both themes and every `var(--key)` consumer; DSH-inspired
+ * layout choices do not change Aura's brand colors.
  */
 export const palettes = {
   dark: {
@@ -17,18 +17,18 @@ export const palettes = {
     secondary: "rgb(207, 211, 214)",
     muted: "rgb(173, 178, 184)",
     caption: "rgb(129, 133, 140)",
-    accent: "rgb(122, 170, 255)",
-    primary: "rgb(249, 250, 251)",
-    primaryText: "rgb(15, 17, 21)",
-    soft: "rgba(255, 255, 255, 0.08)",
-    pressed: "rgba(255, 255, 255, 0.14)",
+    accent: "#BDA1FF",
+    primary: "#8052EA",
+    primaryText: "#FFFFFF",
+    soft: "#2C273B",
+    pressed: "rgba(189, 161, 255, 0.18)",
     input: "rgb(35, 35, 36)",
     sidebar: "rgb(27, 27, 28)",
     success: "rgb(74, 222, 128)",
     danger: "rgb(248, 113, 113)",
     warning: "rgb(251, 191, 36)",
-    glow: "rgb(41, 72, 140)",
-    user: "rgb(44, 44, 46)",
+    glow: "#5E2CB0",
+    user: "#302B3C",
     tooltip: "rgb(67, 69, 74)",
   },
   light: {
@@ -41,18 +41,18 @@ export const palettes = {
     secondary: "rgb(97, 102, 107)",
     muted: "rgb(129, 133, 140)",
     caption: "rgb(173, 178, 184)",
-    accent: "rgb(65, 118, 230)",
-    primary: "rgb(15, 17, 21)",
-    primaryText: "rgb(255, 255, 255)",
-    soft: "rgba(38, 49, 72, 0.06)",
-    pressed: "rgba(38, 49, 72, 0.10)",
+    accent: "#6942B4",
+    primary: "#6D40CD",
+    primaryText: "#FFFFFF",
+    soft: "#EEEBF6",
+    pressed: "rgba(105, 66, 180, 0.14)",
     input: "rgb(255, 255, 255)",
     sidebar: "rgb(249, 250, 251)",
     success: "rgb(22, 163, 74)",
     danger: "rgb(220, 38, 38)",
     warning: "rgb(217, 119, 6)",
-    glow: "rgb(228, 237, 253)",
-    user: "rgb(242, 244, 247)",
+    glow: "#D7C6F5",
+    user: "#EEEBF6",
     tooltip: "rgb(44, 44, 46)",
   },
 } as const;
