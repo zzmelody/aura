@@ -1,5 +1,7 @@
 # @aura/runtime
 
+`GET /coding/sessions/:id/history?page=1` 在编排宿主初始化期间可由编排包的 DSH 只读历史路径响应已完成会话，仍按原会话索引验证权限并返回相同的分页 DTO。执行和模型请求保持原有就绪门槛；HTTP 请求的 `AbortSignal` 传递到历史读取，切换会话或超时后不继续排队读取。
+
 `GET /coding/assistant` 只读返回 Aura 固定主会话与已注册工作空间，未创建时为 `null`；`POST /coding/assistant` 表达用户显式打开意图，缺失时创建、已存在时返回同一身份。路由不接受客户端指定目录，不发送模型请求，身份与持久化由编排宿主持有。
 
 `GET /coding/projects/:id/conversations` 默认包含历史状态；`?status=metadata` 用于快速恢复会话基础记录和内存中的活动状态，不触发旧会话日志扫描。只接受 `metadata` / `full`，旧调用行为保持不变。

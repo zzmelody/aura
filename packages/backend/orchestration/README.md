@@ -10,6 +10,10 @@
 
 `codingHistory(id, { page: true, beforeSeq?, throughSeq? })` 使用 DSH 的 message/turn 窗口和稳定日志截面返回完整回合与向前游标。默认调用仍支持完整历史投影；分页不改写 DSH 日志或用户配置，旁支过滤继承前缀，旧导入历史只在最早一页出现。
 
+执行宿主尚未就绪时，分页历史优先走 `coding/cold-history.ts`：在当前进程组合已发布的 DSH JSONL 只读持久化服务与 domain 校验，直接读取已完成回合，不等待完整插件与 Flow 恢复，也不启动执行进程。索引仅在有界私有临时副本中打开（最多 2 MiB、512 个文件），旧布局的自动引导只作用于副本；原索引和日志不迁移、不写入。每次读取都重新检查当前索引权限，关闭的会话、已解除关联或父会话已归档的旁支仍不可读取；JSONL 只使用 `read` 句柄，保留 DSH 的版本、修订与断尾校验。响应只包含现有历史 DTO，不输出原始日志事件。
+
+只读窗口每页最多十个完整回合，沿用原日志的 `beforeSeq` / `throughSeq`，可以与宿主就绪后的分页互接；继承前缀和最早一页的导入历史规则一致。未完成日志、索引过大、格式暂不可读等情况回退原宿主路径；存在非空的 home 级 `cordis.patch.yml` 时也回退，避免忽略用户对存储根或编码的覆盖。运行状态始终由执行宿主确认；已就绪的宿主继续提供包含内存状态的实时读取。HTTP 请求取消会传递到只读加载；该优化不预热、恢复或重发模型请求。`agent-failure.ts` 独立提供相同的安全错误投影，读取历史无需加载 Agent 执行适配器。
+
 `src/` 根模块拥有执行引擎、恢复、注册和 DSH 集成；业务模块按 `content/`、`video/`、`topics/` 归拢，产物登记、历史绑定和 HTTP 交付在 `artifacts/`，模型进程适配在 `local-ai/`。各领域的 library、production 与 routes 分开，公共 package 子路径名称保持稳定。完整职责见 [模块边界](../../../docs/development/module-boundaries.md)。
 
 Aura 的 durable workflow script 引擎。脚本负责控制流；Graph 是只读静态投影。恢复从 `run()` 入口重放，完成的关键调用返回存档结果。运行时不保存 JS 栈、闭包、Promise 或任意局部变量。

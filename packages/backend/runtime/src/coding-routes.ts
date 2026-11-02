@@ -118,12 +118,16 @@ export function createCodingApp(host: OrchestrationHost) {
       )
         return context.json({ message: "无效的历史分页游标。" }, 400);
       return context.json(
-        await host.codingHistory(context.req.param("id"), {
-          page: context.req.query("page") === "1",
-          ...(before !== undefined && through !== undefined
-            ? { beforeSeq: Number(before), throughSeq: Number(through) }
-            : {}),
-        }),
+        await host.codingHistory(
+          context.req.param("id"),
+          {
+            page: context.req.query("page") === "1",
+            ...(before !== undefined && through !== undefined
+              ? { beforeSeq: Number(before), throughSeq: Number(through) }
+              : {}),
+          },
+          context.req.raw.signal,
+        ),
       );
     } catch (error) {
       return failure(context, error);

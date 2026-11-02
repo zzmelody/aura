@@ -5,7 +5,7 @@ import type {
   SessionHistoryRecord,
 } from "@deepseek-ai/dsh-api-session-controller";
 import type { CodingConversationInfo } from "@aura/protocol/types";
-import { agentFailure } from "../sessions.ts";
+import { agentFailure } from "../agent-failure.ts";
 import type {
   CodingFileDiff,
   CodingHistoryTurn,

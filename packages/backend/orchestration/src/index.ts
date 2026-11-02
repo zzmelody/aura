@@ -609,16 +609,59 @@ export class OrchestrationHost {
   }
 
   /** A coding conversation rebuilt from its stored session log. */
-  codingHistory(
+  async codingHistory(
     sessionId: string,
     options: { page?: boolean; beforeSeq?: number; throughSeq?: number } = {},
+    signal?: AbortSignal,
   ): Promise<Omit<CodingHistoryPage, "hasMore"> & { hasMore?: boolean }> {
+    if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
+    const readSignal = signal ?? AbortSignal.timeout(30_000);
+    readSignal.throwIfAborted();
+    if (!this.running && options.page) {
+      try {
+        const { coldCodingHistory } = await import("./coding/cold-history.ts");
+        const page = await coldCodingHistory(
+          this.options.dshHome,
+          sessionId,
+          options,
+          readSignal,
+        );
+        readSignal.throwIfAborted();
+        if (page && !this.running && !this.closed) return page;
+      } catch (error) {
+        readSignal.throwIfAborted();
+        if (
+          !this.running &&
+          error instanceof FlowError &&
+          [400, 404].includes(error.status)
+        )
+          throw error;
+        // Unsupported or unavailable snapshots use the existing live reader.
+      }
+    }
+    readSignal.throwIfAborted();
+    if (!this.running) {
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => reject(readSignal.reason);
+        readSignal.addEventListener("abort", abort, { once: true });
+        void this.open()
+          .then(() => resolve(), reject)
+          .finally(() => {
+            readSignal.removeEventListener("abort", abort);
+          });
+      });
+    }
+    readSignal.throwIfAborted();
     return this.request<
       Omit<CodingHistoryPage, "hasMore"> & { hasMore?: boolean }
-    >("coding/history", {
-      sessionId,
-      ...options,
-    });
+    >(
+      "coding/history",
+      {
+        sessionId,
+        ...options,
+      },
+      readSignal,
+    );
   }
 
   selectConversationModel(

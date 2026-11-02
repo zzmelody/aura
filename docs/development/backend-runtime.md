@@ -2,7 +2,7 @@
 
 状态：已采纳
 
-最后更新：2026-10-08
+最后更新：2026-11-02
 
 适用范围：`packages/backend/runtime`、`packages/backend/dsh-auth`、`packages/backend/tripo`、`apps/server`、`apps/desktop`
 
@@ -48,6 +48,8 @@ apps/desktop ────┘          │            ├─→ Codex auth routes
 HTTP 层只依赖 `CodexAuthPort`、`ChatPort` 与 `TripoPort`，组合根再注入真实实现。Hono app 可以通过标准 Fetch `Request` 在进程内测试，不需要启动端口、OAuth、DSH 子进程或真实 Tripo 请求，供应商实现也不会反向依赖 HTTP。
 
 ## 4. 请求与授权流程
+
+会话历史的分页读取有独立的启动路径：执行宿主未就绪时，编排包在当前服务进程组合发布版 DSH 的只读 JSONL 持久化服务，用域 schema 校验临时索引快照的权限，读取已结束回合；无需等待 loader 或 Flow 恢复。索引的兼容引导只在可丢弃的副本中进行，真实 `.aura/` 索引和日志保持原样。未结束回合及不可用快照继续交给原宿主确认；宿主就绪后始终走实时读取。分页游标沿用原日志序号，可与两条路径互接，HTTP 取消向下传递。该只读组合不包含 Agent、模型 provider 或执行恢复能力。
 
 对话请求由 Hono 完成路由、body limit 与 JSON 解析，再通过共享协议校验输入；随后交给长驻的 `aura-flow` 编排宿主（`OrchestrationHost.chat`），在其中复用持久化 DSH session（preset `coder-v1`）；旧 `/chat/*` 请求仅做协议转换。用户消息可带最多 4 个已上传图片的内容 ID；Codex 模式下编排宿主按 ID 读取并校验哈希后，把最近的最多 4 张作为图片内容交给模型，演示模式只传文字标记。图片经 `POST /flows/assets/images` 上传，`GET /flows/assets/images/:id` 只按内容 ID 返回已上传图片。响应使用 Hono streaming helper 输出 NDJSON，事件为 `delta`、`workflow`（含 flowId、标题、runId、参数摘要）、`error`、`done`；宿主把流式事件作为 `chat/event` JSON-RPC 通知回传，客户端断开会发送 `chat/cancel`，180 秒超时兜底。内部演示模型使用 Hono SSE helper 提供 OpenAI-compatible 流。
 
