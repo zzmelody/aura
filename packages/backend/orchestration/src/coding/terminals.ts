@@ -16,6 +16,7 @@ const PAGE_SIZE = 65_536;
 interface TerminalRecord {
   info: WorkspaceTerminalInfo;
   handle: SubprocessTerminalHandle;
+  posix: boolean;
   output: string;
   start: number;
   inspectedAt: number;
@@ -107,7 +108,7 @@ export class WorkspaceTerminals {
       rows,
       terminalType: "xterm-256color",
       shellActivity: true,
-      // Cold ConPTY hosts need time to publish exit before escalation.
+      // Cold shells and ConPTY hosts need time to publish exit before escalation.
       graceMs: 3_000,
       signal,
     });
@@ -128,6 +129,7 @@ export class WorkspaceTerminals {
     const record: TerminalRecord = {
       info,
       handle,
+      posix: environment.platform === "posix",
       output: "",
       start: 0,
       inspectedAt: 0,
@@ -165,6 +167,7 @@ export class WorkspaceTerminals {
     const record = this.require(id);
     if (
       record.info.status === "running" &&
+      !record.closing &&
       Date.now() - record.inspectedAt > 1_000
     ) {
       record.inspectedAt = Date.now();
@@ -216,21 +219,38 @@ export class WorkspaceTerminals {
     const record = this.records.get(id);
     if (!record) return;
     if (record.closing) return record.closing;
-    if (!force && record.info.status === "running") {
-      const activity = await record.handle.inspectActivity();
-      if (activity.state !== "idle")
-        throw new FlowError(
-          "终端可能仍有任务运行，关闭将结束其中的进程。",
-          409,
-        );
-    }
-    record.closing = record.handle.terminate();
+    record.closing = this.terminate(record, force);
     try {
       await record.closing;
       this.records.delete(id);
     } finally {
       record.closing = undefined;
     }
+  }
+
+  private async terminate(
+    record: TerminalRecord,
+    force: boolean,
+  ): Promise<void> {
+    let idle = false;
+    if (!force && record.info.status === "running") {
+      idle = (await record.handle.inspectActivity()).state === "idle";
+      if (!idle)
+        throw new FlowError(
+          "终端可能仍有任务运行，关闭将结束其中的进程。",
+          409,
+        );
+    }
+    if (record.posix && idle) {
+      // Interactive shells can ignore TERM. Hang up only a verified idle shell;
+      // DSH still owns and joins cleanup of the complete terminal session.
+      try {
+        await record.handle.signalForeground("SIGHUP");
+      } catch {
+        // The shell may already have exited; terminate remains authoritative.
+      }
+    }
+    await record.handle.terminate();
   }
 
   async close(): Promise<void> {

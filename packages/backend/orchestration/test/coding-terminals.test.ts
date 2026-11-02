@@ -47,7 +47,9 @@ test("workspace terminals isolate output, fence unknown ids and wait for owned c
             state: busy ? ("busy" as const) : ("idle" as const),
             revision: 0,
           }),
-          signalForeground: async () => 1,
+          signalForeground: async () => {
+            assert.fail("Windows terminals must not receive POSIX hangups");
+          },
           terminate: async () => {
             stopped++;
             done({ exitCode: 0, signal: null });
@@ -95,6 +97,117 @@ test("workspace terminals isolate output, fence unknown ids and wait for owned c
   await assert.rejects(service.open("unknown", 80, 24), /Unknown project/);
 });
 
+test("idle POSIX terminals hang up promptly, fence input and wait for owned cleanup once", async (t) => {
+  const inspection = Promise.withResolvers<{
+    state: "idle";
+    revision: number;
+  }>();
+  const cleanup = Promise.withResolvers<void>();
+  const terminating = Promise.withResolvers<void>();
+  const done = Promise.withResolvers<SubprocessOutcome>();
+  const signals: string[] = [];
+  let terminations = 0;
+  let resizes = 0;
+  const handle: SubprocessTerminalHandle = {
+    pid: 1,
+    output: new PassThrough(),
+    done: done.promise,
+    write: async () => assert.fail("closing terminals must reject new input"),
+    resize: async () => {
+      resizes++;
+    },
+    inspectForeground: async () => undefined,
+    inspectActivity: () => inspection.promise,
+    signalForeground: async (signal) => {
+      signals.push(signal);
+      done.resolve({ exitCode: null, signal });
+      return 1;
+    },
+    terminate: () => {
+      terminations++;
+      terminating.resolve();
+      return cleanup.promise;
+    },
+  };
+  const service = new WorkspaceTerminals(
+    {
+      terminalEnvironment: async () => ({ platform: "posix" }),
+      resolveExecutable: async (name) => name,
+      spawnTerminal: async () => handle,
+    },
+    () => "registered-directory",
+  );
+  t.after(async () => {
+    inspection.resolve({ state: "idle", revision: 1 });
+    cleanup.resolve();
+    await service.close();
+  });
+  const info = await service.open("space", 80, 24);
+  const closing = service.closeTerminal(info.id, false);
+  const duplicate = service.closeTerminal(info.id, true);
+  await assert.rejects(service.write(info.id, "new input"), /终端已退出/u);
+  await service.resize(info.id, 100, 30);
+  assert.equal(resizes, 0);
+  inspection.resolve({ state: "idle", revision: 1 });
+  await terminating.promise;
+  assert.deepEqual(signals, ["SIGHUP"]);
+  assert.equal(terminations, 1);
+  assert.equal(service.list("space").length, 1);
+  cleanup.resolve();
+  await Promise.all([closing, duplicate]);
+  assert.deepEqual(service.list("space"), []);
+});
+
+for (const state of ["busy", "unknown", "unavailable", "idle"] as const) {
+  test(`POSIX close preserves confirmation and cleanup with ${state} activity`, async (t) => {
+    const done = Promise.withResolvers<SubprocessOutcome>();
+    let hangups = 0;
+    let terminations = 0;
+    const handle: SubprocessTerminalHandle = {
+      pid: 1,
+      output: new PassThrough(),
+      done: done.promise,
+      write: async () => {},
+      resize: async () => {},
+      inspectForeground: async () => undefined,
+      inspectActivity: async () => {
+        if (state === "unavailable") throw new Error("Inspection unavailable");
+        return { state, revision: 0 };
+      },
+      signalForeground: async () => {
+        hangups++;
+        throw new Error("Shell exited during hangup");
+      },
+      terminate: async () => {
+        terminations++;
+        done.resolve({ exitCode: 0, signal: null });
+      },
+    };
+    const service = new WorkspaceTerminals(
+      {
+        terminalEnvironment: async () => ({ platform: "posix" }),
+        resolveExecutable: async (name) => name,
+        spawnTerminal: async () => handle,
+      },
+      () => "registered-directory",
+    );
+    t.after(() => service.close());
+    const info = await service.open("space", 80, 24);
+    if (state !== "idle") {
+      await assert.rejects(service.closeTerminal(info.id, false));
+      assert.equal(terminations, 0);
+      assert.equal(hangups, 0);
+      assert.equal(service.list("space").length, 1);
+      await service.closeTerminal(info.id, true);
+    } else {
+      await service.closeTerminal(info.id, false);
+    }
+    assert.equal(hangups, state === "idle" ? 1 : 0);
+    assert.equal(terminations, 1);
+    assert.deepEqual(service.list("space"), []);
+  });
+}
+
 test(
   "published DSH PTYs accept real shell input, retain state, resize and release the process",
   { timeout: 40_000 },
@@ -116,6 +229,7 @@ test(
               LOCALAPPDATA: directory,
               USERPROFILE: directory,
               HISTFILE: join(directory, "shell-history"),
+              ZDOTDIR: directory,
             },
           }),
       },
@@ -156,7 +270,7 @@ test(
       if (
         process.platform === "win32"
           ? startup.includes("PS ")
-          : /[$#>] /u.test(startup)
+          : /[$#>%] /u.test(startup)
       )
         break;
       await delay(100);
@@ -196,7 +310,24 @@ test(
       await delay(100);
     }
     assert.ok(output.includes(`${marker}_PERSISTED`));
-    await service.closeTerminal(info.id, true);
+    let idle = false;
+    if (process.platform !== "win32") {
+      for (let index = 0; index < 30; index++) {
+        if ((await read()).terminal.activity === "idle") {
+          idle = true;
+          break;
+        }
+        await delay(100);
+      }
+    }
+    const closingAt = performance.now();
+    await service.closeTerminal(info.id, !idle);
+    const closeMs = performance.now() - closingAt;
+    if (idle)
+      assert.ok(
+        closeMs < 2_000,
+        `closing a POSIX shell must not wait through the Windows exit grace period (took ${Math.round(closeMs)} ms)`,
+      );
     assert.deepEqual(service.list("space"), []);
   },
 );

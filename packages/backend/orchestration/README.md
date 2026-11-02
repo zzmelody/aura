@@ -28,7 +28,7 @@ Aura 的 durable workflow script 引擎。脚本负责控制流；Graph 是只�
 
 ## 编写 Flow
 
-`coding/terminals/*` RPC 管理用户的工作区终端。`coding/terminals.ts` 仅使用已发布的 `ctx.subprocess.terminalEnvironment/resolveExecutable/spawnTerminal`，不复制 DSH、不创建 Agent，也不持有模型凭据。PTY 以已注册工作区的目录启动；客户端不能传入任意 cwd、可执行文件或环境变量。DSH 提供父环境凭据过滤和完整进程会话的终止。终端有独立身份、1 MiB 有界输出与分页游标，输入、尺寸、活动检查和关闭均指向该身份。重放会过滤已经回答过的终端查询，防止重连时将旧设备响应混入当前输入。关闭工作区终端或 runtime 时等待进程清理；关闭仍忙碌或活动未知的终端先返回 409，只有用户确认后才强制关闭。终端仅在当前服务进程中存在，重启不恢复命令。
+`coding/terminals/*` RPC 管理用户的工作区终端。`coding/terminals.ts` 仅使用已发布的 `ctx.subprocess.terminalEnvironment/resolveExecutable/spawnTerminal`，不复制 DSH、不创建 Agent，也不持有模型凭据。PTY 以已注册工作区的目录启动；客户端不能传入任意 cwd、可执行文件或环境变量。DSH 提供父环境凭据过滤和完整进程会话的终止。终端有独立身份、1 MiB 有界输出与分页游标，输入、尺寸、活动检查和关闭均指向该身份。重放会过滤已经回答过的终端查询，防止重连时将旧设备响应混入当前输入。关闭工作区终端或 runtime 时等待 DSH 完整清理进程后才移除终端。未指定 `force` 的 POSIX 终端在重新确认空闲并阻止新输入后，先通过公开 `signalForeground("SIGHUP")` 挂断 shell，避免交互式 shell 忽略 TERM 时固定等待 3 秒；挂断失败仍执行 DSH 的完整清理。启动中、忙碌、活动未知及 Windows 终端保留原有 3 秒退出宽限期，不提前升级终止。关闭仍忙碌或活动未知的终端先返回 409，只有用户确认后才强制关闭。终端仅在当前服务进程中存在，重启不恢复命令。
 
 内置 Flow 支持 `flow/<flow-id>/<flow-id>.flow.ts`，兼容原有 `.flow.js`；每个一级目录只允许一个同名入口，本地辅助模块可以嵌套。新增内置入口使用 TypeScript。外部插件仍按公共 SDK 契约加载 ESM JavaScript。使用公开 `@aura/orchestration/flow` 导出获得类型推导。
 
