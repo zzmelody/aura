@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { realpath } from "node:fs/promises";
 import { registerHooks } from "node:module";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REVISION = "auraPluginRevision";
@@ -32,7 +33,7 @@ export class PluginModules {
 
   async import(entry: string, root: string, hash: string): Promise<unknown> {
     const revision = `${this.#owner}:${hash}`;
-    this.#roots.set(revision, resolve(root));
+    this.#roots.set(revision, await realpath(root));
     const url = pathToFileURL(entry);
     url.searchParams.set(REVISION, revision);
     return import(url.href);

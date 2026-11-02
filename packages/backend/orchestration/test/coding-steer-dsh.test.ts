@@ -6,12 +6,14 @@ import test from "node:test";
 import { serve, type ServerType } from "@hono/node-server";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import sharp from "sharp";
 import { OrchestrationHost } from "../src/index.ts";
 import type { CodingStreamEvent } from "../src/types.ts";
 
 const nodeMajor = Number(process.versions.node.split(".")[0]);
 
 interface ModelRequest {
+  model: string;
   messages: Array<{ role: string; content: unknown }>;
 }
 
@@ -56,16 +58,28 @@ test(
     await mkdir(flowRoot, { recursive: true });
 
     /** Set once the model's prompt contained the guidance. */
+    const firstRequest = Promise.withResolvers<void>();
+    const firstReply = Promise.withResolvers<void>();
+    const models: string[] = [];
     let sawGuidance = false;
+    const guidedModels: string[] = [];
     let steps = 0;
     const modelApp = new Hono();
     modelApp.post("/v1/chat/completions", async (context) => {
       const request = (await context.req.json()) as ModelRequest;
+      models.push(request.model);
+      if (models.length === 1) {
+        firstRequest.resolve();
+        await firstReply.promise;
+      }
       const guided = request.messages.some(
         (message) =>
           message.role === "user" && mentions(message.content, GUIDANCE),
       );
-      if (guided) sawGuidance = true;
+      if (guided) {
+        sawGuidance = true;
+        guidedModels.push(request.model);
+      }
       // Keep the turn alive with a harmless step until the guidance lands.
       const call = !guided && steps++ < MAX_STEPS;
       return streamSSE(context, async (output) => {
@@ -128,10 +142,6 @@ test(
       const created = await host.createProject(project, "steer");
       const sessionId = "coding-steer-session";
       const events: CodingStreamEvent[] = [];
-      let running: () => void = () => {};
-      const started = new Promise<void>((resolve) => {
-        running = resolve;
-      });
       const turn = host.coding(
         {
           sessionId,
@@ -143,8 +153,6 @@ test(
         },
         (event) => {
           events.push(event);
-          // The first finished step proves the turn is live and stepping.
-          if (event.type === "tool" && event.phase === "end") running();
         },
         AbortSignal.timeout(150_000),
       );
@@ -153,7 +161,7 @@ test(
         () => "rejected",
       );
       await Promise.race([
-        started,
+        firstRequest.promise,
         settled.then(() => {
           throw new Error("The turn ended before taking a step");
         }),
@@ -164,15 +172,75 @@ test(
       assert.deepEqual(await host.steerCoding("coding-other", GUIDANCE), {
         steered: false,
       });
-      assert.deepEqual(await host.steerCoding(sessionId, GUIDANCE), {
-        steered: true,
+      // Model controls can stage a choice while the current call is still running.
+      await host.selectConversationModel(sessionId, "demo", {
+        model: "deepseek-v4-pro",
+        reasoningEffort: "off",
       });
+      await assert.rejects(
+        host.steerCoding(sessionId, "cross-service guidance", undefined, {
+          mode: "codex",
+          selection: { model: "gpt-6.1-sol" },
+        }),
+        /当前模型服务/u,
+      );
+      await assert.rejects(
+        host.steerCoding(sessionId, "bad effort", undefined, {
+          mode: "demo",
+          selection: {
+            model: "deepseek-v4-pro",
+            reasoningEffort: "unsupported",
+          },
+        }),
+        /不可用/u,
+      );
+      const image = await host.uploadImage(
+        await sharp({
+          create: { width: 2, height: 2, channels: 3, background: "blue" },
+        })
+          .png()
+          .toBuffer(),
+        AbortSignal.timeout(10_000),
+      );
+      await assert.rejects(
+        host.steerCoding(sessionId, "看看图片", [image.artifactId], {
+          mode: "demo",
+          selection: { model: "deepseek-v4-pro", reasoningEffort: "off" },
+        }),
+        /不支持图片输入/u,
+      );
+      assert.deepEqual(
+        await host.steerCoding(sessionId, GUIDANCE, undefined, {
+          mode: "demo",
+          selection: { model: "deepseek-v4-pro", reasoningEffort: "off" },
+        }),
+        { steered: true },
+      );
 
+      assert.deepEqual(
+        models,
+        ["deepseek-v4-flash"],
+        "the in-flight call keeps its original model",
+      );
+      firstReply.resolve();
       assert.equal(await settled, "resolved", "the steered turn must finish");
       assert.ok(sawGuidance, "the model must read the guidance");
+      assert.ok(guidedModels.length > 0);
+      assert.ok(
+        guidedModels.every((model) => model === "deepseek-v4-pro"),
+        "guidance uses the newly selected model",
+      );
+      assert.equal(
+        (await host.conversations(created.id))[0]?.modelConfig?.demo?.model,
+        "deepseek-v4-pro",
+      );
       // One turn, not two: steering never opens its own.
       const history = await host.codingHistory(sessionId);
       assert.equal(history.turns.length, 1);
+      const transcript = JSON.stringify(history);
+      assert.ok(!transcript.includes("cross-service guidance"));
+      assert.ok(!transcript.includes("bad effort"));
+      assert.ok(!transcript.includes("看看图片"));
       assert.equal(history.turns[0]!.prompt, "写个函数");
       assert.equal(history.turns[0]!.status, "complete");
       // The guidance shows in the transcript, live and replayed alike.
@@ -191,6 +259,7 @@ test(
         steered: false,
       });
     } finally {
+      firstReply.resolve();
       await host.close?.();
       model.close();
       await rm(root, { recursive: true, force: true });

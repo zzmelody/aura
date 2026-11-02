@@ -28,6 +28,7 @@ export function ChatModelControls({
   selection,
   disabled,
   openRequest,
+  note,
   onChange,
   onModeChange,
 }: {
@@ -37,6 +38,7 @@ export function ChatModelControls({
   disabled: boolean;
   /** Opens the same model menu when invoked through the command palette. */
   openRequest?: number;
+  note?: string;
   onChange(selection: ChatModelSelection): void;
   onModeChange?(mode: FlowMode): void;
 }) {
@@ -280,7 +282,7 @@ export function ChatModelControls({
                 </>
               ) : null}
               <p className="chat-model-menu-note">
-                仅影响当前会话，不改变工作流 Agent 的模型配置。
+                {note ?? "仅影响当前会话，不改变工作流 Agent 的模型配置。"}
               </p>
             </>
           ) : (

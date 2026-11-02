@@ -19,8 +19,6 @@ export function conversationService(
     mode: FlowMode,
     selection: ChatModelSelection,
   ) {
-    if (admitted.has(id) || driver.running(id))
-      throw new FlowError("生成中不能更换模型。", 409);
     await index.selectModel(id, mode, selection);
   }
 

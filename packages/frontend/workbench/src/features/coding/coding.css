@@ -67,12 +67,10 @@
 .coding-split-handle:hover::after,
 .coding-split-handle:focus-visible::after,
 .coding-panes[data-resizing="true"] > .coding-split-handle::after {
-  width: 2px;
   background: var(--secondary);
 }
 .coding-split-handle:focus-visible {
-  outline: 2px solid var(--secondary);
-  outline-offset: -2px;
+  outline: none;
 }
 .coding-panes[data-resizing="true"],
 .coding-panes[data-resizing="true"] * {

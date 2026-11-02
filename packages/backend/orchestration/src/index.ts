@@ -16,6 +16,7 @@ import type {
   ActionRun,
   ChatModelCatalog,
   ChatModelSelection,
+  CodingSteerModelConfig,
   CodingSkillInfo,
   CodingHistoryPage,
   PersonalAssistantInfo,
@@ -536,11 +537,13 @@ export class OrchestrationHost {
     sessionId: string,
     prompt: string,
     images?: string[],
+    modelConfig?: CodingSteerModelConfig,
   ): Promise<{ steered: boolean }> {
     return this.request<{ steered: boolean }>("coding/steer", {
       sessionId,
       prompt,
       ...(images?.length ? { images } : {}),
+      ...(modelConfig ? { modelConfig } : {}),
     });
   }
 

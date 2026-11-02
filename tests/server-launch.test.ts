@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -41,7 +48,10 @@ test("distributed launcher loads TypeScript inside node_modules and forwards chi
   const state = JSON.parse(stdout) as Record<string, unknown>;
   assert.equal(state.marker, "typed-server");
   assert.equal(state.root, directory);
-  assert.equal(state.plugins, join(application, "dist/plugins"));
+  assert.equal(
+    state.plugins,
+    join(await realpath(application), "dist/plugins"),
+  );
   assert.equal(state.host, "127.0.0.1");
   assert.equal(state.port, "0");
   assert.match(String(state.loader), /--import=.*tsx.*esm/u);

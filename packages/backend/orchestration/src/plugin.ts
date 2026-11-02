@@ -1048,6 +1048,13 @@ export async function apply(ctx: Context) {
                 .array(z.string().regex(/^[a-f0-9]{64}$/u))
                 .max(CHAT_IMAGE_LIMIT)
                 .optional(),
+              modelConfig: z
+                .object({
+                  mode: chatModeSchema,
+                  selection: conversationModelSchema,
+                })
+                .strict()
+                .optional(),
             })
             .safeParse(params);
           if (
@@ -1058,13 +1065,26 @@ export async function apply(ctx: Context) {
             throw new FlowError("无效的引导内容。", 400);
           // Like stop, this reaches only conversations with a coding turn
           // running in this process, never an arbitrary DSH session.
-          data = {
-            steered: await coding.steer(
+          const steered = await coding.steer(
+            steer.data.sessionId,
+            steer.data.prompt,
+            steer.data.images ?? [],
+            steer.data.modelConfig
+              ? {
+                  ...steer.data.modelConfig,
+                  defaults: await resolveModeDefaults(
+                    steer.data.modelConfig.mode,
+                  ),
+                }
+              : undefined,
+          );
+          if (steered && steer.data.modelConfig)
+            await conversations.selectModel(
               steer.data.sessionId,
-              steer.data.prompt,
-              steer.data.images ?? [],
-            ),
-          };
+              steer.data.modelConfig.mode,
+              steer.data.modelConfig.selection,
+            );
+          data = { steered };
           break;
         }
         case "coding/terminals/list":

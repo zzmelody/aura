@@ -75,8 +75,8 @@ test("search reaches every category and command names take precedence over skill
     running: true,
   });
   assert.equal(
-    commands.find((entry) => entry.name === "model")?.disabled,
-    true,
+    Boolean(commands.find((entry) => entry.name === "model")?.disabled),
+    false,
   );
   assert.equal(
     commands.find((entry) => entry.name === "stop")?.disabled,

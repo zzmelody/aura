@@ -1272,7 +1272,7 @@ textarea {
   background: var(--accent);
   color: var(--background) !important;
 }
-/* Stop sits beside send while a turn runs, so send stays available to steer. */
+/* The running composer shares one action slot between stop and send. */
 .composer-stop {
   width: 29px;
   height: 29px;
@@ -1288,9 +1288,10 @@ textarea {
   color: var(--muted);
 }
 .standalone .chat-screen {
-  max-width: 1000px;
+  /* The pane owns scrolling; constrain only its inner reading column. */
+  max-width: none;
   width: 100%;
-  margin: 0 auto;
+  margin: 0;
 }
 .standalone .chat-transcript {
   padding: 20px 32px;

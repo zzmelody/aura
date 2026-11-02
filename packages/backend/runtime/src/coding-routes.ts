@@ -3,6 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import type { OrchestrationHost } from "@aura/orchestration";
 import { FlowError } from "@aura/orchestration";
 import { isRecord, validCodingImages } from "./validation.ts";
+import type { CodingSteerModelConfig } from "@aura/protocol/types";
 import { validateChatModelSelection } from "@aura/protocol";
 import { createTerminalApp } from "./terminal-routes.ts";
 
@@ -176,6 +177,16 @@ export function createCodingApp(host: OrchestrationHost) {
       typeof body.prompt !== "string" ||
       body.prompt.length > 80_000 ||
       !validCodingImages(body.images) ||
+      (body.modelConfig !== undefined &&
+        (!isRecord(body.modelConfig) ||
+          Object.keys(body.modelConfig).some(
+            (key) => key !== "mode" && key !== "selection",
+          ) ||
+          typeof body.modelConfig.mode !== "string" ||
+          !["demo", "codex", "lumina", "custom"].includes(
+            body.modelConfig.mode,
+          ) ||
+          !validateChatModelSelection(body.modelConfig.selection))) ||
       // An image-only message is allowed; an empty one is not.
       (!body.prompt.trim() && !(body.images as string[] | undefined)?.length)
     )
@@ -186,6 +197,7 @@ export function createCodingApp(host: OrchestrationHost) {
           context.req.param("id"),
           body.prompt,
           body.images as string[] | undefined,
+          body.modelConfig as CodingSteerModelConfig | undefined,
         ),
       );
     } catch (error) {

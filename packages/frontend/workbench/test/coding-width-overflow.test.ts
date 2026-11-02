@@ -70,16 +70,17 @@ test(
     await writeFile(
       fixture,
       `<!doctype html><html><head><style>${styles.join("\n")}</style></head>
-<body class="workbench coding-studio" style="display:block"><div class="coding-panes" style="height:800px"></div><pre id="layout-result"></pre>
+<body class="workbench standalone" style="display:block"><main class="studio-area"><section class="coding-studio chat-screen studio-main"><div class="coding-panes" style="height:800px"></div></section></main><pre id="layout-result"></pre>
 <script>
 const root = document.querySelector(".coding-panes");
+const host = document.querySelector(".studio-area");
 const results = [];
 const pane = (content) => '<div class="coding-pane"><div class="studio-scroll coding-transcript"><article class="coding-turn"><div class="coding-prompt">检查长内容</div><div class="coding-reply"><div class="workflow-rich-text">' + content + '</div></div>' + ${JSON.stringify(report)} + '<section class="coding-recap">本轮小结</section></article></div><div class="chat-composer-area"><div class="coding-approval"><div class="coding-approval-strip">等待审批</div><div class="coding-approval-body">允许运行构建吗？</div><div class="coding-approval-actions"><button>拒绝</button><button>允许这一次</button></div></div><div class="chat-composer"><textarea>检查宽度</textarea><div class="composer-tools coding-composer-tools"><div class="composer-leading"><button class="icon-control composer-add-trigger">+</button></div><div class="composer-trailing"><div class="chat-model-picker"><button class="chat-model-trigger"><span class="chat-model-name">a-very-long-model-name</span><span class="chat-model-effort">High</span></button></div><button class="icon-control composer-stop">■</button><button class="send-button">↑</button></div></div></div></div></div>';
 for (const content of ${JSON.stringify([code, table, code + table, diff])}) {
-  for (const width of [1200, 920, 700, 648, 600, 375])
+  for (const width of [1600, 1200, 920, 700, 648, 600, 375])
   for (const stale of [false, true]) {
     const stacked = width < 648;
-    root.style.width = width + 'px';
+    host.style.width = width + 'px';
     // A stale saved width (e.g. before the window shrank) must still fit.
     root.style.setProperty('--coding-side-width', (stale ? 2000 : Math.min(440, width - 328)) + 'px');
     root.toggleAttribute('data-stacked', stacked);
@@ -89,9 +90,10 @@ for (const content of ${JSON.stringify([code, table, code + table, diff])}) {
     results.push({
       width,
       stacked,
+      frame: { left: root.getBoundingClientRect().left, right: root.getBoundingClientRect().right, hostLeft: host.getBoundingClientRect().left, hostRight: host.getBoundingClientRect().right },
       root: { client: root.clientWidth, scroll: root.scrollWidth },
       panes: Array.from(root.children).filter(node => !node.classList.contains('coding-split-handle')).map(node => node.getBoundingClientRect().width),
-      transcripts: transcripts.map(node => ({ client: node.clientWidth, scroll: node.scrollWidth })),
+      transcripts: transcripts.map(node => ({ client: node.clientWidth, scroll: node.scrollWidth, right: node.getBoundingClientRect().right, paneRight: node.parentElement.getBoundingClientRect().right })),
       blocks: blocks.map(node => ({ client: node.clientWidth, scroll: node.scrollWidth, overflow: getComputedStyle(node).overflowX })),
       files: Array.from(root.querySelectorAll('.coding-report li')).map(row => {
         const card = row.closest('.coding-report').getBoundingClientRect();
@@ -154,9 +156,20 @@ document.getElementById('layout-result').textContent = JSON.stringify(results);
     const layouts = JSON.parse(result[1]!) as Array<{
       width: number;
       stacked: boolean;
+      frame: {
+        left: number;
+        right: number;
+        hostLeft: number;
+        hostRight: number;
+      };
       root: { client: number; scroll: number };
       panes: number[];
-      transcripts: Array<{ client: number; scroll: number }>;
+      transcripts: Array<{
+        client: number;
+        scroll: number;
+        right: number;
+        paneRight: number;
+      }>;
       blocks: Array<{ client: number; scroll: number; overflow: string }>;
       files: Array<{
         cardRight: number;
@@ -184,8 +197,18 @@ document.getElementById('layout-result').textContent = JSON.stringify(results);
         controlsRight: number;
       }>;
     }>;
-    assert.equal(layouts.length, 48);
+    assert.equal(layouts.length, 56);
     for (const layout of layouts) {
+      assert.equal(
+        layout.frame.left,
+        layout.frame.hostLeft,
+        `At ${layout.width}px, the conversation must reach the host's left edge`,
+      );
+      assert.equal(
+        layout.frame.right,
+        layout.frame.hostRight,
+        `At ${layout.width}px, the conversation must reach the host's right edge before the demo page loads`,
+      );
       assert.ok(
         layout.root.scroll <= layout.root.client + 1,
         `At ${layout.width}px, the split overflowed to ${layout.root.scroll}px`,
@@ -196,11 +219,17 @@ document.getElementById('layout-result').textContent = JSON.stringify(results);
             pane >= 319,
             `At ${layout.width}px, a pane shrank to ${pane}px`,
           );
-      for (const transcript of layout.transcripts)
+      for (const transcript of layout.transcripts) {
+        assert.equal(
+          transcript.right,
+          transcript.paneRight,
+          "Keep each scrollbar at its conversation pane's right edge",
+        );
         assert.ok(
           transcript.scroll <= transcript.client + 1,
           `At ${layout.width}px, transcript overflowed to ${transcript.scroll}px inside ${transcript.client}px`,
         );
+      }
       for (const file of layout.files) {
         assert.ok(
           file.rowRight <= file.cardRight,

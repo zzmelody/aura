@@ -6,10 +6,6 @@
 .chat-screen {
   --chat-column: 760px;
 }
-.standalone .chat-screen {
-  max-width: none;
-}
-
 /* Header: session title only, centred on the reading column. */
 .chat-screen .chat-title {
   width: 100%;

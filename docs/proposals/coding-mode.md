@@ -127,7 +127,7 @@ AI 对话，全程可见、可干预，结束时产出报告。对标 Codex 的�
 
 - 下行：扩展事件类型（工具调用、结果、todo、交付物、提问、审批、引导、计时）。
 - 上行：新增 `POST /coding/sessions/:id/answer`，客户端提交提问/审批答案，后端 resolve 挂起的
-  `userQuestions` promise；`POST /coding/sessions/:id/steer` 用 DSH 的 `mode: "steer"` 把引导
+  `userQuestions` promise；`POST /coding/sessions/:id/steer` 通过 DSH Agent 的 `steer` 把引导
   并入正在进行的那一轮，回复仍从该轮原有的流下行。
 
 ## 分阶段实施
@@ -233,7 +233,7 @@ AI 对话，全程可见、可干预，结束时产出报告。对标 Codex 的�
 **执行中插话（引导）已接入** ✅（`src/coding/session.ts`，测试 `coding-steer-dsh.test.ts`、
 `coding-steer-history.test.ts`）：
 
-- 直接用 DSH 的投递模式：`controller.prompt({ mode: "steer" })` 把文本并入**正在进行的那一轮**，
+- 通过 DSH Agent 的公开 `steer` 投递接口把文本并入**正在进行的那一轮**，
   由 agent 在下一个 step 边界领走，模型据此改向而不丢已做的工作。Aura 不自建队列或插话状态机。
 - `POST /coding/sessions/:id/steer` 交引导内容。只能作用于本进程内有轮次在跑的编码对话（与
   `stop` 同一收口方式），别的 DSH 会话（Flow agent、普通对话）拿 id 也插不进去；已结束的对话返回
@@ -243,8 +243,7 @@ AI 对话，全程可见、可干预，结束时产出报告。对标 Codex 的�
 - 转录里引导单独成条（`steer` 事件 → 前端 `timeline` 的 `steer` 项），显示在它改向的提问之后。
   实时流按 `rpcId` 区分本轮自己的提问，回放时 `rpcId` 无意义、改用“该轮第一条用户消息”判断，
   两条路径共用 `projectCodingEvent`，有测试断言刷新前后一致。
-- 前端：执行中停止键独立出来放在发送键左边，发送键始终可用——执行中输入的文本作为引导送出。
-  模式与模型下拉在执行中仍然禁用。
+- 前端：右侧只显示一个操作按钮，执行中空草稿显示停止，填写文字或添加图片后切换为发送，图片上传期间发送置灰；执行中输入的文本作为引导送出。模型和思考强度可在当前服务内调整，追加消息通过 `modelConfig: { mode, selection }` 固定发送时的选择，在 DSH 后续模型调用中生效。已发出的调用保留原配置，校验失败保留草稿且不自动重试；跨服务切换在本轮结束后操作。
 - 只做 `steer`，没做 `queue`：`queue`（`agent.followup`）会起新的一轮，而 Aura 的模型是「一条
   HTTP 流 = 一轮」，新轮次没有流在看，事件要到刷新后才从日志读回。要支持排队得先把流的生命周期
   从单轮解耦。

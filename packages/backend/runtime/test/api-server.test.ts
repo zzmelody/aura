@@ -4,6 +4,7 @@ import { createApiApp } from "../src/api-server.ts";
 import { createCodingApp } from "../src/coding-routes.ts";
 import { TripoService, type TripoPort } from "@aura/tripo";
 import { FlowError } from "@aura/orchestration";
+import type { CodingSteerModelConfig } from "@aura/protocol/types";
 import type {
   AuraPluginSettingsPort,
   CodexAuthPort,
@@ -404,11 +405,25 @@ test("the stop route forwards the conversation id and reports the result", async
 });
 
 test("the steer route validates its content and reports admission", async () => {
-  const sent: Array<{ sessionId: string; prompt: string; images?: string[] }> =
-    [];
+  const sent: Array<{
+    sessionId: string;
+    prompt: string;
+    images?: string[];
+    modelConfig?: CodingSteerModelConfig;
+  }> = [];
   const flows = {
-    async steerCoding(sessionId: string, prompt: string, images?: string[]) {
-      sent.push({ sessionId, prompt, ...(images ? { images } : {}) });
+    async steerCoding(
+      sessionId: string,
+      prompt: string,
+      images?: string[],
+      modelConfig?: CodingSteerModelConfig,
+    ) {
+      sent.push({
+        sessionId,
+        prompt,
+        ...(images ? { images } : {}),
+        ...(modelConfig ? { modelConfig } : {}),
+      });
       return { steered: sessionId === "coding-1" };
     },
   } as unknown as NonNullable<Parameters<typeof createApiApp>[0]["flows"]>;
@@ -437,7 +452,30 @@ test("the steer route validates its content and reports admission", async () => 
     { sessionId: "coding-1", prompt: "", images: [id] },
   ]);
 
+  const modelConfig = {
+    mode: "codex",
+    selection: { model: "gpt-6.1-sol", reasoningEffort: "high" },
+  };
+  assert.equal(
+    (await steer("coding-1", { prompt: "换模型继续", modelConfig })).status,
+    200,
+  );
+  assert.deepEqual(sent.at(-1)?.modelConfig, modelConfig);
+
   for (const invalid of [
+    { prompt: "x", modelConfig: null },
+    {
+      prompt: "x",
+      modelConfig: { mode: "codex", selection: {}, provider: "forbidden" },
+    },
+    { prompt: "x", modelConfig: { mode: "invalid", selection: {} } },
+    { prompt: "x", modelConfig: { mode: { toString: null }, selection: {} } },
+    {
+      prompt: "x",
+      modelConfig: { mode: "codex", selection: { apiKey: "forbidden" } },
+    },
+    { prompt: "x", modelConfig: { mode: "codex", selection: { model: "" } } },
+    { prompt: "x", modelConfig: { mode: "codex" } },
     {},
     { prompt: "" },
     { prompt: "  " },
@@ -452,7 +490,7 @@ test("the steer route validates its content and reports admission", async () => 
       400,
       `accepted ${JSON.stringify(invalid)}`,
     );
-  assert.equal(sent.length, 3, "invalid requests never reach the host");
+  assert.equal(sent.length, 4, "invalid requests never reach the host");
 });
 
 test("coding turns accept uploaded image IDs and reject invalid ones", async () => {

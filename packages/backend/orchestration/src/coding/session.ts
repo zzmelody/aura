@@ -14,6 +14,15 @@ import type { SessionRequestId } from "@deepseek-ai/dsh-api-session-controller";
 // Type-only: activates the approval service's `approval/request` event.
 import type {} from "@deepseek-ai/dsh-user-approval";
 import type { AskUserQuestionAnswer } from "@deepseek-ai/dsh-user-questions";
+import {
+  installModelSelection,
+  type ModelSelectionRef,
+} from "@deepseek-ai/dsh-agent";
+import { createUserMessage } from "@deepseek-ai/dsh-llm";
+import type {
+  CodingSteerModelConfig,
+  FlowAgentConfig,
+} from "@aura/protocol/types";
 import { resolveChatModel } from "../chat-models.ts";
 import { agentFailure } from "../sessions.ts";
 import { FlowError } from "../schema.ts";
@@ -95,6 +104,14 @@ export function codingService(
   const stops = new Map<string, AbortController>();
   /** Cancels only the in-progress turn; the conversation stays usable. */
   const turnStops = new Map<string, AbortController>();
+  type SteerConfig = CodingSteerModelConfig & { defaults?: FlowAgentConfig };
+  type Guide = (
+    prompt: string,
+    imageIds: readonly string[],
+    config: SteerConfig | undefined,
+    signal: AbortSignal,
+  ) => Promise<boolean>;
+  const guides = new Map<string, Guide>();
 
   // The allow-list belongs to the agent, not to a turn: DSH Schedule delivers
   // reminders straight into a live or restored agent, outside `run()`, and
@@ -143,6 +160,7 @@ export function codingService(
     sessionId: string,
     prompt: string,
     imageIds: readonly string[] = [],
+    config?: SteerConfig,
   ): Promise<boolean> {
     const turn = turnStops.get(sessionId);
     if (!turn || !active.has(sessionId)) return false;
@@ -152,43 +170,50 @@ export function codingService(
       sessionStop(sessionId).signal,
       AbortSignal.timeout(CODING_STEER_TIMEOUT_MS),
     ]);
-    const content = [
-      { type: "text" as const, text: prompt.trim() || "请查看我附上的图片。" },
-      ...(await promptImages(imageIds, stop)),
-    ];
-    await submitPrompt(
-      {
-        sessionId: SessionId(sessionId),
-        requestId: randomUUID() as SessionRequestId,
-        mode: "steer",
-        content,
-      },
-      stop,
-    );
-    return true;
+    const guide = guides.get(sessionId);
+    return guide ? guide(prompt, imageIds, config, stop) : false;
   }
 
-  /** Preserve DSH's safe admission reason without forwarding provider errors. */
+  /** Admit content through DSH without changing the deployment's default model. */
   async function submitPrompt(
-    request: Parameters<typeof controller.prompt>[0],
+    request: {
+      sessionId: ReturnType<typeof SessionId>;
+      requestId: SessionRequestId;
+      mode: "steer" | "queue";
+      content: Array<
+        | { type: "text"; text: string }
+        | Awaited<ReturnType<typeof promptImages>>[number]
+      >;
+    },
     signal: AbortSignal,
-  ) {
-    try {
-      return await controller.prompt(request, signal);
-    } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "details" in error &&
-        (error.details as { reason?: unknown } | undefined)?.reason ===
-          "MODEL_DOES_NOT_SUPPORT_IMAGES"
-      )
+    config: Awaited<ReturnType<typeof resolveChatModel>>,
+    commit?: () => void,
+  ): Promise<boolean> {
+    const agent = ctx.agents.get(request.sessionId);
+    if (!agent) throw new FlowError("对话已结束，请重新发送。", 409);
+    if (request.content.some((part) => part.type === "image")) {
+      const info = await ctx.llm.resolveModelInfo(
+        config.provider,
+        config.model,
+        signal,
+      );
+      if (info.inputModalities && !info.inputModalities.includes("image"))
         throw new FlowError(
           "当前模型不支持图片输入，请更换支持图片的模型，或移除附件后重新发送。",
           422,
         );
-      throw error;
     }
+    const content = await ctx.attachments.admitPromptContent(request.content);
+    signal.throwIfAborted();
+    const message = createUserMessage({
+      content,
+      source: { kind: "user", rpcId: request.requestId },
+    });
+    if (request.mode === "steer" && agent.status !== "running") return false;
+    commit?.();
+    if (request.mode === "steer") agent.steer(message);
+    else agent.followup(message);
+    return true;
   }
 
   /**
@@ -233,6 +258,8 @@ export function codingService(
     try {
       return await turnDone;
     } finally {
+      // In-flight guidance must never spill into a later turn of this agent.
+      own.abort(new FlowError("这一轮已经结束了，请重新发送。", 409));
       active.delete(turn.sessionId);
       settled.delete(turn.sessionId);
       if (turnStops.get(turn.sessionId) === own)
@@ -321,7 +348,7 @@ export function codingService(
       AbortSignal.timeout(CODING_TURN_TIMEOUT_MS),
       sessionStop(turn.sessionId).signal,
     ]);
-    const config = await resolveChatModel(
+    let config = await resolveChatModel(
       ctx.llm,
       turn.mode,
       {
@@ -381,22 +408,90 @@ export function codingService(
     const scoped: Array<() => void> = [];
     const disposers: Array<() => void> = [];
     try {
-      // Reused agents must apply this turn's selection to every model request.
+      // Snapshot route, reasoning and token limits together at prompt assembly.
+      const selection: ModelSelectionRef = {
+        current: config,
+        assembled: undefined,
+      };
+      scoped.push(installModelSelection(agent.ctx, selection));
+      let assembledConfig = config;
+      scoped.push(
+        agent.ctx.on(
+          "system-prompt/assemble",
+          async (_assembly, _context, next) => {
+            const captured = config;
+            const assembled = await next();
+            assembledConfig = captured;
+            return assembled;
+          },
+        ),
+      );
       scoped.push(
         agent.ctx.on("agent/request", async (_payload, next) => {
-          await next();
+          const resolved = await next();
+          const { maxTokens: _inheritedMaxTokens, ...rest } = resolved;
           return {
-            provider: config.provider,
-            model: config.model,
-            ...(config.reasoningEffort === undefined
+            ...rest,
+            ...(assembledConfig.maxTokens === undefined
               ? {}
-              : { reasoningEffort: config.reasoningEffort }),
-            ...(config.maxTokens === undefined
-              ? {}
-              : { maxTokens: config.maxTokens }),
+              : { maxTokens: assembledConfig.maxTokens }),
           };
         }),
       );
+      // Serialize guidance so a slower validation cannot overwrite a later choice.
+      let guiding: Promise<unknown> = Promise.resolve();
+      guides.set(turn.sessionId, (prompt, imageIds, requested, signal) => {
+        const admission = guiding.then(async () => {
+          signal.throwIfAborted();
+          if (!active.has(turn.sessionId) || agent.status !== "running")
+            return false;
+          if (requested && requested.mode !== turn.mode)
+            throw new FlowError(
+              "请在当前模型服务内选择模型；本轮结束后可切换服务。",
+              409,
+            );
+          const nextConfig = requested
+            ? await resolveChatModel(
+                ctx.llm,
+                requested.mode,
+                requested.selection,
+                signal,
+                requested.defaults,
+              )
+            : config;
+          const content = [
+            {
+              type: "text" as const,
+              text: prompt.trim() || "请查看我附上的图片。",
+            },
+            ...(await promptImages(imageIds, signal)),
+          ];
+          // Prompt admission and the model change commit synchronously after validation.
+          return submitPrompt(
+            {
+              sessionId,
+              requestId: randomUUID() as SessionRequestId,
+              mode: "steer",
+              content,
+            },
+            signal,
+            nextConfig,
+            () => {
+              agent.session.append("model/selection", {
+                provider: nextConfig.provider,
+                model: nextConfig.model,
+                ...(nextConfig.reasoningEffort === undefined
+                  ? {}
+                  : { reasoningEffort: nextConfig.reasoningEffort }),
+              });
+              config = nextConfig;
+              selection.current = nextConfig;
+            },
+          );
+        });
+        guiding = admission.catch(() => {});
+        return admission;
+      });
       // Record the pending choice without changing the deployment default.
       agent.session.append("model/selection", {
         provider: config.provider,
@@ -558,6 +653,7 @@ export function codingService(
             ],
           },
           stop,
+          config,
         );
         await completed;
         await ctx.agents.get(sessionId)?.whenIdle();
@@ -567,6 +663,7 @@ export function codingService(
       }
       return { model: config.model };
     } finally {
+      guides.delete(turn.sessionId);
       for (const dispose of disposers) dispose();
       for (const dispose of scoped.reverse()) dispose();
       const session = ctx.sessions.get(sessionId);

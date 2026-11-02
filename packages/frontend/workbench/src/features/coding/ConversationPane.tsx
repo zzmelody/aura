@@ -1746,6 +1746,20 @@ export function ConversationPane({
     return undefined;
   }, [shown]);
 
+  // Capture the displayed defaults for both new turns and in-flight guidance.
+  const submittedModelConfig = (): ChatModelSelection => {
+    const catalog = modelCatalogs.snapshot(endpoint, mode).catalog;
+    const chosenModel = modelConfig.model ?? catalog?.defaultModel;
+    const chosenEffort =
+      modelConfig.reasoningEffort ??
+      catalog?.models.find((model) => model.id === chosenModel)
+        ?.defaultReasoningEffort;
+    return {
+      ...(chosenModel ? { model: chosenModel } : {}),
+      ...(chosenEffort ? { reasoningEffort: chosenEffort } : {}),
+    };
+  };
+
   /**
    * Sends guidance into the running turn. DSH joins it to that turn, which
    * picks it up at its next step boundary, so the model changes course with
@@ -1771,6 +1785,7 @@ export function ConversationPane({
         sessionId,
         text,
         attached.map((image) => image.assetId),
+        { mode, selection: submittedModelConfig() },
       );
       if (!steered) {
         // The turn ended between the keystroke and the request; the text is
@@ -1822,17 +1837,7 @@ export function ConversationPane({
       });
       images.moveTo(id);
     }
-    // Freeze exactly the model shown at submit time, including cached defaults.
-    const catalog = modelCatalogs.snapshot(endpoint, mode).catalog;
-    const chosenModel = modelConfig.model ?? catalog?.defaultModel;
-    const chosenEffort =
-      modelConfig.reasoningEffort ??
-      catalog?.models.find((model) => model.id === chosenModel)
-        ?.defaultReasoningEffort;
-    const submittedConfig = {
-      ...(chosenModel ? { model: chosenModel } : {}),
-      ...(chosenEffort ? { reasoningEffort: chosenEffort } : {}),
-    };
+    const submittedConfig = submittedModelConfig();
     onOpen?.(id, submittedConfig);
     setError("");
     if (!options?.preserveDraft) {
@@ -2253,19 +2258,22 @@ export function ConversationPane({
                 endpoint={endpoint}
                 mode={mode}
                 selection={modelConfig}
-                disabled={running}
+                disabled={readOnly || steering}
                 openRequest={modelOpenRequest}
+                note={
+                  running
+                    ? "随下一条消息生效；已发出的请求继续使用原配置。"
+                    : undefined
+                }
                 onChange={onModelConfig}
-                onModeChange={(next) =>
-                  onProvider(next === "demo" ? "offline" : next)
+                onModeChange={
+                  running
+                    ? undefined
+                    : (next) => onProvider(next === "demo" ? "offline" : next)
                 }
               />
-              {/*
-               * Stop is its own control while a turn runs, so the send button
-               * stays send: text typed during a turn steers it instead of
-               * waiting for it to finish.
-               */}
-              {running ? (
+              {/* Empty running drafts stop; content switches the same slot to send. */}
+              {running && !draft.trim() && !images.attachments.length ? (
                 <button
                   type="button"
                   className="icon-control composer-stop"
@@ -2281,8 +2289,7 @@ export function ConversationPane({
                     aria-hidden="true"
                   />
                 </button>
-              ) : null}
-              {!running || draft.trim() || images.ready.length ? (
+              ) : (
                 <button
                   className="send-button"
                   aria-label={running ? "发送引导" : "发送消息"}
@@ -2305,7 +2312,7 @@ export function ConversationPane({
                 >
                   <ArrowUp size={16} strokeWidth={2.5} aria-hidden="true" />
                 </button>
-              ) : null}
+              )}
             </div>
           </div>
         </div>

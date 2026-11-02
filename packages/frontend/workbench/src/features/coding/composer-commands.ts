@@ -51,7 +51,6 @@ export function composerEntries({
       title: "选择模型",
       description: "切换当前会话的模型和思考强度",
       group: "commands",
-      disabled: running,
     },
     {
       kind: "command",

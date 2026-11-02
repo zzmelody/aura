@@ -411,6 +411,11 @@ export interface FlowHistory {
 
 /** POST /chat body; credentials are configured on the server, never here. */
 export type ChatModelSelection = { model?: string; reasoningEffort?: string };
+/** Model controls captured when sending guidance to a running conversation. */
+export type CodingSteerModelConfig = {
+  mode: FlowMode;
+  selection: ChatModelSelection;
+};
 export type ConversationModelConfig = Partial<
   Record<FlowMode, ChatModelSelection>
 >;

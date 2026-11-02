@@ -1,5 +1,6 @@
 import type {
   ChatModelSelection,
+  CodingSteerModelConfig,
   ChatMessage,
   CodingActivity,
   CodingConversationInfo,
@@ -503,12 +504,17 @@ export const steerCodingTurn = (
   sessionId: string,
   prompt: string,
   images?: string[],
+  modelConfig?: CodingSteerModelConfig,
 ) =>
   codingApi<{ steered: boolean }>(
     endpoint,
     `/sessions/${encodeURIComponent(sessionId)}/steer`,
     "POST",
-    { prompt, ...(images?.length ? { images } : {}) },
+    {
+      prompt,
+      ...(images?.length ? { images } : {}),
+      ...(modelConfig ? { modelConfig } : {}),
+    },
   );
 
 export const openSideChat = (endpoint: string, parentId: string) =>
