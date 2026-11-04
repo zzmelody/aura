@@ -23,14 +23,46 @@
 .coding-studio .coding-pane .chat-composer.dragging {
   border-color: var(--accent);
 }
-.coding-studio .coding-pane .chat-composer textarea {
+.coding-composer-editor {
+  position: relative;
+  min-width: 0;
+}
+.coding-studio .coding-pane .chat-composer textarea,
+.coding-composer-highlights {
   min-height: 52px;
   max-height: 220px;
   padding: 4px 2px 0;
-  resize: none;
-  overflow-y: auto;
+  font: inherit;
   font-size: 14px;
   line-height: 24px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.coding-studio .coding-pane .chat-composer textarea {
+  position: relative;
+  resize: none;
+  overflow-y: auto;
+}
+.coding-composer-highlights {
+  position: absolute;
+  inset: 0 auto 0 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: transparent;
+}
+.coding-composer-highlights mark {
+  color: inherit;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.coding-composer-highlights mark[data-command] {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 48%, transparent);
+}
+.coding-composer-highlights mark[data-selected] {
+  background: color-mix(in srgb, var(--accent) 46%, transparent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 .coding-studio .chat-composer textarea::placeholder {
   color: var(--muted);
@@ -114,9 +146,6 @@
   background: color-mix(in srgb, var(--danger) 19%, transparent);
   color: var(--danger);
 }
-.composer-mode {
-  flex-shrink: 0;
-}
 .coding-goal {
   display: flex;
   flex-wrap: wrap;
@@ -141,17 +170,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.coding-goal-detail > span,
-.coding-goal-hint {
+.coding-goal-detail > span {
   color: var(--muted);
 }
 .coding-goal-actions {
   display: flex;
   gap: 4px;
-}
-.coding-goal-hint {
-  margin: 0 8px 8px;
-  font-size: 12px;
 }
 .composer-trailing .chat-model-picker {
   flex: 0 1 auto;
@@ -240,7 +264,8 @@
   }
 }
 @media (pointer: coarse) {
-  .coding-studio .coding-pane .chat-composer textarea {
+  .coding-studio .coding-pane .chat-composer textarea,
+  .coding-composer-highlights {
     font-size: 16px;
   }
 }

@@ -10,7 +10,6 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
-  useLayoutEffect,
   useId,
   useRef,
   useState,
@@ -25,6 +24,7 @@ import {
   type FlowConversationRequest,
 } from "../../flow-conversation";
 import { ComposerCommands, useComposerCommands } from "./ComposerCommands";
+import { ComposerEditor } from "./ComposerEditor";
 import { collaborationCommand } from "./composer-commands";
 import {
   ArrowUp,
@@ -1595,24 +1595,12 @@ export function ConversationPane({
     Partial<Record<string, CodingCollaboration>>
   >({});
   const [draftIntents, setDraftIntents] = useState<
-    Partial<Record<string, CodingRunIntent>>
+    Partial<Record<string, "execute">>
   >({});
   const [collaborationSaving, setCollaborationSaving] = useState(false);
   const collaboration = sessionId ? collaborations[sessionId] : undefined;
   const goal = collaboration?.goal;
   const draftIntent = draftIntents[draftKey];
-  const selectedMode =
-    draftIntent === "goal" || goal?.armed
-      ? "goal"
-      : (draftIntent ? draftIntent === "plan" : collaboration?.planning)
-        ? "plan"
-        : "execute";
-  const modeLabel =
-    selectedMode === "goal"
-      ? "目标"
-      : selectedMode === "plan"
-        ? "计划"
-        : "执行";
   const [historyRequest, setHistoryRequest] = useState<{
     id: string;
     state: "loading" | "error";
@@ -1684,30 +1672,6 @@ export function ConversationPane({
     [readOnly, shown],
   );
   const questionDocked = pending !== undefined && !isApproval(pending.asked);
-  useLayoutEffect(() => {
-    const textarea = editor.current;
-    if (!textarea || questionDocked) return;
-    const fit = () => {
-      // A hidden pane measures 0; keep the CSS minimum instead of 0px.
-      if (!textarea.clientWidth) {
-        textarea.style.height = "";
-        return;
-      }
-      textarea.style.height = "auto";
-      textarea.style.height = `${textarea.scrollHeight}px`;
-    };
-    fit();
-    // A side pane can first measure while it is still sliding open and very
-    // narrow; re-fit when its width settles so the height does not stay huge.
-    let width = textarea.clientWidth;
-    const observer = new ResizeObserver(() => {
-      if (textarea.clientWidth === width) return;
-      width = textarea.clientWidth;
-      fit();
-    });
-    observer.observe(textarea);
-    return () => observer.disconnect();
-  }, [draft, questionDocked]);
   const windowEnd =
     historyWindow && historyWindow.id === sessionId
       ? Math.min(historyWindow.end, shown.length)
@@ -1795,7 +1759,7 @@ export function ConversationPane({
     }
   }
   const chooseCollaboration = async (
-    action: CodingCollaborationAction | "goal",
+    action: Exclude<CodingCollaborationAction, "plan">,
   ) => {
     if (
       offline ||
@@ -1807,17 +1771,9 @@ export function ConversationPane({
     )
       return false;
     setError("");
-    if (action === "goal" && goal && goal.phase !== "complete") {
-      setError("这段对话已有目标，请先继续或清除它。");
-      return false;
-    }
-    if (
-      action === "goal" ||
-      !sessionId ||
-      (!shown.length && !collaboration?.planning && !goal)
-    ) {
-      if (action !== "clear-goal")
-        setDraftIntents((current) => ({ ...current, [draftKey]: action }));
+    if (!sessionId || (!shown.length && !collaboration?.planning && !goal)) {
+      if (action === "execute")
+        setDraftIntents((current) => ({ ...current, [draftKey]: "execute" }));
       return true;
     }
     const id = sessionId;
@@ -1837,6 +1793,7 @@ export function ConversationPane({
   const commands = useComposerCommands({
     endpoint,
     projectId,
+    draftKey,
     draft,
     setDraft,
     flows: flows ?? [],
@@ -1848,8 +1805,6 @@ export function ConversationPane({
       if (command === "model") setModelOpenRequest((value) => value + 1);
       else if (command === "stop") void stop();
       else if (command === "compact") void compact();
-      else if (command === "plan" || command === "goal")
-        void chooseCollaboration(command);
       else editor.current?.focus();
     },
   });
@@ -2471,6 +2426,10 @@ export function ConversationPane({
         }
         return false;
       }
+      if (directive.action === "goal" && goal && goal.phase !== "complete") {
+        setError("这段对话已有目标，请先继续或清除它。");
+        return false;
+      }
       if ("prompt" in directive)
         return Boolean(
           await send(directive.prompt, images.ready, {
@@ -2479,8 +2438,7 @@ export function ConversationPane({
         );
     }
     if (pending) return Promise.resolve(false);
-    if (commands.submitCommand() || commands.slash !== undefined)
-      return Promise.resolve(false);
+    if (commands.submitCommand()) return false;
     return running || guidanceState?.phase === "retry"
       ? steer(draft, images.ready)
       : send(draft, images.ready, { intent: draftIntent }).then(Boolean);
@@ -2717,10 +2675,6 @@ export function ConversationPane({
               </div>
             ) : null}
           </section>
-        ) : draftIntent === "goal" ? (
-          <p className="coding-goal-hint">
-            下一条纯文本消息将成为目标。续跑使用「对话能力」里的额外请求额度。
-          </p>
         ) : null}
         {flowForm && !questionDocked ? (
           <WorkflowRunForm
@@ -2891,8 +2845,10 @@ export function ConversationPane({
             anchor={composer}
             flowsLoading={flowsLoading}
           />
-          <textarea
-            ref={editor}
+          <ComposerEditor
+            editor={editor}
+            command={commands.command}
+            references={commands.references}
             aria-label={label}
             aria-controls={commands.visible ? commands.id : undefined}
             aria-activedescendant={
@@ -2902,17 +2858,21 @@ export function ConversationPane({
             maxLength={80_000}
             value={draft}
             disabled={offline}
-            onChange={(event) => commands.changeDraft(event.target.value)}
+            onFocus={(event) => commands.trackSelection(event.currentTarget)}
+            onSelect={(event) => commands.trackSelection(event.currentTarget)}
+            onChange={(event) => commands.changeDraft(event.currentTarget)}
+            onCompositionStart={() => commands.setComposing(true)}
+            onCompositionEnd={(event) => {
+              commands.trackSelection(event.currentTarget);
+              commands.setComposing(false);
+            }}
             onKeyDown={(event) => {
               if (commands.handleKey(event)) return;
-              if (commands.slash !== undefined && event.key === "Enter") {
-                event.preventDefault();
-                return;
-              }
               if (
                 event.key === "Enter" &&
                 !event.shiftKey &&
-                !event.nativeEvent.isComposing
+                !event.nativeEvent.isComposing &&
+                event.keyCode !== 229
               ) {
                 event.preventDefault();
                 void submit();
@@ -2969,46 +2929,6 @@ export function ConversationPane({
                     editor.current?.focus();
                   }}
                 />
-              ) : null}
-              {!offline ? (
-                <WorkbenchMenu
-                  label={`协作模式 · ${modeLabel}`}
-                  className="composer-context composer-mode"
-                  disabled={
-                    !projectId ||
-                    historyBlocked ||
-                    readOnly ||
-                    running ||
-                    !!goal?.armed ||
-                    collaborationSaving
-                  }
-                  items={[
-                    {
-                      id: "execute",
-                      label: "执行模式",
-                      action: () => void chooseCollaboration("execute"),
-                    },
-                    {
-                      id: "plan",
-                      label: "计划模式 · 先规划，再审阅",
-                      action: () => void chooseCollaboration("plan"),
-                    },
-                    {
-                      id: "goal",
-                      label: "目标模式 · 按额度自动续跑",
-                      disabled: !!goal && goal.phase !== "complete",
-                      action: () => void chooseCollaboration("goal"),
-                    },
-                  ]}
-                >
-                  {selectedMode === "goal" ? (
-                    <Target size={14} aria-hidden="true" />
-                  ) : (
-                    <ClipboardCheck size={14} aria-hidden="true" />
-                  )}
-                  <span>{modeLabel}</span>
-                  <ChevronDown size={12} aria-hidden="true" />
-                </WorkbenchMenu>
               ) : null}
               {!offline ? (
                 <WorkbenchMenu
@@ -3095,8 +3015,7 @@ export function ConversationPane({
                       awaitingService.current.has(sessionId)) ||
                     !!pending ||
                     (!draft.trim() && !images.ready.length) ||
-                    images.uploading ||
-                    commands.slash !== undefined
+                    images.uploading
                   }
                   onClick={() => void submit()}
                 >
@@ -3110,6 +3029,11 @@ export function ConversationPane({
             </div>
           </div>
         </div>
+        {collaboration?.planning && !draftIntent ? (
+          <p className="composer-footnote" role="status">
+            当前会话处于计划模式，输入 /plan off 可退出。
+          </p>
+        ) : null}
         {footnote ? <p className="composer-footnote">{footnote}</p> : null}
       </div>
     </div>
