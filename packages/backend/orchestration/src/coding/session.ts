@@ -16,6 +16,7 @@ import {
   SessionId,
   SessionLogOffset as sessionLogOffset,
   SessionSeq as sessionSeq,
+  type SessionEvent,
 } from "@deepseek-ai/dsh-session";
 import type { SessionRequestId } from "@deepseek-ai/dsh-api-session-controller";
 // Type-only: activates the approval service's `approval/request` event.
@@ -28,6 +29,7 @@ import {
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type {
   CodingSteerModelConfig,
+  CodingTurnUsage,
   FlowAgentConfig,
 } from "@aura/protocol/types";
 import { resolveChatModel } from "../chat-models.ts";
@@ -41,6 +43,7 @@ import type {
 import type { GeneratedArtifacts } from "../artifacts/generated.ts";
 import { projectCodingEvent } from "./activity.ts";
 import { readSessionEvents } from "./history.ts";
+import { addTurnUsage, turnTokenUsage } from "./usage.ts";
 import {
   approvalOutcome,
   approvalQuestion,
@@ -414,7 +417,14 @@ export function codingService(
       AbortSignal.timeout(CODING_STEER_TIMEOUT_MS),
     ]);
     const guide = guides.get(sessionId);
-    return guide ? guide(prompt, imageIds, config, stop) : false;
+    if (!guide) return false;
+    try {
+      return await guide(prompt, imageIds, config, stop);
+    } catch (error) {
+      // A turn that stops during admission never receives the guidance.
+      if (turn.signal.aborted && error === turn.signal.reason) return false;
+      throw error;
+    }
   }
 
   /** Admit content through DSH without changing the deployment's default model. */
@@ -537,14 +547,7 @@ export function codingService(
     return stop;
   }
 
-  /**
-   * Creates a side chat's agent from its parent's log, cut at the parent's
-   * latest completed turn so a turn still running there is not half-copied.
-   * A parent with no completed turn yet is cut at its last event; DSH closes
-   * that open tail with synthetic results that tell the model the parent may
-   * have finished those calls. The child keeps the parent's directory, so
-   * the sandbox boundary is unchanged.
-   */
+  /** Seeds an agent through the selected completed turn or the usual side-chat cut. */
   async function forkAgent(
     parentId: string,
     options: {
@@ -554,14 +557,26 @@ export function codingService(
       agentOptions: { provider: string; model: string };
       setup: (agentCtx: Context) => Promise<void>;
       signal: AbortSignal;
+      endSeq?: number;
     },
   ): Promise<AgentHandle> {
     const parent = await controller
       .inspect(SessionId(parentId), options.signal)
       .catch(() => {
-        throw new FlowError("主对话还没有记录，暂时不能开旁支。", 404);
+        throw new FlowError("来源对话没有可用的分叉记录。", 404);
       });
-    const boundary = forkBoundary(parent.events);
+    const boundary = options.endSeq ?? forkBoundary(parent.events);
+    if (
+      options.endSeq !== undefined &&
+      !parent.events.some(
+        (event) =>
+          event.seq === options.endSeq &&
+          event.seq >= parent.inheritedEventCount &&
+          event.type === "turn/end" &&
+          event.data.reason.kind === "completed",
+      )
+    )
+      throw new FlowError("找不到可以分叉的已完成轮次。", 409);
     return ctx.agents.create({
       sessionId: options.sessionId,
       agentOptions: options.agentOptions,
@@ -638,6 +653,7 @@ export function codingService(
               agentOptions,
               setup,
               signal: stop,
+              endSeq: turn.branchAt,
             })
           : await ctx.agents.create({
               sessionId,
@@ -797,6 +813,10 @@ export function codingService(
       const requestId = randomUUID() as SessionRequestId;
       let turnNumber: number | undefined;
       let matched: number | undefined;
+      let endSeq: number | undefined;
+      let nativeTurn: SessionEvent[] | undefined;
+      let usage: CodingTurnUsage | undefined;
+      let incompleteUsage = false;
       let wroteText = false;
       let followupFailure: Error | undefined;
       let finish!: { resolve(): void; reject(reason: unknown): void };
@@ -818,6 +838,10 @@ export function codingService(
       disposers.push(
         ctx.on("session/event", (session, event) => {
           if (session.id !== sessionId) return;
+          if (event.type === "turn/start") nativeTurn = [];
+          nativeTurn?.push(event);
+          const ended = event.type === "turn/end" ? nativeTurn : undefined;
+          if (event.type === "turn/end") nativeTurn = undefined;
           projectCodingEvent(event, emit, created, ownPrompt);
           if (event.type === "turn/start") turnNumber = event.data.turn;
           if (
@@ -827,6 +851,18 @@ export function codingService(
           )
             matched = turnNumber;
           if (matched === undefined) return;
+          if (
+            event.type === "turn/end" &&
+            event.data.turn >= matched &&
+            event.data.reason.kind === "completed"
+          ) {
+            endSeq = event.seq;
+            if (!incompleteUsage) {
+              const next = ended && turnTokenUsage(ended);
+              usage = next && (usage ? addTurnUsage(usage, next) : next);
+              incompleteUsage = usage === undefined;
+            }
+          }
           if (
             event.type === "assistant/message" &&
             event.data.turn >= matched &&
@@ -927,6 +963,8 @@ export function codingService(
         await agent.whenIdle();
         stop.throwIfAborted();
         if (followupFailure) throw followupFailure;
+        if (usage) emit({ type: "usage", usage });
+        if (endSeq !== undefined) emit({ type: "turn-boundary", endSeq });
       } finally {
         stop.removeEventListener("abort", onAbort);
         if (stop.aborted) controller.cancel({ sessionId });

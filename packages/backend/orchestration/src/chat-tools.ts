@@ -7,6 +7,7 @@ import type {
   FlowCatalog,
   FlowMode,
   FlowRun,
+  FlowStep,
   JsonValue,
 } from "@aura/protocol/types";
 import { executable } from "./durable.ts";
@@ -22,6 +23,7 @@ export interface ChatToolHost {
     conversationId?: string;
   }): Promise<FlowRun>;
   get(id: string): FlowRun;
+  storageIssue?(id: string): string | undefined;
   catalog?(): Promise<FlowCatalog>;
   associateConversation?(runId: string, conversationId: string): Promise<void>;
   taskTools?(): readonly PluginTaskTool[];
@@ -51,16 +53,111 @@ const preview = (value: unknown) => {
   return text.length > 140 ? `${text.slice(0, 137)}…` : text;
 };
 
-const summary = (run: FlowRun): Record<string, JsonValue> => {
+const runNotes: Partial<Record<FlowRun["status"], string>> = {
+  queued: "运行正在排队，请查询同一 runId，不要重复启动。",
+  running: "运行尚未结束。请根据步骤进度判断当前在等什么，并查询同一 runId。",
+  pausing: "正在等待已开始的步骤收尾，随后进入暂停。",
+  paused: "运行已暂停，需要在运行详情中继续。",
+  waiting_input: "流程正在等待人工输入，请在运行详情中回答后继续。",
+  needs_attention: "步骤结果未确认，请在运行详情核对结果后处理。",
+};
+
+/** Project public Run data only; never fetch raw provider responses or logs. */
+function stepDiagnostics(
+  root: FlowRun,
+  host: ChatToolHost,
+  now: number,
+): JsonValue[] {
+  const limit = 12;
+  const details: JsonValue[] = [];
+  const seen = new Set([root.id]);
+  function visit(run: FlowRun) {
+    const relevant = (step: FlowStep) =>
+      step.status !== "completed" &&
+      (step.status !== "failed" ||
+        run.status === "failed" ||
+        run.status === "interrupted");
+    const steps = run.steps.filter(relevant);
+    // Show the reason for a stop before ordinary queued work in parallel branches.
+    const blocking = steps.filter(
+      (step) => step.status !== "queued" && step.status !== "running",
+    );
+    const active = steps.filter(
+      (step) => step.status === "queued" || step.status === "running",
+    );
+    for (const step of [...blocking, ...active]) {
+      if (details.length >= limit) break;
+      const attempt = step.attempts?.at(-1);
+      const reason = step.error ?? attempt?.error;
+      const stepKey = step.stepKey ?? step.id;
+      const childRunId = step.kind === "flow" ? step.childRunId : undefined;
+      const detail: Record<string, JsonValue> = {
+        runId: run.id,
+        stepKey,
+        label: step.label.slice(0, 160),
+        kind: step.kind ?? "agent",
+        status: step.status,
+        ...(reason ? { error: reason.slice(0, 500) } : {}),
+        ...(attempt ? { attempt: attempt.number } : {}),
+        ...(step.nextAttemptAt !== undefined
+          ? { retryInMs: Math.max(0, step.nextAttemptAt - now) }
+          : {}),
+        ...(step.status === "running" && step.startedAt !== undefined
+          ? {
+              elapsedMs: Math.max(
+                0,
+                now - (attempt?.startedAt ?? step.startedAt),
+              ),
+            }
+          : {}),
+        ...(step.kind === "action" ? { actionId: step.actionId } : {}),
+        ...(step.kind === "checkpoint" && step.status === "waiting_input"
+          ? { prompt: step.prompt.slice(0, 500) }
+          : {}),
+        ...(childRunId ? { childRunId } : {}),
+      };
+      details.push(detail);
+      if (!childRunId || seen.has(childRunId) || details.length >= limit)
+        continue;
+      seen.add(childRunId);
+      let child: FlowRun;
+      try {
+        child = host.get(childRunId);
+      } catch (error) {
+        if (!(error instanceof FlowError) || error.status !== 404) throw error;
+        detail.childStatus = "unavailable";
+        continue;
+      }
+      if (child.parent?.runId !== run.id || child.parent.stepKey !== stepKey)
+        continue;
+      detail.childStatus = child.status;
+      const childError = host.storageIssue?.(child.id) ?? child.error;
+      if (childError) detail.childError = childError.slice(0, 500);
+      visit(child);
+    }
+  }
+  visit(root);
+  return details;
+}
+
+function summary(run: FlowRun, host: ChatToolHost): Record<string, JsonValue> {
   const output =
     run.output === undefined ? undefined : JSON.stringify(run.output);
+  const storageIssue = host.storageIssue?.(run.id);
+  const note = storageIssue ? undefined : runNotes[run.status];
+  const error = storageIssue ?? run.error;
+  const now = Date.now();
+  const steps =
+    run.status === "completed" ? [] : stepDiagnostics(run, host, now);
   return {
     status: run.status,
     runId: run.id,
-    ...(executable(run.status)
-      ? { note: "工作流仍在运行，请查询此 runId 的状态，不要重复启动。" }
+    ...(note ? { note } : {}),
+    ...(error ? { error: error.slice(0, 500) } : {}),
+    ...(steps.length ? { steps } : {}),
+    ...(run.status === "queued"
+      ? { queuedMs: Math.max(0, now - (run.queuedAt ?? run.createdAt)) }
       : {}),
-    ...(run.error ? { error: run.error.slice(0, 500) } : {}),
     ...(output
       ? {
           output:
@@ -68,7 +165,7 @@ const summary = (run: FlowRun): Record<string, JsonValue> => {
         }
       : {}),
   };
-};
+}
 
 const compileTool = defineTool as unknown as (
   options: unknown,
@@ -88,11 +185,16 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
   async function settle(runId: string, signal: AbortSignal) {
     const deadline = Date.now() + waitMs;
     let run = host.get(runId);
-    while (executable(run.status) && Date.now() < deadline && !signal.aborted) {
+    while (
+      executable(run.status) &&
+      Date.now() < deadline &&
+      !signal.aborted &&
+      !host.storageIssue?.(runId)
+    ) {
       await new Promise((resolve) => setTimeout(resolve, 400));
       run = host.get(runId);
     }
-    return summary(run);
+    return summary(run, host);
   }
 
   /** Same call ID returns the same answer; failures go back to the model as data. */
@@ -279,7 +381,7 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
   const run = compileTool({
     name: "aura_run_flow",
     description:
-      "在当前对话中运行任意已发现的 Aura 工作流。仅在用户要求执行时启动；先从目录确认 ID 和输入 Schema。查看结果或继续讨论时使用 aura_flow_status；只有用户明确要求再次运行才创建新运行。",
+      "在当前对话中运行任意已发现的 Aura 工作流。仅在用户要求执行时启动；先从目录确认 ID 和输入 Schema。向用户说明返回的失败或等待步骤、具体原因及 runId。查看后续状态时使用 aura_flow_status；只有用户明确要求再次运行才创建新运行。",
     parameters: {
       flowId: { type: "string", required: true },
       input: { type: "json", required: true },
@@ -314,12 +416,12 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
   const status = compileTool({
     name: "aura_flow_status",
     description:
-      "读取既有工作流运行的当前状态、输入和输出。继续讨论结果或等待完成时使用，不会启动或重试工作流。",
+      "读取既有工作流运行的状态、输入、输出和步骤诊断。用户询问失败、中断或卡住时，说明具体步骤、原因、是否在等待输入或重试，以及 runId。运行耗时本身不代表卡死。此工具不会启动或重试工作流。",
     parameters: { runId: { type: "string", required: true } },
     output,
     execute: async (args: { runId: string }) => {
       const current = host.get(args.runId);
-      return { ...summary(current), input: current.input };
+      return { ...summary(current, host), input: current.input };
     },
   });
 

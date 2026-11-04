@@ -10,7 +10,7 @@ import type { FlowRun, FlowRunSummary } from "@aura/protocol/types";
 import { OrchestrationHost } from "../src/index.ts";
 
 test(
-  "a conversation runs a catalog flow, discusses its result after restart and explicitly runs it again",
+  "conversations run flows, read restored results and receive checkpoint diagnostics",
   { timeout: 120_000 },
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), "aura-flow-conversation-"));
@@ -37,12 +37,25 @@ export default defineFlow({
   description: "Local integration fixture; no external model or paid service",
   input: z.object({ topic: z.string() }),
   output: z.object({ report: z.string() }),
-  async run(_ctx, input) { return { report: "Report for " + input.topic }; }
+  async run(ctx, input) {
+    if (input.topic === "CHECKPOINT") {
+      await ctx.sequence({ id: "review" }, (scope) =>
+        scope.checkpoint({
+          id: "confirm",
+          label: "报告审核",
+          prompt: "请审核报告后继续。",
+          schema: z.boolean(),
+        }),
+      );
+    }
+    return { report: "Report for " + input.topic };
+  }
 });
 `,
     );
     let calls = 0;
     let queriedRun = "";
+    let checkpointContext = "";
     const requestedTools: string[] = [];
     const model = new Hono();
     model.post("/v1/chat/completions", async (context) => {
@@ -62,6 +75,13 @@ export default defineFlow({
         .slice(lastRequest + 1)
         .some((message) => message.role === "tool");
       const check = prompt.includes("CHECK_RESULT");
+      const checkpoint = prompt.includes("RUN_CHECKPOINT");
+      if (checkpoint && answered)
+        checkpointContext = JSON.stringify(
+          request.messages
+            .slice(lastRequest + 1)
+            .filter((message) => message.role === "tool"),
+        );
       const call = !answered;
       return streamSSE(context, async (stream) => {
         await stream.writeSSE({
@@ -83,7 +103,9 @@ export default defineFlow({
                                 ? { runId: queriedRun }
                                 : {
                                     flowId: "report",
-                                    input: { topic: "Aura" },
+                                    input: {
+                                      topic: checkpoint ? "CHECKPOINT" : "Aura",
+                                    },
                                   },
                             ),
                           },
@@ -170,5 +192,16 @@ export default defineFlow({
     assert.ok(repeated.every((run) => run.conversationId === conversationId));
     assert.notEqual(repeated[0]?.id, repeated[1]?.id);
     assert.equal((await host.codingHistory(conversationId)).turns.length, 3);
+
+    await send("RUN_CHECKPOINT 生成需要审核的报告");
+    const waiting = (await host.request<FlowRunSummary[]>("list")).find(
+      (run) => run.status === "waiting_input",
+    );
+    assert.ok(waiting);
+    assert.ok(checkpointContext.includes(waiting.id));
+    assert.match(
+      checkpointContext,
+      /waiting_input.*报告审核.*请审核报告后继续/u,
+    );
   },
 );

@@ -91,6 +91,8 @@ export interface ChatPort {
       images?: string[];
       /** Set on a side chat: the conversation it branches from. */
       forkFrom?: string;
+      branchFrom?: string;
+      branchAt?: number;
       mode: ChatRoute["mode"];
     } & ChatModelSelection,
     emit: (event: unknown) => void,

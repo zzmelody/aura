@@ -10,13 +10,19 @@ Aura 的 Windows/macOS/Linux Electron 桌面入口。Vite renderer 复用 `@aura
 
 静态 renderer 的本机 HTTP 服务复用上次成功监听的端口，使 Chromium 的 origin、界面偏好与目录缓存能跨应用重启保留。端口号保存在 Electron `userData/Cache/renderer-port`，只是可丢弃的启动提示，不改写 `.aura/` 用户配置；端口占用时由系统另选空闲端口并更新提示，缓存损坏或不可写不阻止打开界面。开发模式继续使用 Vite 的固定端口。
 
-主窗口默认 1360×860，使用 Electron 的 `titleBarStyle: hidden` 与 `titleBarOverlay` 将共用的应用菜单栏放入标题区；最小化、最大化与关闭保留原生控件。原生控件叠层使用透明底色，整条标题栏由 renderer 连续绘制，避免按钮区域与左侧顶栏出现色差或分界。macOS 使用 48px 标题区，红绿灯定位到 `{ x: 12, y: 17 }`；preload 仅将 `process.platform` 作为 `auraHost.os` 提供给界面。宽窗口将导航、当前页标题和工具页签放在同一行，侧栏收起时为原生按钮与导航预留左侧位置。其他系统保持原有标题栏尺寸。标题区留白可拖动窗口，菜单和导航按钮使用 no-drag。`window-host.ts` 仅接收主 frame 的深/浅色布尔设置，同步原生控件颜色。更改主进程或 preload 后需完全退出并重启桌面应用。实现依据 [Electron 自定义标题栏](https://www.electronjs.org/docs/latest/tutorial/custom-title-bar)。
+主窗口默认 1360×860，使用 Electron 的 `titleBarStyle: hidden` 与 `titleBarOverlay` 将共用的应用菜单栏放入标题区；最小化、最大化与关闭保留原生控件。原生控件叠层使用透明底色，标题区留白可拖动窗口，菜单和导航按钮使用 no-drag。macOS 使用 48px 标题区，红绿灯定位到 `{ x: 12, y: 17 }`。宽窗口将导航、当前页标题和工具页签放在同一行，侧栏收起时为原生按钮与导航预留左侧位置。其他系统保持原有标题栏尺寸。`window-host.ts` 仅接收主 frame 的外观设置，同步原生材质外观或标题控件颜色。更改主进程或 preload 后需完全退出并重启桌面应用。实现依据 [Electron 自定义标题栏](https://www.electronjs.org/docs/latest/tutorial/custom-title-bar)。
+
+macOS 宽窗口的会话列表使用原生 `sidebar` 毛玻璃和轻微渐变，右侧对话面板保持实色。应用切换主题时同步系统材质的外观，选择跟随系统时由 macOS 决定。最小化、隐藏或系统开启「减少透明度」时使用实色侧栏底，恢复窗口后重新附着原生材质。
 
 在仓库根运行 `.\scripts\aura.ps1 run desktop`。命令先生成桌面 renderer，再打开原生窗口。Codex OAuth 始终交给 DSH；桌面壳只把授权页交给系统浏览器，不接触 token。
+
+macOS 的 Dock 和应用切换器显示的是运行中 bundle 的 `CFBundleName`，代码里的 `app.setName` 改不了它。因此 `pnpm desktop` 和 `pnpm desktop:preview` 由 `scripts/desktop-bundle.ts` 把 `Electron.app` 复制为 `dist-host/Aura.app`，改名称和 bundle ID 后本地 ad-hoc 重签再启动；不修改 `node_modules`。复制在 APFS 上用克隆完成，按 Electron 版本加修订号缓存，只在升级后重建。userData 路径来自 `package.json`，改名不影响已有本地数据。其他系统直接使用原版 Electron。
 
 `package.json#main` 指向 Electron 的 `src/main.ts`；renderer 入口是 `src/renderer.tsx`，只由 Vite 构建。两者不得互相导入，确保 Node/DSH 后端依赖不会进入浏览器 bundle。
 
 `pnpm desktop` 和 `pnpm desktop:preview` 都会先将 `src/preload.ts` 编译为 `dist-host/preload.cjs`，再由沙箱窗口加载。Electron 的沙箱 preload 不经过主进程的 TypeScript loader，不能直接加载 `.ts`/ESM。产物由 `build:preload` 生成并忽略提交；更改 preload 后需要完全退出并重启桌面应用。桥接加载失败时页面会提示「桌面连接未就绪」，不会误判成 Web 版。
+
+桌面工具面板的浏览器标签使用 Electron 沙箱网页。主进程只允许工作台为自己的标签创建一次性网页实例。与 DSH Desktop 一致，同一工作空间目录的标签共享一个内存存储分区（Cookie 与站点数据），不同工作空间互相隔离；分区在应用退出时释放，不写入磁盘。网页实例通过 `about:blank#<lease>` 首页与一次性租约绑定，不注入 Aura 桥接，并拒绝访问 Aura 工作台和本机运行时端口。切换标签或会话保留页面；关闭标签只释放该实例，站点数据保留到应用退出。
 
 侧栏 Site 使用桌面 preload 暴露的最小 IPC 能力选择本机目录、启动前端项目脚本和打开本地预览窗口。`pnpm desktop` 启动后，进入 Site →「选择目录」，选中包含 `package.json` 的目录，确认脚本和预览地址，再点击「运行项目」。主进程仅负责 Electron 对话框、IPC 和窗口；`@aura/runtime/site` 负责绝对目录、已存在脚本、本机 HTTP(S) 地址校验及进程生命周期。项目脚本是具有当前用户权限的受信任代码，请只运行可信项目；不会自动安装依赖。
 

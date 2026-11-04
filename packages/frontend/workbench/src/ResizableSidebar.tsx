@@ -4,11 +4,13 @@ export const DEFAULT_SIDEBAR_WIDTH = 280;
 
 /** Keep pointer movement out of workspace state; persist only the committed width. */
 export function ResizableSidebar({
+  collapsed,
   width,
   viewport,
   onResize,
   children,
 }: {
+  collapsed: boolean;
   width: number;
   viewport: number;
   onResize(width: number): void;
@@ -49,6 +51,7 @@ export function ResizableSidebar({
     <div
       ref={root}
       className="resizable-sidebar"
+      inert={collapsed}
       style={{ "--sidebar-width": `${actual}px` } as React.CSSProperties}
     >
       {children}

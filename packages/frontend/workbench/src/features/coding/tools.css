@@ -107,6 +107,84 @@
   justify-content: flex-start;
   min-height: 42px;
 }
+.coding-browser {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.coding-browser[hidden] {
+  display: none;
+}
+.coding-browser-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 6px;
+  border-bottom: 1px solid var(--workspace-divider);
+}
+.coding-browser-toolbar .icon-control {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 28px;
+}
+.coding-browser-toolbar input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--workspace-divider);
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--text);
+  font-size: 12px;
+}
+.coding-browser-loading {
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.coding-browser-content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.coding-browser-guest,
+.coding-browser-empty {
+  position: absolute;
+  inset: 0;
+}
+.coding-browser-guest webview {
+  width: 100%;
+  height: 100%;
+}
+.coding-browser-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  background: var(--background);
+  color: var(--muted);
+  font-size: 13px;
+}
+.coding-browser-restore {
+  padding: 16px;
+  text-align: center;
+}
+.coding-browser-restore strong,
+.coding-browser-restore span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coding-browser-restore strong {
+  color: var(--text);
+  font-weight: 500;
+}
+.coding-browser-restore span {
+  font-size: 12px;
+}
 .coding-side-actions {
   display: flex;
   justify-content: flex-end;
@@ -158,14 +236,6 @@
   background: transparent;
   color: var(--accent);
   font-size: 11px;
-}
-.coding-panes[data-tools-only] > .coding-main-column {
-  display: none;
-}
-.coding-panes[data-tools-only] > .coding-side {
-  flex: 1 1 0;
-  max-width: none;
-  border-top: 0;
 }
 [data-platform="desktop"] .coding-tools-header {
   -webkit-app-region: drag;

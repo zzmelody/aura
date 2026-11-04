@@ -29,6 +29,16 @@ test("workspace terminal selection survives switching between main conversations
   assert.equal(selectedToolId(second, "side-a"), "side-b");
   assert.equal(selectedToolId([], terminal.id), undefined);
 });
+test("workspace browser selection survives changes to the side conversations", () => {
+  const browser = { id: "browser-one", title: "项目预览" };
+  const tabs = workspaceToolTabs(
+    [{ id: "other-side", title: "旁支", createdAt: 1 }],
+    [terminal],
+    [browser],
+  );
+  assert.equal(selectedToolId(tabs, browser.id), browser.id);
+  assert.deepEqual(tabs.at(-1), { ...browser, kind: "browser" });
+});
 test("tool labels distinguish terminal instances and project legacy side names without mutations", () => {
   const side = { id: "side-a", title: "旁支对话", createdAt: 1 };
   const tabs = workspaceToolTabs(

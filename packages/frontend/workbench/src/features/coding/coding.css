@@ -16,6 +16,9 @@
   color: var(--danger);
   font-size: 13px;
 }
+.coding-guidance-status {
+  color: var(--muted);
+}
 
 /*
  * Layout: the panes fill the studio below its toolbar, and each pane is a
@@ -23,11 +26,18 @@
  * at the bottom instead of being pushed out of view by a long history.
  */
 .coding-panes {
+  --workspace-sidebar-progress: 1;
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  transition: --workspace-sidebar-progress var(--workspace-sidebar-duration)
+    var(--workspace-motion-ease);
+}
+.coding-panes[data-side-closed] {
+  --workspace-sidebar-progress: 0;
 }
 .coding-pane {
   container-type: inline-size;
@@ -40,34 +50,49 @@
   overflow: hidden;
 }
 .coding-side {
+  --coding-side-size: min(var(--coding-side-width), calc(100% - 328px));
   display: flex;
-  flex: 0 0 min(var(--coding-side-width), calc(100% - 328px));
+  flex: 0 0 var(--coding-side-size);
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  max-width: calc(100% - 328px);
+  margin-inline-end: calc(
+    (var(--workspace-sidebar-progress) - 1) * var(--coding-side-size)
+  );
   overflow: hidden;
+  transition: display var(--workspace-sidebar-duration) allow-discrete;
 }
 .coding-split-handle {
   position: relative;
-  flex: 0 0 8px;
+  flex: 0 0 calc(8px * var(--workspace-sidebar-progress));
   cursor: col-resize;
   touch-action: none;
   user-select: none;
+  transition: visibility 0s var(--workspace-sidebar-duration);
+}
+.coding-panes[data-side-closed] > .coding-split-handle {
+  visibility: hidden;
+  transition: none;
 }
 .coding-split-handle::after {
+  --coding-divider-color: var(--workspace-divider);
   content: "";
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 3px;
+  left: 0;
   width: 1px;
-  background: var(--workspace-divider);
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--coding-divider-color) 50%,
+    transparent
+  );
 }
 .coding-split-handle:hover::after,
 .coding-split-handle:focus-visible::after,
 .coding-panes[data-resizing="true"] > .coding-split-handle::after {
-  background: var(--secondary);
+  --coding-divider-color: var(--secondary);
 }
 .coding-split-handle:focus-visible {
   outline: none;
@@ -80,15 +105,22 @@
 .coding-panes[data-stacked] {
   flex-direction: column;
 }
-.coding-panes[data-stacked] > .coding-pane,
-.coding-panes[data-stacked] > .coding-side {
+.coding-panes[data-stacked] > .coding-pane {
   flex: 1 1 0;
-  max-width: none;
+}
+.coding-panes[data-stacked] > .coding-main-column {
+  transition: display var(--workspace-sidebar-duration) allow-discrete;
 }
 .coding-panes[data-stacked] > .coding-side {
-  border-top: 1px solid var(--workspace-divider);
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc((1 - var(--workspace-sidebar-progress)) * 100%);
+  width: 100%;
+  margin: 0;
+  background: var(--background);
 }
-.coding-side[hidden] {
+.coding-panes[data-side-closed] > .coding-side,
+.coding-panes[data-tools-only] > .coding-main-column {
   display: none;
 }
 .coding-side-conversation[hidden] {
@@ -107,6 +139,129 @@
   font-size: 12px;
 }
 
+.coding-turn-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin-top: 4px;
+  margin-inline-start: -6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.coding-turn-actions .icon-control {
+  width: 28px;
+  height: 28px;
+  color: inherit;
+}
+.coding-turn-actions .icon-control[aria-disabled="true"] {
+  opacity: 0.4;
+  background: transparent;
+  cursor: default;
+}
+.coding-turn-metadata,
+.coding-turn-usage,
+.coding-usage-trigger {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+.coding-turn-metadata {
+  gap: 8px;
+  margin-inline-start: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.coding-usage-trigger {
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.coding-usage-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.coding-usage-trigger svg,
+.coding-usage-heading svg {
+  flex: none;
+}
+.coding-usage-trigger:hover,
+.coding-usage-trigger[aria-expanded="true"] {
+  background: var(--highlight-fill);
+}
+.coding-usage-panel {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: min(300px, calc(100vw - 24px));
+  max-width: min(440px, calc(100vw - 24px));
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 10px 32px rgb(0 0 0 / 22%);
+  font-size: 12px;
+  line-height: 18px;
+}
+.coding-usage-heading,
+.coding-usage-heading > span {
+  display: flex;
+  align-items: center;
+}
+.coding-usage-heading {
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.coding-usage-heading > span {
+  gap: 6px;
+}
+.coding-usage-panel dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+}
+.coding-usage-panel dt {
+  color: var(--muted);
+}
+.coding-usage-panel dd {
+  margin: 0;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+@media (hover: hover) {
+  .coding-turn[data-actions-reveal="hover"] .coding-turn-actions {
+    transition: opacity 80ms ease;
+  }
+  .coding-turn[data-actions-reveal="hover"]:not(:hover):not(:focus-within)
+    .coding-turn-actions {
+    opacity: 0;
+  }
+}
+@media (max-width: 480px) {
+  .coding-usage-trigger {
+    justify-content: center;
+    width: 28px;
+    padding: 0;
+  }
+  .coding-usage-trigger > span {
+    display: none;
+  }
+}
+
 .coding-transcript {
   display: flex;
   flex-direction: column;
@@ -117,6 +272,11 @@
      shift the content axis away from the composer. */
   scrollbar-gutter: stable both-edges;
   padding: 24px 22px;
+}
+.workbench .coding-transcript::-webkit-scrollbar-thumb:vertical {
+  /* Keep the same thumb width and shift it toward the pane edge. */
+  border-left-width: 5px;
+  border-right-width: 1px;
 }
 .coding-transcript > * {
   flex-shrink: 0;
@@ -222,6 +382,13 @@
 .coding-process.running .coding-process-icon,
 .coding-process.running .coding-process-state {
   color: var(--accent);
+}
+.coding-process.complete .coding-process-icon {
+  color: var(--success);
+}
+.coding-process.complete .coding-process-state {
+  color: var(--secondary);
+  font-weight: 500;
 }
 .coding-process.error .coding-process-icon,
 .coding-process.error .coding-process-state {
@@ -569,9 +736,10 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   border-radius: 12px;
   background: var(--soft);
 }
-.coding-question.answered {
-  border-color: var(--border);
-  background: transparent;
+.coding-question.bare {
+  padding: 0;
+  border: 0;
+  background: none;
 }
 .coding-question h3 {
   display: flex;
@@ -586,9 +754,6 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   flex: none;
   width: 14px;
   height: 14px;
-}
-.coding-question.answered h3 {
-  color: var(--muted);
 }
 .coding-question fieldset {
   display: grid;
@@ -657,11 +822,6 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   color: var(--text);
   font-size: 13px;
 }
-.coding-question-answer {
-  margin: 0;
-  color: var(--secondary);
-  font-size: 13px;
-}
 .coding-question-actions button {
   display: inline-flex;
   align-items: center;
@@ -681,7 +841,8 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
  * A settled approval stays in the transcript as one quiet line, like a tool
  * row; the decision itself was taken in the composer card.
  */
-.coding-approval-note {
+.coding-approval-note,
+.coding-question-note > summary {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -690,12 +851,14 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   color: var(--muted);
   font-size: 13px;
 }
-.coding-approval-note svg {
+.coding-approval-note svg,
+.coding-question-note > summary svg {
   flex: none;
   width: 14px;
   height: 14px;
 }
-.coding-approval-note > span:last-child {
+.coding-approval-note > span:last-child,
+.coding-question-note-question {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -704,8 +867,29 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
 .coding-approval-note.rejected {
   color: var(--danger);
 }
+.coding-question-note > summary {
+  cursor: pointer;
+}
+.coding-question-note-state {
+  flex: none;
+}
+.coding-question-note[open] .coding-question-note-chevron {
+  transform: rotate(180deg);
+}
+.coding-question-note-body {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 8px 20px;
+  color: var(--secondary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.coding-question-note-body dd {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
 
-/* End-of-turn recap, after DSH's changed-files card. */
+/* Changed files inside the execution details. */
 .coding-recap {
   display: flex;
   flex-direction: column;
@@ -717,48 +901,13 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   background: var(--surface);
   color: var(--text);
 }
-.coding-recap-header {
-  display: flex;
-  box-sizing: border-box;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  min-height: 60px;
-  padding: 8px 10px;
-}
-.coding-recap-tile {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
-}
-.coding-recap-titles {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-}
 .coding-recap-title {
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 20px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.coding-recap-line {
-  overflow: hidden;
+  margin: 0;
+  padding: 7px 14px;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
 }
-.coding-recap-stat,
 .coding-recap-counts {
   display: inline-flex;
   flex: none;
@@ -930,35 +1079,40 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   }
 }
 
-/*
- * Pending approval, after DSH ui-approval: it takes over the composer slot
- * with a warning strip, the reason, and reject / allow-once actions.
- */
-.coding-approval {
+/* Pending questions and approvals share the surface above the composer. */
+.coding-decision {
+  --decision-color: var(--warning);
   margin-bottom: 12px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--decision-color) 45%, transparent);
   border-radius: 20px;
   background: var(--elevated);
 }
-.coding-approval-strip {
+.coding-decision.question {
+  --decision-color: var(--accent);
+  margin-bottom: 0;
+}
+.coding-decision-strip {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
+  background: color-mix(in srgb, var(--decision-color) 12%, transparent);
+  color: var(--decision-color);
   font-size: 13px;
   line-height: 18px;
 }
-.coding-approval-dot {
+.coding-decision-strip .composer-stop {
+  margin-inline-start: auto;
+}
+.coding-decision-dot {
   flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: currentColor;
 }
-.coding-approval[aria-busy="true"] .coding-approval-dot {
+.coding-decision[aria-busy="true"] .coding-decision-dot {
   animation: coding-approval-pulse 1s ease-in-out infinite;
 }
 @keyframes coding-approval-pulse {
@@ -966,7 +1120,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
     opacity: 0.3;
   }
 }
-.coding-approval-body {
+.coding-decision-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -974,26 +1128,31 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   overflow-y: auto;
   padding: 12px 16px 0;
 }
-.coding-approval-headline {
+.coding-decision.question .coding-decision-body {
+  max-height: min(480px, 50dvh);
+  padding-bottom: 12px;
+}
+.coding-decision-headline {
   color: var(--text);
   font-size: 15px;
   font-weight: 500;
   line-height: 24px;
+  overflow-wrap: anywhere;
 }
-.coding-approval-detail {
+.coding-decision-detail {
   color: var(--secondary);
   font-size: 13px;
   line-height: 20px;
   overflow-wrap: anywhere;
 }
-.coding-approval-actions {
+.coding-decision-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
   padding: 14px 16px;
 }
-.coding-approval-actions button {
+.coding-decision-actions button {
   height: 32px;
   padding: 0 14px;
   border: 0.5px solid var(--border);
@@ -1004,23 +1163,23 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   font-size: 13px;
   cursor: pointer;
 }
-.coding-approval-actions button.allow {
+.coding-decision-actions button.allow {
   border-color: transparent;
   background: var(--primary);
   color: var(--primaryText);
 }
-.coding-approval-actions button:disabled {
+.coding-decision-actions button:disabled {
   cursor: default;
   opacity: 0.6;
 }
 @media (hover: hover) {
-  .coding-approval-actions button.reject:hover:not(:disabled) {
+  .coding-decision-actions button.reject:hover:not(:disabled) {
     border-color: transparent;
     background: color-mix(in srgb, var(--danger) 12%, transparent);
     color: var(--danger);
   }
 }
-.coding-approval-error {
+.coding-decision-error {
   margin: 0 16px 12px;
   color: var(--danger);
   font-size: 12px;
@@ -1106,4 +1265,43 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
 .model-service-card input[type="password"] {
   flex: 1;
   min-width: 150px;
+}
+
+/* Floating actions over selected transcript text. */
+.selection-actions {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  z-index: 30;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 0.5px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 16%),
+    0 1px 4px rgb(0 0 0 / 8%);
+}
+.selection-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.selection-action:hover:not(:disabled),
+.selection-action:focus-visible {
+  background: var(--soft);
+}
+.selection-action:disabled {
+  opacity: 0.45;
+  cursor: default;
 }

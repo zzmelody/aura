@@ -29,7 +29,7 @@ test("cold history windows preserve complete turns and a stable cursor across pa
   assert.equal(first.hasMore, false);
   assert.deepEqual(
     [first, middle, last].flatMap((page) => page.events),
-    source.map(({ type, time, data }) => ({ type, time, data })),
+    source.map(({ type, seq, time, data }) => ({ type, seq, time, data })),
   );
 });
 

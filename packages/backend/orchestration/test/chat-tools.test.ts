@@ -153,6 +153,150 @@ test("follow-up questions read a run's latest result without re-executing it", a
   );
 });
 
+test("conversation status explains the blocking step inside a child Run", async () => {
+  const { host, runs, tool } = fixture();
+  const root = await host.start({
+    requestId: "request",
+    flowId: "report",
+    input: null,
+    mode: "demo",
+  });
+  root.status = "needs_attention";
+  root.steps = [
+    {
+      id: "child",
+      stepKey: "main/child",
+      kind: "flow",
+      label: "生成报告",
+      status: "unknown",
+      flowId: "render",
+      sourceHash: "hash",
+      input: null,
+      outputSchema: {},
+      childRequestId: "child-request",
+      childRunId: "child-run",
+      requestInputHash: "hash",
+    },
+  ];
+  const child: FlowRun = {
+    ...root,
+    id: "child-run",
+    parent: { runId: root.id, stepKey: "main/child" },
+    steps: [
+      {
+        id: "render",
+        kind: "action",
+        label: "渲染",
+        status: "unknown",
+        actionId: "render",
+        input: { internal: "private step input" },
+        error: "渲染过程中断，结果未知。",
+      },
+    ],
+  };
+  runs.push(child);
+  const args = { runId: root.id };
+  const result = await call(tool("aura_flow_status"), args, "unknown");
+  assert.partialDeepStrictEqual(result, {
+    status: "needs_attention",
+    steps: [
+      {
+        stepKey: "main/child",
+        childRunId: child.id,
+        childStatus: "needs_attention",
+      },
+      {
+        runId: child.id,
+        stepKey: "render",
+        actionId: "render",
+        error: "渲染过程中断，结果未知。",
+      },
+    ],
+  });
+  assert.doesNotMatch(JSON.stringify(result), /private step input/u);
+
+  root.status = child.status = "waiting_input";
+  root.steps[0]!.status = "waiting_input";
+  child.steps = [
+    {
+      id: "review",
+      kind: "checkpoint",
+      label: "人工审核",
+      status: "waiting_input",
+      prompt: "请确认草稿。",
+      outputSchema: { type: "boolean" },
+    },
+  ];
+  assert.partialDeepStrictEqual(
+    await call(tool("aura_flow_status"), args, "waiting"),
+    {
+      status: "waiting_input",
+      steps: [
+        { childStatus: "waiting_input" },
+        { stepKey: "review", prompt: "请确认草稿。" },
+      ],
+    },
+  );
+});
+
+test("start tool distinguishes retry backoff and storage failure from ordinary execution", async () => {
+  const { host, tool } = fixture();
+  const start = host.start;
+  host.start = async (input) => {
+    const run = await start(input);
+    const now = Date.now();
+    run.steps = [
+      {
+        id: "retry",
+        kind: "action",
+        label: "等待重试",
+        status: "queued",
+        actionId: "render",
+        input: null,
+        nextAttemptAt: now + 60_000,
+        attempts: [
+          {
+            number: 1,
+            status: "failed",
+            startedAt: now,
+            error: "服务暂时不可用。",
+          },
+        ],
+      },
+    ];
+    return run;
+  };
+  const result = await call(
+    tool("aura_run_flow"),
+    { flowId: "report", input: null },
+    "progress",
+  );
+  assert.partialDeepStrictEqual(result, {
+    status: "running",
+    steps: [
+      {
+        stepKey: "retry",
+        status: "queued",
+        error: "服务暂时不可用。",
+        attempt: 1,
+      },
+    ],
+  });
+  assert.match(JSON.stringify(result), /"retryInMs":[1-9]\d*/u);
+
+  host.storageIssue = () => "Flow 状态存档失败，请修复存储并重启运行时恢复。";
+  const blocked = await call(
+    tool("aura_flow_status"),
+    { runId: "run-1" },
+    "blocked",
+  );
+  assert.partialDeepStrictEqual(blocked, {
+    status: "running",
+    error: "Flow 状态存档失败，请修复存储并重启运行时恢复。",
+  });
+  assert.doesNotMatch(JSON.stringify(blocked), /"note"/u);
+});
+
 test("uncertain submissions cannot start another flow automatically or leak upstream errors", async () => {
   const { host, starts, tool } = fixture();
   host.start = async (input) => {

@@ -341,6 +341,11 @@ export function createApiApp({
           (typeof body.branchFrom !== "string" ||
             !body.branchFrom.trim() ||
             body.branchFrom.length > 200)) ||
+        (body.branchAt !== undefined &&
+          (typeof body.branchAt !== "number" ||
+            !Number.isSafeInteger(body.branchAt) ||
+            body.branchAt < 0 ||
+            typeof body.branchFrom !== "string")) ||
         !validCodingImages(body.images) ||
         (body.forkFrom !== undefined &&
           (typeof body.forkFrom !== "string" ||
@@ -391,6 +396,9 @@ export function createApiApp({
                 : {}),
               ...(typeof body.branchFrom === "string"
                 ? { branchFrom: body.branchFrom }
+                : {}),
+              ...(typeof body.branchAt === "number"
+                ? { branchAt: body.branchAt }
                 : {}),
               prompt: body.prompt as string,
               ...((body.images as string[] | undefined)?.length

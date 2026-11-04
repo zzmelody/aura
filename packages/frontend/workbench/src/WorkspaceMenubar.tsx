@@ -42,7 +42,11 @@ export function WorkspaceMenubar({
           aria-label={sidebarVisible ? "收起侧栏" : "展开会话列表"}
           title="切换侧栏"
           aria-expanded={sidebarVisible}
-          onClick={toggleSidebar}
+          onClick={(event) => {
+            if (sidebarVisible)
+              event.currentTarget.focus({ preventScroll: true });
+            toggleSidebar();
+          }}
         >
           <PanelLeft size={16} />
         </button>

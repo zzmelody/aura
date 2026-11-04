@@ -1,6 +1,10 @@
+import { conversationSides } from "@aura/protocol/conversations";
 import type { CodingConversationInfo } from "@aura/protocol/types";
 
-/** Startup lists do not need to open every stored session log. */
+/**
+ * Startup lists do not need to open every stored session log. A conversation
+ * counts as running while its main session or any of its side chats runs.
+ */
 export async function conversationList(
   conversations: CodingConversationInfo[],
   options: {
@@ -12,11 +16,17 @@ export async function conversationList(
 ): Promise<CodingConversationInfo[]> {
   return Promise.all(
     conversations.map(async (conversation) => {
-      if (options.running(conversation.id))
+      const active = [
+        conversation.id,
+        ...(conversation.archivedAt === undefined
+          ? conversationSides(conversation).map((side) => side.id)
+          : []),
+      ].filter((id) => options.running(id));
+      if (active.length)
         return {
           ...conversation,
           lastTurnStatus: "running" as const,
-          ...(options.waitingForAnswer(conversation.id)
+          ...(active.some((id) => options.waitingForAnswer(id))
             ? { waitingForAnswer: true as const }
             : {}),
         };

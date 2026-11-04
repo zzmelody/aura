@@ -1,10 +1,15 @@
-import type { SessionId } from "@deepseek-ai/dsh-session";
+import type { SessionEvent, SessionId } from "@deepseek-ai/dsh-session";
 import { conversationPromptText } from "@aura/protocol/conversations";
 import type {
   SessionController,
   SessionHistoryRecord,
+  SessionWireEvent,
 } from "@deepseek-ai/dsh-api-session-controller";
-import type { CodingConversationInfo } from "@aura/protocol/types";
+import type {
+  CodingConversationInfo,
+  CodingTurnUsage,
+} from "@aura/protocol/types";
+import { turnTokenUsage } from "./usage.ts";
 import { agentFailure } from "../agent-failure.ts";
 import type {
   CodingFileDiff,
@@ -40,7 +45,7 @@ export async function readSessionEvents(
   sessionId: SessionId,
   signal: AbortSignal,
   maxPages = MAX_PAGES,
-): Promise<StoredEvent[] | undefined> {
+): Promise<SessionWireEvent[] | undefined> {
   const address = { kind: "session" as const, sessionId };
   const abort = new AbortController();
   const follow = controller.follow(
@@ -81,15 +86,7 @@ export async function readSessionEvents(
     hasMore = older.hasMore;
   }
   return records.flatMap((record) =>
-    record.type === "event"
-      ? [
-          {
-            type: record.event.type,
-            time: record.event.time,
-            data: record.event.data,
-          },
-        ]
-      : [],
+    record.type === "event" ? [record.event] : [],
   );
 }
 
@@ -113,7 +110,7 @@ export async function readSessionEventPage(
     minimumSeq?: number;
   } = {},
 ): Promise<{
-  events: StoredEvent[];
+  events: SessionWireEvent[];
   beforeSeq?: number;
   throughSeq: number;
   hasMore: boolean;
@@ -196,11 +193,7 @@ export async function readSessionEventPage(
       : records.slice(start).filter((record) => record.event.seq >= minimum);
   const beforeSeq = selected[0]?.event.seq;
   return {
-    events: selected.map(({ event }) => ({
-      type: event.type,
-      time: event.time,
-      data: event.data,
-    })),
+    events: selected.map(({ event }) => event),
     beforeSeq,
     throughSeq,
     hasMore:
@@ -213,8 +206,30 @@ export async function readSessionEventPage(
 /** One stored session event, as DSH's wire DTO carries it. */
 export interface StoredEvent {
   type: string;
+  seq?: number;
   time: number;
   data: unknown;
+  usage?: CodingTurnUsage;
+}
+
+/** Keep native event boundaries for exact usage on both cold and live history. */
+export function sessionHistoryTurns(
+  events: ReadonlyArray<SessionEvent | SessionWireEvent>,
+  live: boolean,
+): CodingHistoryTurn[] {
+  let start: number | undefined;
+  return historyTurns(
+    events.map((event, index) => {
+      if (event.type === "turn/start") start = index;
+      if (event.type !== "turn/end") return event;
+      const from = start;
+      start = undefined;
+      if (from === undefined) return event;
+      const usage = turnTokenUsage(events.slice(from, index + 1));
+      return usage ? { ...event, usage } : event;
+    }),
+    live,
+  );
 }
 
 /**
@@ -293,6 +308,10 @@ export function historyTurns(
       const reason = data.reason as
         { kind?: string; error?: { message?: string } } | undefined;
       current.endedAt = event.time;
+      if (reason?.kind === "completed" && event.usage)
+        emit({ type: "usage", usage: event.usage });
+      if (reason?.kind === "completed" && event.seq !== undefined)
+        current.endSeq = event.seq;
       current.status =
         reason?.kind === "completed"
           ? "complete"

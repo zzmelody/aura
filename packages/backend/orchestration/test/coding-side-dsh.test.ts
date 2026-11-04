@@ -55,6 +55,11 @@ test(
         await output.writeSSE({
           data: JSON.stringify({
             choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            usage: {
+              prompt_tokens: 23,
+              completion_tokens: 5,
+              total_tokens: 28,
+            },
           }),
         });
         await output.writeSSE({ data: "[DONE]" });
@@ -177,6 +182,48 @@ test(
       );
       assert.equal(paged.hasMore, false);
       assert.equal(typeof paged.throughSeq, "number");
+
+      // Branching from the first side reply must omit its later turn, while
+      // retaining the context the side inherited from its parent.
+      const branchAt = paged.turns[0]?.endSeq;
+      assert.equal(typeof branchAt, "number");
+      let endSeq: number | undefined;
+      let streamedUsage;
+      await host.coding(
+        {
+          sessionId: "branched-from-side",
+          projectId: space.id,
+          branchFrom: sideA,
+          branchAt,
+          prompt: "INDEPENDENT_REPLY",
+          mode: "demo",
+        },
+        (event) => {
+          if (event.type === "turn-boundary") endSeq = event.endSeq;
+          if (event.type === "usage") streamedUsage = event.usage;
+        },
+        AbortSignal.timeout(60_000),
+      );
+      const branchedRequest = JSON.stringify(requests.at(-1));
+      assert.match(branchedRequest, /PARENT_ONLY_CONTEXT/u);
+      assert.match(branchedRequest, /SIDE_ONLY_CONTEXT/u);
+      assert.doesNotMatch(branchedRequest, /SIDE_AFTER_RESTART/u);
+      const branch = await host.codingHistory("branched-from-side", {
+        page: true,
+      });
+      assert.equal(typeof endSeq, "number");
+      const usage = branch.turns[0]?.events.find(
+        (event) => event.type === "usage",
+      )?.usage;
+      assert.equal(usage?.totalTokens, 28);
+      assert.equal(usage.uncachedInputTokens, 23);
+      assert.equal(usage.outputTokens, 5);
+      assert.deepEqual(streamedUsage, usage);
+      assert.deepEqual(
+        branch.turns.map((item) => [item.prompt, item.endSeq]),
+        [["INDEPENDENT_REPLY", endSeq]],
+      );
+      await host.closeCodingConversation("branched-from-side");
 
       // Cold closure works even if no side agent has been resumed in this host.
       assert.equal((await host.closeCodingSide(blankSide)).closed, true);

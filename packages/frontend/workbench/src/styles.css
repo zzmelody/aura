@@ -1448,9 +1448,38 @@ body {
   min-width: 0;
   flex: 1;
 }
-.workspace-deck.split > .assistant-area {
-  flex: 0 0 clamp(330px, 28vw, 420px);
+.workspace-deck[data-workflow-layout] {
+  --workspace-sidebar-progress: 1;
+  position: relative;
+  overflow: clip;
+  transition: --workspace-sidebar-progress var(--workspace-sidebar-duration)
+    var(--workspace-motion-ease);
+}
+.workspace-deck[data-assistant-closed] {
+  --workspace-sidebar-progress: 0;
+}
+.workspace-deck[data-workflow-layout] > .assistant-area,
+.workspace-deck[data-workflow-layout="stacked"] > .flow-area {
+  transition: display var(--workspace-sidebar-duration) allow-discrete;
+}
+.workspace-deck[data-workflow-layout="split"] > .assistant-area {
+  --workflow-assistant-width: clamp(330px, 28vw, 420px);
+  flex: 0 0 var(--workflow-assistant-width);
+  margin-inline-end: calc(
+    (var(--workspace-sidebar-progress) - 1) * var(--workflow-assistant-width)
+  );
   border-left: 1px solid var(--border);
+}
+.workspace-deck[data-workflow-layout="stacked"] > .assistant-area {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc((1 - var(--workspace-sidebar-progress)) * 100%);
+  width: 100%;
+  background: var(--background);
+}
+.workspace-deck[data-assistant-closed] > .assistant-area,
+.workspace-deck[data-workflow-layout="stacked"] > .flow-area[inert] {
+  display: none;
 }
 .assistant-heading {
   display: flex;
@@ -1669,28 +1698,6 @@ body {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.workspace-status {
-  height: 24px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 0 14px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 9px;
-  background: var(--surface);
-}
-.workspace-status > span {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.workspace-status .session-status {
-  width: 4px;
-  height: 4px;
-}
 .workspace-notice {
   margin: 8px 12px;
   border: 1px solid var(--danger);
@@ -1789,9 +1796,6 @@ body {
   }
   .chat-empty {
     margin-top: 24px;
-  }
-  .workspace-status {
-    font-size: 8px;
   }
 }
 @media (max-width: 400px) {

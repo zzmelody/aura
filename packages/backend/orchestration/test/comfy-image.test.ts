@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { Hono } from "hono";
 import sharp from "sharp";
 import { GeneratedArtifacts } from "../src/artifacts/generated.ts";
 import { prepareWorkflow, isolateComfyLaunch } from "../src/local-ai/comfy.ts";
@@ -139,9 +140,10 @@ test("Flow HTTP admits raw image uploads and returns a reusable asset ID", async
       .png()
       .toBuffer();
     assert(large.length > 256 * 1024);
+    const mounted = new Hono().route("/flows", app);
     assert.equal(
       (
-        await app.request("/assets/images", {
+        await mounted.request("/flows/assets/images", {
           method: "POST",
           headers: { "Content-Type": "image/png" },
           body: new Uint8Array(large),
@@ -149,6 +151,24 @@ test("Flow HTTP admits raw image uploads and returns a reusable asset ID", async
       ).status,
       201,
     );
+    const oversized = await mounted.request("/flows/assets/images", {
+      method: "POST",
+      headers: { "Content-Type": "image/png" },
+      body: new Uint8Array(32 * 1024 * 1024 + 1),
+    });
+    assert.equal(oversized.status, 413);
+    assert.deepEqual(await oversized.json(), {
+      message: "图片不能超过 32 MB。",
+    });
+    const oversizedFlow = await mounted.request("/flows/fixture/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: "x".repeat(256 * 1024) }),
+    });
+    assert.equal(oversizedFlow.status, 413);
+    assert.deepEqual(await oversizedFlow.json(), {
+      message: "Flow 请求过大。",
+    });
     assert.equal(
       (
         await app.request("/assets/images", {

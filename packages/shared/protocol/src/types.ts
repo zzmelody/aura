@@ -607,7 +607,7 @@ export interface CodingConversationInfo {
   sideConversations?: CodingSideConversationInfo[];
   modelConfig?: ConversationModelConfig;
   sideModelConfig?: ConversationModelConfig;
-  /** Source of an explicit continuation in a different project. */
+  /** Source of a fork or an explicit continuation in another project. */
   sourceSessionId?: string;
   /**
    * Outcome of the last stored turn, omitted when the conversation has no
@@ -625,8 +625,19 @@ export interface PersonalAssistantInfo {
 }
 
 /** One entry in the coding activity stream. */
+export interface CodingTurnUsage {
+  totalTokens: number;
+  uncachedInputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+}
+
 export type CodingActivity =
   | CodingCapabilityActivity
+  | { type: "usage"; usage: CodingTurnUsage }
+  | { type: "turn-boundary"; endSeq: number }
   | ({ type: "workflow" } & ChatWorkflowStart)
   | {
       type: "tool";
@@ -684,6 +695,8 @@ export interface CodingHistoryTurn {
   prompt: string;
   startedAt: number;
   endedAt?: number;
+  /** DSH log position of this completed turn, used to fork its context. */
+  endSeq?: number;
   status: "running" | "complete" | "stopped" | "error";
   error?: string;
   /** The same events a live turn streams, in log order. */

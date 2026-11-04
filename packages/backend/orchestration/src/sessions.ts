@@ -263,6 +263,17 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
           const session = ctx.sessions.get(sessionId);
           if (session) await ctx.sessions.flush(session);
         }
+      } catch (error) {
+        if (
+          !(error instanceof FlowError) &&
+          timeout.aborted &&
+          stop.reason === timeout.reason
+        )
+          throw new FlowError(
+            `Agent 步骤执行超时（${timeoutMs / 1000} 秒）。`,
+            504,
+          );
+        throw error;
       } finally {
         for (const dispose of agentScopeDisposers.reverse()) dispose();
       }

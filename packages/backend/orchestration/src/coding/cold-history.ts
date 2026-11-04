@@ -10,7 +10,7 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import { legacyConversationTurns } from "@aura/protocol/conversations";
 import type { CodingHistoryPage } from "@aura/protocol/types";
 import { CodingConversationIndex, codingDomainSpec } from "./index-record.ts";
-import { historyTurns } from "./history.ts";
+import { sessionHistoryTurns } from "./history.ts";
 import {
   storedHistoryPage,
   type HistoryCursor,
@@ -119,7 +119,7 @@ export async function coldCodingHistory(
             !page.hasMore ? (record?.history ?? []) : [],
             record?.createdAt ?? 0,
           ),
-          ...historyTurns(page.events, false),
+          ...sessionHistoryTurns(page.events, false),
         ],
         running: false,
       };

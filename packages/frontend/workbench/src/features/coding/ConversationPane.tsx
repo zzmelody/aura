@@ -33,7 +33,6 @@ import {
   File as FileIcon,
   FileArchive,
   FileBraces,
-  FileCheck,
   FileCode,
   FileCodeCorner,
   FileDiff,
@@ -76,12 +75,14 @@ import type {
   FlowRun,
   FlowMode,
   CodingFileDiff,
+  CodingHistoryTurn,
   CodingQuestionAnswer,
 } from "@aura/protocol/types";
 import { WorkflowRichText } from "../../screens/WorkflowValue";
 import { ChatModelControls } from "../../screens/ChatModelControls";
 import { modelCatalogs } from "../../model-catalog-store";
 import { WorkbenchMenu } from "../../WorkbenchMenu";
+import { TurnActions } from "./TurnActions.tsx";
 import "./composer.css";
 import { writeClipboard } from "../../clipboard";
 import type { ChatImage } from "@aura/core/types";
@@ -94,6 +95,7 @@ import {
   steerCodingTurn,
   stopCodingTurn,
   prepareCodingTurn,
+  waitForCodingTurnEnd,
 } from "./api";
 import { fileDiff } from "./diff";
 import { retainConversations } from "./conversation-cache";
@@ -110,17 +112,29 @@ import {
   answerTurn,
   applyTurnEvent,
   finishTurn,
-  hasSummary,
   newTurn,
-  recapParts,
+  pendingQuestion,
+  reconcileFinishedTurn,
   summarizeTurn,
   summarizeToolGroup,
   describeToolGroup,
+  turnPresentation,
   turnsFromHistory,
   type AskedQuestion,
   type ToolEntry,
   type Turn,
 } from "./turns";
+
+type GuidanceState = {
+  phase: "sending" | "submitted" | "checking" | "retry" | "ready";
+  turnId: string;
+};
+
+type ConversationStream = {
+  controller: AbortController;
+  turnId: string;
+  reconcile(recorded: CodingHistoryTurn | undefined, checkedAt: number): void;
+};
 
 /** One file-change block inside an expanded step: path header, then lines. */
 function DiffCard({ diff }: { diff: CodingFileDiff }) {
@@ -292,6 +306,7 @@ function ToolGroup({
     <section
       className={`coding-tool-group ${summary.state}`}
       aria-label="工具调用组"
+      data-coding-process-record
     >
       <button
         type="button"
@@ -414,7 +429,7 @@ function ApprovalCard({
   return (
     <div
       ref={root}
-      className="coding-approval"
+      className="coding-decision approval"
       role="region"
       aria-label="授权请求"
       aria-busy={sending}
@@ -458,17 +473,17 @@ function ApprovalCard({
         void answer(event.key === "Enter" ? labels.allow : labels.reject);
       }}
     >
-      <div className="coding-approval-strip">
-        <span className="coding-approval-dot" aria-hidden="true" />
+      <div className="coding-decision-strip">
+        <span className="coding-decision-dot" aria-hidden="true" />
         等待审批
       </div>
-      <div className="coding-approval-body">
-        <div className="coding-approval-headline">{question.question}</div>
+      <div className="coding-decision-body">
+        <div className="coding-decision-headline">{question.question}</div>
         {question.detail ? (
-          <div className="coding-approval-detail">{question.detail}</div>
+          <div className="coding-decision-detail">{question.detail}</div>
         ) : null}
       </div>
-      <div className="coding-approval-actions">
+      <div className="coding-decision-actions">
         <button
           type="button"
           className="reject"
@@ -487,7 +502,7 @@ function ApprovalCard({
         </button>
       </div>
       {error ? (
-        <p className="coding-approval-error" role="alert">
+        <p className="coding-decision-error" role="alert">
           {error}
         </p>
       ) : null}
@@ -495,27 +510,43 @@ function ApprovalCard({
   );
 }
 
-/** One question batch from the agent: open with a form, or its answer once sent. */
+/** The answer recorded for one question of a batch. */
+function answerText(asked: AskedQuestion, id: string) {
+  const answer = asked.answered?.find((item) => item.id === id);
+  if (!answer) return "未回答";
+  return (
+    [...answer.selected, ...(answer.custom ? [answer.custom] : [])].join(
+      "、",
+    ) || "已跳过"
+  );
+}
+
+/** Whether the batch is a tool authorization rather than a question. */
+function isApproval(asked: AskedQuestion) {
+  return asked.questions.some((item) => item.kind === "approval");
+}
+
+/**
+ * The question form. The card above the composer shows it with the shared
+ * decision chrome; the inline fallback of a second pending batch shows it with
+ * its own surface.
+ */
 function QuestionCard({
   asked,
-  live,
   onAnswer,
+  bare = false,
 }: {
   asked: AskedQuestion;
-  /** False once the turn ended; the agent is no longer waiting. */
-  live: boolean;
   onAnswer(answers: CodingQuestionAnswer[]): Promise<void>;
+  /** Inside the composer card, which already draws the surface and strip. */
+  bare?: boolean;
 }) {
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
-  const done = asked.answered !== undefined;
-  const approval = asked.questions.some((item) => item.kind === "approval");
+  const waiting = useRef(false);
   const plan = asked.questions.some((item) => item.intent);
-  // Like DSH, the decision happens in the composer card; the transcript keeps
-  // only one quiet line recording what was asked and how it was settled.
-  if (approval) return <ApprovalNote asked={asked} live={live} />;
   const toggle = (id: string, label: string, multi: boolean) =>
     setSelected((current) => {
       const now = current[id] ?? [];
@@ -529,6 +560,8 @@ function QuestionCard({
       };
     });
   const submit = async () => {
+    if (waiting.current) return;
+    waiting.current = true;
     setSending(true);
     setError("");
     try {
@@ -544,41 +577,21 @@ function QuestionCard({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      waiting.current = false;
       setSending(false);
     }
   };
-  const answerText = (id: string) => {
-    const answer = asked.answered?.find((item) => item.id === id);
-    if (!answer) return "未回答";
-    return (
-      [...answer.selected, ...(answer.custom ? [answer.custom] : [])].join(
-        "、",
-      ) || "已跳过"
-    );
-  };
   return (
     <section
-      className={`coding-question${done ? " answered" : ""}`}
+      className={`coding-question${bare ? " bare" : ""}`}
       aria-label="模型的提问"
     >
       <h3>
         <MessageCircleQuestion size={14} />
-        {done
-          ? approval
-            ? "已处理授权"
-            : plan
-              ? "已审阅计划"
-              : "已回答"
-          : !live
-            ? "提问已结束"
-            : approval
-              ? "需要你授权"
-              : plan
-                ? "请审阅计划"
-                : "需要你的决定"}
+        {plan ? "请审阅计划" : "需要你的决定"}
       </h3>
       {asked.questions.map((question) => (
-        <fieldset key={question.id} disabled={done || !live || sending}>
+        <fieldset key={question.id} disabled={sending}>
           <legend>
             {question.header ? <span>{question.header}</span> : null}
             {question.question}
@@ -590,74 +603,153 @@ function QuestionCard({
               <WorkflowRichText text={question.detail} />
             </div>
           ) : null}
-          {done ? (
-            <p className="coding-question-answer">{answerText(question.id)}</p>
-          ) : (
-            <>
-              {question.options?.map((option) => (
-                <label key={option.label} className="coding-question-option">
-                  <input
-                    type={question.multiSelect ? "checkbox" : "radio"}
-                    name={`${asked.questionId}-${question.id}`}
-                    checked={(selected[question.id] ?? []).includes(
-                      option.label,
-                    )}
-                    onChange={() =>
-                      toggle(question.id, option.label, !!question.multiSelect)
-                    }
-                  />
-                  <span>
-                    {option.label}
-                    {question.intent?.approve === option.label ? (
-                      <small>批准后开始实施</small>
-                    ) : null}
-                    {option.description ? (
-                      <small>{option.description}</small>
-                    ) : null}
-                  </span>
-                </label>
-              ))}
-              {/* An approval is grant-or-refuse; the backend ignores text. */}
-              {question.kind === "approval" ? null : (
-                <input
-                  className="coding-question-custom"
-                  aria-label={`${question.question} 的其他回答`}
-                  placeholder={
-                    question.intent
-                      ? "或者写下要修改的地方"
-                      : question.options?.length
-                        ? "或者写下你的回答"
-                        : "写下你的回答"
-                  }
-                  value={custom[question.id] ?? ""}
-                  onChange={(event) =>
-                    setCustom((current) => ({
-                      ...current,
-                      [question.id]: event.target.value,
-                    }))
-                  }
-                />
-              )}
-            </>
+          {question.options?.map((option) => (
+            <label key={option.label} className="coding-question-option">
+              <input
+                type={question.multiSelect ? "checkbox" : "radio"}
+                name={`${asked.questionId}-${question.id}`}
+                checked={(selected[question.id] ?? []).includes(option.label)}
+                onChange={() =>
+                  toggle(question.id, option.label, !!question.multiSelect)
+                }
+              />
+              <span>
+                {option.label}
+                {question.intent?.approve === option.label ? (
+                  <small>批准后开始实施</small>
+                ) : null}
+                {option.description ? (
+                  <small>{option.description}</small>
+                ) : null}
+              </span>
+            </label>
+          ))}
+          {/* An approval is grant-or-refuse; the backend ignores text. */}
+          {question.kind === "approval" ? null : (
+            <input
+              className="coding-question-custom"
+              aria-label={`${question.question} 的其他回答`}
+              placeholder={
+                question.intent
+                  ? "或者写下要修改的地方"
+                  : question.options?.length
+                    ? "或者写下你的回答"
+                    : "写下你的回答"
+              }
+              value={custom[question.id] ?? ""}
+              onChange={(event) =>
+                setCustom((current) => ({
+                  ...current,
+                  [question.id]: event.target.value,
+                }))
+              }
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+            />
           )}
         </fieldset>
       ))}
-      {!done && live ? (
-        <div className="coding-question-actions">
-          <button disabled={sending} onClick={() => void submit()}>
-            {sending ? (
-              <LoaderCircle size={13} className="coding-spin" />
-            ) : null}
-            发送回答
-          </button>
-        </div>
-      ) : null}
+      <div className="coding-question-actions">
+        <button disabled={sending} onClick={() => void submit()}>
+          {sending ? <LoaderCircle size={13} className="coding-spin" /> : null}
+          发送回答
+        </button>
+      </div>
       {error ? (
         <p className="coding-error" role="alert">
           {error}
         </p>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * The transcript trace of one question batch. As in DSH, the decision itself
+ * happens in the card above the composer; here the batch stays as one line
+ * that expands to the questions and the answers that were recorded.
+ */
+function QuestionNote({
+  asked,
+  live,
+}: {
+  asked: AskedQuestion;
+  live: boolean;
+}) {
+  const settled = asked.answered !== undefined;
+  const summary = asked.questions
+    .map((question) => question.question)
+    .join("；");
+  return (
+    <details className="coding-question-note">
+      <summary title={summary}>
+        <MessageCircleQuestion size={14} aria-hidden="true" />
+        <span className="coding-question-note-state">
+          {settled ? "已回答" : live ? "等待你的回答" : "提问已结束"}
+        </span>
+        <span className="coding-question-note-question">{summary}</span>
+        <ChevronDown
+          size={12}
+          className="coding-question-note-chevron"
+          aria-hidden="true"
+        />
+      </summary>
+      <dl className="coding-question-note-body">
+        {asked.questions.map((question) => (
+          <div key={question.id}>
+            <dt>
+              {question.header ? `${question.header}：` : ""}
+              {question.question}
+            </dt>
+            <dd>{answerText(asked, question.id)}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
+/**
+ * A pending question above the composer, after DSH: it takes over the input
+ * position, so the draft stays and sending waits until it is answered.
+ */
+function QuestionDock({
+  asked,
+  active,
+  stopControl,
+  onAnswer,
+}: {
+  asked: AskedQuestion;
+  /** False while the pane is hidden; then the card must not take focus. */
+  active: boolean;
+  stopControl: React.ReactNode;
+  onAnswer(answers: CodingQuestionAnswer[]): Promise<void>;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (active) root.current?.focus();
+  }, [active, asked.questionId]);
+  return (
+    <div
+      ref={root}
+      className="coding-decision question"
+      role="region"
+      aria-label="等待你的回答"
+      tabIndex={-1}
+    >
+      <div className="coding-decision-strip">
+        <span className="coding-decision-dot" aria-hidden="true" />
+        等待你的回答
+        {stopControl}
+      </div>
+      <div className="coding-decision-body">
+        <QuestionCard asked={asked} onAnswer={onAnswer} bare />
+      </div>
+    </div>
   );
 }
 
@@ -724,33 +816,45 @@ function DeliverableItem({
 
 const TurnView = memo(function TurnView({
   turn,
+  latest,
   visible,
   directory,
   endpoint,
+  dockedQuestionId,
   onAnswer,
   onApplyFlow,
   onRepeatFlow,
+  onForkTurn,
 }: {
   turn: Turn;
+  latest: boolean;
   visible: boolean;
   /** Runtime endpoint; sent images are served from it. */
   endpoint: string;
   /** Project directory; deliverable paths resolve against it. */
   directory: string;
-  onAnswer(
+  /** The batch answered in the card above the composer, if any. */
+  dockedQuestionId?: string;
+  onAnswer?(
     turnId: string,
     questionId: string,
     answers: CodingQuestionAnswer[],
   ): Promise<void>;
   onApplyFlow?(code: string): void;
   onRepeatFlow?(run: FlowRun): void;
+  onForkTurn?(endSeq: number): void;
 }) {
   const running = turn.status === "running";
+  const endSeq = turn.endSeq;
   const waiting = turn.questions.some((item) => !item.answered);
   const [open, setOpen] = useState(false);
+  const [processOpen, setProcessOpen] = useState(false);
+  const [processFocused, setProcessFocused] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
     {},
   );
+  const { finalReplyIndex, canCollapse } = turnPresentation(turn);
+  const processVisible = !canCollapse || processOpen || processFocused;
   const groups = turn.timeline.filter((item) => item.kind === "tools");
   const allExpanded =
     (!turn.progress?.total || open) &&
@@ -761,6 +865,12 @@ const TurnView = memo(function TurnView({
   );
   const workflows = new Map(turn.workflows?.map((run) => [run.runId, run]));
   const hasSteps = turn.tools.length > 0 || !!turn.progress?.total;
+  const foldedTools = processVisible
+    ? undefined
+    : summarizeToolGroup(turn.tools);
+  const expandable = canCollapse || hasSteps;
+  const expanded = canCollapse ? processVisible : allExpanded;
+  const missingFinalReply = turn.status === "complete" && finalReplyIndex < 0;
   const stateLabel = running
     ? turn.waitingForService
       ? "正在连接本地服务，可停止等待"
@@ -782,7 +892,19 @@ const TurnView = memo(function TurnView({
         ? CircleStop
         : CircleX;
   return (
-    <article className="coding-turn">
+    <article
+      className="coding-turn"
+      data-actions-reveal={latest ? "always" : "hover"}
+      onFocusCapture={(event) => {
+        setProcessFocused(
+          event.target.closest("[data-coding-process-record]") !== null,
+        );
+      }}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget))
+          setProcessFocused(false);
+      }}
+    >
       {turn.prompt ? (
         <div className="coding-prompt">
           <MaskedUserText text={turn.prompt} />
@@ -805,38 +927,61 @@ const TurnView = memo(function TurnView({
           ))}
         </div>
       ) : null}
-      {running || hasSteps || turn.status !== "complete" ? (
-        <div className="coding-work" aria-live="polite">
+      {canCollapse ||
+      hasSteps ||
+      turn.status !== "complete" ||
+      missingFinalReply ? (
+        <div className="coding-work">
+          <span className="sr-only" role="status">
+            {stateLabel}
+          </span>
           <button
             type="button"
             className={`coding-process ${turn.status}`}
-            aria-expanded={hasSteps ? allExpanded : undefined}
-            disabled={!hasSteps}
-            data-open={(hasSteps && allExpanded) || undefined}
-            title={`${stateLabel} · ${turn.tools.length} 次工具调用`}
-            onClick={() => {
-              setOpen(!allExpanded);
-              setExpandedGroups({});
+            aria-expanded={expandable ? expanded : undefined}
+            disabled={!expandable}
+            data-open={(expandable && expanded) || undefined}
+            title={
+              expandable
+                ? `${expanded ? "收起" : "展开"}${canCollapse ? "执行记录" : "工具明细"}`
+                : undefined
+            }
+            onClick={(event) => {
+              if (canCollapse) {
+                event.currentTarget.focus();
+                setProcessOpen(!processVisible);
+              } else {
+                setOpen(!allExpanded);
+                setExpandedGroups({});
+              }
             }}
           >
-            {turn.status !== "complete" ? (
-              <StateIcon
-                size={15}
-                className={`coding-process-icon${running && !waiting ? " coding-spin" : ""}`}
-                aria-hidden="true"
-              />
-            ) : null}
+            <StateIcon
+              size={15}
+              className={`coding-process-icon${running && !waiting ? " coding-spin" : ""}`}
+              aria-hidden="true"
+            />
             <span className="coding-process-label">
-              {turn.status !== "complete" ? (
-                <span className="coding-process-state">{stateLabel} · </span>
-              ) : (
-                "用时 "
-              )}
-              <span className="coding-process-number">
-                <TurnDuration turn={turn} visible={visible} />
-              </span>
+              <span className="coding-process-state">{stateLabel}</span>
+              {running || turn.endedAt !== undefined ? (
+                <span className="coding-process-number">
+                  {" · "}
+                  <TurnDuration turn={turn} visible={visible} />
+                </span>
+              ) : null}
+              {turn.tools.length ? ` · ${turn.tools.length} 次工具调用` : null}
+              {foldedTools?.failed ? (
+                <span className="coding-tool-group-failed">
+                  {` · ${foldedTools.failed} 项失败`}
+                </span>
+              ) : null}
+              {foldedTools?.stopped ? (
+                <span className="coding-tool-group-stopped">
+                  {` · ${foldedTools.stopped} 项中断`}
+                </span>
+              ) : null}
             </span>
-            {hasSteps ? (
+            {expandable ? (
               <ChevronDown
                 size={14}
                 className="coding-process-chevron"
@@ -844,35 +989,43 @@ const TurnView = memo(function TurnView({
               />
             ) : null}
           </button>
-          {open && turn.progress && turn.progress.total > 0 ? (
+          {processVisible &&
+          (canCollapse || open) &&
+          turn.progress &&
+          turn.progress.total > 0 ? (
             <div className="coding-process-body">
-              {turn.progress && turn.progress.total > 0 ? (
-                <div className="coding-progress">
-                  <ListTodo size={14} aria-hidden="true" />
-                  <div
-                    className="coding-progress-bar"
-                    role="progressbar"
-                    aria-label="任务进度"
-                    aria-valuemin={0}
-                    aria-valuemax={turn.progress.total}
-                    aria-valuenow={turn.progress.done}
-                  >
-                    <span
-                      style={{
-                        width: `${(turn.progress.done / turn.progress.total) * 100}%`,
-                      }}
-                    />
-                  </div>
-                  <span>
-                    {turn.progress.done}/{turn.progress.total} 项任务
-                  </span>
+              <div className="coding-progress">
+                <ListTodo size={14} aria-hidden="true" />
+                <div
+                  className="coding-progress-bar"
+                  role="progressbar"
+                  aria-label="任务进度"
+                  aria-valuemin={0}
+                  aria-valuemax={turn.progress.total}
+                  aria-valuenow={turn.progress.done}
+                >
+                  <span
+                    style={{
+                      width: `${(turn.progress.done / turn.progress.total) * 100}%`,
+                    }}
+                  />
                 </div>
-              ) : null}
+                <span>
+                  {turn.progress.done}/{turn.progress.total} 项任务
+                </span>
+              </div>
             </div>
           ) : null}
         </div>
       ) : null}
+      {!running && processVisible ? (
+        <ChangedFilesView turn={turn} directory={directory} />
+      ) : null}
       {turn.timeline.map((item, index) => {
+        const isProcess =
+          item.kind === "tools" ||
+          (item.kind === "text" && index !== finalReplyIndex);
+        if (isProcess && !processVisible) return null;
         if (item.kind === "notice")
           return (
             <p key={index} className="coding-notice" role="status">
@@ -898,7 +1051,11 @@ const TurnView = memo(function TurnView({
           );
         if (item.kind === "text")
           return item.text.trim() ? (
-            <div key={index} className="coding-reply">
+            <div
+              key={index}
+              className="coding-reply"
+              data-coding-process-record={isProcess || running || undefined}
+            >
               <WorkflowRichText text={item.text} />
             </div>
           ) : null;
@@ -924,23 +1081,32 @@ const TurnView = memo(function TurnView({
         }
         if (item.kind === "question") {
           const asked = questions.get(item.questionId);
-          // Pending approvals are actionable only in the card above the input.
-          if (
-            !asked ||
-            (!asked.answered &&
-              running &&
-              asked.questions.some((q) => q.kind === "approval"))
-          )
-            return null;
+          if (!asked) return null;
+          // The pending batch is answered in the card above the composer, so
+          // its transcript entry stays empty until the decision is recorded.
+          if (running && item.questionId === dockedQuestionId) return null;
+          if (isApproval(asked))
+            return (
+              <ApprovalNote
+                key={item.questionId}
+                asked={asked}
+                live={running}
+              />
+            );
+          // A second open batch keeps its own inline form: only one card can
+          // own the composer, and an unanswerable question would be a dead end.
+          if (running && asked.answered === undefined && onAnswer)
+            return (
+              <QuestionCard
+                key={item.questionId}
+                asked={asked}
+                onAnswer={(answers) =>
+                  onAnswer(turn.id, asked.questionId, answers)
+                }
+              />
+            );
           return (
-            <QuestionCard
-              key={item.questionId}
-              asked={asked}
-              live={running}
-              onAnswer={(answers) =>
-                onAnswer(turn.id, asked.questionId, answers)
-              }
-            />
+            <QuestionNote key={item.questionId} asked={asked} live={running} />
           );
         }
         if (item.kind === "workflow") {
@@ -985,15 +1151,24 @@ const TurnView = memo(function TurnView({
           </ul>
         </section>
       ) : null}
-      {!running ? <TurnSummaryView turn={turn} directory={directory} /> : null}
+      {turn.status === "complete" ? (
+        <TurnActions
+          reply={turn.reply}
+          endedAt={turn.endedAt}
+          usage={turn.usage}
+          onFork={
+            onForkTurn && endSeq !== undefined
+              ? () => onForkTurn(endSeq)
+              : undefined
+          }
+        />
+      ) : null}
     </article>
   );
 });
 
 /**
- * End-of-turn recap, after DSH's changed-files card: one line of what it did
- * and how long it took, then the files it changed. A single file is just the
- * header; more files fold after four rows.
+ * The recorded file changes have their own list inside the execution details.
  */
 const COLLAPSED_FILES = 4;
 
@@ -1151,7 +1326,7 @@ function RecapFile({
   );
 }
 
-function TurnSummaryView({
+function ChangedFilesView({
   turn,
   directory,
 }: {
@@ -1159,22 +1334,10 @@ function TurnSummaryView({
   directory: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const summary = useMemo(() => summarizeTurn(turn, fileDiff), [turn]);
-  if (!hasSummary(summary)) return null;
-  const elapsed = (turn.endedAt ?? Date.now()) - turn.startedAt;
-  const work = recapParts(summary);
-  const totals = summary.files.reduce(
-    (sum, file) => ({
-      added: sum.added + file.added,
-      removed: sum.removed + file.removed,
-    }),
-    { added: 0, removed: 0 },
-  );
-  const foldable = summary.files.length > COLLAPSED_FILES;
-  const files =
-    foldable && !expanded
-      ? summary.files.slice(0, COLLAPSED_FILES)
-      : summary.files;
+  const { files } = useMemo(() => summarizeTurn(turn, fileDiff), [turn]);
+  if (!files.length) return null;
+  const foldable = files.length > COLLAPSED_FILES;
+  const shown = foldable && !expanded ? files.slice(0, COLLAPSED_FILES) : files;
   const diffsByPath = new Map<string, CodingFileDiff[]>();
   for (const tool of turn.tools)
     for (const diff of tool.diffs ?? []) {
@@ -1182,49 +1345,25 @@ function TurnSummaryView({
       list.push(diff);
       diffsByPath.set(diff.path, list);
     }
-  // Every changed file has its own row below, so the header names the count
-  // and keeps the rest of the work and the time on the quiet second line.
-  const changed = summary.files.length > 0;
-  const title = changed
-    ? `改动了 ${summary.files.length} 个文件`
-    : (work[0] ?? `${summary.steps} 次操作`);
-  // The title already says what it changed (or the first thing it did).
-  const rest = changed
-    ? work.filter((part) => !part.startsWith("改动 "))
-    : work.slice(1);
-  const line = [...rest, `用时 ${duration(elapsed)}`].join(" · ");
-  const HeaderIcon = changed ? FileCheck : Wrench;
   return (
-    <section className="coding-recap" aria-label="本轮小结">
-      <div className="coding-recap-header">
-        <span className="coding-recap-tile" aria-hidden="true">
-          <HeaderIcon size={18} />
-        </span>
-        <span className="coding-recap-titles">
-          <span className="coding-recap-title">{title}</span>
-          <span className="coding-recap-line">{line}</span>
-        </span>
-        {summary.files.length ? (
-          <span className="coding-recap-stat">
-            <span className="coding-diff-added">+{totals.added}</span>
-            <span className="coding-diff-removed">-{totals.removed}</span>
-          </span>
-        ) : null}
-      </div>
-      {files.length ? (
-        <ul className="coding-recap-files">
-          {files.map((file) => (
-            <RecapFile
-              key={file.path}
-              path={file.path}
-              added={file.added}
-              removed={file.removed}
-              diffs={diffsByPath.get(file.path) ?? []}
-              directory={directory}
-            />
-          ))}
-        </ul>
-      ) : null}
+    <section
+      className="coding-recap"
+      aria-label="文件改动"
+      data-coding-process-record
+    >
+      <h3 className="coding-recap-title">文件改动</h3>
+      <ul className="coding-recap-files">
+        {shown.map((file) => (
+          <RecapFile
+            key={file.path}
+            path={file.path}
+            added={file.added}
+            removed={file.removed}
+            diffs={diffsByPath.get(file.path) ?? []}
+            directory={directory}
+          />
+        ))}
+      </ul>
       {foldable ? (
         <button
           type="button"
@@ -1232,7 +1371,7 @@ function TurnSummaryView({
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? "收起" : `全部 ${summary.files.length} 个文件`}
+          {expanded ? "收起" : `全部 ${files.length} 个文件`}
           <ChevronDown
             size={14}
             aria-hidden="true"
@@ -1289,6 +1428,8 @@ export function ConversationPane({
   sessionId,
   forkFrom,
   branchFrom,
+  branchAt,
+  onForkTurn,
   history,
   historyTime = 0,
   context,
@@ -1333,6 +1474,8 @@ export function ConversationPane({
   /** The parent whose context seeds the side chat's first turn only. */
   forkFrom?: string;
   branchFrom?: string;
+  branchAt?: number;
+  onForkTurn?(endSeq: number): void;
   history?: ChatMessage[];
   historyTime?: number;
   context?: string;
@@ -1370,7 +1513,9 @@ export function ConversationPane({
   onTurns?(turns: readonly Turn[]): void;
 }) {
   const [turns, setTurns] = useState<Record<string, Turn[]>>({});
-  const draftKey = sessionId ?? "draft";
+  const draftKey =
+    sessionId ??
+    (branchFrom ? `fork:${branchFrom}:${branchAt ?? "latest"}` : "draft");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const draft = drafts[draftKey] ?? initialDraft ?? "";
   const setDraft = useCallback(
@@ -1424,19 +1569,19 @@ export function ConversationPane({
    * conversations, so a single controller would let "stop" in one
    * conversation abort another one's turn.
    */
-  const controllers = useRef(new Map<string, AbortController>());
-  const sending = useRef(new Set<string>());
+  const streams = useRef(new Map<string, ConversationStream>());
+  const sending = useRef(new Map<string, AbortController>());
   const [stopping, setStopping] = useState(false);
-  const [steering, setSteering] = useState(false);
+  const guidanceRequests = useRef(new Map<string, AbortController>());
+  const [guidance, setGuidance] = useState<
+    Record<string, GuidanceState | undefined>
+  >({});
+  const guidanceState = sessionId ? guidance[sessionId] : undefined;
+  const steering =
+    guidanceState?.phase === "sending" || guidanceState?.phase === "checking";
   const transcript = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLDivElement>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
-    const textarea = editor.current;
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  }, [draft]);
 
   const imported = useMemo(
     () =>
@@ -1449,6 +1594,36 @@ export function ConversationPane({
     [history, historyTime, sessionId],
   );
   const shown = sessionId ? (turns[sessionId] ?? imported) : noTurns;
+  // Only the oldest open batch in this conversation owns the dock.
+  const pending = useMemo(
+    () => (readOnly ? undefined : pendingQuestion(shown)),
+    [readOnly, shown],
+  );
+  const questionDocked = pending !== undefined && !isApproval(pending.asked);
+  useLayoutEffect(() => {
+    const textarea = editor.current;
+    if (!textarea || questionDocked) return;
+    const fit = () => {
+      // A hidden pane measures 0; keep the CSS minimum instead of 0px.
+      if (!textarea.clientWidth) {
+        textarea.style.height = "";
+        return;
+      }
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    };
+    fit();
+    // A side pane can first measure while it is still sliding open and very
+    // narrow; re-fit when its width settles so the height does not stay huge.
+    let width = textarea.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (textarea.clientWidth === width) return;
+      width = textarea.clientWidth;
+      fit();
+    });
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, [draft, questionDocked]);
   const windowEnd =
     historyWindow && historyWindow.id === sessionId
       ? Math.min(historyWindow.end, shown.length)
@@ -1542,7 +1717,7 @@ export function ConversationPane({
     setDraft,
     flows: flows ?? [],
     running,
-    enabled: !!projectId && !offline && !readOnly,
+    enabled: !!projectId && !offline && !readOnly && !questionDocked,
     onFlow: openFlow,
     editor,
     onCommand(command) {
@@ -1588,7 +1763,7 @@ export function ConversationPane({
     const retained = retainConversations(
       turns,
       sessionId,
-      controllers.current.keys(),
+      streams.current.keys(),
     );
     if (retained === turns) return;
     const evicted = new Set(
@@ -1664,9 +1839,11 @@ export function ConversationPane({
 
   // Stop in-flight turns when the pane unmounts.
   useEffect(() => {
-    const live = controllers.current;
+    const live = streams.current;
+    const requests = guidanceRequests.current;
     return () => {
-      for (const abort of live.values()) abort.abort();
+      for (const { controller } of live.values()) controller.abort();
+      for (const abort of requests.values()) abort.abort();
     };
   }, []);
 
@@ -1680,7 +1857,7 @@ export function ConversationPane({
     const id = sessionId;
     setStopping(true);
     setError("");
-    controllers.current.get(id)?.abort();
+    streams.current.get(id)?.controller.abort();
     try {
       if (awaitingService.current.has(id)) return;
       await stopCodingTurn(endpoint, id);
@@ -1790,20 +1967,6 @@ export function ConversationPane({
     [endpoint, sessionId],
   );
 
-  // Only this conversation's oldest pending approval owns the decision card.
-  const pendingApproval = useMemo(() => {
-    for (const turn of shown) {
-      if (turn.status !== "running") continue;
-      const asked = turn.questions.find(
-        (item) =>
-          !item.answered &&
-          item.questions.some((question) => question.kind === "approval"),
-      );
-      if (asked) return { turnId: turn.id, asked };
-    }
-    return undefined;
-  }, [shown]);
-
   // Capture the displayed defaults for both new turns and in-flight guidance.
   const submittedModelConfig = (): ChatModelSelection => {
     const catalog = modelCatalogs.snapshot(endpoint, mode).catalog;
@@ -1826,41 +1989,83 @@ export function ConversationPane({
    * transcript here.
    */
   const steer = async (text: string, attached: ChatImage[]) => {
+    const retry = guidanceState?.phase === "retry";
+    const turnId = retry
+      ? guidanceState.turnId
+      : shown.find((turn) => turn.status === "running")?.id;
     // An image-only message is allowed, as it is for a turn.
     if (
       !projectId ||
       !sessionId ||
+      !turnId ||
+      readOnly ||
+      offline ||
+      images.uploading ||
       awaitingService.current.has(sessionId) ||
-      steering ||
+      guidanceRequests.current.has(sessionId) ||
       (!text.trim() && !attached.length)
     )
       return false;
-    setSteering(true);
+    const id = sessionId;
+    const stream = streams.current.get(id);
+    const abort = new AbortController();
+    guidanceRequests.current.set(id, abort);
+    const updateGuidance = (phase?: GuidanceState["phase"]) =>
+      setGuidance((current) => ({
+        ...current,
+        [id]: phase ? { phase, turnId } : undefined,
+      }));
+    updateGuidance(retry ? "checking" : "sending");
     setError("");
     try {
-      const { steered } = await steerCodingTurn(
-        endpoint,
-        sessionId,
-        text,
-        attached.map((image) => image.assetId),
-        { mode, selection: submittedModelConfig() },
-      );
-      if (!steered) {
-        // The turn ended between the keystroke and the request; the text is
-        // still in the composer, so sending it again starts a new turn.
-        setError("这一轮已经结束了，直接发送就好。");
-        return false;
+      if (!retry) {
+        const { steered } = await steerCodingTurn(
+          endpoint,
+          id,
+          text,
+          attached.map((image) => image.assetId),
+          { mode, selection: submittedModelConfig() },
+          abort.signal,
+        );
+        abort.signal.throwIfAborted();
+        if (steered) {
+          setDraft((current) => (current === text ? "" : current));
+          for (const item of images.attachments)
+            if (item.image) images.detach(item.key);
+          updateGuidance("submitted");
+          return true;
+        }
       }
-      setDraft("");
-      images.clear();
-      return true;
+      updateGuidance("checking");
+      try {
+        const recorded = await waitForCodingTurnEnd(endpoint, id, abort.signal);
+        abort.signal.throwIfAborted();
+        const checkedAt = Date.now();
+        if (
+          stream &&
+          stream.turnId === turnId &&
+          streams.current.get(id) === stream
+        )
+          stream.reconcile(recorded, checkedAt);
+        else
+          updateTurn(id, turnId, (turn) =>
+            reconcileFinishedTurn(turn, recorded, checkedAt),
+          );
+        updateGuidance("ready");
+        onSettled?.();
+      } catch {
+        if (!abort.signal.aborted) updateGuidance("retry");
+      }
+      return false;
     } catch (reason) {
+      if (abort.signal.aborted) return false;
+      updateGuidance();
       setError(
         `发送失败：${reason instanceof Error ? reason.message : String(reason)}`,
       );
       return false;
     } finally {
-      setSteering(false);
+      guidanceRequests.current.delete(id);
     }
   };
 
@@ -1876,12 +2081,15 @@ export function ConversationPane({
       images.uploading ||
       historyBlocked ||
       readOnly ||
+      (sessionId !== undefined && guidanceRequests.current.has(sessionId)) ||
+      guidanceState?.phase === "retry" ||
       sending.current.has(draftKey) ||
       !projectId ||
       offline
     )
       return undefined;
-    sending.current.add(draftKey);
+    const abort = new AbortController();
+    sending.current.set(draftKey, abort);
     // Side chats use a prefix the backend requires, so they never collide
     // with an indexed conversation.
     const id = sessionId ?? `${forkFrom ? "side" : "coding"}-${newId()}`;
@@ -1898,6 +2106,8 @@ export function ConversationPane({
     const submittedConfig = submittedModelConfig();
     onOpen?.(id, submittedConfig);
     setError("");
+    if (guidanceState)
+      setGuidance((current) => ({ ...current, [id]: undefined }));
     if (!options?.preserveDraft) {
       setDraft("");
       images.clear();
@@ -1905,7 +2115,9 @@ export function ConversationPane({
     // Mirrors the state updates so the finished turn can be returned.
     let latest = newTurn(turnId, prompt, Date.now(), attached);
     if (preparing) latest.waitingForService = true;
+    let reconciled = false;
     const change = (next: (turn: Turn) => Turn) => {
+      if (reconciled) return;
       latest = next(latest);
       updateTurn(id, turnId, next);
     };
@@ -1913,8 +2125,19 @@ export function ConversationPane({
       ...current,
       [id]: [...(current[id] ?? (id === sessionId ? imported : [])), latest],
     }));
-    const abort = new AbortController();
-    controllers.current.set(id, abort);
+    const stream: ConversationStream = {
+      controller: abort,
+      turnId,
+      reconcile(recorded, checkedAt) {
+        change((turn) => reconcileFinishedTurn(turn, recorded, checkedAt));
+        // The host is idle, so a stale stream can be detached before it closes.
+        reconciled = true;
+        if (sending.current.get(draftKey) === abort)
+          sending.current.delete(draftKey);
+        abort.abort();
+      },
+    };
+    streams.current.set(id, stream);
     // The sidebar lists the conversation as soon as its session exists.
     const listed = setTimeout(() => onSettled?.(), 1_500);
     try {
@@ -1939,6 +2162,7 @@ export function ConversationPane({
             : {}),
           ...(forkFrom ? { forkFrom } : {}),
           ...(branchFrom ? { branchFrom } : {}),
+          ...(branchAt !== undefined ? { branchAt } : {}),
           ...(history ? { history } : {}),
           ...(context ? { context } : {}),
           mode,
@@ -1969,9 +2193,10 @@ export function ConversationPane({
         ),
       );
     } finally {
-      sending.current.delete(draftKey);
+      if (sending.current.get(draftKey) === abort)
+        sending.current.delete(draftKey);
       clearTimeout(listed);
-      if (controllers.current.get(id) === abort) controllers.current.delete(id);
+      if (streams.current.get(id) === stream) streams.current.delete(id);
       onSettled?.();
     }
     return latest;
@@ -1983,10 +2208,12 @@ export function ConversationPane({
    * `send` stays the new-turn path its programmatic callers expect.
    */
   const submit = () => {
-    if (pendingApproval) return Promise.resolve(false);
+    if (pending) return Promise.resolve(false);
     if (commands.submitCommand() || commands.slash !== undefined)
       return Promise.resolve(false);
-    return running ? steer(draft, images.ready) : send().then(Boolean);
+    return running || guidanceState?.phase === "retry"
+      ? steer(draft, images.ready)
+      : send().then(Boolean);
   };
 
   // The host and the hand-off read the latest `send` through refs, so typing
@@ -2006,6 +2233,25 @@ export function ConversationPane({
     });
     return () => clearTimeout(timer);
   }, [initialSend, onInitialSendTaken]);
+
+  const stopControl = (
+    <button
+      type="button"
+      className="icon-control composer-stop"
+      aria-label={stopping ? "正在停止" : "停止生成"}
+      title={stopping ? "正在停止" : "停止生成"}
+      disabled={offline || readOnly || stopping}
+      onClick={() => void stop()}
+    >
+      <Square
+        size={14}
+        fill="currentColor"
+        className="aura-icon--filled"
+        aria-hidden="true"
+      />
+    </button>
+  );
+  const DecisionCard = questionDocked ? QuestionDock : ApprovalCard;
 
   return (
     // Empty and active conversations share the same bottom-docked composer.
@@ -2027,6 +2273,19 @@ export function ConversationPane({
       {error ? (
         <p className="coding-notice" role="alert">
           {error}
+        </p>
+      ) : null}
+      {guidanceState?.phase === "checking" ? (
+        <p className="coding-notice" role="status">
+          追加未送达，正在确认本轮是否结束。草稿已保留。
+        </p>
+      ) : guidanceState?.phase === "retry" ? (
+        <p className="coding-notice" role="alert">
+          暂时无法确认本轮状态。草稿已保留，点击发送可重新确认。
+        </p>
+      ) : guidanceState?.phase === "ready" ? (
+        <p className="coding-notice" role="status">
+          本轮已结束。草稿已保留，点击发送开始新一轮。
         </p>
       ) : null}
       {sessionId && !offline && visible ? (
@@ -2079,12 +2338,19 @@ export function ConversationPane({
             <TurnView
               key={turn.id}
               turn={turn}
+              latest={turn.id === shown.at(-1)?.id}
               visible={visible}
               directory={directory}
               endpoint={endpoint}
-              onAnswer={answer}
+              dockedQuestionId={
+                pending?.turnId === turn.id
+                  ? pending.asked.questionId
+                  : undefined
+              }
+              onAnswer={readOnly ? undefined : answer}
               onApplyFlow={onApplyFlow}
               onRepeatFlow={readOnly ? undefined : repeatFlow}
+              onForkTurn={readOnly ? undefined : onForkTurn}
             />
           ))
         )}
@@ -2123,7 +2389,17 @@ export function ConversationPane({
         style={readOnly ? { display: "none" } : undefined}
       >
         {composerExtra}
-        {flowForm ? (
+        {guidanceState?.phase === "sending" ||
+        guidanceState?.phase === "submitted" ? (
+          <p className="coding-notice coding-guidance-status" role="status">
+            {guidanceState.phase === "sending"
+              ? "正在提交追加消息…"
+              : running
+                ? "追加消息已提交。Agent 在步骤切换时读取追加内容。"
+                : "追加消息已提交。"}
+          </p>
+        ) : null}
+        {flowForm && !questionDocked ? (
           <WorkflowRunForm
             key={`${draftKey}:${flowForm.flow.id}`}
             id={flowFormId}
@@ -2178,22 +2454,27 @@ export function ConversationPane({
             {images.error}
           </p>
         ) : null}
-        {pendingApproval ? (
-          <ApprovalCard
-            key={pendingApproval.asked.questionId}
-            asked={pendingApproval.asked}
+        {images.attachments.map((item) =>
+          item.error ? (
+            <p key={item.key} className="composer-attach-error" role="alert">
+              {item.name} · {item.error}
+            </p>
+          ) : null,
+        )}
+        {pending ? (
+          <DecisionCard
+            key={pending.asked.questionId}
+            asked={pending.asked}
             active={visible}
+            stopControl={stopControl}
             onAnswer={(answers) =>
-              answer(
-                pendingApproval.turnId,
-                pendingApproval.asked.questionId,
-                answers,
-              )
+              answer(pending.turnId, pending.asked.questionId, answers)
             }
           />
         ) : null}
         <div
           ref={composer}
+          hidden={questionDocked}
           className={`chat-composer${dragging ? " dragging" : ""}`}
           onPaste={(event) => {
             const files = pastedImages(event.clipboardData);
@@ -2239,8 +2520,11 @@ export function ConversationPane({
                     </span>
                   ) : null}
                   {item.error ? (
-                    <span className="composer-attachment-state" role="alert">
-                      !<span className="sr-only">{item.error}</span>
+                    <span
+                      className="composer-attachment-state"
+                      aria-hidden="true"
+                    >
+                      !
                     </span>
                   ) : null}
                   <button
@@ -2351,26 +2635,22 @@ export function ConversationPane({
               />
               {/* Empty running drafts stop; content switches the same slot to send. */}
               {running && !draft.trim() && !images.attachments.length ? (
-                <button
-                  type="button"
-                  className="icon-control composer-stop"
-                  aria-label={stopping ? "正在停止" : "停止生成"}
-                  title={stopping ? "正在停止" : "停止生成"}
-                  disabled={offline || readOnly || stopping}
-                  onClick={() => void stop()}
-                >
-                  <Square
-                    size={14}
-                    fill="currentColor"
-                    className="aura-icon--filled"
-                    aria-hidden="true"
-                  />
-                </button>
+                stopControl
               ) : (
                 <button
                   className="send-button"
-                  aria-label={running ? "发送引导" : "发送消息"}
-                  title={running ? "发送引导（模型会在下一步读到）" : undefined}
+                  aria-label={
+                    guidanceState?.phase === "retry"
+                      ? "重新确认本轮状态"
+                      : running
+                        ? "发送引导"
+                        : "发送消息"
+                  }
+                  title={
+                    running && guidanceState?.phase !== "retry"
+                      ? "发送引导（模型会在下一步读到）"
+                      : undefined
+                  }
                   disabled={
                     offline ||
                     !projectId ||
@@ -2380,7 +2660,7 @@ export function ConversationPane({
                     (running &&
                       !!sessionId &&
                       awaitingService.current.has(sessionId)) ||
-                    !!pendingApproval ||
+                    !!pending ||
                     (!draft.trim() && !images.ready.length) ||
                     images.uploading ||
                     commands.slash !== undefined

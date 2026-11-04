@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { PERSONAL_ASSISTANT_SESSION_ID } from "@aura/protocol/conversations";
 import { fileDiff } from "../src/features/coding/diff.ts";
 import { retainConversations } from "../src/features/coding/conversation-cache.ts";
 
@@ -27,4 +28,16 @@ test("transcript eviction preserves selected and streaming conversations", () =>
     ),
     Object.keys(entries),
   );
+});
+
+test("returning to Aura can still use its transcript after older tasks are evicted", () => {
+  const assistant = ["retained transcript"];
+  const retained = retainConversations(
+    { [PERSONAL_ASSISTANT_SESSION_ID]: assistant, oldest: [], selected: [] },
+    "selected",
+    [],
+    2,
+  );
+  assert.equal(retained[PERSONAL_ASSISTANT_SESSION_ID], assistant);
+  assert.equal(retained.oldest, undefined);
 });

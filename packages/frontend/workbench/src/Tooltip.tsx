@@ -24,10 +24,12 @@ type Side = "bottom" | "top" | "right";
 export function Tooltip({
   label,
   side = "bottom",
+  delayMs = DELAY_MS,
   children,
 }: {
   label: React.ReactNode;
   side?: Side;
+  delayMs?: number;
   children: React.ReactElement<React.HTMLAttributes<HTMLElement>>;
 }) {
   const [open, setOpen] = useState(false);
@@ -36,12 +38,15 @@ export function Tooltip({
   const timer = useRef<number>(undefined);
   const id = useId();
 
-  const show = useCallback((element: HTMLElement, now: boolean) => {
-    anchor.current = element;
-    window.clearTimeout(timer.current);
-    if (now) setOpen(true);
-    else timer.current = window.setTimeout(() => setOpen(true), DELAY_MS);
-  }, []);
+  const show = useCallback(
+    (element: HTMLElement, now: boolean) => {
+      anchor.current = element;
+      window.clearTimeout(timer.current);
+      if (now || delayMs <= 0) setOpen(true);
+      else timer.current = window.setTimeout(() => setOpen(true), delayMs);
+    },
+    [delayMs],
+  );
   const hide = useCallback(() => {
     window.clearTimeout(timer.current);
     setOpen(false);

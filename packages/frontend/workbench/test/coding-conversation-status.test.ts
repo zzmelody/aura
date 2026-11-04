@@ -5,6 +5,7 @@ import {
   codingConversationStatus,
   conversationInfoStatus,
   isActiveStatus,
+  withSideActivity,
 } from "../src/features/coding/conversationStatus.ts";
 import {
   applyTurnEvent,
@@ -111,6 +112,15 @@ test("listed conversations carry a badge without being opened", () => {
     )?.kind,
     "waiting",
   );
+});
+
+test("a running side chat keeps a settled main conversation running", () => {
+  const completed = codingConversationStatus([settled("complete")]);
+  assert.equal(withSideActivity(completed, false)?.kind, "completed");
+  assert.equal(withSideActivity(completed, true)?.kind, "running");
+  assert.equal(withSideActivity(undefined, true)?.kind, "running");
+  const waiting = { kind: "waiting" as const, label: "等待你的回答" };
+  assert.equal(withSideActivity(waiting, true), waiting);
 });
 
 test("only running and waiting rows keep the sidebar polling", () => {

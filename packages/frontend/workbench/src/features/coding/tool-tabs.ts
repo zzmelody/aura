@@ -5,7 +5,7 @@ import type {
 
 export interface WorkspaceToolTab {
   id: string;
-  kind: "chat" | "terminal";
+  kind: "chat" | "terminal" | "browser";
   title: string;
   status?: WorkspaceTerminalInfo["status"];
 }
@@ -13,6 +13,7 @@ export interface WorkspaceToolTab {
 export function workspaceToolTabs(
   sides: CodingSideConversationInfo[],
   terminals: WorkspaceTerminalInfo[],
+  browsers: ReadonlyArray<{ id: string; title: string }> = [],
 ): WorkspaceToolTab[] {
   return [
     ...sides.map((side): WorkspaceToolTab => ({
@@ -27,6 +28,11 @@ export function workspaceToolTabs(
       kind: "terminal",
       title: `${terminal.title}${terminals.length > 1 ? ` ${index + 1}` : ""}`,
       status: terminal.status,
+    })),
+    ...browsers.map(({ id, title }): WorkspaceToolTab => ({
+      id,
+      kind: "browser",
+      title,
     })),
   ];
 }

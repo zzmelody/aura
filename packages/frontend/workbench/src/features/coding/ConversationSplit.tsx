@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { conversationSplit } from "./split-layout";
 
 const STORAGE_KEY = "aura.coding.side-width";
@@ -55,7 +55,7 @@ export function ConversationSplit({
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
-  const commit = (value?: number) => {
+  const commit = useCallback((value?: number) => {
     setPreferred(value);
     try {
       if (value === undefined) localStorage.removeItem(STORAGE_KEY);
@@ -63,22 +63,29 @@ export function ConversationSplit({
     } catch {
       // Resizing still works for this mount when persistence is blocked.
     }
-  };
-  const finish = (cancel = false) => {
-    if (!drag.current) return;
-    const { current, preferred: initialPreferred } = drag.current;
-    drag.current = null;
-    root.current?.removeAttribute("data-resizing");
-    if (cancel) setPreferred(initialPreferred);
-    else commit(current);
-  };
+  }, []);
+  const finish = useCallback(
+    (cancel = false) => {
+      if (!drag.current) return;
+      const { current, preferred: initialPreferred } = drag.current;
+      drag.current = null;
+      root.current?.removeAttribute("data-resizing");
+      if (cancel) setPreferred(initialPreferred);
+      else commit(current);
+    },
+    [commit],
+  );
+  useLayoutEffect(() => {
+    if (!sideVisible || stacked || hidden) finish(true);
+  }, [finish, hidden, sideVisible, stacked]);
   return (
     <div
       ref={root}
       className="coding-panes"
       hidden={hidden}
-      data-stacked={(sideVisible && stacked) || undefined}
+      data-stacked={stacked || undefined}
       data-tools-only={(sideVisible && stacked && !!sideHeader) || undefined}
+      data-side-closed={!sideVisible || undefined}
       style={
         {
           "--coding-side-width": `${containerWidth ? width : 0}px`,
@@ -86,7 +93,10 @@ export function ConversationSplit({
       }
     >
       {mainHeader ? (
-        <div className="coding-pane coding-main-column">
+        <div
+          className="coding-pane coding-main-column"
+          inert={sideVisible && stacked && !!sideHeader}
+        >
           {mainHeader}
           {main}
         </div>
@@ -95,9 +105,10 @@ export function ConversationSplit({
       )}
       {side ? (
         <>
-          {sideVisible && !stacked ? (
+          {!stacked ? (
             <div
               className="coding-split-handle"
+              inert={!sideVisible}
               role="separator"
               tabIndex={0}
               aria-label="调整主对话与工具面板宽度"
@@ -173,7 +184,7 @@ export function ConversationSplit({
             <aside
               className="coding-side"
               aria-label="工具面板"
-              hidden={!sideVisible}
+              inert={!sideVisible}
             >
               {sideHeader}
               {side}

@@ -5,6 +5,7 @@ import type {
   CodingHistoryTurn,
   CodingQuestionAnswer,
   CodingQuestionItem,
+  CodingTurnUsage,
 } from "@aura/protocol/types";
 import type { ChatImage } from "@aura/core/types";
 
@@ -101,6 +102,25 @@ export type AskedQuestion = {
   answered?: CodingQuestionAnswer[];
 };
 
+/** An open question batch and the turn that is waiting on it. */
+export type PendingQuestion = { turnId: string; asked: AskedQuestion };
+
+/**
+ * The batch that owns the card above the composer: the oldest unanswered one
+ * in a running turn. The decision and its record live in different places, so
+ * only that batch may hide its transcript entry.
+ */
+export function pendingQuestion(
+  turns: readonly Turn[],
+): PendingQuestion | undefined {
+  for (const turn of turns) {
+    if (turn.status !== "running") continue;
+    const asked = turn.questions.find((item) => item.answered === undefined);
+    if (asked) return { turnId: turn.id, asked };
+  }
+  return undefined;
+}
+
 /**
  * One entry of a turn in the order the agent produced it: some text, a run of
  * consecutive tool calls, or a question. Rendering this list replays the real
@@ -141,10 +161,45 @@ export type Turn = {
   error?: string;
   startedAt: number;
   endedAt?: number;
+  endSeq?: number;
+  usage?: CodingTurnUsage;
 };
 
 /** A reply fragment or one activity entry, live or replayed. */
 export type TurnEvent = { type: "delta"; text: string } | CodingActivity;
+
+/** Identify the reply after the last activity and whether work can fold as one. */
+export function turnPresentation(turn: Turn): {
+  finalReplyIndex: number;
+  canCollapse: boolean;
+} {
+  let finalReplyIndex = -1;
+  let hasOutput = false;
+  let hasProcess = Boolean(turn.progress?.total);
+  let hasInterleavedInput = false;
+  for (const [index, item] of turn.timeline.entries()) {
+    if (item.kind === "steer") {
+      hasInterleavedInput ||= hasOutput;
+      finalReplyIndex = -1;
+    } else if (item.kind === "text" && item.text.trim()) {
+      hasOutput = true;
+      finalReplyIndex = index;
+    } else if (
+      item.kind === "tools" ||
+      item.kind === "question" ||
+      item.kind === "workflow"
+    ) {
+      hasProcess ||= item.kind === "tools" || finalReplyIndex >= 0;
+      hasOutput = true;
+      finalReplyIndex = -1;
+    }
+  }
+  return {
+    finalReplyIndex,
+    canCollapse:
+      turn.status === "complete" && hasProcess && !hasInterleavedInput,
+  };
+}
 
 export function newTurn(
   id: string,
@@ -173,6 +228,8 @@ export function newTurn(
  * through here, so a reloaded transcript looks exactly like the live one.
  */
 export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
+  if (event.type === "usage") return { ...turn, usage: event.usage };
+  if (event.type === "turn-boundary") return { ...turn, endSeq: event.endSeq };
   if (event.type === "notice") {
     const item: TimelineItem = {
       kind: "notice",
@@ -358,11 +415,44 @@ export function turnsFromHistory(
 ): Turn[] {
   return history.map((item, index) => {
     let turn = newTurn(`${sessionId}-${index}`, item.prompt, item.startedAt);
+    if (item.endSeq !== undefined) turn.endSeq = item.endSeq;
     for (const event of item.events) turn = applyTurnEvent(turn, event);
     return item.status === "running"
       ? turn
       : finishTurn(turn, item.status, item.endedAt, item.error);
   });
+}
+
+/** Recover a stale local turn only after the backend has reported idle. */
+export function reconcileFinishedTurn(
+  turn: Turn,
+  recorded: CodingHistoryTurn | undefined,
+  checkedAt: number,
+): Turn {
+  if (turn.status === "complete" || turn.status === "stopped") return turn;
+  const prompt = turn.prompt || "请查看我附上的图片。";
+  if (
+    recorded &&
+    recorded.status !== "running" &&
+    recorded.startedAt >= turn.startedAt &&
+    recorded.prompt === prompt
+  ) {
+    const [restored] = turnsFromHistory(turn.id, [recorded]);
+    return {
+      ...restored!,
+      id: turn.id,
+      prompt: turn.prompt,
+      images: turn.images,
+    };
+  }
+  return turn.status === "running"
+    ? finishTurn(
+        turn,
+        "error",
+        checkedAt,
+        "本轮已结束，历史中没有可确认的结果。",
+      )
+    : turn;
 }
 
 /** Tools that run a shell command; their detail is the command line. */
@@ -432,31 +522,6 @@ export function summarizeTurn(
   };
 }
 
-/** A recap is worth showing once the turn took at least one step. */
-export function hasSummary(summary: TurnSummary): boolean {
-  return summary.steps > 0;
-}
-
-/**
- * The "what it did" phrases of a recap line, in the order the work usually
- * happens: look, change, verify, then anything that went wrong.
- */
-export function recapParts(summary: TurnSummary): string[] {
-  const parts: string[] = [];
-  if (summary.reads) parts.push(`读取 ${summary.reads} 个文件`);
-  if (summary.searches) parts.push(`搜索 ${summary.searches} 次`);
-  if (summary.files.length) parts.push(`改动 ${summary.files.length} 个文件`);
-  if (summary.commands.length) {
-    const failed = summary.commands.filter((item) => !item.ok).length;
-    parts.push(
-      `运行 ${summary.commands.length} 条命令${failed ? `（${failed} 条失败）` : ""}`,
-    );
-  }
-  if (summary.failedSteps) parts.push(`${summary.failedSteps} 个步骤失败`);
-  if (summary.unanswered) parts.push(`${summary.unanswered} 个问题未回答`);
-  return parts;
-}
-
 /**
  * Fallback summary of a side chat when the model did not write one: its last
  * reply, or the files and commands it touched.
@@ -496,4 +561,53 @@ export function handoffPrompt(
   }
   if (lines.length === 1) lines.push("没有改文件，也没有跑命令。");
   return lines.join("\n");
+}
+
+/** Asks the side chat's model to write its own hand-off for the main chat. */
+export const HANDOFF_SUMMARY_PROMPT = `请把这段侧边对话整理成交接给主对话的结论，只输出结论本身：
+1. 结论：讨论或任务的最终结果
+2. 关键决定与理由
+3. 改动的文件与执行过的命令（如有）
+4. 尚未解决的问题或需要主对话继续处理的事项
+没有内容的小节直接省略，保持简洁，不复述过程。`;
+
+/**
+ * A summary turn that already finished as the side chat's latest turn; handing
+ * off again reuses it instead of asking the model a second time.
+ */
+export function reusableHandoffSummary(
+  turns: readonly Turn[],
+): string | undefined {
+  const last = turns.at(-1);
+  if (
+    last?.prompt.trim() !== HANDOFF_SUMMARY_PROMPT ||
+    last.status !== "complete"
+  )
+    return undefined;
+  return last.reply.trim() || undefined;
+}
+
+export type HandoffResult =
+  | { kind: "summary"; text: string }
+  | { kind: "fallback"; text: string }
+  | { kind: "cancelled" };
+
+/**
+ * Picks what goes back to the main chat once the summary turn settles: the
+ * model's summary, the deterministic fallback when it failed or said nothing,
+ * or nothing when the user stopped it.
+ */
+export function handoffResult(
+  summaryTurn: Turn | undefined,
+  turns: readonly Turn[],
+  countLines: (diff: CodingFileDiff) => { added: number; removed: number },
+): HandoffResult {
+  if (summaryTurn?.status === "stopped") return { kind: "cancelled" };
+  const text = summaryTurn?.status === "complete" && summaryTurn.reply.trim();
+  if (text) return { kind: "summary", text };
+  // The failed summary turn itself carries no conclusion of the side chat.
+  const earlier = summaryTurn
+    ? turns.filter((turn) => turn.id !== summaryTurn.id)
+    : turns;
+  return { kind: "fallback", text: handoffPrompt(earlier, countLines) };
 }

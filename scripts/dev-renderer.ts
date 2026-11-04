@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
+import { desktopExecutable } from "./desktop-bundle.ts";
 import { modelViewerAssets } from "./model-viewer-assets.ts";
 import { liveReloadFallback } from "./vite-live-reload.ts";
 
@@ -45,12 +45,12 @@ try {
   await server.listen();
   server.printUrls();
   if (target === "desktop") {
-    const require = createRequire(resolve(appRoot, "package.json"));
-    const electronCli = require.resolve("electron/cli.js");
+    // A renamed bundle on macOS, so the Dock shows "Aura" instead of "Electron".
+    const electron = await desktopExecutable();
     // An inherited ELECTRON_RUN_AS_NODE (set by some IDE and agent hosts)
     // would start Electron as plain Node, without its `app` and window APIs.
     const { ELECTRON_RUN_AS_NODE: _runAsNode, ...env } = process.env;
-    desktop = spawn(process.execPath, [electronCli, ".", "--dev"], {
+    desktop = spawn(electron, [".", "--dev"], {
       cwd: appRoot,
       stdio: "inherit",
       windowsHide: true,

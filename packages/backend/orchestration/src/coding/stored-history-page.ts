@@ -1,6 +1,5 @@
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { FlowError } from "../schema.ts";
-import type { StoredEvent } from "./history.ts";
 
 export interface HistoryCursor {
   beforeSeq?: number;
@@ -14,7 +13,7 @@ export function storedHistoryPage(
   cursor: HistoryCursor,
 ):
   | {
-      events: StoredEvent[];
+      events: readonly SessionEvent[];
       hasMore: boolean;
       beforeSeq?: number;
       throughSeq: number;
@@ -54,7 +53,7 @@ export function storedHistoryPage(
   const first = starts.at(-10) ?? starts[0];
   const selected = first === undefined ? [] : window.slice(first);
   return {
-    events: selected.map(({ type, time, data }) => ({ type, time, data })),
+    events: selected,
     hasMore: starts.length > 10,
     beforeSeq: selected[0]?.seq,
     throughSeq,

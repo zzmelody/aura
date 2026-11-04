@@ -16,7 +16,7 @@ const chrome =
 const run = promisify(execFile);
 
 test(
-  "workspace and terminal fill their panels before the demo chat styles load",
+  "terminal fills its panel and keeps a stable viewport during sidebar motion",
   {
     skip:
       !chrome || !existsSync(chrome)
@@ -76,7 +76,40 @@ for (const width of [375, 900, 1600, 2400]) {
   results.push({width, workspace: rect('.coding-studio'), side: rect('.coding-side'),
     header: rect('.coding-tools-header'), terminal: rect('.coding-terminal'), screen: rect('.coding-terminal-screen')});
 }
-document.querySelector('#result').textContent = JSON.stringify(results);
+const motion = [];
+for (const width of [375, 900]) {
+  const narrow = width < 648;
+  host.style.width = width + 'px';
+  panes.toggleAttribute('data-stacked', narrow);
+  panes.toggleAttribute('data-tools-only', narrow);
+  panes.querySelector('.coding-split-handle').hidden = narrow;
+  const side = panes.querySelector('.coding-side');
+  const main = panes.querySelector('.coding-main-column');
+  const screen = side.querySelector('.coding-terminal-screen');
+  const geometry = () => ({
+    sideStart: side.getBoundingClientRect().left,
+    viewportWidth: screen.getBoundingClientRect().width,
+    mainWidth: main.getBoundingClientRect().width,
+    sideDisplay: getComputedStyle(side).display,
+  });
+  const opened = geometry();
+  panes.dataset.sideClosed = '';
+  delete panes.dataset.toolsOnly;
+  const progress = panes.getAnimations().find(animation => animation instanceof CSSTransition);
+  if (progress) {
+    progress.pause();
+    progress.currentTime = 90;
+  }
+  const leaving = geometry();
+  document.body.dataset.reduced = 'true';
+  const closed = geometry();
+  delete panes.dataset.sideClosed;
+  panes.toggleAttribute('data-tools-only', narrow);
+  geometry();
+  delete document.body.dataset.reduced;
+  motion.push({ width, narrow, opened, leaving, closed });
+}
+document.querySelector('#result').textContent = JSON.stringify({ layouts: results, motion });
 </script></body></html>`,
     );
     const { stdout } = await run(
@@ -98,14 +131,30 @@ document.querySelector('#result').textContent = JSON.stringify(results);
     const result = stdout.match(/<pre id="result">([^<]+)<\/pre>/);
     assert.ok(result, "Chrome should return measured panel dimensions");
     type Box = { left: number; right: number; width: number; height: number };
-    const layouts = JSON.parse(result[1]!) as Array<{
+    type Layout = {
       width: number;
       workspace: Box;
       side: Box;
       header: Box;
       terminal: Box;
       screen: Box;
-    }>;
+    };
+    type MotionBox = {
+      sideStart: number;
+      viewportWidth: number;
+      mainWidth: number;
+      sideDisplay: string;
+    };
+    const { layouts, motion } = JSON.parse(result[1]!) as {
+      layouts: Layout[];
+      motion: Array<{
+        width: number;
+        narrow: boolean;
+        opened: MotionBox;
+        leaving: MotionBox;
+        closed: MotionBox;
+      }>;
+    };
     assert.equal(layouts.length, 4);
     for (const layout of layouts) {
       assert.equal(
@@ -121,6 +170,21 @@ document.querySelector('#result').textContent = JSON.stringify(results);
       assert.ok(layout.screen.height > 500, "Terminal fills available height");
       if (layout.width < 648)
         assert.equal(layout.side.width, layout.workspace.width);
+    }
+    assert.equal(motion.length, 2);
+    for (const { width, narrow, opened, leaving, closed } of motion) {
+      assert.equal(leaving.viewportWidth, opened.viewportWidth);
+      assert.ok(
+        leaving.sideStart > opened.sideStart && leaving.sideStart < width,
+      );
+      assert.equal(leaving.sideDisplay, "flex");
+      assert.equal(closed.sideDisplay, "none");
+      assert.equal(closed.mainWidth, width);
+      if (narrow) assert.equal(leaving.mainWidth, width);
+      else
+        assert.ok(
+          leaving.mainWidth > opened.mainWidth && leaving.mainWidth < width,
+        );
     }
   },
 );

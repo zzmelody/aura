@@ -275,6 +275,7 @@ export class FlowExecution {
             step.kind === "action" &&
             error instanceof FlowError &&
             /TOOL_OUTCOME_UNKNOWN/.test(error.message);
+          let uncertainty: string | undefined;
           if (step.kind === "agent") {
             try {
               const result =
@@ -284,16 +285,23 @@ export class FlowExecution {
               unknown = result
                 ? result.actionStarted
                 : Boolean(step.actions?.length);
+              if (unknown)
+                uncertainty = result
+                  ? "Agent 已调用工具，外部结果需人工确认。"
+                  : "无法核对 Agent 的工具执行记录，外部结果需人工确认。";
             } catch {
               unknown = true;
+              uncertainty =
+                "无法核对 Agent 的工具执行记录，外部结果需人工确认。";
             }
           }
-          const message =
+          const failure =
             error instanceof FlowError
               ? error.message
               : step.kind === "agent"
                 ? "DSH Agent 执行失败或超时，请查看对应会话。"
                 : "Action 执行失败。";
+          const message = uncertainty ? `${uncertainty} ${failure}` : failure;
           const retry = !unknown && attemptsLeft(step);
           await this.updateStep(key, (current) => ({
             ...current,

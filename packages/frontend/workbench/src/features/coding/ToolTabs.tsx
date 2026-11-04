@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import {
   ChevronDown,
+  Globe,
   LoaderCircle,
   MessageSquare,
   PanelRightClose,
@@ -20,7 +21,9 @@ export function ToolTabs({
   onSelect,
   onChat,
   onTerminal,
+  onBrowser,
   onClose,
+  hideButtonRef,
   onHide,
 }: {
   tabs: WorkspaceToolTab[];
@@ -31,7 +34,9 @@ export function ToolTabs({
   onSelect(id: string): void;
   onChat(): void;
   onTerminal(): void;
+  onBrowser?(): void;
   onClose(tab: WorkspaceToolTab): void;
+  hideButtonRef: React.Ref<HTMLButtonElement>;
   onHide(): void;
 }) {
   const strip = useRef<HTMLDivElement>(null);
@@ -87,11 +92,7 @@ export function ToolTabs({
               tabIndex={selectedId === tab.id ? 0 : -1}
               onClick={() => onSelect(tab.id)}
             >
-              {tab.kind === "chat" ? (
-                <MessageSquare size={13} />
-              ) : (
-                <SquareTerminal size={13} />
-              )}
+              <ToolIcon kind={tab.kind} size={13} />
               <span>{tab.title}</span>
               {tab.status && tab.status !== "running" ? (
                 <small>已退出</small>
@@ -132,6 +133,16 @@ export function ToolTabs({
             disabled: busy,
             action: onTerminal,
           },
+          ...(onBrowser
+            ? [
+                {
+                  id: "browser",
+                  label: "新建浏览器",
+                  icon: <Globe size={14} />,
+                  action: onBrowser,
+                },
+              ]
+            : []),
         ]}
       >
         {busy ? (
@@ -147,12 +158,7 @@ export function ToolTabs({
           items={tabs.map((tab) => ({
             id: tab.id,
             label: `${tab.id === selectedId ? "✓ " : ""}${tab.title}`,
-            icon:
-              tab.kind === "chat" ? (
-                <MessageSquare size={14} />
-              ) : (
-                <SquareTerminal size={14} />
-              ),
+            icon: <ToolIcon kind={tab.kind} size={14} />,
             action: () => onSelect(tab.id),
           }))}
         >
@@ -160,6 +166,7 @@ export function ToolTabs({
         </WorkbenchMenu>
       ) : null}
       <button
+        ref={hideButtonRef}
         type="button"
         className="icon-control"
         aria-label="收起工具面板"
@@ -170,4 +177,19 @@ export function ToolTabs({
       </button>
     </header>
   );
+}
+
+function ToolIcon({
+  kind,
+  size,
+}: {
+  kind: WorkspaceToolTab["kind"];
+  size: number;
+}) {
+  const Icon = {
+    chat: MessageSquare,
+    terminal: SquareTerminal,
+    browser: Globe,
+  }[kind];
+  return <Icon size={size} />;
 }

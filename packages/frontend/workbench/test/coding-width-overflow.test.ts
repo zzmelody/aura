@@ -75,7 +75,7 @@ test(
 const root = document.querySelector(".coding-panes");
 const host = document.querySelector(".studio-area");
 const results = [];
-const pane = (content) => '<div class="coding-pane"><div class="studio-scroll coding-transcript"><article class="coding-turn"><div class="coding-prompt">检查长内容</div><div class="coding-reply"><div class="workflow-rich-text">' + content + '</div></div>' + ${JSON.stringify(report)} + '<section class="coding-recap">本轮小结</section></article></div><div class="chat-composer-area"><div class="coding-approval"><div class="coding-approval-strip">等待审批</div><div class="coding-approval-body">允许运行构建吗？</div><div class="coding-approval-actions"><button>拒绝</button><button>允许这一次</button></div></div><div class="chat-composer"><textarea>检查宽度</textarea><div class="composer-tools coding-composer-tools"><div class="composer-leading"><button class="icon-control composer-add-trigger">+</button></div><div class="composer-trailing"><div class="chat-model-picker"><button class="chat-model-trigger"><span class="chat-model-name">a-very-long-model-name</span><span class="chat-model-effort">High</span></button></div><button class="icon-control composer-stop">■</button><button class="send-button">↑</button></div></div></div></div></div>';
+const pane = (content) => '<div class="coding-pane"><div class="studio-scroll coding-transcript"><article class="coding-turn"><div class="coding-prompt">检查长内容</div><div class="coding-reply"><div class="workflow-rich-text">' + content + '</div></div>' + ${JSON.stringify(report)} + '<section class="coding-recap">本轮小结</section></article></div><div class="chat-composer-area"><div class="coding-decision approval"><div class="coding-decision-strip">等待审批</div><div class="coding-decision-body">允许运行构建吗？</div><div class="coding-decision-actions"><button>拒绝</button><button>允许这一次</button></div></div><div class="chat-composer"><textarea>检查宽度</textarea><div class="composer-tools coding-composer-tools"><div class="composer-leading"><button class="icon-control composer-add-trigger">+</button></div><div class="composer-trailing"><div class="chat-model-picker"><button class="chat-model-trigger"><span class="chat-model-name">a-very-long-model-name</span><span class="chat-model-effort">High</span></button></div><button class="icon-control composer-stop">■</button><button class="send-button">↑</button></div></div></div></div></div>';
 for (const content of ${JSON.stringify([code, table, code + table, diff])}) {
   for (const width of [1600, 1200, 920, 700, 648, 600, 375])
   for (const stale of [false, true]) {
@@ -117,7 +117,7 @@ for (const content of ${JSON.stringify([code, table, code + table, diff])}) {
         const inputBox = input.getBoundingClientRect();
         const inputCss = getComputedStyle(input);
         const card = area.querySelector('.chat-composer').getBoundingClientRect();
-        const approval = area.querySelector('.coding-approval').getBoundingClientRect();
+        const approval = area.querySelector('.coding-decision.approval').getBoundingClientRect();
         return {
           textLeft: text.left, textRight: text.right,
           inputLeft: inputBox.left + parseFloat(inputCss.paddingLeft),

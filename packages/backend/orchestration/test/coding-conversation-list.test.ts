@@ -55,6 +55,28 @@ test("background status enrichment reads idle logs while live execution remains 
   assert.equal(result[1]!.lastTurnStatus, "running");
 });
 
+test("a running side chat keeps its parent conversation running", async () => {
+  const parent: CodingConversationInfo = {
+    ...records[0]!,
+    sideConversations: [{ id: "side", title: "Side", createdAt: 1 }],
+  };
+  const result = await conversationList([parent], {
+    includeStatus: true,
+    running: (id) => id === "side",
+    waitingForAnswer: (id) => id === "side",
+    readStatus: async () => "complete",
+  });
+  assert.equal(result[0]!.lastTurnStatus, "running");
+  assert.equal(result[0]!.waitingForAnswer, true);
+  const archived = await conversationList([{ ...parent, archivedAt: 2 }], {
+    includeStatus: true,
+    running: (id) => id === "side",
+    waitingForAnswer: () => false,
+    readStatus: async () => "complete",
+  });
+  assert.equal(archived[0]!.lastTurnStatus, "complete");
+});
+
 test("an old open turn becomes stopped and an unreadable log cannot hide the record", async () => {
   const result = await conversationList(records, {
     includeStatus: true,

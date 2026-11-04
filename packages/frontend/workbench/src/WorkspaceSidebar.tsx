@@ -202,16 +202,13 @@ export function WorkspaceSidebar({
           aria-label="打开 Aura 个人助手"
           aria-current={tab === "assistant" ? "page" : undefined}
           aria-busy={codingWorkspaces.assistantLoading}
-          disabled={codingWorkspaces.assistantLoading}
           title="Aura · 持续使用同一段对话的个人助手"
           onClick={onAssistant}
         >
           <AuraAssistantIcon
-            running={
-              isActiveStatus(
-                codingWorkspaces.statuses[PERSONAL_ASSISTANT_SESSION_ID],
-              ) || codingWorkspaces.assistantLoading
-            }
+            running={isActiveStatus(
+              codingWorkspaces.statuses[PERSONAL_ASSISTANT_SESSION_ID],
+            )}
           />
           <span>Aura</span>
         </button>

@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   AutomationHistory,
   AutomationTask,
@@ -152,7 +158,8 @@ export function AutomationScreen({
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<string>();
+  const [selection, setSelection] = useState<{ id: string; open: boolean }>();
+  const detailTrigger = useRef<HTMLButtonElement>(null);
   /** `null` creates a task; a task edits that one. */
   const [editing, setEditing] = useState<AutomationTask | null>();
 
@@ -207,10 +214,16 @@ export function AutomationScreen({
         (a.status === b.status ? 0 : a.status === "active" ? -1 : 1) ||
         a.scheduledAt.localeCompare(b.scheduledAt),
     );
-  const current = tasks?.find((task) => task.id === selected);
+  const current = tasks?.find((task) => task.id === selection?.id);
+  const detailOpen = !!current && selection?.open === true;
+  const closeDetail = (id: string) =>
+    setSelection((value) => (value?.id === id ? { id, open: false } : value));
+  useEffect(() => {
+    if (!detailOpen) detailTrigger.current?.focus({ preventScroll: true });
+  }, [detailOpen]);
 
   return (
-    <div className={`automation-layout${current ? " with-detail" : ""}`}>
+    <div className={`automation-layout${detailOpen ? " with-detail" : ""}`}>
       <section
         className="dsh-page automation-page"
         aria-labelledby="automation-title"
@@ -302,33 +315,38 @@ export function AutomationScreen({
           <p className="dsh-page-empty">没有符合条件的任务</p>
         ) : null}
         <ul className="automation-list">
-          {shown.map((task) => (
-            <li key={`${task.sessionId}:${task.id}`}>
-              <button
-                type="button"
-                className={`automation-row${task.id === selected ? " selected" : ""}`}
-                aria-current={task.id === selected ? "true" : undefined}
-                onClick={() =>
-                  setSelected(task.id === selected ? undefined : task.id)
-                }
-              >
-                <AlarmClock size={16} aria-hidden="true" />
-                <span className="automation-row-text">
-                  <strong>{task.title}</strong>
-                  <span>
-                    {task.status === "active" ? "运行中" : "已结束"} ·{" "}
-                    {timingLabel(task.timing)}
-                    {task.status === "active"
-                      ? ` · 下次 ${new Date(task.scheduledAt).toLocaleString("zh-CN")}`
-                      : ""}
+          {shown.map((task) => {
+            const selected = detailOpen && task.id === current?.id;
+            return (
+              <li key={`${task.sessionId}:${task.id}`}>
+                <button
+                  type="button"
+                  className={`automation-row${selected ? " selected" : ""}`}
+                  aria-current={selected ? "true" : undefined}
+                  onClick={(event) => {
+                    detailTrigger.current = event.currentTarget;
+                    if (selected) closeDetail(task.id);
+                    else setSelection({ id: task.id, open: true });
+                  }}
+                >
+                  <AlarmClock size={16} aria-hidden="true" />
+                  <span className="automation-row-text">
+                    <strong>{task.title}</strong>
+                    <span>
+                      {task.status === "active" ? "运行中" : "已结束"} ·{" "}
+                      {timingLabel(task.timing)}
+                      {task.status === "active"
+                        ? ` · 下次 ${new Date(task.scheduledAt).toLocaleString("zh-CN")}`
+                        : ""}
+                    </span>
                   </span>
-                </span>
-                <span className="automation-row-target">
-                  {task.conversationTitle}
-                </span>
-              </button>
-            </li>
-          ))}
+                  <span className="automation-row-target">
+                    {task.conversationTitle}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </section>
       {current ? (
@@ -336,14 +354,15 @@ export function AutomationScreen({
           key={`${current.sessionId}:${current.id}`}
           endpoint={endpoint}
           task={current}
-          onClose={() => setSelected(undefined)}
+          open={detailOpen}
+          onClose={() => closeDetail(current.id)}
           onEdit={() => setEditing(current)}
           onOpen={() =>
             current.projectId &&
             openConversation(current.projectId, current.sessionId)
           }
           onDeleted={() => {
-            setSelected(undefined);
+            closeDetail(current.id);
             void refresh();
           }}
         />
@@ -356,7 +375,7 @@ export function AutomationScreen({
           onClose={() => setEditing(undefined)}
           onSaved={(task) => {
             setEditing(undefined);
-            setSelected(task.id);
+            setSelection({ id: task.id, open: true });
             void refresh();
           }}
         />
@@ -368,6 +387,7 @@ export function AutomationScreen({
 function AutomationDetail({
   endpoint,
   task,
+  open,
   onClose,
   onEdit,
   onOpen,
@@ -375,6 +395,7 @@ function AutomationDetail({
 }: {
   endpoint: string;
   task: AutomationTask;
+  open: boolean;
   onClose(): void;
   onEdit(): void;
   onOpen(): void;
@@ -384,14 +405,19 @@ function AutomationDetail({
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
   useEffect(() => {
+    if (!open) return;
     const abort = new AbortController();
     automationHistory(endpoint, task.sessionId, task.id, abort.signal)
-      .then(setHistory)
+      .then((next) => {
+        if (abort.signal.aborted) return;
+        setHistory(next);
+        setError("");
+      })
       .catch((cause: unknown) => {
         if (!abort.signal.aborted) setError(problem(cause));
       });
     return () => abort.abort();
-  }, [endpoint, task.sessionId, task.id, task.lastDeliveredAt]);
+  }, [open, endpoint, task.sessionId, task.id, task.lastDeliveredAt]);
 
   async function remove() {
     if (
@@ -411,7 +437,11 @@ function AutomationDetail({
   }
 
   return (
-    <aside className="automation-detail" aria-label={`任务：${task.title}`}>
+    <aside
+      className="automation-detail"
+      aria-label={`任务：${task.title}`}
+      inert={!open}
+    >
       <header>
         <h2>{task.title}</h2>
         <button

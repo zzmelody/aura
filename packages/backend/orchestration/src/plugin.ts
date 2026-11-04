@@ -64,7 +64,7 @@ import {
   legacyConversationTurns,
 } from "@aura/protocol/conversations";
 import {
-  historyTurns,
+  sessionHistoryTurns,
   lastTurnStatus,
   readSessionEvents,
   readSessionEventPage,
@@ -724,6 +724,7 @@ export async function apply(ctx: Context) {
     start: ({ conversationId, ...input }) =>
       engine.start(input, conversationId),
     get: (id) => engine.get(id),
+    storageIssue: (id) => engine.storageIssue(id),
     catalog: () => engine.catalog(),
     associateConversation: (id, conversationId) =>
       engine.associateConversation(id, conversationId),
@@ -1022,6 +1023,7 @@ export async function apply(ctx: Context) {
                 .optional(),
               forkFrom: z.string().trim().min(1).max(200).optional(),
               branchFrom: z.string().trim().min(1).max(200).optional(),
+              branchAt: z.number().int().nonnegative().optional(),
               history: z.array(conversationMessageSchema).max(200).optional(),
               context: z.string().max(40_000).optional(),
               mode: chatModeSchema,
@@ -1494,7 +1496,7 @@ export async function apply(ctx: Context) {
               !page?.hasMore ? (record?.history ?? []) : [],
               record?.createdAt ?? 0,
             ),
-            ...historyTurns(
+            ...sessionHistoryTurns(
               own ? own.events.slice(own.inheritedEventCount) : (events ?? []),
               running,
             ),

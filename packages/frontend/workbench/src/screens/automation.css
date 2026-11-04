@@ -3,10 +3,18 @@
 /* DSH schedule page: pill filters, 48px task rows, a 47% detail pane with a
  * hairline divider, and a modal create / edit form. */
 .automation-layout {
+  --workspace-sidebar-progress: 1;
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
   min-width: 0;
+  overflow: clip;
+  transition: --workspace-sidebar-progress var(--workspace-sidebar-duration)
+    var(--workspace-motion-ease);
+}
+.automation-layout:not(.with-detail) {
+  --workspace-sidebar-progress: 0;
 }
 .automation-layout > .automation-page {
   flex: 1;
@@ -159,15 +167,22 @@
   line-height: 20px;
 }
 .automation-detail {
+  --automation-detail-size: min(47%, 520px);
   display: grid;
-  flex: 0 0 47%;
+  flex: 0 0 var(--automation-detail-size);
   align-content: start;
   gap: 20px;
-  max-width: 520px;
   min-width: 0;
+  margin-inline-end: calc(
+    (var(--workspace-sidebar-progress) - 1) * var(--automation-detail-size)
+  );
   overflow: auto;
   padding: 28px 24px;
   border-left: 0.5px solid var(--hairline);
+  transition: display var(--workspace-sidebar-duration) allow-discrete;
+}
+.automation-detail[inert] {
+  display: none;
 }
 .automation-detail header,
 .automation-dialog header {
@@ -307,12 +322,20 @@
   justify-content: flex-end;
 }
 @container workspace (max-width: 820px) {
+  .automation-layout > .automation-page {
+    transition: display var(--workspace-sidebar-duration) allow-discrete;
+  }
   .automation-layout.with-detail > .automation-page {
     display: none;
+    interactivity: inert;
   }
   .automation-detail {
-    flex: 1;
-    max-width: none;
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: calc((1 - var(--workspace-sidebar-progress)) * 100%);
+    width: 100%;
+    margin: 0;
     border-left: 0;
+    background: var(--background);
   }
 }

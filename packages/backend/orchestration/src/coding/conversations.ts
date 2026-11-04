@@ -35,12 +35,17 @@ export function conversationService(
         request.projectId ?? (await projects.defaultProject()).id;
       const directory = projects.directory(projectId);
       const parentId = request.forkFrom ?? request.branchFrom;
-      const parent = parentId ? index.get(parentId) : undefined;
+      const parent = parentId
+        ? (index.get(parentId) ??
+          (request.branchFrom ? index.sideParent(parentId) : undefined))
+        : undefined;
       if (request.forkFrom && request.branchFrom)
         throw new FlowError("不能同时创建旁支和跨项目延续。", 400);
+      if (request.branchAt !== undefined && !request.branchFrom)
+        throw new FlowError("分叉轮次缺少来源对话。", 400);
       if (
         parentId &&
-        (!parent || parent.archivedAt !== undefined || parent.id === id)
+        (!parent || parent.archivedAt !== undefined || parentId === id)
       )
         throw new FlowError("来源对话不存在或已归档。", 404);
       if (
@@ -54,19 +59,24 @@ export function conversationService(
       if (
         request.branchFrom &&
         existing &&
-        existing.sourceSessionId !== request.branchFrom
+        (existing.sourceSessionId !== request.branchFrom ||
+          existing.sourceEndSeq !== request.branchAt)
       )
         throw new FlowError("对话来源不匹配。", 409);
       if (!request.forkFrom) {
         await index.open(id, projectId, request.prompt, {
           ...(request.history?.length ? { history: request.history } : {}),
           ...(request.branchFrom
-            ? { sourceSessionId: request.branchFrom }
+            ? {
+                sourceSessionId: request.branchFrom,
+                sourceEndSeq: request.branchAt,
+              }
             : {}),
         });
       }
       const saved =
         index.modelConfig(id)?.[request.mode] ??
+        (parentId ? index.modelConfig(parentId)?.[request.mode] : undefined) ??
         parent?.modelConfig?.[request.mode];
       const selection =
         request.model !== undefined || request.reasoningEffort !== undefined
@@ -87,6 +97,7 @@ export function conversationService(
           projectId,
           project: directory,
           history: index.get(id)?.history,
+          branchAt: request.branchAt ?? existing?.sourceEndSeq,
           ...((parentId ?? existing?.sourceSessionId)
             ? { forkFrom: parentId ?? existing?.sourceSessionId }
             : {}),

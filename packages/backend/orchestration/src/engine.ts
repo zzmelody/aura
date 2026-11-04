@@ -645,13 +645,14 @@ export class FlowEngine {
       this.scheduler.notify();
     }
   }
+  storageIssue(id: string): string | undefined {
+    if (this.storageFailures.has(id))
+      return "Flow 状态存档失败，请修复存储并重启运行时恢复。";
+  }
   async wait(id: string) {
     while (executable(this.get(id).status)) {
-      if (this.storageFailures.has(id))
-        throw new FlowError(
-          "Flow 状态存档失败，请修复存储并重启运行时恢复。",
-          503,
-        );
+      const issue = this.storageIssue(id);
+      if (issue) throw new FlowError(issue, 503);
       if (this.closed) break;
       if (this.get(id).parent && this.get(id).status === "queued") {
         await this.runChild(id);

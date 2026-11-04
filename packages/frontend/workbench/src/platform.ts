@@ -1,4 +1,6 @@
 import type { WorkflowFileHostApi } from "./file-picker.ts";
+import type { BrowserHost } from "@aura/protocol/browser";
+import type { ThemeMode } from "@aura/core/types";
 
 export type AuraPlatform = "web" | "desktop" | "mobile";
 
@@ -13,10 +15,11 @@ declare global {
       previews?: {
         open(url: string, id: string, title: string): Promise<void>;
       };
+      browser?: BrowserHost;
       workflowFiles?: WorkflowFileHostApi;
       /** Show an existing local file in the file manager; never opens it. */
       files?: { reveal(root: string, path: string): Promise<void> };
-      chrome?: { setTheme(dark: boolean): Promise<void> };
+      chrome?: { setTheme(dark: boolean, mode?: ThemeMode): Promise<void> };
     };
   }
 }

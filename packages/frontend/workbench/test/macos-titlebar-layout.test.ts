@@ -16,7 +16,7 @@ const chrome =
 const run = promisify(execFile);
 
 test(
-  "macOS page titles and tool tabs share the navigation row without covering controls",
+  "macOS page titles and tool tabs clear navigation at rest and during sidebar motion",
   {
     skip:
       !chrome || !existsSync(chrome)
@@ -45,6 +45,9 @@ test(
 <body><div class="aura-root workbench" style="height:800px"></div><pre id="result"></pre>
 <script>
 const root = document.querySelector('.workbench');
+root.style.setProperty('--background', 'rgb(21, 21, 23)');
+root.style.setProperty('--sidebar', 'rgb(27, 27, 28)');
+root.dataset.theme = 'dark';
 const results = [];
 const button = label => '<button class="icon-control" aria-label="' + label + '">' + label + '</button>';
 const navigation = '<header class="workspace-menubar"><div class="window-navigation">' + button('←') + button('→') + button('侧栏') + '</div></header>';
@@ -60,13 +63,19 @@ for (const side of [false, true]) {
   const integrated = os === 'darwin' && width >= 900;
   root.dataset.platform = os === 'web' ? 'web' : 'desktop';
   root.dataset.os = os;
+  root.toggleAttribute('data-native-sidebar', os === 'darwin');
   root.style.width = width + 'px';
   if (integrated) root.dataset.titlebarLayout = layout;
   else delete root.dataset.titlebarLayout;
   root.toggleAttribute('data-sidebar-collapsed', collapsed);
-  root.innerHTML = navigation + '<div class="workspace-body">' + (!collapsed && width >= 900 ? sidebar(width === 1360 ? 480 : 240) : '') + '<main class="workspace-main">' + (layout === 'page' ? page : conversation(side)) + '</main></div>';
+  const sidebarWidth = width === 1360 ? 480 : 240;
+  root.innerHTML = navigation + '<div class="workspace-body" style="--sidebar-width:' + sidebarWidth + 'px">' + (!collapsed && width >= 900 ? sidebar(sidebarWidth) : '') + '<main class="workspace-main">' + (layout === 'page' ? page : conversation(side)) + '</main></div>';
   const panes = root.querySelector('.coding-panes');
-  if (panes && side && panes.clientWidth < 648) panes.setAttribute('data-tools-only', '');
+  if (panes && side && panes.clientWidth < 648) {
+    panes.setAttribute('data-stacked', '');
+    panes.setAttribute('data-tools-only', '');
+    panes.querySelector('.coding-split-handle').hidden = true;
+  }
   const rect = node => {
     const box = node.getBoundingClientRect();
     return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
@@ -95,7 +104,45 @@ for (const side of [false, true]) {
     sidebar: root.querySelector('.workspace-sidebar') ? rect(root.querySelector('.workspace-sidebar')) : null,
   });
 }
-document.querySelector('#result').textContent = JSON.stringify(results);
+root.dataset.platform = 'desktop';
+root.dataset.os = 'darwin';
+root.dataset.nativeSidebar = '';
+root.dataset.titlebarLayout = 'page';
+root.style.width = '1360px';
+delete root.dataset.sidebarCollapsed;
+root.innerHTML = navigation + '<div class="workspace-body" style="--sidebar-width:280px">' + sidebar(280) + '<main class="workspace-main">' + page + '</main></div>';
+const body = root.querySelector('.workspace-body');
+const sidebarSurface = getComputedStyle(body.querySelector('.resizable-sidebar'));
+const surfaces = {
+  reducedTransparency: matchMedia('(prefers-reduced-transparency: reduce)').matches,
+  window: getComputedStyle(root).backgroundColor,
+  sidebarTint: sidebarSurface.backgroundColor,
+  sidebarWash: sidebarSurface.backgroundImage,
+  sidebarContent: getComputedStyle(body.querySelector('.workspace-sidebar')).backgroundColor,
+  titleStrip: getComputedStyle(body.querySelector('.resizable-sidebar'), '::before').backgroundColor,
+  conversation: getComputedStyle(body.querySelector('.workspace-main')).backgroundColor,
+};
+const motionBox = () => {
+  const panel = body.querySelector('.workspace-sidebar').getBoundingClientRect();
+  return {
+    width: body.querySelector('.resizable-sidebar').getBoundingClientRect().width,
+    panelWidth: panel.width, panelEdge: panel.right,
+    mainEdge: body.querySelector('.workspace-main').getBoundingClientRect().left,
+    headingLeft: body.querySelector('.workspace-heading').getBoundingClientRect().left,
+    navigationRight: root.querySelector('.workspace-menubar').getBoundingClientRect().right,
+  };
+};
+const expanded = motionBox();
+root.dataset.sidebarCollapsed = '';
+const transition = body.getAnimations().find(animation => animation instanceof CSSTransition);
+if (transition) {
+  transition.pause();
+  transition.currentTime = transition.effect.getTiming().duration / 3;
+}
+const moving = motionBox();
+root.dataset.reduced = 'true';
+const collapsed = motionBox();
+document.querySelector('#result').textContent = JSON.stringify({ layouts: results, expanded, moving, collapsed, surfaces });
 </script></body></html>`,
     );
     const { stdout } = await run(
@@ -117,7 +164,7 @@ document.querySelector('#result').textContent = JSON.stringify(results);
     const result = stdout.match(/<pre id="result">([^<]+)<\/pre>/);
     assert.ok(result, "Chrome should return measured title bar layouts");
     type Box = { left: number; right: number; top: number; bottom: number };
-    const layouts = JSON.parse(result[1]!) as Array<{
+    type Layout = {
       integrated: boolean;
       os: string;
       width: number;
@@ -138,7 +185,43 @@ document.querySelector('#result').textContent = JSON.stringify(results);
       scroll: number;
       client: number;
       sidebar: Box | null;
-    }>;
+    };
+    type SidebarBox = {
+      width: number;
+      panelWidth: number;
+      panelEdge: number;
+      mainEdge: number;
+      headingLeft: number;
+      navigationRight: number;
+    };
+    const { layouts, expanded, moving, collapsed, surfaces } = JSON.parse(
+      result[1]!,
+    ) as {
+      layouts: Layout[];
+      expanded: SidebarBox;
+      moving: SidebarBox;
+      collapsed: SidebarBox;
+      surfaces: {
+        reducedTransparency: boolean;
+        window: string;
+        sidebarTint: string;
+        sidebarWash: string;
+        sidebarContent: string;
+        titleStrip: string;
+        conversation: string;
+      };
+    };
+    assert.equal(surfaces.window, "rgba(0, 0, 0, 0)");
+    assert.equal(surfaces.sidebarContent, "rgba(0, 0, 0, 0)");
+    assert.equal(surfaces.titleStrip, "rgba(0, 0, 0, 0)");
+    assert.equal(surfaces.conversation, "rgb(21, 21, 23)");
+    if (surfaces.reducedTransparency) {
+      assert.equal(surfaces.sidebarTint, "rgb(27, 27, 28)");
+      assert.equal(surfaces.sidebarWash, "none");
+    } else {
+      assert.match(surfaces.sidebarTint, /\/ 0\.5\)$/u);
+      assert.match(surfaces.sidebarWash, /^linear-gradient\(/u);
+    }
     assert.equal(layouts.length, 96);
     for (const layout of layouts) {
       const label = JSON.stringify(layout);
@@ -191,6 +274,17 @@ document.querySelector('#result').textContent = JSON.stringify(results);
         if (layout.integrated && !control.navigation)
           assert.ok(control.left >= layout.nav.right, label);
       }
+    }
+    assert.equal(expanded.width, 280);
+    assert.ok(
+      moving.width > 0 && moving.width < expanded.width,
+      moving.width.toString(),
+    );
+    assert.equal(collapsed.width, 0);
+    for (const box of [expanded, moving, collapsed]) {
+      assert.equal(box.panelWidth, expanded.width);
+      assert.equal(box.panelEdge, box.mainEdge);
+      assert.ok(box.headingLeft >= box.navigationRight, JSON.stringify(box));
     }
   },
 );

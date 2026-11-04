@@ -11,6 +11,7 @@ import type {
   CodingConversationInfo,
   CodingFileDiff,
   CodingHistoryTurn,
+  CodingTurnUsage,
   CodingProjectInfo,
   CodingSkillInfo,
   CodingQuestionAnswer,
@@ -240,6 +241,7 @@ export async function* codingTurn(
     /** Set on a side chat: the conversation it branches from. */
     forkFrom?: string;
     branchFrom?: string;
+    branchAt?: number;
     history?: ChatMessage[];
     context?: string;
     mode: FlowMode;
@@ -297,6 +299,12 @@ export async function* codingTurn(
 function parseCodingEvent(
   event: Record<string, unknown>,
 ): CodingChunk | undefined {
+  if (event.type === "usage") {
+    const usage = codingUsage(event.usage);
+    return usage ? { type: "usage", usage } : undefined;
+  }
+  if (event.type === "turn-boundary" && validCount(event.endSeq))
+    return { type: "turn-boundary", endSeq: event.endSeq };
   if (
     event.type === "workflow" &&
     typeof event.runId === "string" &&
@@ -543,7 +551,7 @@ export const stopCodingTurn = (endpoint: string, sessionId: string) =>
 /**
  * Sends guidance into the turn already running. It joins that turn, so what
  * the model does with it arrives on the turn's own stream rather than here;
- * `steered` is false when the turn ended before the guidance landed.
+ * `steered` is false when the turn could not accept the guidance.
  */
 export const steerCodingTurn = (
   endpoint: string,
@@ -551,6 +559,7 @@ export const steerCodingTurn = (
   prompt: string,
   images?: string[],
   modelConfig?: CodingSteerModelConfig,
+  signal?: AbortSignal,
 ) =>
   codingApi<{ steered: boolean }>(
     endpoint,
@@ -561,6 +570,7 @@ export const steerCodingTurn = (
       ...(images?.length ? { images } : {}),
       ...(modelConfig ? { modelConfig } : {}),
     },
+    signal,
   );
 
 export const openSideChat = (endpoint: string, parentId: string) =>
@@ -630,9 +640,11 @@ export async function conversationHistory(
     beforeSeq?: unknown;
     throughSeq?: unknown;
   } | null;
+  if (typeof body?.running !== "boolean")
+    throw new Error("无法确认会话运行状态。");
   const turns = Array.isArray(body?.turns) ? body.turns : [];
   return {
-    running: body?.running === true,
+    running: body.running,
     hasMore: body?.hasMore === true,
     beforeSeq: typeof body?.beforeSeq === "number" ? body.beforeSeq : undefined,
     throughSeq:
@@ -658,6 +670,7 @@ export async function conversationHistory(
           ...(typeof turn.endedAt === "number"
             ? { endedAt: turn.endedAt }
             : {}),
+          ...(validCount(turn.endSeq) ? { endSeq: turn.endSeq } : {}),
           ...(typeof turn.error === "string" ? { error: turn.error } : {}),
           events: turn.events.flatMap((event) => {
             const parsed = parseCodingEvent(event as Record<string, unknown>);
@@ -666,6 +679,61 @@ export async function conversationHistory(
         },
       ];
     }),
+  };
+}
+
+/** The agent can stop accepting guidance before the host finishes the turn. */
+export async function waitForCodingTurnEnd(
+  endpoint: string,
+  sessionId: string,
+  signal: AbortSignal,
+): Promise<CodingHistoryTurn | undefined> {
+  while (true) {
+    signal.throwIfAborted();
+    const history = await conversationHistory(endpoint, sessionId, signal);
+    signal.throwIfAborted();
+    if (!history.running) return history.turns.at(-1);
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", cancel);
+        resolve();
+      }, 2_000);
+      const cancel = () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      };
+      signal.addEventListener("abort", cancel, { once: true });
+    });
+  }
+}
+
+function validCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function codingUsage(value: unknown): CodingTurnUsage | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const {
+    totalTokens,
+    uncachedInputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    reasoningTokens,
+  } = value as Record<string, unknown>;
+  if (
+    !validCount(totalTokens) ||
+    !validCount(uncachedInputTokens) ||
+    !validCount(outputTokens)
+  )
+    return undefined;
+  return {
+    totalTokens,
+    uncachedInputTokens,
+    outputTokens,
+    ...(validCount(cacheReadTokens) ? { cacheReadTokens } : {}),
+    ...(validCount(cacheWriteTokens) ? { cacheWriteTokens } : {}),
+    ...(validCount(reasoningTokens) ? { reasoningTokens } : {}),
   };
 }
 

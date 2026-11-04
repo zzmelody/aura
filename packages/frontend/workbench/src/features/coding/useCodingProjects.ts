@@ -23,6 +23,7 @@ import {
 } from "./api";
 import { conversationInfoStatus, isActiveStatus } from "./conversationStatus";
 import { conversationProject } from "./conversation-project";
+import { createAssistantLoader } from "./assistant-loader";
 import { startupCache } from "../../startup-cache.ts";
 
 /** How often the sidebar re-reads statuses while some turn is still running. */
@@ -34,7 +35,7 @@ export type CodingProjectsController = {
   ready: boolean;
   assistant?: PersonalAssistantInfo;
   assistantLoading: boolean;
-  loadAssistant(create?: boolean, signal?: AbortSignal): Promise<boolean>;
+  loadAssistant(create?: boolean): Promise<boolean>;
   /** Conversations of each workspace, most recently active first. */
   conversations: Record<string, CodingConversationInfo[]>;
   conversationErrors: Record<string, string>;
@@ -43,7 +44,9 @@ export type CodingProjectsController = {
   /** The open conversation; undefined starts a new one in the workspace. */
   conversationId?: string;
   branchFrom?: string;
+  branchAt?: number;
   continueIn(projectId: string): void;
+  fork(projectId: string, sessionId: string, endSeq: number): void;
   newChat(): void;
   selectModel(
     sessionId: string,
@@ -98,11 +101,12 @@ export function useCodingProjects(
     projectId?: string;
     conversationId?: string;
     branchFrom?: string;
+    branchAt?: number;
   }>({ projectId: conversationProject(restored.projects)?.id });
   const [error, setError] = useState("");
-  const [assistantProject, setAssistantProject] = useState<{
+  const [loadedAssistant, setLoadedAssistant] = useState<{
     endpoint: string;
-    project: CodingProjectInfo;
+    info: PersonalAssistantInfo;
   }>();
   const [assistantRequests, setAssistantRequests] = useState(0);
   // Ignore lists requested before a successful mutation changed these rows.
@@ -200,17 +204,17 @@ export function useCodingProjects(
     [endpoint],
   );
 
-  const loadAssistant = useCallback(
-    async (create = false, signal?: AbortSignal) => {
+  const requestAssistant = useCallback(
+    async (create: boolean, signal: AbortSignal) => {
       setAssistantRequests((current) => current + 1);
       try {
         const info = await personalAssistant(endpoint, create, signal);
-        if (signal?.aborted || !info) return false;
+        if (signal.aborted || !info) return false;
         versions.current.set(
           info.project.id,
           (versions.current.get(info.project.id) ?? 0) + 1,
         );
-        setAssistantProject({ endpoint, project: info.project });
+        setLoadedAssistant({ endpoint, info });
         setProjects((current) =>
           current.some((project) => project.id === info.project.id)
             ? current
@@ -233,7 +237,7 @@ export function useCodingProjects(
         setError("");
         return true;
       } catch (reason) {
-        if (!signal?.aborted)
+        if (!signal.aborted)
           setError(reason instanceof Error ? reason.message : String(reason));
         return false;
       } finally {
@@ -242,6 +246,11 @@ export function useCodingProjects(
     },
     [endpoint, refreshConversations],
   );
+  const assistantLoader = useMemo(
+    () => createAssistantLoader(requestAssistant),
+    [requestAssistant],
+  );
+  useEffect(() => assistantLoader.cancel, [assistantLoader]);
 
   /** Server status for every listed row, overlaid with the pane's live status. */
   const statuses = useMemo(() => {
@@ -490,9 +499,11 @@ export function useCodingProjects(
     [endpoint, mutate],
   );
 
+  const assistant =
+    loadedAssistant?.endpoint === endpoint ? loadedAssistant.info : undefined;
   const assistantConversation =
-    assistantProject?.endpoint === endpoint
-      ? conversations[assistantProject.project.id]?.find(
+    assistant && dataEndpoint === endpoint
+      ? conversations[assistant.project.id]?.find(
           (item) => item.id === PERSONAL_ASSISTANT_SESSION_ID,
         )
       : undefined;
@@ -501,29 +512,28 @@ export function useCodingProjects(
     projects: dataEndpoint === endpoint ? projects : [],
     ready: readyEndpoint === endpoint,
     assistant:
-      assistantConversation && assistantProject
-        ? {
-            conversation: assistantConversation,
-            project: assistantProject.project,
-          }
-        : undefined,
+      assistant && assistantConversation
+        ? { ...assistant, conversation: assistantConversation }
+        : assistant,
     assistantLoading: assistantRequests > 0,
-    loadAssistant,
+    loadAssistant: assistantLoader.load,
     conversations: dataEndpoint === endpoint ? conversations : {},
     conversationErrors: dataEndpoint === endpoint ? conversationErrors : {},
     selectedId: dataEndpoint === endpoint ? selection.projectId : undefined,
     conversationId:
       dataEndpoint === endpoint ? selection.conversationId : undefined,
     branchFrom: dataEndpoint === endpoint ? selection.branchFrom : undefined,
+    branchAt: dataEndpoint === endpoint ? selection.branchAt : undefined,
+    fork: (projectId, sessionId, endSeq) =>
+      setSelection({ projectId, branchFrom: sessionId, branchAt: endSeq }),
     continueIn: (projectId) =>
       setSelection((current) =>
         current.projectId === projectId
           ? current
           : {
               projectId,
-              ...(current.conversationId
-                ? { branchFrom: current.conversationId }
-                : {}),
+              branchFrom: current.conversationId ?? current.branchFrom,
+              branchAt: current.branchAt,
             },
       ),
     newChat: () =>

@@ -1,13 +1,35 @@
 /* Shallow chrome, compact rows and one reading column. */
+/* Animate open progress independently from the width the resize handle sets. */
+@property --workspace-sidebar-progress {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
 .workbench {
   --workspace-divider: color-mix(in srgb, var(--border) 40%, transparent);
+  --workspace-sidebar-duration: 220ms;
+  --workspace-motion-ease: cubic-bezier(0.22, 0.75, 0.22, 1);
   flex-direction: column;
 }
+.workbench[data-reduced="true"] {
+  --workspace-sidebar-duration: 0ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workbench {
+    --workspace-sidebar-duration: 0ms;
+  }
+}
 .workspace-body {
+  --workspace-sidebar-progress: 1;
   display: flex;
   flex: 1;
   min-width: 0;
   min-height: 0;
+  transition: --workspace-sidebar-progress var(--workspace-sidebar-duration)
+    var(--workspace-motion-ease);
+}
+[data-sidebar-collapsed] .workspace-body {
+  --workspace-sidebar-progress: 0;
 }
 .workspace-menubar {
   display: flex;
@@ -26,6 +48,29 @@
   flex-shrink: 0;
   height: 36px;
 }
+.sidebar-dialog {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 45;
+  background: transparent;
+  transition:
+    display var(--workspace-sidebar-duration) allow-discrete,
+    overlay var(--workspace-sidebar-duration) allow-discrete;
+}
+.sidebar-dialog::backdrop {
+  opacity: 0;
+  transition:
+    opacity var(--workspace-sidebar-duration) var(--workspace-motion-ease),
+    display var(--workspace-sidebar-duration) allow-discrete,
+    overlay var(--workspace-sidebar-duration) allow-discrete;
+}
+.sidebar-dialog[open]::backdrop {
+  opacity: 1;
+}
+.sidebar-dialog:not([open]),
+.sidebar-dialog:not([open])::backdrop {
+  pointer-events: none;
+}
 .sidebar-dialog .workspace-menubar {
   position: fixed;
   top: 0;
@@ -36,6 +81,20 @@
 }
 .sidebar-dialog .workspace-sidebar {
   padding-top: calc(36px + env(safe-area-inset-top));
+  translate: -100% 0;
+  transition: translate var(--workspace-sidebar-duration)
+    var(--workspace-motion-ease);
+}
+.sidebar-dialog[open] .workspace-sidebar {
+  translate: none;
+}
+@starting-style {
+  .sidebar-dialog[open] .workspace-sidebar {
+    translate: -100% 0;
+  }
+  .sidebar-dialog[open]::backdrop {
+    opacity: 0;
+  }
 }
 .window-navigation {
   display: flex;
@@ -108,46 +167,77 @@
   pointer-events: none;
   -webkit-app-region: drag;
 }
-[data-titlebar-layout] .workspace-header {
-  -webkit-app-region: drag;
+[data-titlebar-layout] .workspace-body {
+  --titlebar-main-start: calc(
+    var(--sidebar-width) * var(--workspace-sidebar-progress)
+  );
+  --titlebar-drag-inset: calc(
+    var(--window-navigation-width) - var(--titlebar-main-start)
+  );
 }
 [data-titlebar-layout] .workspace-header :is(button, a, input, nav) {
   -webkit-app-region: no-drag;
 }
+[data-titlebar-layout="page"] .workspace-header {
+  --titlebar-leading-padding: 18px;
+}
+[data-titlebar-layout="conversation"] .coding-tools-header {
+  --titlebar-leading-padding: 5px;
+}
+[data-titlebar-layout="page"] .workspace-header,
+[data-titlebar-layout="conversation"]
+  :is(
+    .coding-main-column > .coding-header,
+    .coding-panes[data-stacked] > .coding-side > .coding-tools-header
+  ) {
+  padding-left: max(
+    var(--titlebar-leading-padding, 10px),
+    calc(var(--titlebar-drag-inset) + 10px)
+  );
+  position: relative;
+}
+/* With the sidebar open the header is the native drag region itself. Only a
+ * collapsed sidebar lets headers slide under navigation, so only then is the
+ * header no-drag with a drag layer that starts after the navigation. */
+[data-titlebar-layout="page"] .workspace-header,
+[data-titlebar-layout="conversation"]
+  :is(
+    .coding-main-column > .coding-header,
+    .coding-panes[data-stacked] > .coding-side > .coding-tools-header
+  ) {
+  -webkit-app-region: drag;
+}
 [data-titlebar-layout="page"][data-sidebar-collapsed] .workspace-header,
 [data-titlebar-layout="conversation"][data-sidebar-collapsed]
-  .coding-main-column
-  > .coding-header,
-[data-titlebar-layout="conversation"][data-sidebar-collapsed]
-  .coding-panes[data-tools-only]
-  > .coding-side
-  > .coding-tools-header {
-  padding-left: calc(var(--window-navigation-width) + 10px);
-  position: relative;
+  :is(
+    .coding-main-column > .coding-header,
+    .coding-panes[data-stacked] > .coding-side > .coding-tools-header
+  ) {
   -webkit-app-region: no-drag;
 }
 [data-titlebar-layout="page"][data-sidebar-collapsed] .workspace-header::before,
 [data-titlebar-layout="conversation"][data-sidebar-collapsed]
-  .coding-main-column
-  > .coding-header::before,
-[data-titlebar-layout="conversation"][data-sidebar-collapsed]
-  .coding-panes[data-tools-only]
-  > .coding-side
-  > .coding-tools-header::before {
+  :is(
+    .coding-main-column > .coding-header,
+    .coding-panes[data-stacked] > .coding-side > .coding-tools-header
+  )::before {
   content: "";
   position: absolute;
-  inset: 0 0 0 var(--window-navigation-width);
+  inset: 0 0 0 max(0px, var(--titlebar-drag-inset));
   pointer-events: none;
   -webkit-app-region: drag;
 }
 .resizable-sidebar {
   position: relative;
-  flex: 0 0 var(--sidebar-width);
-  width: var(--sidebar-width);
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  width: calc(var(--sidebar-width) * var(--workspace-sidebar-progress));
   min-height: 0;
 }
 .resizable-sidebar > .workspace-sidebar {
-  width: 100%;
+  flex: 0 0 var(--sidebar-width);
+  width: var(--sidebar-width);
   height: 100%;
 }
 /* Codex-like chrome: tonal panels, no full-height accent divider. The hit
@@ -161,34 +251,37 @@
   width: 8px;
   cursor: col-resize;
   touch-action: none;
+  transition: visibility 0s var(--workspace-sidebar-duration);
 }
+[data-sidebar-collapsed] .sidebar-resize-handle {
+  visibility: hidden;
+  transition: none;
+}
+/* Same full-height, edge-faded line as the conversation/tools split. */
 .sidebar-resize-handle::after {
   content: "";
   position: absolute;
-  top: 50%;
-  left: 2px;
-  width: 3px;
-  height: 40px;
-  border-radius: 999px;
-  background: var(--secondary);
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--secondary) 50%,
+    transparent
+  );
   opacity: 0;
-  transform: translateY(-50%);
   transition: opacity 120ms ease;
 }
-.sidebar-resize-handle:hover::after {
-  opacity: 0.5;
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle:focus-visible::after,
+.resizable-sidebar[data-resizing="true"] .sidebar-resize-handle::after {
+  opacity: 1;
 }
 .sidebar-resize-handle:focus-visible,
 .sidebar-resize-handle:active {
   outline: none;
-}
-.sidebar-resize-handle:focus-visible::after {
-  outline: 2px solid var(--secondary);
-  outline-offset: 3px;
-  opacity: 1;
-}
-.resizable-sidebar[data-resizing="true"] .sidebar-resize-handle::after {
-  opacity: 0.85;
 }
 .workspace-body:has([data-resizing="true"]),
 .workspace-body:has([data-resizing="true"]) * {
@@ -201,6 +294,45 @@
   border-right: 0.5px solid var(--workspace-divider);
   background: var(--sidebar);
   font-size: 14px;
+}
+
+/* Only the inline macOS sidebar sits over the native window material. */
+.workbench[data-native-sidebar] {
+  background: transparent;
+}
+[data-native-sidebar] .workspace-main,
+.workbench[data-native-sidebar]:not([data-titlebar-layout])
+  > .workspace-menubar {
+  background: var(--background);
+}
+[data-native-sidebar] .resizable-sidebar {
+  --sidebar-glass-tint: 40%;
+  background:
+    linear-gradient(
+      180deg,
+      rgb(122 155 240 / 9%),
+      transparent 36% 68%,
+      rgb(143 137 184 / 8%)
+    ),
+    color-mix(in srgb, var(--sidebar) var(--sidebar-glass-tint), transparent);
+}
+[data-native-sidebar][data-theme="dark"] .resizable-sidebar {
+  --sidebar-glass-tint: 50%;
+}
+[data-native-sidebar] .resizable-sidebar > .workspace-sidebar,
+[data-native-sidebar][data-titlebar-layout] .resizable-sidebar::before {
+  border-right: 0;
+  background: transparent;
+}
+[data-native-sidebar]:not([data-sidebar-collapsed])
+  .resizable-sidebar
+  + .workspace-main {
+  border-inline-start: 0.5px solid var(--workspace-divider);
+}
+@media (prefers-reduced-transparency: reduce) {
+  [data-native-sidebar] .resizable-sidebar {
+    background: var(--sidebar);
+  }
 }
 .aura-assistant-orb {
   position: relative;
@@ -262,9 +394,15 @@
     animation: none;
   }
 }
+/* A tinted, low-glare entry: the sidebar's main action without a solid fill. */
 .workspace-sidebar > .new-session {
-  --button-hover-fill: var(--control-hover-fill);
-  --button-pressed-fill: var(--control-pressed-fill);
+  --button-hover-fill: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--soft) 80%, var(--accent)),
+    color-mix(in srgb, var(--soft) 92%, var(--accent))
+  );
+  --button-pressed-fill: var(--pressed-fill);
+  --button-hover-shadow: none;
   display: flex;
   flex-shrink: 0;
   align-items: center;
@@ -273,12 +411,12 @@
   min-height: 38px;
   margin-bottom: 8px;
   padding: 8px 12px;
-  border: 0;
+  border: 0.5px solid color-mix(in srgb, var(--accent) 22%, transparent);
   border-radius: 12px;
-  background: var(--primary);
-  color: var(--primaryText);
+  background: var(--soft);
+  color: var(--accent);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   text-align: center;
 }
 .workspace-nav {
@@ -641,9 +779,6 @@
 .standalone .chat-screen .chat-transcript {
   padding-top: 20px;
 }
-.workspace-status {
-  min-height: 22px;
-}
 .sidebar-footer {
   padding: 7px 0;
   border-top-color: var(--workspace-divider);
@@ -666,6 +801,13 @@
   color: var(--text);
   box-shadow: 0 10px 32px rgb(0 0 0 / 22%);
   -webkit-app-region: no-drag;
+  animation: workbench-menu-in 130ms var(--workspace-motion-ease);
+}
+@keyframes workbench-menu-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
 }
 .workbench-menu-item {
   display: flex;

@@ -35,6 +35,22 @@ export const isActiveStatus = (status: SessionStatus | undefined) =>
   status?.kind === "running" || status?.kind === "waiting";
 
 /**
+ * A conversation stays running while any of its side chats runs, even after
+ * the main conversation's own turn has settled.
+ */
+export function withSideActivity(
+  status: SessionStatus | undefined,
+  sideRunning: boolean,
+): SessionStatus | undefined {
+  if (!sideRunning) return status;
+  return status?.kind === "running" ||
+    status?.kind === "waiting" ||
+    status?.kind === "queued"
+    ? status
+    : RUNNING;
+}
+
+/**
  * Sidebar status of one workspace conversation, from its latest turn. A
  * conversation with no turns loaded on this page has no known status.
  */

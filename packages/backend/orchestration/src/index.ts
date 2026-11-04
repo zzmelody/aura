@@ -867,50 +867,56 @@ export function createFlowApp(
     if (plugin) return plugin;
     await next();
   });
-  app.use("*", (context, next) =>
+  // Register the upload limit on its route so it also applies under a mount.
+  app.post(
+    "/assets/images",
     bodyLimit({
-      maxSize:
-        context.req.method === "POST" && context.req.path === "/assets/images"
-          ? 32 * 1024 * 1024
-          : 256 * 1024,
+      maxSize: 32 * 1024 * 1024,
+      onError: (context) =>
+        context.json({ message: "图片不能超过 32 MB。" }, 413),
+    }),
+    async (context) => {
+      if (!host.uploadImage) throw new FlowError("图片资产服务不可用。", 503);
+      const mediaType = context.req
+        .header("content-type")
+        ?.split(";", 1)[0]
+        ?.trim()
+        .toLowerCase();
+      if (!["image/png", "image/jpeg", "image/webp"].includes(mediaType ?? ""))
+        throw new FlowError("请上传 PNG、JPEG 或 WebP 图片。", 415);
+      const bytes = new Uint8Array(await context.req.arrayBuffer());
+      try {
+        const asset = await host.uploadImage(bytes, context.req.raw.signal);
+        return context.json(
+          {
+            assetId: asset.artifactId,
+            mimeType: asset.mimeType,
+            width: asset.width,
+            height: asset.height,
+            bytes: asset.bytes,
+          },
+          201,
+        );
+      } catch (error) {
+        if (context.req.raw.signal.aborted) throw error;
+        if (error instanceof ActionFailure)
+          throw new FlowError(error.message, 400);
+        throw error;
+      }
+    },
+  );
+  app.use(
+    "*",
+    bodyLimit({
+      maxSize: 256 * 1024,
       onError: (context) => context.json({ message: "Flow 请求过大。" }, 413),
-    })(context, next),
+    }),
   );
 
   app.get("/assets/images/:id", async (context) => {
     if (!host.imageAssetContent)
       throw new FlowError("图片资产服务不可用。", 503);
     return host.imageAssetContent(context.req.param("id"), context.req.raw);
-  });
-
-  app.post("/assets/images", async (context) => {
-    if (!host.uploadImage) throw new FlowError("图片资产服务不可用。", 503);
-    const mediaType = context.req
-      .header("content-type")
-      ?.split(";", 1)[0]
-      ?.trim()
-      .toLowerCase();
-    if (!["image/png", "image/jpeg", "image/webp"].includes(mediaType ?? ""))
-      throw new FlowError("请上传 PNG、JPEG 或 WebP 图片。", 415);
-    const bytes = new Uint8Array(await context.req.arrayBuffer());
-    try {
-      const asset = await host.uploadImage(bytes, context.req.raw.signal);
-      return context.json(
-        {
-          assetId: asset.artifactId,
-          mimeType: asset.mimeType,
-          width: asset.width,
-          height: asset.height,
-          bytes: asset.bytes,
-        },
-        201,
-      );
-    } catch (error) {
-      if (context.req.raw.signal.aborted) throw error;
-      if (error instanceof ActionFailure)
-        throw new FlowError(error.message, 400);
-      throw error;
-    }
   });
 
   app.get("/catalog", async (context) => {

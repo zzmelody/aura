@@ -10,7 +10,7 @@
   "main": "src/main.ts",
   "scripts": {
     "dev": "pnpm run build:preload && tsx ../../scripts/dev-renderer.ts desktop",
-    "start": "pnpm run build && electron .",
+    "start": "pnpm run build && tsx ../../scripts/desktop-bundle.ts .",
     "build": "pnpm run build:renderer && pnpm run build:preload && node ../../scripts/build-plugins.ts desktop",
     "build:preload": "tsx ../../scripts/build-desktop-preload.ts",
     "build:renderer": "tsx ../../scripts/build-renderer.ts desktop",

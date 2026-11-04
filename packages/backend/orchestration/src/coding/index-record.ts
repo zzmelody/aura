@@ -24,6 +24,7 @@ export interface CodingConversationRecord extends CodingConversation {
   /** A tombstone prevents delayed requests from reopening a closed parent. */
   closedAt?: number;
   history?: ChatMessage[];
+  sourceEndSeq?: number;
 }
 
 export const conversationMessageSchema = z.object({
@@ -65,6 +66,7 @@ const recordSchema = z.object({
     )
     .optional(),
   sourceSessionId: z.string().optional(),
+  sourceEndSeq: z.number().int().nonnegative().optional(),
   history: z.array(conversationMessageSchema).max(200).optional(),
   modelConfig: modelConfigSchema.optional(),
   sideModelConfig: modelConfigSchema.optional(),
@@ -117,7 +119,11 @@ export class CodingConversationIndex {
     id: string,
     projectId: string,
     prompt: string,
-    seed: { history?: ChatMessage[]; sourceSessionId?: string } = {},
+    seed: {
+      history?: ChatMessage[];
+      sourceSessionId?: string;
+      sourceEndSeq?: number;
+    } = {},
   ): Promise<CodingConversationRecord> {
     if (id.startsWith("side-"))
       throw new FlowError("旁支对话不能作为主对话打开。", 400);

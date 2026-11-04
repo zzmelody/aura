@@ -1,11 +1,13 @@
-/** Keep recent transcripts, always retaining the selected and streaming conversations. */
+import { PERSONAL_ASSISTANT_SESSION_ID } from "@aura/protocol/conversations";
+
+/** Keep recent transcripts, protecting Aura and the selected and streaming conversations. */
 export function retainConversations<T>(
   entries: Record<string, T>,
   selectedId: string | undefined,
   runningIds: Iterable<string>,
   capacity = 6,
 ): Record<string, T> {
-  const protectedIds = new Set(runningIds);
+  const protectedIds = new Set([PERSONAL_ASSISTANT_SESSION_ID, ...runningIds]);
   if (selectedId) protectedIds.add(selectedId);
   const ids = Object.keys(entries);
   const idle = ids.filter((id) => !protectedIds.has(id));

@@ -11,7 +11,8 @@
     ".": "./src/index.ts",
     "./types": "./src/types.ts",
     "./models": "./src/models.ts",
-    "./conversations": "./src/conversations.ts"
+    "./conversations": "./src/conversations.ts",
+    "./browser": "./src/browser.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

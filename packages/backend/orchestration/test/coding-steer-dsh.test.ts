@@ -222,6 +222,11 @@ test(
         ["deepseek-v4-flash"],
         "the in-flight call keeps its original model",
       );
+      assert.equal(
+        events.some((event) => event.type === "steer"),
+        false,
+        "admission succeeds before the agent records guidance on the stream",
+      );
       firstReply.resolve();
       assert.equal(await settled, "resolved", "the steered turn must finish");
       assert.ok(sawGuidance, "the model must read the guidance");

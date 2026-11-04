@@ -10,9 +10,11 @@ import {
   Ellipsis,
   FolderPlus,
   FolderOpen,
+  Globe,
   ChevronDown,
   PanelRight,
   MessageSquare,
+  MessageSquareQuote,
   SquareTerminal,
 } from "lucide-react";
 import {
@@ -36,6 +38,7 @@ import { ConversationPane } from "./ConversationPane";
 import { ConversationSplit } from "./ConversationSplit";
 import { SideConversation } from "./SideConversation";
 import { ToolTabs } from "./ToolTabs";
+import { BrowserPane, type BrowserPageInfo } from "./BrowserPane.tsx";
 import { TerminalPane } from "./TerminalPane";
 import { TerminalCloseDialog } from "./TerminalCloseDialog";
 import { useWorkspaceTerminals } from "./useWorkspaceTerminals";
@@ -44,13 +47,22 @@ import {
   selectedToolId,
   type WorkspaceToolTab,
 } from "./tool-tabs";
+import {
+  loadToolLayouts,
+  saveToolLayout,
+  type ToolLayout,
+} from "./tool-layout";
 import { WorkbenchMenu } from "../../WorkbenchMenu";
 import { WorkflowApiError } from "../../workflowSessions";
-import { codingConversationStatus } from "./conversationStatus";
+import {
+  codingConversationStatus,
+  withSideActivity,
+} from "./conversationStatus";
 import type { CodingProjectsController } from "./useCodingProjects";
 import { WorkspaceDialog } from "./WorkspaceDialog";
 import type { Turn } from "./turns";
 import { TrajectoryView } from "./TrajectoryView";
+import { SelectionActions, type SelectionAction } from "./SelectionActions";
 import "./coding.css";
 import "./tools.css";
 
@@ -72,6 +84,7 @@ export function CodingStudio({
   workspaces,
   handoff,
   onHandoffTaken,
+  onForkConversation,
   onProvider,
   onBack,
   headerActions,
@@ -99,6 +112,11 @@ export function CodingStudio({
   headerActions?: React.ReactNode;
   legacy?: Session;
   onOpened?(): void;
+  onForkConversation?(
+    projectId: string,
+    sessionId: string,
+    endSeq: number,
+  ): void;
   context?: string;
   initialDraft?: string;
   onApplyFlow?(code: string): void;
@@ -123,6 +141,7 @@ export function CodingStudio({
       ? `legacy-${legacy.id}`
       : selectedConversationId;
   const branchFrom = personalAssistant ? undefined : workspaces.branchFrom;
+  const branchAt = personalAssistant ? undefined : workspaces.branchAt;
   const history = useMemo(
     () =>
       legacy
@@ -142,33 +161,98 @@ export function CodingStudio({
   );
   const [creating, setCreating] = useState(false);
   const [openingSide, setOpeningSide] = useState(false);
-  const [toolSelections, setToolSelections] = useState<Record<string, string>>(
-    {},
-  );
-  const [toolVisibility, setToolVisibility] = useState<Record<string, boolean>>(
-    {},
+  /**
+   * Tool panel layout per main conversation, like DSH's per-session sidebar:
+   * browser tabs, selected tab and visibility survive switches and reloads.
+   */
+  const [layouts, setLayouts] = useState(loadToolLayouts);
+  const savedLayouts = useRef(layouts);
+  useEffect(() => {
+    const previous = savedLayouts.current;
+    for (const [owner, layout] of Object.entries(layouts)) {
+      if (layout !== previous[owner]) saveToolLayout(owner, layout);
+    }
+    for (const owner of Object.keys(previous)) {
+      if (!layouts[owner]) saveToolLayout(owner, { browsers: [] });
+    }
+    savedLayouts.current = layouts;
+  }, [layouts]);
+  /**
+   * Conversations whose browsers were shown this visit, with their storage
+   * workspace. Only these mount guests; hidden ones stay mounted.
+   */
+  const [mountedBrowsers, setMountedBrowsers] = useState<
+    Record<string, string>
+  >({});
+  const updateLayout = useCallback(
+    (owner: string, change: (layout: ToolLayout) => ToolLayout) =>
+      setLayouts((current) => ({
+        ...current,
+        [owner]: change(current[owner] ?? { browsers: [] }),
+      })),
+    [],
   );
   const [toolError, setToolError] = useState("");
+  const browserHost = window.auraHost?.browser;
+  const saveBrowserPage = useCallback(
+    (id: string, page: BrowserPageInfo) =>
+      setLayouts((current) => {
+        for (const [owner, layout] of Object.entries(current)) {
+          const tab = layout.browsers.find((item) => item.id === id);
+          if (!tab) continue;
+          if (tab.url === page.url && tab.title === page.title) return current;
+          const next = {
+            ...layout,
+            browsers: layout.browsers.map((item) =>
+              item.id === id ? { ...item, ...page } : item,
+            ),
+          };
+          return { ...current, [owner]: next };
+        }
+        return current;
+      }),
+    [],
+  );
   const [closingTools, setClosingTools] = useState<string[]>([]);
   const [confirmTerminal, setConfirmTerminal] =
     useState<WorkspaceTerminalInfo>();
   const [draftInserts, setDraftInserts] = useState<
     Record<string, { id: string; text: string }>
   >({});
+  const [sideInserts, setSideInserts] = useState<
+    Record<string, { id: string; text: string }>
+  >({});
+  const studioRoot = useRef<HTMLElement>(null);
   const terminals = useWorkspaceTerminals(endpoint, projectId);
   const [mainRunning, setMainRunning] = useState(false);
   /** Main conversation's turns, mirrored for the trajectory view. */
   const [mainTurns, setMainTurns] = useState<readonly Turn[]>([]);
-  const [view, setView] = useState<"chat" | "trajectory">("chat");
+  const [selectedView, setView] = useState<"chat" | "trajectory">("chat");
+  const view = branchFrom ? "chat" : selectedView;
   const [modelConfigs, setModelConfigs] = useState<
     Record<string, Partial<Record<FlowMode, ChatModelSelection>>>
   >({});
   const sideToggle = useRef<HTMLButtonElement>(null);
-  const restoreToolFocus = useRef(false);
+  const hideTools = useRef<HTMLButtonElement>(null);
+  const moveToolFocus = useRef(false);
   const closingSides = useRef(new Set<string>());
   const selection = useRef({ conversationId, mainRunning });
   selection.current = { conversationId, mainRunning };
   const { reportStatus } = workspaces;
+  /** Side chats with a live turn, keyed by side session id. */
+  const [sideRunning, setSideRunning] = useState<Record<string, boolean>>({});
+  const reportSideRunning = useCallback(
+    (sessionId: string, running: boolean) =>
+      setSideRunning((current) =>
+        !!current[sessionId] === running
+          ? current
+          : { ...current, [sessionId]: running },
+      ),
+    [],
+  );
+  const sideActive = useRef(false);
+  /** The conversation `mainTurns` belongs to, so a switch never mislabels a row. */
+  const mainTurnsOwner = useRef<string | undefined>(undefined);
   /**
    * Publishes the open conversation's live status. Other rows keep the status
    * the server reports, so switching away never blanks their badge.
@@ -176,8 +260,13 @@ export function CodingStudio({
   const reportTurns = useCallback(
     (turns: readonly Turn[]) => {
       const current = selection.current.conversationId;
+      mainTurnsOwner.current = current;
       setMainTurns(turns);
-      if (current) reportStatus(current, codingConversationStatus(turns));
+      if (current)
+        reportStatus(
+          current,
+          withSideActivity(codingConversationStatus(turns), sideActive.current),
+        );
     },
     [reportStatus],
   );
@@ -185,30 +274,74 @@ export function CodingStudio({
   const project = personalAssistant
     ? workspaces.assistant?.project
     : projects.find((item) => item.id === projectId);
-  const conversation = project
-    ? workspaces.conversations[project.id]?.find(
-        (item) => item.id === conversationId,
-      )
-    : undefined;
+  const conversation = personalAssistant
+    ? workspaces.assistant?.conversation
+    : project
+      ? workspaces.conversations[project.id]?.find(
+          (item) => item.id === conversationId,
+        )
+      : undefined;
   const currentSides =
     conversation && conversation.archivedAt === undefined
       ? conversationSides(conversation)
       : [];
+  const currentSideRunning = currentSides.some((side) => sideRunning[side.id]);
+  sideActive.current = currentSideRunning;
+  // Re-publish when only a side chat starts or settles; main turns are unchanged.
+  useEffect(() => {
+    if (!conversationId || mainTurnsOwner.current !== conversationId) return;
+    reportStatus(
+      conversationId,
+      withSideActivity(codingConversationStatus(mainTurns), currentSideRunning),
+    );
+  }, [conversationId, currentSideRunning, mainTurns, reportStatus]);
   const toolKey = `${endpoint}:${projectId ?? ""}`;
-  const tabs = workspaceToolTabs(currentSides, terminals.current);
-  const activeToolId = selectedToolId(tabs, toolSelections[toolKey]);
+  // A draft has no session id yet; its layout moves to the session on first send.
+  const layoutOwner = conversationId
+    ? `${endpoint}:${conversationId}`
+    : `draft:${toolKey}`;
+  const layout = layouts[layoutOwner];
+  const tabs = workspaceToolTabs(
+    currentSides,
+    terminals.current,
+    browserHost ? layout?.browsers : undefined,
+  );
+  const activeToolId = selectedToolId(tabs, layout?.selected);
   const sideVisible =
     !!project &&
-    toolVisibility[toolKey] !== false &&
-    (toolVisibility[toolKey] === true || tabs.length > 0);
+    layout?.visible !== false &&
+    (layout?.visible === true || tabs.length > 0);
+  const setSideVisible = (visible: boolean) =>
+    updateLayout(layoutOwner, (current) => ({ ...current, visible }));
+  // Browser storage is grouped by workspace directory, as in DSH Desktop.
+  const browserWorkspace = project
+    ? `${endpoint}:${project.directory}`
+    : undefined;
+  const showBrowsers = visible && sideVisible && !!layout?.browsers.length;
   useEffect(() => {
-    if (!sideVisible && restoreToolFocus.current) {
-      restoreToolFocus.current = false;
-      sideToggle.current?.focus();
-    }
+    if (!browserHost || !browserWorkspace || !showBrowsers) return;
+    setMountedBrowsers((current) =>
+      current[layoutOwner]
+        ? current
+        : { ...current, [layoutOwner]: browserWorkspace },
+    );
+  }, [browserHost, browserWorkspace, layoutOwner, showBrowsers]);
+  useEffect(() => {
+    if (!moveToolFocus.current) return;
+    moveToolFocus.current = false;
+    (sideVisible ? hideTools : sideToggle).current?.focus({
+      preventScroll: true,
+    });
   }, [sideVisible]);
   const selectTool = (id: string) =>
-    setToolSelections((current) => ({ ...current, [toolKey]: id }));
+    updateLayout(layoutOwner, (current) => ({ ...current, selected: id }));
+  /** Selects a tool and expands the panel in one saved change. */
+  const showTool = (id: string) =>
+    updateLayout(layoutOwner, (current) => ({
+      ...current,
+      selected: id,
+      visible: true,
+    }));
   const title = personalAssistant
     ? "Aura"
     : (conversation?.title ?? legacy?.title ?? "新任务");
@@ -224,10 +357,20 @@ export function CodingStudio({
       ? handoff
       : undefined;
   const mode = providerMode(provider);
-  const source = Object.values(workspaces.conversations)
-    .flat()
-    .find((item) => item.id === (branchFrom ?? conversation?.sourceSessionId));
-  const configKey = conversationId ?? `draft:${projectId}`;
+  const sourceId = branchFrom ?? conversation?.sourceSessionId;
+  const source =
+    sourceId === PERSONAL_ASSISTANT_SESSION_ID
+      ? workspaces.assistant?.conversation
+      : Object.values(workspaces.conversations)
+          .flatMap((conversations) =>
+            conversations.flatMap((item) => [item, ...conversationSides(item)]),
+          )
+          .find((item) => item.id === sourceId);
+  const configKey =
+    conversationId ??
+    (branchFrom
+      ? `fork:${branchFrom}:${branchAt ?? "latest"}`
+      : `draft:${projectId}`);
   const modelConfig =
     initialSend?.modelConfig ??
     conversation?.modelConfig?.[mode] ??
@@ -246,22 +389,70 @@ export function CodingStudio({
     }));
   };
 
-  const openSide = async () => {
-    if (!conversation || openingSide) return;
+  const openSide = async (): Promise<string | undefined> => {
+    if (!conversation || openingSide) return undefined;
     setOpeningSide(true);
-    setToolVisibility((current) => ({ ...current, [toolKey]: true }));
+    setSideVisible(true);
     try {
       const id = await workspaces.openSide(
         conversation.projectId,
         conversation.id,
       );
       selectTool(id);
+      return id;
     } catch {
       // The controller keeps the service error visible above the transcript.
+      return undefined;
     } finally {
       setOpeningSide(false);
     }
   };
+
+  /** Puts a quoted selection into the main conversation's draft. */
+  const quoteToMain = (quote: string) => {
+    if (!conversationId) return;
+    setDraftInserts((current) => ({
+      ...current,
+      [conversationId]: { id: crypto.randomUUID(), text: quote },
+    }));
+    setView("chat");
+  };
+
+  /** Puts a quoted selection into the active side chat, opening one if needed. */
+  const quoteToSide = async (quote: string) => {
+    const active = tabs.find(
+      (tab) => tab.id === activeToolId && tab.kind === "chat",
+    );
+    const sideId = active?.id ?? (await openSide());
+    if (!sideId) return;
+    showTool(sideId);
+    setSideInserts((current) => ({
+      ...current,
+      [sideId]: { id: crypto.randomUUID(), text: quote },
+    }));
+  };
+  const mainReadOnly =
+    conversation?.archivedAt !== undefined || legacy?.archivedAt !== undefined;
+  const selectionActions: SelectionAction[] = [
+    {
+      id: "main",
+      label: "发送到对话",
+      icon: <MessageSquareQuote size={13} />,
+      disabled: !conversationId || mainReadOnly,
+      run: quoteToMain,
+    },
+    {
+      id: "side",
+      label: "发送到侧边对话",
+      icon: <PanelRight size={13} />,
+      disabled:
+        !conversation ||
+        conversation.archivedAt !== undefined ||
+        offline ||
+        openingSide,
+      run: (quote) => void quoteToSide(quote),
+    },
+  ];
 
   const closeSide = async (projectId: string, sessionId: string) => {
     closingSides.current.add(sessionId);
@@ -295,12 +486,29 @@ ${summary}`,
   );
 
   const createTerminal = async () => {
-    setToolVisibility((current) => ({ ...current, [toolKey]: true }));
+    setSideVisible(true);
     const info = await terminals.create();
     if (info) selectTool(info.id);
   };
+  const openBrowser = () => {
+    const id = `browser-${crypto.randomUUID()}`;
+    updateLayout(layoutOwner, (current) => ({
+      ...current,
+      browsers: [...current.browsers, { id, title: "浏览器", url: "" }],
+      selected: id,
+      visible: true,
+    }));
+  };
   const closeTool = async (tab: WorkspaceToolTab) => {
     if (!project || closingTools.includes(tab.id)) return;
+    if (tab.kind === "browser") {
+      updateLayout(layoutOwner, (current) => ({
+        ...current,
+        browsers: current.browsers.filter((browser) => browser.id !== tab.id),
+        selected: current.selected === tab.id ? undefined : current.selected,
+      }));
+      return;
+    }
     setClosingTools((current) => [...current, tab.id]);
     setToolError("");
     const info = terminals.current.find((item) => item.id === tab.id);
@@ -322,6 +530,8 @@ ${summary}`,
       return parent.archivedAt === undefined
         ? conversationSides(parent).map((side) => {
             const sessionId = side.id;
+            const selected =
+              parent.id === conversationId && sessionId === activeToolId;
             return (
               <SideConversation
                 key={sessionId}
@@ -331,12 +541,8 @@ ${summary}`,
                 parentId={parent.id}
                 sessionId={sessionId}
                 title={side.title}
-                visible={
-                  visible &&
-                  sideVisible &&
-                  parent.id === conversationId &&
-                  sessionId === activeToolId
-                }
+                selected={selected}
+                visible={visible && sideVisible && selected}
                 modelConfig={
                   side.modelConfig?.[mode] ?? parent.modelConfig?.[mode] ?? {}
                 }
@@ -345,6 +551,14 @@ ${summary}`,
                 flows={flows}
                 flowsLoading={flowsLoading}
                 onSendBack={sendBack}
+                onForkTurn={
+                  onForkConversation && !offline
+                    ? (endSeq) =>
+                        onForkConversation(space.id, sessionId, endSeq)
+                    : undefined
+                }
+                draftInsert={sideInserts[sessionId]}
+                onRunning={reportSideRunning}
                 onSettled={() =>
                   void refreshConversations(space.id).catch(() => {})
                 }
@@ -388,6 +602,7 @@ ${summary}`,
               id: "trajectory",
               label: "执行记录",
               action: () => setView("trajectory"),
+              disabled: Boolean(branchFrom),
             },
           ]}
         >
@@ -403,12 +618,10 @@ ${summary}`,
           aria-label="工具面板"
           aria-expanded={sideVisible}
           title="打开工具面板"
-          onClick={() =>
-            setToolVisibility((current) => ({
-              ...current,
-              [toolKey]: true,
-            }))
-          }
+          onClick={() => {
+            moveToolFocus.current = true;
+            setSideVisible(true);
+          }}
         >
           <PanelRight size={16} />
         </button>
@@ -418,9 +631,13 @@ ${summary}`,
 
   return (
     <section
+      ref={studioRoot}
       className={`coding-studio chat-screen studio-main${sideVisible ? " with-side" : ""}`}
       aria-label="工作空间对话"
     >
+      {visible ? (
+        <SelectionActions root={studioRoot} actions={selectionActions} />
+      ) : null}
       <ConversationSplit
         mainHeader={mainHeader}
         sideHeader={
@@ -437,13 +654,12 @@ ${summary}`,
             onSelect={selectTool}
             onChat={() => void openSide()}
             onTerminal={() => void createTerminal()}
+            onBrowser={browserHost ? openBrowser : undefined}
             onClose={(tab) => void closeTool(tab)}
+            hideButtonRef={hideTools}
             onHide={() => {
-              restoreToolFocus.current = true;
-              setToolVisibility((current) => ({
-                ...current,
-                [toolKey]: false,
-              }));
+              moveToolFocus.current = true;
+              setSideVisible(false);
             }}
           />
         }
@@ -454,9 +670,11 @@ ${summary}`,
                 {workspaces.error}
               </p>
             ) : null}
-            {workspaces.branchFrom ? (
+            {branchFrom ? (
               <p className="coding-notice">
-                将继承来源对话的上下文，在「{project?.title}」中继续。
+                将继承{source ? `「${source.title}」` : "来源对话"}
+                {branchAt === undefined ? "的上下文" : "截至所选回复的上下文"}
+                。发送第一条消息后保存为独立会话。
               </p>
             ) : null}
             {view === "trajectory" ? (
@@ -489,6 +707,17 @@ ${summary}`,
                     : `在「${project.title}」中描述要完成的事情…`
                 }
                 branchFrom={branchFrom}
+                branchAt={branchAt}
+                onForkTurn={
+                  onForkConversation && conversation && !offline
+                    ? (endSeq) =>
+                        onForkConversation(
+                          conversation.projectId,
+                          conversation.id,
+                          endSeq,
+                        )
+                    : undefined
+                }
                 history={history}
                 historyTime={legacy?.updatedAt}
                 context={context}
@@ -547,6 +776,7 @@ ${summary}`,
                 onOpen={(id, submittedConfig) => {
                   if (!project) return;
                   if (personalAssistant) return;
+                  if (branchFrom) setView("chat");
                   if (id !== configKey)
                     setModelConfigs((current) => {
                       const next = {
@@ -559,6 +789,20 @@ ${summary}`,
                       delete next[configKey];
                       return next;
                     });
+                  if (!conversationId) {
+                    const owner = `${endpoint}:${id}`;
+                    setLayouts((current) => {
+                      const { [layoutOwner]: draft, ...remaining } = current;
+                      return draft ? { ...remaining, [owner]: draft } : current;
+                    });
+                    setMountedBrowsers((current) => {
+                      const { [layoutOwner]: workspace, ...remaining } =
+                        current;
+                      return workspace
+                        ? { ...remaining, [owner]: workspace }
+                        : current;
+                    });
+                  }
                   open(project.id, id);
                   onOpened?.();
                 }}
@@ -608,9 +852,38 @@ ${summary}`,
                   <SquareTerminal size={15} />
                   终端
                 </button>
+                {browserHost ? (
+                  <button
+                    type="button"
+                    className="tool-button"
+                    onClick={openBrowser}
+                  >
+                    <Globe size={15} />
+                    浏览器
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {sides}
+            {browserHost &&
+              Object.entries(mountedBrowsers).flatMap(([owner, workspace]) =>
+                (layouts[owner]?.browsers ?? []).map((tab) => (
+                  <BrowserPane
+                    key={tab.id}
+                    id={tab.id}
+                    workspace={workspace}
+                    saved={tab}
+                    host={browserHost}
+                    visible={
+                      visible &&
+                      sideVisible &&
+                      owner === layoutOwner &&
+                      tab.id === activeToolId
+                    }
+                    onPage={saveBrowserPage}
+                  />
+                )),
+              )}
             {terminals.all.map((info) => (
               <TerminalPane
                 key={`${endpoint}:${info.id}`}

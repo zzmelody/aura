@@ -8,9 +8,10 @@ import { secureHeaders } from "hono/secure-headers";
 import type { AuraRuntimeHandle } from "@aura/runtime";
 import { closeSiteHost, installSiteHost } from "./site-host.ts";
 import { installWorkflowFileHost } from "./workflow-file-host.ts";
-import { installWindowHost } from "./window-host.ts";
+import { installWindowHost, installWorkbenchBackdrop } from "./window-host.ts";
 import { installFileRevealHost } from "./file-reveal-host.ts";
 import { startRendererServer } from "./renderer-server.ts";
+import { installBrowserHost, registerBrowserOwner } from "./browser-host.ts";
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(sourceDir, "..");
@@ -20,6 +21,7 @@ let ownedRuntime: AuraRuntimeHandle | null = null;
 let runtimeStartup: Promise<void> | undefined;
 let renderer: ServerType | null = null;
 installSiteHost();
+installBrowserHost();
 installWorkflowFileHost();
 installWindowHost();
 installFileRevealHost();
@@ -120,16 +122,23 @@ async function openWorkbench() {
       height: process.platform === "darwin" ? 48 : 38,
     },
     ...(process.platform === "darwin"
-      ? { trafficLightPosition: { x: 12, y: 17 } }
+      ? {
+          trafficLightPosition: { x: 12, y: 17 },
+          vibrancy: "sidebar" as const,
+          visualEffectState: "active" as const,
+        }
       : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webviewTag: true,
       preload: resolve(appDir, "dist-host", "preload.cjs"),
     },
   });
   window.setMenu(null);
+  installWorkbenchBackdrop(window);
+  registerBrowserOwner(window, url);
   runtimeStartup = ensureRuntime().then(() => {
     if (!closingServices) watchBorrowedRuntime();
   });

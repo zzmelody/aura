@@ -44,7 +44,6 @@ import { ToastProvider } from "./toast";
 import { sidebarSessionStatus, sidebarSessionTitle } from "./sidebarSessions";
 import { platform } from "./platform";
 import { useCodingProjects } from "./features/coding/useCodingProjects";
-import { isActiveStatus } from "./features/coding/conversationStatus";
 import type { CodingHandoff } from "./features/coding/CodingStudio";
 import { usePluginPages } from "./usePluginPages";
 import { isPluginTab } from "./pluginPages";
@@ -143,12 +142,6 @@ export default function App({ onReady }: AppProps) {
     ),
   );
   const pluginPages = usePluginPages(codexAuth.endpoint, workspace.ready);
-  const runningCount = new Set([
-    ...workspace.runningIds,
-    ...Object.entries(codingWorkspaces.statuses)
-      .filter(([, status]) => isActiveStatus(status))
-      .map(([id]) => id),
-  ]).size;
   const [workflowDetail, setWorkflowDetail] = useState(false);
   const [codingHandoff, setCodingHandoff] = useState<CodingHandoff>();
   const [flowRequest, setFlowRequest] = useState<FlowConversationRequest>();
@@ -198,28 +191,29 @@ export default function App({ onReady }: AppProps) {
       /* Navigation still works when browser storage is unavailable. */
     }
   }, [workspace.ready, assistantViewKey]);
-  const { loadAssistant } = codingWorkspaces;
+  const { assistant, loadAssistant } = codingWorkspaces;
+  const hasAssistant = Boolean(assistant);
   useEffect(() => {
-    if (tab !== "assistant") return;
-    const abort = new AbortController();
-    void loadAssistant(false, abort.signal);
-    return () => abort.abort();
-  }, [tab, loadAssistant]);
+    if (tab === "assistant" && !hasAssistant) void loadAssistant();
+  }, [tab, hasAssistant, loadAssistant]);
   const [systemReduced, setSystemReduced] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);
   const dialog = useRef<HTMLDialogElement>(null);
+  const assistantToggle = useRef<HTMLButtonElement>(null);
   const systemTheme = useColorScheme();
   const { width } = useWindowDimensions();
   const wide = width >= 900;
-  const sidebarWidth = Math.max(
-    240,
-    Math.min(
-      480,
-      width - 560,
-      workspace.state.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH,
+  const sidebarWidth = Math.round(
+    Math.max(
+      240,
+      Math.min(
+        480,
+        width - 560,
+        workspace.state.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH,
+      ),
     ),
   );
   const split = width - (wide && !collapsed ? sidebarWidth : 0) >= 930;
@@ -228,6 +222,10 @@ export default function App({ onReady }: AppProps) {
       ? systemTheme !== "light"
       : workspace.state.theme === "dark";
   const colors = dark ? palettes.dark : palettes.light;
+  const nativeSidebar =
+    workspace.ready &&
+    platform() === "desktop" &&
+    window.auraHost?.os === "darwin";
   const reduced = systemReduced || workspace.state.reduceMotion;
   const pluginStudio = isPluginTab(tab)
     ? pluginPages.studios.find((studio) => studio.id === tab)
@@ -265,23 +263,27 @@ export default function App({ onReady }: AppProps) {
     return () => media.removeEventListener("change", update);
   }, []);
   useEffect(() => {
-    document.documentElement.style.backgroundColor = colors.background;
-    document.body.style.backgroundColor = colors.background;
+    const pageFill = nativeSidebar ? "transparent" : colors.background;
+    document.documentElement.style.backgroundColor = pageFill;
+    document.body.style.backgroundColor = pageFill;
     document.documentElement.style.colorScheme = dark ? "dark" : "light";
     // Fonts are theme-independent; the document carries them so body text
     // outside the workbench root (dialogs, plugin pages) uses the same stack.
     document.documentElement.style.setProperty("--font-text", fonts.body);
     document.documentElement.style.setProperty("--font-mono", fonts.mono);
     document.title = documentTitle;
-  }, [colors.background, dark, documentTitle]);
+  }, [colors.background, dark, documentTitle, nativeSidebar]);
   useEffect(() => {
     if (tab === "chat" && navigation.current[navigationIndex]?.tab === "chat")
       navigation.current[navigationIndex].sessionId =
         workspace.active?.id ?? null;
   }, [tab, navigationIndex, workspace.active?.id]);
   useEffect(() => {
-    void window.auraHost?.chrome?.setTheme(dark).catch(() => {});
-  }, [dark]);
+    if (workspace.ready)
+      void window.auraHost?.chrome
+        ?.setTheme(dark, workspace.state.theme)
+        .catch(() => {});
+  }, [dark, workspace.ready, workspace.state.theme]);
   useEffect(() => {
     if (!wide && sidebarOpen) dialog.current?.showModal();
     else if (dialog.current?.open) {
@@ -290,7 +292,7 @@ export default function App({ onReady }: AppProps) {
         .querySelector<HTMLButtonElement>(
           '.workspace-menubar button[title="切换侧栏"]',
         )
-        ?.focus();
+        ?.focus({ preventScroll: true });
     }
   }, [wide, sidebarOpen]);
 
@@ -406,12 +408,29 @@ export default function App({ onReady }: AppProps) {
     setSidebarOpen(false);
   };
   const openPersonalAssistant = async () => {
+    if (tab === "assistant" && hasAssistant) {
+      setSidebarOpen(false);
+      return;
+    }
     if (!canLeaveStudio()) return;
     const intent = ++navigationIntent.current;
-    if ((await loadAssistant(true)) && intent === navigationIntent.current) {
+    if (
+      (hasAssistant || (await loadAssistant(true))) &&
+      intent === navigationIntent.current
+    ) {
       workspace.newChat();
       navigate("assistant");
     }
+  };
+  const forkConversation = (
+    projectId: string,
+    sessionId: string,
+    endSeq: number,
+  ) => {
+    codingWorkspaces.fork(projectId, sessionId, endSeq);
+    workspace.newChat();
+    navigate("studio:coding");
+    setSidebarOpen(false);
   };
   const sidebar = (
     <WorkspaceSidebar
@@ -475,6 +494,7 @@ export default function App({ onReady }: AppProps) {
         ) : null}
         {tab === "flows" && workflowDetail ? (
           <button
+            ref={assistantToggle}
             className={`tool-button${assistantOpen ? " active" : ""}`}
             aria-pressed={assistantOpen}
             onClick={() => {
@@ -511,6 +531,8 @@ export default function App({ onReady }: AppProps) {
           data-reduced={reduced}
           data-platform={platform()}
           data-os={window.auraHost?.os}
+          data-native-sidebar={nativeSidebar || undefined}
+          data-theme={dark ? "dark" : "light"}
           data-titlebar-layout={
             platform() === "desktop" &&
             window.auraHost?.os === "darwin" &&
@@ -521,7 +543,7 @@ export default function App({ onReady }: AppProps) {
                 : "page"
               : undefined
           }
-          data-sidebar-collapsed={(wide && collapsed) || undefined}
+          data-sidebar-collapsed={collapsed || undefined}
           style={
             Object.fromEntries(
               Object.entries(colors).map(([key, value]) => [`--${key}`, value]),
@@ -544,9 +566,17 @@ export default function App({ onReady }: AppProps) {
                   ) : (
                     navigationBar
                   )}
-                  <div className="workspace-body">
-                    {wide && !collapsed ? (
+                  <div
+                    className="workspace-body"
+                    style={
+                      {
+                        "--sidebar-width": `${sidebarWidth}px`,
+                      } as React.CSSProperties
+                    }
+                  >
+                    {wide ? (
                       <ResizableSidebar
+                        collapsed={collapsed}
                         width={
                           workspace.state.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH
                         }
@@ -563,7 +593,11 @@ export default function App({ onReady }: AppProps) {
                         className="sidebar-dialog"
                         aria-label="会话列表"
                         ref={dialog}
-                        onCancel={() => setSidebarOpen(false)}
+                        inert={!navigationInDrawer}
+                        onCancel={(event) => {
+                          event.preventDefault();
+                          setSidebarOpen(false);
+                        }}
                         onClick={(event) => {
                           if (event.target === event.currentTarget)
                             setSidebarOpen(false);
@@ -609,7 +643,17 @@ export default function App({ onReady }: AppProps) {
                         }
                       >
                         <div
-                          className={`workspace-deck${tab === "flows" && showChat && split ? " split" : ""}`}
+                          className="workspace-deck"
+                          data-workflow-layout={
+                            tab === "flows"
+                              ? split
+                                ? "split"
+                                : "stacked"
+                              : undefined
+                          }
+                          data-assistant-closed={
+                            (tab === "flows" && !showChat) || undefined
+                          }
                           hidden={
                             tab !== "flows" &&
                             tab !== "chat" &&
@@ -619,7 +663,8 @@ export default function App({ onReady }: AppProps) {
                         >
                           <div
                             className="flow-area"
-                            hidden={tab !== "flows" || (!split && showChat)}
+                            hidden={tab !== "flows"}
+                            inert={tab === "flows" && !split && showChat}
                           >
                             {flowsOpened || tab === "flows" ? (
                               <Workflows
@@ -651,6 +696,9 @@ export default function App({ onReady }: AppProps) {
                                   if (workspace.active?.workflow)
                                     workspace.newChat();
                                   setAssistantOpen(true);
+                                  assistantToggle.current?.focus({
+                                    preventScroll: true,
+                                  });
                                   workspace.setDraft(
                                     "帮我完善当前工作流，检查步骤拆分、输入输出与异常处理。",
                                   );
@@ -660,7 +708,8 @@ export default function App({ onReady }: AppProps) {
                           </div>
                           <div
                             className={`assistant-area${tab === "chat" || tab === "assistant" ? " standalone" : ""}`}
-                            hidden={!showChat}
+                            hidden={tab !== "flows" && !showChat}
+                            inert={tab === "flows" && !showChat}
                           >
                             {tab === "flows" ? (
                               <div className="assistant-heading">
@@ -679,17 +728,22 @@ export default function App({ onReady }: AppProps) {
                                   <button
                                     className="icon-control"
                                     aria-label="返回工作流编辑器"
-                                    onClick={() => setAssistantOpen(false)}
+                                    onClick={() => {
+                                      setAssistantOpen(false);
+                                      assistantToggle.current?.focus({
+                                        preventScroll: true,
+                                      });
+                                    }}
                                   >
                                     <X size={15} />
                                   </button>
                                 </div>
                               </div>
                             ) : null}
-                            {workspace.state.provider !== "offline" ||
-                            tab === "assistant" ? (
+                            {online || hasAssistant ? (
                               <div
                                 className="studio-area"
+                                hidden={!online}
                                 style={
                                   showWorkflowChat
                                     ? { display: "none" }
@@ -704,15 +758,21 @@ export default function App({ onReady }: AppProps) {
                                   }
                                 >
                                   <CodingStudio
-                                    personalAssistant={tab === "assistant"}
-                                    visible={showChat && !showWorkflowChat}
+                                    personalAssistant={
+                                      tab === "assistant" || !online
+                                    }
+                                    visible={
+                                      online && showChat && !showWorkflowChat
+                                    }
                                     key={codexAuth.endpoint}
                                     endpoint={codexAuth.endpoint}
                                     provider={workspace.state.provider}
                                     workspaces={codingWorkspaces}
                                     handoff={codingHandoff}
                                     onHandoffTaken={takeHandoff}
+                                    onForkConversation={forkConversation}
                                     legacy={
+                                      online &&
                                       tab === "chat" &&
                                       workspace.active &&
                                       !showWorkflowChat
@@ -901,29 +961,6 @@ export default function App({ onReady }: AppProps) {
                           />
                         ) : null}
                       </React.Suspense>
-                      <footer className="workspace-status">
-                        <span>
-                          <span
-                            className={`session-status${runningCount ? " running" : ""}`}
-                          />
-                          {runningCount
-                            ? `${runningCount} 个会话生成中`
-                            : online &&
-                                (codingWorkspaces.error || startupModels.error)
-                              ? "服务连接需要处理"
-                              : codexAuth.loading ||
-                                  (online &&
-                                    (!codingWorkspaces.ready ||
-                                      !startupModels.catalog))
-                                ? "正在准备本地服务…"
-                                : "工作区就绪"}
-                        </span>
-                        <span>
-                          {flowDraft.saveError
-                            ? "本地草稿未保存"
-                            : "本地草稿已保存"}
-                        </span>
-                      </footer>
                     </main>
                   </div>
                   {sessionDialog ? (

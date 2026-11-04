@@ -1,4 +1,7 @@
-import type { CodingCapabilityActivity } from "@aura/protocol/types";
+import type {
+  CodingCapabilityActivity,
+  CodingTurnUsage,
+} from "@aura/protocol/types";
 import type {
   PluginCompatibility,
   PluginHttpContribution,
@@ -168,6 +171,8 @@ export interface CodingTurn {
    */
   forkFrom?: string;
   branchFrom?: string;
+  /** Completed source turn's log position for an explicit fork. */
+  branchAt?: number;
   /** Imported once, only when the conversation has no stored DSH log. */
   history?: ChatMessage[];
   context?: string;
@@ -185,6 +190,8 @@ export interface CodingTurn {
  */
 export type CodingStreamEvent =
   | CodingCapabilityActivity
+  | { type: "usage"; usage: CodingTurnUsage }
+  | { type: "turn-boundary"; endSeq: number }
   | ({ type: "workflow" } & ChatWorkflowStart)
   | { type: "delta"; text: string }
   | {
@@ -243,6 +250,7 @@ export interface CodingHistoryTurn {
   prompt: string;
   startedAt: number;
   endedAt?: number;
+  endSeq?: number;
   status: "running" | "complete" | "stopped" | "error";
   error?: string;
   /** The same events a live turn streams, in log order. */
