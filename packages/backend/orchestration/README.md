@@ -343,3 +343,7 @@ Runtime 挂载以下 Hono 路由；JSON-RPC 只解析关联与元数据，HTTP �
 ## 产品插件后端
 
 插件 ESM 热更新以真实目录判断模块归属，避免 macOS 临时目录或目录别名经符号链接解析后漏掉 helper 的版本标记；本地 helper 随插件版本重新加载，SDK 继续共用宿主实例。回归覆盖目录符号链接及已有任务结束后的刷新。
+
+对话通过 DSH 原生 command/compaction、Web 与 subagents 服务接入增强能力；
+`coding/capabilities` 管理用户开关和请求次数额度，`coding/compact` 执行手动压缩，
+`coding/agents` 只读恢复子 Agent 目录。参见[对话能力](../../../docs/dsh-conversation-capabilities.md)。

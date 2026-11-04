@@ -20,6 +20,21 @@ export function projectCodingEvent(
   if (typeof data !== "object" || data === null) return;
   const fields = data as Record<string, unknown>;
   const at = event.time;
+  if (
+    event.type.startsWith("compaction/") &&
+    typeof fields.compactionId === "string"
+  ) {
+    const text =
+      event.type === "compaction/start"
+        ? "正在压缩较早的上下文…"
+        : event.type === "compaction/summary" &&
+            typeof fields.shadowedTokenCount === "number"
+          ? `已概括较早上下文（原约 ${fields.shadowedTokenCount} tokens），原始聊天记录仍然保留。`
+          : event.type === "compaction/end" && fields.error
+            ? "上下文压缩未完成。"
+            : undefined;
+    if (text) emit({ type: "notice", id: fields.compactionId, text, at });
+  }
   // Model spans for the trajectory: a step opens a model request, the
   // assistant message (or an interrupted attempt) closes it.
   if (event.type === "step/start") {
@@ -60,6 +75,9 @@ export function projectCodingEvent(
   if (event.type === "tool/result") {
     const result = toolResult(fields);
     if (result) {
+      const web = webMetadata(fields.meta);
+      if (web && !result.isError)
+        emit({ type: "web", callId: result.toolCallId, ...web, at });
       const pending = created.get(result.toolCallId);
       created.delete(result.toolCallId);
       let diffs = resultDiffs(fields.meta);
@@ -180,7 +198,14 @@ function toolDetail(raw: unknown): string | undefined {
   }
   if (typeof args !== "object" || args === null) return undefined;
   const fields = args as Record<string, unknown>;
-  for (const key of ["file_path", "path", "command", "pattern"]) {
+  for (const key of [
+    "file_path",
+    "path",
+    "command",
+    "pattern",
+    "url",
+    "label",
+  ]) {
     const value = fields[key];
     if (typeof value === "string" && value.trim())
       return value.replace(/\s+/gu, " ").trim().slice(0, 160);
@@ -242,4 +267,49 @@ function createdFile(raw: unknown): CodingFileDiff | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Project only citeable HTTP(S) URLs from DSH's native Web presentation metadata. */
+function webMetadata(raw: unknown) {
+  if (!raw || typeof raw !== "object") return undefined;
+  const meta = raw as Record<string, unknown>;
+  if (typeof meta.truncated !== "boolean") return undefined;
+  const inputs = Array.isArray(meta.sources)
+    ? meta.sources
+    : typeof meta.url === "string"
+      ? [{ url: meta.url }]
+      : undefined;
+  if (!inputs) return undefined;
+  const sources = inputs.slice(0, 50).flatMap((source: unknown) => {
+    if (!source || typeof source !== "object") return [];
+    const item = source as Record<string, unknown>;
+    if (typeof item.url !== "string") return [];
+    try {
+      const url = new URL(item.url);
+      if (
+        !["https:", "http:"].includes(url.protocol) ||
+        url.username ||
+        url.password
+      )
+        return [];
+      return [
+        {
+          url: url.href,
+          title:
+            typeof item.title === "string"
+              ? item.title.slice(0, 500)
+              : url.hostname,
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+  return {
+    sources,
+    truncated: meta.truncated,
+    ...(typeof meta.statusCode === "number"
+      ? { statusCode: meta.statusCode }
+      : {}),
+  };
 }

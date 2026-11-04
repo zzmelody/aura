@@ -65,3 +65,6 @@ Runtime 启动时默认读取 `<Aura root>/.aura/plugins.json`。只加载被显
 相对路径以 `plugins.json` 所在目录为基准。`AuraRuntimeOptions.pluginConfigPath` 可为嵌入式宿主或测试指定其他配置文件。插件必须提前安装自己的依赖并能解析兼容的 `@aura/plugin-sdk`；Aura 的发现过程只读，不运行包管理器、构建或下载。设置 API 动态应用目录变化；已启用贡献的 JavaScript 内容继续由现有 HMR 处理。
 
 设置页通过 `GET/POST /plugins/config` 管理同一个固定配置文件。浏览器不能指定配置文件路径，后端会补全 `trust: "local"`、预校验目录并原子替换 JSON。由于启用插件等同于授予本机 Node.js 代码执行权限，这组接口仅在 runtime 绑定 `localhost`、`127.0.0.1` 或 `::1` 时可用；绑定局域网地址时返回 403，手机端不能远程启用宿主机代码。保存时会先把有效的 Action/Flow 根动态应用到编排宿主，再持久化配置；加载或保存失败会回滚到上一组注册根。已有运行继续使用创建时锁定的贡献版本，新运行立即使用新配置，无需重启 Aura。若配置文件被外部程序修改，接口返回 `applyRequired`，在设置页重新保存即可应用。
+
+Coding HTTP 适配增加能力配置、压缩与子 Agent 查询/停止路由；浏览器资源注册表提供
+原生 DSH secret-mask bundle，由工作台适配公开注册接口。参见[对话能力](../../../docs/dsh-conversation-capabilities.md)。

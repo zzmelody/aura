@@ -1,3 +1,8 @@
+import type {
+  CodingSubagent,
+  CodingCapabilities,
+  CodingCompactionResult,
+} from "@aura/protocol/types";
 import { PluginHttpRegistry } from "./plugin-http.ts";
 import {
   defaultPluginSdkPackage,
@@ -524,6 +529,31 @@ export class OrchestrationHost {
   }
 
   /** Stops a conversation's running turn and resolves once it has settled. */
+  codingSubagents(sessionId: string) {
+    return this.request<CodingSubagent[]>("coding/agents", { sessionId });
+  }
+  stopCodingSubagent(sessionId: string, childId: string) {
+    return this.request<{ accepted: true }>("coding/agents/stop", {
+      sessionId,
+      childId,
+    });
+  }
+
+  codingCapabilities(source?: unknown) {
+    return this.request<CodingCapabilities>(
+      source === undefined ? "coding/capabilities" : "coding/capabilities/save",
+      source ?? {},
+    );
+  }
+
+  compactCoding(sessionId: string) {
+    return this.request<CodingCompactionResult>(
+      "coding/compact",
+      { sessionId },
+      AbortSignal.timeout(5 * 60_000),
+    );
+  }
+
   stopCoding(sessionId: string): Promise<{ stopped: boolean }> {
     return this.request<{ stopped: boolean }>("coding/stop", { sessionId });
   }

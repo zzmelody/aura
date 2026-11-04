@@ -132,11 +132,15 @@ test("registry composes DSH's boot graph and serves only live revisions", () =>
     assert.equal(snapshot.bundles.length, 1);
     assert.deepEqual(
       snapshot.graph.entries.map((entry) => entry.id),
-      ["@deepseek-ai/dsh-client-modules", "wechat-history"],
+      [
+        "@deepseek-ai/dsh-client-modules",
+        "@deepseek-ai/dsh-client-ui-secret-mask",
+        "wechat-history",
+      ],
     );
     assert.deepEqual(
       snapshot.graph.batches.map((batch) => batch.phase),
-      ["bootstrap", "application"],
+      ["bootstrap", "application", "application"],
     );
     assert.ok(snapshot.graph.entries[1]?.external?.includes("react"));
 

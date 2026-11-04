@@ -9,6 +9,7 @@ import type {
 } from "@aura/protocol/types";
 
 /** Browser half of DSH's client module system, served as the bootstrap row. */
+export const SECRET_MASK_ID = "@deepseek-ai/dsh-client-ui-secret-mask";
 export const LOADER_ID = "@deepseek-ai/dsh-client-modules";
 /** Specifiers the workbench seeds into the module table; plugins must not bundle them. */
 export const PAGE_EXTERNALS = [
@@ -143,6 +144,7 @@ export function parseCombo(
  */
 export class PluginPageRegistry {
   #loader: BundleRecord | undefined;
+  #mask: BundleRecord | undefined;
   #bundles = new Map<string, BundleRecord>();
   #snapshot: PluginPagesSnapshot = compose(undefined, []);
   readonly #listeners = new Set<() => void>();
@@ -232,6 +234,12 @@ export class PluginPageRegistry {
       this.#loader,
     );
     const next = new Map<string, BundleRecord>();
+    const mask = await capture(
+      SECRET_MASK_ID,
+      createRequire(import.meta.url).resolve(`${SECRET_MASK_ID}/client`),
+      { id: SECRET_MASK_ID, name: "DSH secret masking", version: "0.2.1-rc.5" },
+      this.#mask,
+    );
     for (const root of roots)
       next.set(
         root.plugin.id,
@@ -242,7 +250,8 @@ export class PluginPageRegistry {
           this.#bundles.get(root.plugin.id),
         ),
       );
-    const snapshot = compose(loader, [...next.values()]);
+    const snapshot = compose(loader, [...next.values()], mask);
+    this.#mask = mask;
     this.#loader = loader;
     this.#bundles = next;
     if (snapshot.rev === this.#snapshot.rev) return;
@@ -255,7 +264,11 @@ export class PluginPageRegistry {
     const parsed = parseCombo(target);
     if (!parsed) return { status: 404, headers: {} };
     const records = parsed.ids.map((id) =>
-      id === LOADER_ID ? this.#loader : this.#bundles.get(id),
+      id === LOADER_ID
+        ? this.#loader
+        : id === SECRET_MASK_ID
+          ? this.#mask
+          : this.#bundles.get(id),
     );
     if (records.some((record) => !record)) return { status: 404, headers: {} };
     const present = records as BundleRecord[];
@@ -280,6 +293,7 @@ export class PluginPageRegistry {
 function compose(
   loader: BundleRecord | undefined,
   bundles: readonly BundleRecord[],
+  mask?: BundleRecord,
 ): PluginPagesSnapshot {
   if (!loader)
     return {
@@ -295,8 +309,19 @@ function compose(
     rev: record.rev,
     url: comboReference(record.id, record.rev),
   }));
+  const native = mask
+    ? [
+        {
+          id: mask.id,
+          url: comboReference(mask.id, mask.rev),
+          rev: mask.rev,
+          external: [...PAGE_EXTERNALS],
+        },
+      ]
+    : [];
   const rev = hash([
     loader.rev,
+    ...(mask ? [mask.rev] : []),
     ...pages.flatMap((page) => [page.module, page.rev]),
   ]);
   return {
@@ -307,6 +332,7 @@ function compose(
       rev,
       entries: [
         { id: LOADER_ID, url: loaderUrl, rev: loader.rev, immediately: true },
+        ...native,
         ...pages.map((page) => ({
           id: page.module,
           url: page.url,
@@ -323,6 +349,12 @@ function compose(
           rev: loader.rev,
           entries: [LOADER_ID],
         },
+        ...native.map((entry) => ({
+          phase: "application" as const,
+          url: entry.url,
+          rev: entry.rev,
+          entries: [entry.id],
+        })),
         ...pages.map((page) => ({
           phase: "application" as const,
           url: page.url,

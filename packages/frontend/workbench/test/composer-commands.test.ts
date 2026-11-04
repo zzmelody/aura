@@ -38,7 +38,7 @@ test("the slash root stays compact and opens separate command, skill and flow ca
   );
   assert.deepEqual(
     root.map((entry) => entry.kind === "group" && entry.count),
-    [3, 1, 2],
+    [4, 1, 2],
   );
   const flows = composerEntries({ ...catalog, group: "flows" });
   assert.deepEqual(
@@ -90,4 +90,20 @@ test("navigation handles an empty or shrinking catalog and skill completion pres
   assert.equal(composerIndex(0, -1, 3), 2);
   assert.equal(skillDraft("review", "/rev"), "/review ");
   assert.equal(skillDraft("review", "检查当前界面"), "/review 检查当前界面");
+});
+
+test("compact is an idle-only native command and cannot be shadowed by a skill", () => {
+  const idle = composerEntries({
+    ...catalog,
+    query: "compact",
+    skills: [{ name: "compact", description: "collision" }],
+  });
+  assert.equal(idle.length, 1);
+  assert.equal(idle[0]?.kind, "command");
+  assert.equal(idle[0]?.disabled, false);
+  assert.equal(
+    composerEntries({ ...catalog, query: "compact", running: true })[0]
+      ?.disabled,
+    true,
+  );
 });

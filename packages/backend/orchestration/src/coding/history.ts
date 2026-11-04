@@ -255,7 +255,15 @@ export function historyTurns(
       wroteText = false;
       continue;
     }
-    if (!current) continue;
+    if (!current) {
+      if (event.type.startsWith("compaction/"))
+        projectCodingEvent(
+          event,
+          (activity) => turns.at(-1)?.events.push(activity),
+          created,
+        );
+      continue;
+    }
     if (event.type === "user/message") {
       const source = (data as { source?: { kind?: unknown } }).source;
       // The turn's opening request, then any steering the user sent into it

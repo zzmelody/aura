@@ -16,22 +16,23 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@aura/demo": "workspace:*",
+    "@aura/dsh-auth": "workspace:*",
     "@aura/extensions": "workspace:*",
     "@aura/orchestration": "workspace:*",
-    "@aura/dsh-auth": "workspace:*",
-    "@aura/demo": "workspace:*",
     "@aura/plugin-sdk": "workspace:*",
     "@aura/protocol": "workspace:*",
     "@aura/tripo": "workspace:*",
-    "@hono/node-server": "2.1.1",
-    "hono": "4.13.7",
-    "undici": "7.29.1",
-    "@deepseek-ai/dsh-credentials": "0.2.1-rc.5",
     "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-client-modules": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-client-ui-secret-mask": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-credentials": "0.2.1-rc.5",
     "@deepseek-ai/dsh-credentials-local": "0.2.1-rc.5",
     "@deepseek-ai/dsh-llm": "0.2.1-rc.5",
     "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-client-modules": "0.2.1-rc.5"
+    "@hono/node-server": "2.1.1",
+    "hono": "4.13.7",
+    "undici": "7.29.1"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

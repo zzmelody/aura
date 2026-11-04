@@ -27,3 +27,5 @@
 - [历史验证记录](verification/history.md)：按当时提交与环境记录，不代表当前全仓状态。
 
 新增文档放入对应目录，同时更新此入口。行为和公共接口变化更新所属包的 README 及功能文档；验证记录只记实际执行的结果。
+
+- [DSH 对话能力](dsh-conversation-capabilities.md)：压缩、Web、子 Agent、密钥遮罩与请求额度。

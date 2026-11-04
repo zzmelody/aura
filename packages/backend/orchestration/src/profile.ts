@@ -103,14 +103,9 @@ export async function provisionProfile(
   // scope that names it explicitly.
   const disabled = [
     "tool-jobs",
+    "llm-retry",
     "command-goal",
     "tool-goal",
-    "compaction-basic",
-    "command-compact",
-    "tool-result-pruner",
-    "tool-subagent-control",
-    "tool-subagent-list-agents",
-    "tool-subagent",
     "tool-subagent-fork",
     "workflow-worker-thread",
     "tool-workflow",
@@ -118,12 +113,56 @@ export async function provisionProfile(
     // Prompt section, not a tool: the per-scope tool allow-list cannot keep it
     // out, so an ambient instruction loader would reach every agent.
     "agent-instructions",
-    "tool-web",
     "session-title-llm",
   ];
+  const profiles = customProfiles(await readAiServices(root));
+  const modelPolicies = Object.entries(profiles).flatMap(
+    ([provider, profile]) =>
+      (profile.models ?? []).flatMap((model) =>
+        typeof model.contextWindow === "number"
+          ? [
+              {
+                provider,
+                model: model.id,
+                ...compactModelPolicy(model.contextWindow),
+              },
+            ]
+          : [],
+      ),
+  );
   const patch =
     disabled.map((id) => `- id: ${id}\n  disabled: true\n`).join("\n") +
     `
+- id: compaction-basic
+  config:
+    auto: false
+    headroomTokens: 4096
+    maxTokens: 2048
+    compactionRetries: 0
+    maxOverflowRetries: 0
+    modelPolicies: ${JSON.stringify(modelPolicies)}
+- id: subagent
+  config:
+    maxActiveSubagents: 2
+    maxDepth: 1
+- id: tool-subagent
+  config:
+    provider: spawn
+    toolName: subagent
+    agentPreset: coding-researcher
+    allowedAgentPresets: [coding-researcher, coding-reviewer]
+- id: web
+  config:
+    searchProvider: deepseek-search-api
+    fetchProvider: deepseek-fetch-api
+- id: web-deepseek-api
+  config:
+    apiKeyEnv: AURA_DEEPSEEK_WEB_KEY
+    sendOriginalQuestion: false
+- id: tool-web
+  config:
+    fetch: true
+    searchMaxQueries: 1
 - id: sdk-jsonrpc-server
   disabled: true
 - id: hmr
@@ -159,10 +198,11 @@ export async function provisionProfile(
         baseURL: ${JSON.stringify(demoURL ?? process.env.AURA_DEMO_BASE_URL ?? "http://127.0.0.1:1/v1")}
         apiKeyEnv: AURA_DEMO_KEY
         defaultMaxTokens: 4096
+        defaultContextWindow: 32768
         models:
           - { id: deepseek-v4-flash, input: [text], reasoningEfforts: false }
           - { id: deepseek-v4-pro, input: [text], reasoningEfforts: false }
-${Object.entries(customProfiles(await readAiServices(root)))
+${Object.entries(profiles)
   .map(([id, profile]) => `      ${id}: ${JSON.stringify(profile)}`)
   .join("\n")}
 - id: session-persistence-jsonl
@@ -226,4 +266,13 @@ ${await presetRows(fileURLToPath(new URL("../presets", import.meta.url)))}`;
     options,
   );
   await writeFileAtomic(join(dir, "cordis.patch.yml"), patch, options);
+}
+
+/** Scale summary headroom for smaller user-configured context windows. */
+export function compactModelPolicy(contextWindow: number) {
+  const headroomTokens = Math.max(
+    256,
+    Math.min(4096, Math.floor(contextWindow * 0.05)),
+  );
+  return { headroomTokens, maxTokens: Math.min(2048, headroomTokens) };
 }

@@ -626,6 +626,7 @@ export interface PersonalAssistantInfo {
 
 /** One entry in the coding activity stream. */
 export type CodingActivity =
+  | CodingCapabilityActivity
   | ({ type: "workflow" } & ChatWorkflowStart)
   | {
       type: "tool";
@@ -779,3 +780,41 @@ export interface AutomationHistory {
   /** Older deliveries were pruned by retention or predate history. */
   truncated: boolean;
 }
+
+/** User-configured allowance for additional conversation requests, not currency. */
+export interface CodingCapabilities {
+  revision: number;
+  autoCompact: boolean;
+  web: boolean;
+  subagents: boolean;
+  maxRequests: number;
+  usedRequests: number;
+  unknownRequests: number;
+  hasWebKey: boolean;
+}
+
+export interface CodingCompactionResult {
+  compacted: boolean;
+  replacedMessages: number;
+  previousTokens: number;
+  savedTokens?: number;
+}
+
+export interface CodingSubagent {
+  id: string;
+  label: string;
+  role: string;
+  status: "running" | "complete" | "stopped" | "error";
+  result: string;
+}
+
+export type CodingCapabilityActivity =
+  | { type: "notice"; id: string; text: string; at: number }
+  | {
+      type: "web";
+      callId: string;
+      sources: Array<{ url: string; title: string }>;
+      truncated: boolean;
+      statusCode?: number;
+      at: number;
+    };

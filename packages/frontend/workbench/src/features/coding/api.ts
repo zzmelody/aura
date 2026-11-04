@@ -1,4 +1,9 @@
 import type {
+  CodingSubagent,
+  CodingCapabilities,
+  CodingCompactionResult,
+} from "@aura/protocol/types";
+import type {
   ChatModelSelection,
   CodingSteerModelConfig,
   ChatMessage,
@@ -305,6 +310,47 @@ function parseCodingEvent(
       title: event.title,
       inputPreview:
         typeof event.inputPreview === "string" ? event.inputPreview : "",
+    };
+  if (
+    event.type === "notice" &&
+    typeof event.id === "string" &&
+    typeof event.text === "string"
+  )
+    return {
+      type: "notice",
+      id: event.id,
+      text: event.text,
+      at: typeof event.at === "number" ? event.at : Date.now(),
+    };
+  if (
+    event.type === "web" &&
+    typeof event.callId === "string" &&
+    Array.isArray(event.sources)
+  )
+    return {
+      type: "web",
+      callId: event.callId,
+      truncated: event.truncated === true,
+      at: typeof event.at === "number" ? event.at : Date.now(),
+      ...(typeof event.statusCode === "number"
+        ? { statusCode: event.statusCode }
+        : {}),
+      sources: event.sources.flatMap((source: unknown) => {
+        if (!source || typeof source !== "object") return [];
+        const item = source as Record<string, unknown>;
+        if (typeof item.url !== "string" || typeof item.title !== "string")
+          return [];
+        try {
+          const url = new URL(item.url);
+          return ["https:", "http:"].includes(url.protocol) &&
+            !url.username &&
+            !url.password
+            ? [{ url: url.href, title: item.title }]
+            : [];
+        } catch {
+          return [];
+        }
+      }),
     };
   if (event.type === "delta" && typeof event.text === "string")
     return { type: "delta", text: event.text };
@@ -689,4 +735,31 @@ export const automationHistory = (
     "GET",
     undefined,
     signal,
+  );
+
+export const readCodingCapabilities = (endpoint: string) =>
+  codingApi<CodingCapabilities>(endpoint, "/capabilities");
+export const saveCodingCapabilities = (endpoint: string, source: unknown) =>
+  codingApi<CodingCapabilities>(endpoint, "/capabilities", "POST", source);
+export const compactCoding = (endpoint: string, sessionId: string) =>
+  codingApi<CodingCompactionResult>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/compact`,
+    "POST",
+  );
+
+export const readCodingSubagents = (endpoint: string, sessionId: string) =>
+  codingApi<CodingSubagent[]>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/agents`,
+  );
+export const stopCodingSubagent = (
+  endpoint: string,
+  sessionId: string,
+  childId: string,
+) =>
+  codingApi<{ accepted: true }>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/agents/${encodeURIComponent(childId)}/stop`,
+    "POST",
   );

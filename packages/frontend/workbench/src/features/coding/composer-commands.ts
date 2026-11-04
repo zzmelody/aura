@@ -1,7 +1,7 @@
 import type { CodingSkillInfo, FlowCatalogEntry } from "@aura/protocol/types";
 
 export type ComposerGroup = "commands" | "skills" | "flows";
-export type ComposerCommand = "model" | "stop" | "clear";
+export type ComposerCommand = "model" | "stop" | "clear" | "compact";
 
 export const composerGroups = {
   commands: { title: "内置命令", description: "模型、生成与输入操作" },
@@ -43,6 +43,16 @@ export function composerEntries({
   canRunFlow: boolean;
 }): ComposerEntry[] {
   const commands: ComposerEntry[] = [
+    {
+      kind: "command",
+      command: "compact",
+      id: "command:compact",
+      name: "compact",
+      title: "压缩上下文",
+      description: "用当前模型概括较早记录，保留原始聊天历史",
+      group: "commands",
+      disabled: running,
+    },
     {
       kind: "command",
       command: "model",

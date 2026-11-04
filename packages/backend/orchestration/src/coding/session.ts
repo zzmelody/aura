@@ -1,3 +1,10 @@
+import type {} from "@deepseek-ai/dsh-token-meter";
+import type {} from "@deepseek-ai/dsh-compaction";
+import type {} from "@deepseek-ai/dsh-commands";
+import type {} from "@deepseek-ai/dsh-subagent";
+import type { Agent } from "@deepseek-ai/dsh-agent";
+import type { CodingCompactionResult } from "@aura/protocol/types";
+import type { CodingCapabilityStore } from "./capabilities.ts";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { conversationPrompt } from "@aura/protocol/conversations";
@@ -93,6 +100,7 @@ export function codingService(
   questions: CodingQuestions,
   images: Pick<GeneratedArtifacts, "readImage">,
   workflows: ChatToolHost,
+  capabilities?: CodingCapabilityStore,
 ) {
   const controller = ctx.sessionController;
   /** Sessions with a turn in progress in this process. */
@@ -113,17 +121,247 @@ export function codingService(
   ) => Promise<boolean>;
   const guides = new Map<string, Guide>();
 
-  // The allow-list belongs to the agent, not to a turn: DSH Schedule delivers
-  // reminders straight into a live or restored agent, outside `run()`, and
-  // that turn must see exactly the tools a user-sent turn sees.
+  const emitters = new Map<string, (event: CodingStreamEvent) => void>();
+  const permissions = new WeakMap<Agent, () => void>();
+  const childPresets = ["coding-researcher", "coding-reviewer"];
+  const owned = new Set<string>();
+  const maintenance = new Map<string, AbortController>();
+
   ctx.on("agent/created", async ({ agent }) => {
     const preset = (await ctx.agentPresets.resolve("coder-v1")).id;
-    if (agent.session.header.agentPreset === preset) mountCodingTools(agent);
+    const children = await Promise.all(
+      childPresets.map(async (id) => (await ctx.agentPresets.resolve(id)).id),
+    );
+    if (agent.session.header.agentPreset === preset) {
+      owned.add(agent.id);
+      await refreshTools(agent, false);
+    } else if (children.includes(agent.session.header.agentPreset ?? "")) {
+      const parentId = agent.session.header.parentSession;
+      if (!parentId || !owned.has(parentId))
+        throw new FlowError("子 Agent 缺少有效的父对话。", 403);
+      owned.add(agent.id);
+      await refreshTools(agent, true);
+      const nativeQuestion = agent.ctx.tools.get("ask_user_question");
+      if (!nativeQuestion) throw new FlowError("问答工具尚未就绪。", 503);
+      agent.ctx.tools.register({
+        ...nativeQuestion,
+        async execute(args, exec) {
+          const parent = ctx.agents.get(parentId);
+          const stop = turnStops.get(parentId)?.signal;
+          if (!parent || !stop || !emitters.has(parentId))
+            throw new FlowError("父对话已停止。", 409);
+          const input = args as { questions?: unknown };
+          const items = codingQuestions(
+            Array.isArray(input.questions) ? input.questions : [],
+          ).map((item) => ({
+            ...item,
+            header: `子 Agent · ${agent.session.header.agentPreset?.includes("reviewer") ? "审查" : "调研"}`,
+          }));
+          // DSH deliberately accepts human interaction only on a root Agent.
+          // Route the native question through its live parent, retaining the
+          // child's original tool call/result and visibly attributing the ask.
+          return nativeQuestion.execute(
+            { ...input, questions: items },
+            {
+              ...exec,
+              agent: parent,
+              signal: AbortSignal.any([exec.signal, stop]),
+            },
+          );
+        },
+      });
+    }
     return undefined;
   });
+  if (capabilities) {
+    ctx.on("agent/pre-step", async ({ agent, signal }, next) => {
+      if (
+        owned.has(agent.id) &&
+        agent.session.header.origin !== "subagent" &&
+        capabilities.config().autoCompact
+      ) {
+        try {
+          await ctx.compaction.compactIfNeeded(agent, "pressure", signal);
+        } catch {
+          signal.throwIfAborted();
+          // Match the native automatic policy: a failed reduction does not
+          // discard the turn or automatically resend the summary request.
+          emitters.get(agent.id)?.({
+            type: "notice",
+            id: `compact-warning-${Date.now()}`,
+            text: "自动压缩未完全降低上下文占用，本轮将继续。可在本轮结束后检查额度或拆分输入。",
+            at: Date.now(),
+          });
+        }
+      }
+      return next();
+    });
+    ctx.on("llm/stream", (options, next) => {
+      const agent = options.sessionId
+        ? ctx.agents.get(options.sessionId)
+        : undefined;
+      const kind =
+        options.purpose === "compaction"
+          ? "compaction"
+          : agent?.session.header.origin === "subagent"
+            ? "subagent"
+            : undefined;
+      if (!kind || !options.sessionId || !owned.has(options.sessionId))
+        return next();
+      const sessionId = options.sessionId;
+      return (async function* () {
+        options.signal?.throwIfAborted();
+        const id = await capabilities.reserve(kind, sessionId);
+        let complete = false;
+        try {
+          for await (const chunk of next()) {
+            if (chunk.type === "finish")
+              complete =
+                chunk.reason.kind !== "error" &&
+                chunk.reason.kind !== "aborted";
+            yield chunk;
+          }
+        } finally {
+          await capabilities.settle(id, complete);
+        }
+      })();
+    });
+    ctx.on("tools/execute", async (exec, next) => {
+      if (!exec.agent || !owned.has(exec.agent.id)) return next();
+      if (exec.name === "subagent") {
+        if (!capabilities.config().subagents)
+          throw new FlowError("子 Agent 已停用。", 409);
+        const args = exec.arguments as { cwd?: unknown };
+        if (
+          args.cwd !== undefined &&
+          (typeof args.cwd !== "string" ||
+            resolve(exec.agent.session.header.cwd ?? "", args.cwd) !==
+              exec.agent.session.header.cwd)
+        )
+          throw new FlowError("子 Agent 必须继承父对话目录。", 403);
+      }
+      if (exec.name !== "web_search" && exec.name !== "web_fetch")
+        return next();
+      const state = await capabilities.snapshot();
+      if (!state.web || !state.hasWebKey)
+        throw new FlowError("请先配置 DeepSeek Web 服务。", 409);
+      exec.signal.throwIfAborted();
+      const id = await capabilities.reserve("web", exec.agent.id);
+      let complete = false;
+      try {
+        const result = await next();
+        complete = !result.isError;
+        return result;
+      } finally {
+        await capabilities.settle(id, complete);
+      }
+    });
+  }
+
+  async function refreshTools(agent: Agent, child: boolean) {
+    const previous = permissions.get(agent);
+    const state = await capabilities?.snapshot();
+    const base = child
+      ? ["read", "glob", "grep", "ask_user_question", "send_message"]
+      : [...codingTools];
+    const extra = [
+      ...(state?.web && state.hasWebKey ? ["web_search", "web_fetch"] : []),
+      ...(!child && state?.subagents
+        ? ["subagent", "send_message", "interrupt_agent", "list_agents"]
+        : []),
+    ];
+    if (!permissions.has(agent)) agent.ctx.tools.presentAs("native");
+    const missing = base.filter((name) => !agent.ctx.tools.get(name));
+    if (missing.length)
+      throw new FlowError(`对话工具未注册：${missing.join("、")}。`);
+    const shell = child
+      ? undefined
+      : shellTools.find((name) => agent.ctx.tools.get(name));
+    permissions.set(
+      agent,
+      agent.ctx.tools.restrict({
+        allow: [...base, ...extra, ...(shell ? [shell] : [])],
+      }),
+    );
+    previous?.();
+  }
+
+  async function compact(id: string): Promise<CodingCompactionResult> {
+    if (active.has(id) || maintenance.has(id))
+      throw new FlowError("请先等待本轮结束或停止生成。", 409);
+    const abort = new AbortController();
+    maintenance.set(id, abort);
+    try {
+      let agent = ctx.agents.get(SessionId(id));
+      if (!agent) {
+        const events = await readSessionEvents(
+          controller,
+          SessionId(id),
+          abort.signal,
+          1,
+        );
+        if (!events)
+          return { compacted: false, replacedMessages: 0, previousTokens: 0 };
+        const preset = (await ctx.agentPresets.resolve("coder-v1")).id;
+        const handle = await ctx.agents.resume({
+          resumeSessionId: SessionId(id),
+          signal: sessionStop(id).signal,
+          setup: async (scope) => {
+            await ctx.agentPresets.mount(scope, preset);
+          },
+        });
+        handles.set(id, handle);
+        agent = handle.agent;
+      }
+      const beforeTokens = ctx.tokenMeter.measure(agent.session).surfaceTokens;
+      let result: CodingCompactionResult = {
+        compacted: false,
+        replacedMessages: 0,
+        previousTokens: 0,
+      };
+      const unsubscribe = ctx.on("session/event", (session, event) => {
+        if (session.id === id && event.type === "compaction/summary")
+          result = {
+            compacted: true,
+            replacedMessages: event.data.shadowedSeqs.length,
+            previousTokens: event.data.shadowedTokenCount,
+          };
+      });
+      try {
+        const command = await ctx.commands.execute(
+          agent,
+          "/compact",
+          [],
+          AbortSignal.any([
+            abort.signal,
+            sessionStop(id).signal,
+            AbortSignal.timeout(5 * 60_000),
+          ]),
+        );
+        if (!command || command.result.kind === "error")
+          throw new FlowError(
+            "压缩未完成；请检查额外请求额度和会话状态，结果未知时不要直接重试。",
+            409,
+          );
+        await ctx.sessions.flush(agent.session);
+        return {
+          ...result,
+          savedTokens: Math.max(
+            0,
+            beforeTokens - ctx.tokenMeter.measure(agent.session).surfaceTokens,
+          ),
+        };
+      } finally {
+        unsubscribe();
+      }
+    } finally {
+      maintenance.delete(id);
+    }
+  }
 
   return {
     stream,
+    compact,
     stop: stopTurn,
     steer: steerTurn,
     close: closeSession,
@@ -137,6 +375,11 @@ export function codingService(
    * client's stream disconnect reached us, and waits until it has settled.
    */
   async function stopTurn(sessionId: string): Promise<boolean> {
+    const pending = maintenance.get(sessionId);
+    if (pending) {
+      pending.abort();
+      return true;
+    }
     const turn = turnStops.get(sessionId);
     if (!turn) return false;
     turn.abort(new FlowError("已停止生成。"));
@@ -242,9 +485,10 @@ export function codingService(
     emit: (event: CodingStreamEvent) => void,
     signal: AbortSignal,
   ): Promise<{ model: string }> {
-    if (active.has(turn.sessionId))
+    if (active.has(turn.sessionId) || maintenance.has(turn.sessionId))
       throw new FlowError("这段对话还有一轮在进行，请先等它结束或停止。", 409);
     active.add(turn.sessionId);
+    emitters.set(turn.sessionId, emit);
     const own = new AbortController();
     turnStops.set(turn.sessionId, own);
     const turnDone = run(turn, emit, AbortSignal.any([signal, own.signal]));
@@ -261,6 +505,7 @@ export function codingService(
       // In-flight guidance must never spill into a later turn of this agent.
       own.abort(new FlowError("这一轮已经结束了，请重新发送。", 409));
       active.delete(turn.sessionId);
+      emitters.delete(turn.sessionId);
       settled.delete(turn.sessionId);
       if (turnStops.get(turn.sessionId) === own)
         turnStops.delete(turn.sessionId);
@@ -278,6 +523,7 @@ export function codingService(
     // Keep the aborted scope so an already-dispatched request cannot revive it.
     const session = ctx.sessions.get(SessionId(sessionId));
     if (session) await ctx.sessions.flush(session).catch(() => false);
+    if (handle) await ctx.subagents.drainDescendants([handle.agent]);
     await handle?.dispose();
     return existed;
   }
@@ -405,6 +651,7 @@ export function codingService(
       handles.set(turn.sessionId, handle);
       agent = handle.agent;
     }
+    await refreshTools(agent, false);
     const scoped: Array<() => void> = [];
     const disposers: Array<() => void> = [];
     try {
@@ -551,6 +798,7 @@ export function codingService(
       let turnNumber: number | undefined;
       let matched: number | undefined;
       let wroteText = false;
+      let followupFailure: Error | undefined;
       let finish!: { resolve(): void; reject(reason: unknown): void };
       const completed = new Promise<void>((resolve, reject) => {
         finish = { resolve, reject };
@@ -581,7 +829,7 @@ export function codingService(
           if (matched === undefined) return;
           if (
             event.type === "assistant/message" &&
-            event.data.turn === matched &&
+            event.data.turn >= matched &&
             !event.data.interrupted
           ) {
             const text = event.data.message.content
@@ -593,6 +841,12 @@ export function codingService(
               wroteText = true;
             }
           }
+          if (
+            event.type === "turn/end" &&
+            event.data.turn > matched &&
+            event.data.reason.kind !== "completed"
+          )
+            followupFailure = agentFailure();
           if (event.type === "turn/end" && event.data.turn === matched) {
             if (event.data.reason.kind === "completed") finish.resolve();
             else
@@ -611,8 +865,19 @@ export function codingService(
           if (id === sessionId) finish.reject(agentFailure(message));
         }),
       );
+      let childrenStopping: Promise<void> | undefined;
       const onAbort = () => {
         controller.cancel({ sessionId });
+        childrenStopping = ctx.subagents
+          .listChildren(sessionId)
+          .then((children) =>
+            ctx.subagents.drainChildren(
+              agent,
+              children.map((child) => child.id),
+            ),
+          );
+        // Joined below; observe immediately so a fast teardown error is contained.
+        void childrenStopping.catch(() => undefined);
         finish.reject(stop.reason);
       };
       stop.addEventListener("abort", onAbort, { once: true });
@@ -656,48 +921,38 @@ export function codingService(
           config,
         );
         await completed;
-        await ctx.agents.get(sessionId)?.whenIdle();
+        await agent.whenIdle();
+        while (await ctx.subagents.waitForChildren(agent))
+          await agent.whenIdle();
+        await agent.whenIdle();
+        stop.throwIfAborted();
+        if (followupFailure) throw followupFailure;
       } finally {
         stop.removeEventListener("abort", onAbort);
         if (stop.aborted) controller.cancel({ sessionId });
+        await childrenStopping;
       }
       return { model: config.model };
     } finally {
-      guides.delete(turn.sessionId);
-      for (const dispose of disposers) dispose();
-      for (const dispose of scoped.reverse()) dispose();
-      const session = ctx.sessions.get(sessionId);
-      if (session) await ctx.sessions.flush(session).catch(() => false);
-      // The agent stays registered so the next turn resumes this session.
+      try {
+        // An errored parent must not leave charged child work running after
+        // its question/approval bridge has been removed. Completed children
+        // remain in DSH's catalog and can be explicitly continued later.
+        await ctx.subagents.drainChildren(
+          agent,
+          (await ctx.subagents.listChildren(sessionId)).map(
+            (child) => child.id,
+          ),
+        );
+      } finally {
+        guides.delete(turn.sessionId);
+        for (const dispose of disposers) dispose();
+        for (const dispose of scoped.reverse()) dispose();
+        const session = ctx.sessions.get(sessionId);
+        if (session) await ctx.sessions.flush(session).catch(() => false);
+        // The agent stays registered so the next turn resumes this session.
+      }
     }
-  }
-
-  /**
-   * Admits the coding tool set to this agent's own scope. DSH restrictions
-   * filter inherited tools only, so `restrict({ allow })` keeps exactly these
-   * names and nothing else the profile mounts reaches the model. Both
-   * registrations unwind with the agent's scope.
-   */
-  function mountCodingTools(agent: {
-    ctx: {
-      tools: {
-        presentAs(mode: "native"): () => void;
-        restrict(filter: { allow: readonly string[] }): () => void;
-        get(name: string): unknown;
-      };
-    };
-  }) {
-    agent.ctx.tools.presentAs("native");
-    // A coding session needs every listed tool; the shell name varies by
-    // platform, so only one of those is expected to exist.
-    const available = codingTools.filter((name) => agent.ctx.tools.get(name));
-    const missing = codingTools.filter((name) => !available.includes(name));
-    if (missing.length)
-      throw new FlowError(`编码工具未注册：${missing.join("、")}。`);
-    const shell = shellTools.find((name) => agent.ctx.tools.get(name));
-    agent.ctx.tools.restrict({
-      allow: [...available, ...(shell ? [shell] : [])],
-    });
   }
 }
 

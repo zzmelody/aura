@@ -30,6 +30,9 @@ export type ToolGroupSummary = {
 };
 
 const toolGroupActivities: Record<string, readonly [string, string]> = {
+  web_search: ["搜索了网页", "尝试搜索网页"],
+  web_fetch: ["读取了网页", "尝试读取网页"],
+  subagent: ["委派了子 Agent", "尝试委派子 Agent"],
   read: ["读取了文件", "尝试读取文件"],
   read_image: ["查看了图片", "尝试查看图片"],
   glob: ["搜索了项目", "尝试搜索项目"],
@@ -104,6 +107,8 @@ export type AskedQuestion = {
  * flow (think, act, explain, act again) instead of all tools then all text.
  */
 export type TimelineItem =
+  | { kind: "notice"; id: string; text: string }
+  | { kind: "web"; event: Extract<CodingActivity, { type: "web" }> }
   | { kind: "text"; text: string }
   | { kind: "tools"; callIds: string[] }
   | { kind: "question"; questionId: string }
@@ -168,6 +173,25 @@ export function newTurn(
  * through here, so a reloaded transcript looks exactly like the live one.
  */
 export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
+  if (event.type === "notice") {
+    const item: TimelineItem = {
+      kind: "notice",
+      id: event.id,
+      text: event.text,
+    };
+    const index = turn.timeline.findIndex(
+      (entry) => entry.kind === "notice" && entry.id === event.id,
+    );
+    return {
+      ...turn,
+      timeline:
+        index < 0
+          ? [...turn.timeline, item]
+          : turn.timeline.map((entry, at) => (at === index ? item : entry)),
+    };
+  }
+  if (event.type === "web")
+    return { ...turn, timeline: [...turn.timeline, { kind: "web", event }] };
   if (event.type === "workflow")
     return turn.workflows?.some((run) => run.runId === event.runId)
       ? turn

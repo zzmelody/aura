@@ -27,6 +27,49 @@ export function createCodingApp(host: OrchestrationHost) {
   );
   app.route("/terminals", createTerminalApp(host));
 
+  app.get("/sessions/:id/agents", async (context) => {
+    try {
+      return context.json(await host.codingSubagents(context.req.param("id")));
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+  app.post("/sessions/:id/agents/:child/stop", async (context) => {
+    try {
+      return context.json(
+        await host.stopCodingSubagent(
+          context.req.param("id"),
+          context.req.param("child"),
+        ),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+  app.get("/capabilities", async (context) => {
+    try {
+      return context.json(await host.codingCapabilities());
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+  app.post("/capabilities", async (context) => {
+    try {
+      return context.json(
+        await host.codingCapabilities(await context.req.json()),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+  app.post("/sessions/:id/compact", async (context) => {
+    try {
+      return context.json(await host.compactCoding(context.req.param("id")));
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
   app.get("/assistant", async (context) => {
     try {
       return context.json(await host.personalAssistant(false));

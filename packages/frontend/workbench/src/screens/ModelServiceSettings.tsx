@@ -1,3 +1,4 @@
+import { ConversationCapabilitySettings } from "./ConversationCapabilitySettings.tsx";
 import React, { useCallback, useEffect, useState } from "react";
 import { KeyRound, RefreshCw, Save, Trash2 } from "lucide-react";
 import type { AiCustomProvider } from "@aura/protocol/types";
@@ -115,6 +116,7 @@ export function ModelServiceSettings({
 
   return (
     <>
+      <ConversationCapabilitySettings endpoint={endpoint} />
       {!state ? (
         <div className="settings-group">
           <div className="settings-row">

@@ -1,3 +1,4 @@
+import type { CodingCapabilityActivity } from "@aura/protocol/types";
 import type {
   PluginCompatibility,
   PluginHttpContribution,
@@ -183,6 +184,7 @@ export interface CodingTurn {
  * the agent declared, rather than only its final answer.
  */
 export type CodingStreamEvent =
+  | CodingCapabilityActivity
   | ({ type: "workflow" } & ChatWorkflowStart)
   | { type: "delta"; text: string }
   | {

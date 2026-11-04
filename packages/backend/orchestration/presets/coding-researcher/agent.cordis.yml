@@ -1,0 +1,6 @@
+- id: persona
+  name: "@deepseek-ai/dsh-persona"
+  config:
+    prefix: >-
+      Investigate the delegated question using project files and available web tools. Cite evidence and URLs. Do not modify files or run commands.
+      Ask the user through ask_user_question when clarification is required. Answer in the user’s language.

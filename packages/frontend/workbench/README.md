@@ -83,3 +83,7 @@ Flow 代码草稿以 `aura.flow-draft.v1` 自动保存在本机，支持代码�
 侧栏的 Site 菜单仅在 Electron 桌面宿主中启用本机项目运行器。选择包含 `package.json` 的前端项目目录后，后端会识别包管理器和 `dev`/`start`/`serve` 脚本；只有确认预览端口属于本次进程且 HTTP 就绪，才在独立窗口打开。支持的直接开发命令会先选择可用端口再启动，并把实际地址同步到页面；自定义命令冲突会报错。运行中锁定目录、脚本和地址，就绪超时仍保留停止按钮；「打开预览」仅在后端验证就绪后启用。共享 DTO 属于 `@aura/protocol/types`，frontend 不包含端口或进程操作。目录、脚本和预览地址保存在 `aura.site.v1`，不会进入会话、HTTP 请求或凭据存储；退出 Aura 会停止该项目进程。浏览器和移动端只显示桌面版提示。
 
 验证命令：`pnpm --filter @aura/workbench typecheck`、`pnpm --filter @aura/workbench test`。宽内容布局回归使用本机 Chrome；其他平台可通过 `CHROME_BIN` 指定 Chrome/Chromium 可执行文件，未提供可用浏览器时只跳过该项。当前结果见 [验证记录](../../../docs/verification.md)。
+
+“模型服务 → 对话能力”提供压缩、Web、只读子 Agent 开关与请求次数额度。
+聊天的 `/compact`、Web 来源、子 Agent 卡片和原生 DSH 密钥遮罩共用主对话与旁支界面。
+参见[DSH 对话能力](../../../docs/dsh-conversation-capabilities.md)。

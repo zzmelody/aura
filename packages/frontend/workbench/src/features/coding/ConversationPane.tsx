@@ -1,3 +1,6 @@
+import { SubagentPanel } from "./SubagentPanel.tsx";
+import { MaskedUserText } from "./MaskedUserText.tsx";
+import { compactCoding } from "./api.ts";
 import React, {
   memo,
   useCallback,
@@ -780,7 +783,11 @@ const TurnView = memo(function TurnView({
         : CircleX;
   return (
     <article className="coding-turn">
-      {turn.prompt ? <div className="coding-prompt">{turn.prompt}</div> : null}
+      {turn.prompt ? (
+        <div className="coding-prompt">
+          <MaskedUserText text={turn.prompt} />
+        </div>
+      ) : null}
       {turn.images?.length ? (
         <div className="message-images coding-prompt-images">
           {turn.images.map((image) => (
@@ -866,6 +873,29 @@ const TurnView = memo(function TurnView({
         </div>
       ) : null}
       {turn.timeline.map((item, index) => {
+        if (item.kind === "notice")
+          return (
+            <p key={index} className="coding-notice" role="status">
+              {item.text}
+            </p>
+          );
+        if (item.kind === "web")
+          return (
+            <aside key={index} className="coding-web-sources">
+              <span>
+                网页来源
+                {item.event.statusCode
+                  ? ` · HTTP ${item.event.statusCode}`
+                  : ""}
+                {item.event.truncated ? " · 结果已截断" : ""}
+              </span>
+              {item.event.sources.map((source, at) => (
+                <a key={at} href={source.url} target="_blank" rel="noreferrer">
+                  {source.title}
+                </a>
+              ))}
+            </aside>
+          );
         if (item.kind === "text")
           return item.text.trim() ? (
             <div key={index} className="coding-reply">
@@ -926,7 +956,7 @@ const TurnView = memo(function TurnView({
         }
         return (
           <div key={index} className="coding-prompt coding-steer">
-            {item.text}
+            <MaskedUserText text={item.text} />
           </div>
         );
       })}
@@ -1478,6 +1508,33 @@ export function ConversationPane({
     });
     editor.current?.focus();
   };
+  const [compactStates, setCompactStates] = useState<
+    Record<string, { busy: boolean; text: string }>
+  >({});
+  const compacting = compactStates[sessionId ?? ""]?.busy ?? false;
+  const compactNotice = compactStates[sessionId ?? ""]?.text ?? "";
+  async function compact() {
+    const id = sessionId ?? "";
+    const update = (busy: boolean, text: string) =>
+      setCompactStates((current) => ({ ...current, [id]: { busy, text } }));
+    if (!id) {
+      update(false, "发送消息后才能压缩上下文。");
+      return;
+    }
+    if (compacting || running) return;
+    update(true, "正在压缩较早的上下文…");
+    try {
+      const result = await compactCoding(endpoint, id);
+      update(
+        false,
+        result.compacted
+          ? `已压缩 ${result.replacedMessages} 条上下文（约节省 ${result.savedTokens ?? 0} tokens），原始聊天记录仍然保留。`
+          : "还没有可压缩的上下文。",
+      );
+    } catch (cause) {
+      update(false, cause instanceof Error ? cause.message : "压缩未完成。");
+    }
+  }
   const commands = useComposerCommands({
     endpoint,
     projectId,
@@ -1491,6 +1548,7 @@ export function ConversationPane({
     onCommand(command) {
       if (command === "model") setModelOpenRequest((value) => value + 1);
       else if (command === "stop") void stop();
+      else if (command === "compact") void compact();
       else editor.current?.focus();
     },
   });
@@ -1955,10 +2013,29 @@ export function ConversationPane({
       className="coding-pane"
       data-phase={!shown.length && !loadingHistory ? "hero" : "active"}
     >
+      {compactNotice ? (
+        <p role="status" className="coding-notice">
+          {compactNotice}
+          {compacting ? (
+            <button type="button" onClick={() => void stop()}>
+              停止压缩
+            </button>
+          ) : null}
+        </p>
+      ) : null}
+
       {error ? (
         <p className="coding-notice" role="alert">
           {error}
         </p>
+      ) : null}
+      {sessionId && !offline && visible ? (
+        <SubagentPanel
+          key={sessionId}
+          endpoint={endpoint}
+          sessionId={sessionId}
+          running={running}
+        />
       ) : null}
       {historyError ? (
         <div className="coding-notice" role="alert">

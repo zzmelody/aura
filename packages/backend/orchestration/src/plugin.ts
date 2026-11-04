@@ -1,3 +1,9 @@
+import { codingSubagents } from "./coding/subagents.ts";
+import {
+  CodingCapabilityStore,
+  capabilitiesDomain,
+  type CapabilityRecord,
+} from "./coding/capabilities.ts";
 import { PluginPresets } from "./plugin-presets.ts";
 import { installHostPluginSdkResolutionFromEnv } from "./plugin-sdk-resolution.ts";
 import {
@@ -279,6 +285,11 @@ async function extendHmrRoots(ctx: Context, roots: ContributionRoot[]) {
 export const name = "aura-orchestration";
 export const inject = [
   "sessionController",
+  "credentials",
+  "compaction",
+  "tokenMeter",
+  "commands",
+  "subagents",
   "sessions",
   "agents",
   "agentPresets",
@@ -721,7 +732,18 @@ export async function apply(ctx: Context) {
   const chats = new Map<string, AbortController>();
   const rejectedChatModels = new RejectedChatModels();
   const codingAnswers = new CodingQuestions();
-  const coding = codingService(ctx, codingAnswers, artifacts, workflowTools);
+  const capabilityDomain = await ctx.storageDomain.open(capabilitiesDomain);
+  const capabilities = new CodingCapabilityStore(
+    capabilityDomain.table("settings") as unknown as Table<CapabilityRecord>,
+    ctx.credentials,
+  );
+  const coding = codingService(
+    ctx,
+    codingAnswers,
+    artifacts,
+    workflowTools,
+    capabilities,
+  );
   const conversations = conversationService(
     codingProjects,
     codingConversations,
@@ -1029,6 +1051,43 @@ export async function apply(ctx: Context) {
           } finally {
             chats.delete(chatId);
           }
+          break;
+        }
+        case "coding/capabilities":
+          data = await capabilities.snapshot();
+          break;
+        case "coding/capabilities/save":
+          data = await capabilities.save(params);
+          break;
+        case "coding/agents":
+        case "coding/agents/stop": {
+          if (typeof params.sessionId !== "string")
+            throw new FlowError("无效的对话。", 400);
+          const parent =
+            codingConversations.get(params.sessionId) ??
+            codingConversations.sideParent(params.sessionId);
+          if (!parent || parent.archivedAt !== undefined)
+            throw new FlowError("对话不存在或已归档。", 404);
+          if (method === "coding/agents/stop") {
+            if (typeof params.childId !== "string")
+              throw new FlowError("无效的子 Agent。", 400);
+            data = ctx.subagents.interruptByParent(
+              SessionId(params.childId),
+              SessionId(params.sessionId),
+              "continuable",
+            );
+          } else data = await codingSubagents(ctx, params.sessionId);
+          break;
+        }
+        case "coding/compact": {
+          if (typeof params.sessionId !== "string")
+            throw new FlowError("无效的对话。", 400);
+          const parent =
+            codingConversations.get(params.sessionId) ??
+            codingConversations.sideParent(params.sessionId);
+          if (!parent || parent.archivedAt !== undefined)
+            throw new FlowError("对话不存在或已归档。", 404);
+          data = await coding.compact(params.sessionId);
           break;
         }
         case "coding/stop": {

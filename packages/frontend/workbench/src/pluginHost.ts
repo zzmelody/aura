@@ -1,3 +1,7 @@
+import {
+  installSecretMask,
+  SECRET_MASK_MODULE,
+} from "./features/coding/secret-mask.ts";
 import { Context, Service } from "@deepseek-ai/cordis";
 import * as pluginUi from "@aura/plugin-ui";
 import {
@@ -292,7 +296,10 @@ async function bootPluginHost(
 
     const mountedPlugins = new Map<string, ClientPlugin>();
     const mount = async (id: string, rev: string, plugin: ClientPlugin) => {
-      const fiber = pluginOwnerContext(root, id).plugin(plugin);
+      const fiber =
+        id === SECRET_MASK_MODULE
+          ? root.plugin((scope) => installSecretMask(scope, plugin))
+          : pluginOwnerContext(root, id).plugin(plugin);
       fibers.set(id, fiber);
       revisions.set(id, rev);
       try {
