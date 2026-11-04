@@ -21,7 +21,7 @@ apps/desktop ────┘          │            ├─→ Codex auth routes
                             │            └─→ chat routes
                             ├─→ Tripo routes ─→ @aura/tripo ─→ official Tripo v3 SDK
                             ├─→ @aura/orchestration ─→ 长驻 DSH SDK profile
-                            ├─→ @aura/extensions ─→ 插件校验与动态激活
+                            ├─→ @aura/plugin-manager ─→ 插件校验与动态激活
                             └─→ loopback demo model
 ```
 

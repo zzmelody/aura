@@ -1,4 +1,4 @@
-import { AuraPluginConfigurationError } from "@aura/extensions";
+import { AuraPluginConfigurationError } from "@aura/plugin-manager";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AuraPluginSettingsPort } from "./types.ts";

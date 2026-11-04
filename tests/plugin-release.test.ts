@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { loadAuraPlugins } from "@aura/extensions";
+import { loadAuraPlugins } from "@aura/plugin-manager";
 import { buildPlugins } from "../scripts/build-plugins.ts";
 
 test(

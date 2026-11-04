@@ -170,9 +170,9 @@ importers:
 
   .:
     devDependencies:
-      '@aura/extensions':
+      '@aura/plugin-manager':
         specifier: workspace:*
-        version: link:packages/backend/extensions
+        version: link:packages/backend/plugin-manager
       '@aura/protocol':
         specifier: workspace:*
         version: link:packages/shared/protocol
@@ -443,7 +443,7 @@ importers:
         specifier: ~5.9.2
         version: 5.9.3
 
-  packages/backend/extensions:
+  packages/backend/plugin-manager:
     dependencies:
       '@aura/protocol':
         specifier: workspace:*
@@ -685,9 +685,9 @@ importers:
       '@aura/dsh-auth':
         specifier: workspace:*
         version: link:../dsh-auth
-      '@aura/extensions':
+      '@aura/plugin-manager':
         specifier: workspace:*
-        version: link:../extensions
+        version: link:../plugin-manager
       '@aura/orchestration':
         specifier: workspace:*
         version: link:../orchestration

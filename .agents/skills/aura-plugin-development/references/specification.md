@@ -360,7 +360,7 @@ When implementing this contract in Aura:
 
 - Put manifest types that are truly runtime-neutral in a shared package only if both frontend and backend need them; otherwise keep them in backend code.
 - Put public Action/Flow author contracts in a backend library such as `packages/backend/plugin-sdk`.
-- Put configuration, manifest discovery, trust decisions, multi-root aggregation, and lifecycle management in a backend library such as `packages/backend/extensions`.
+- Put configuration, manifest discovery, trust decisions, multi-root aggregation, and lifecycle management in a backend library such as `packages/backend/plugin-manager`.
 - Keep Action/Flow execution and DSH/Cordis integration in `packages/backend/orchestration`.
 - Keep final construction and configuration wiring in `packages/backend/runtime`.
 - Do not make frontend libraries depend on plugin-host or orchestration packages.

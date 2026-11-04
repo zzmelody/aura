@@ -11,7 +11,7 @@
 | `@aura/workbench`     | 通用对话、Flow、设置、工作区与宿主适配；通过公开 plugin/transport 入口提供共享控件和传输                                                                            | 业务界面由外部插件提供；Site 页面与运行后端在 `plugins/site-launcher` |
 | `@aura/dsh-auth`      | `codex-auth.ts` 为授权生命周期；`codex-token.ts` 为令牌读取/刷新；`codex-profile.ts` 为 provider 配置；`ai-services.ts` 为模型设置；`index.ts` 为公共导出           | 组合 DSH 服务，不包含 HTTP 路由                                       |
 | `@aura/tripo`         | `service.ts` 为 SDK 调度与付费提交；`task.ts` 投影公开任务；`credentials.ts` 读取忽略存储；`game-asset.ts` 为固定资产链路；`index.ts` 为公共导出                    | 不公开密钥、不自动重发未知付费结果                                    |
-| `@aura/extensions`    | `schemas.ts` 校验；`configuration.ts` 原子读写；`discovery.ts` 校验目录、引擎与 SDK；`manager.ts` 管理串行应用/回滚；`types.ts` 为包内接口                          | 发现只读，不执行或安装插件                                            |
+| `@aura/plugin-manager`    | `schemas.ts` 校验；`configuration.ts` 原子读写；`discovery.ts` 校验目录、引擎与 SDK；`manager.ts` 管理串行应用/回滚；`types.ts` 为包内接口                          | 发现只读，不执行或安装插件                                            |
 | `@aura/plugin-sdk`    | 公开 Action/Flow/provider、backend、storage、media、browser、errors 契约                                                                                            | 外部插件不导入宿主私有模块                                            |
 | `@aura/plugin-ui`     | 插件工作台页面契约：`definePage`、页面 props 与 `auraWorkbench` 服务类型                                                                                            | frontend；运行时由工作台作为种子模块提供，插件不打包                  |
 | `@aura/orchestration` | 根模块为执行、恢复、DSH 和注册；plugin-* 管理通用插件生命周期、存储、HTTP、preset 与兼容映射；`artifacts` 为登记、历史绑定、媒体与 HTTP 交付；`local-ai` 为进程适配 | 宿主不绑定业务库或业务 ID                                             |

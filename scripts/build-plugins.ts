@@ -10,7 +10,7 @@ import {
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { discoverAuraPluginDirectories } from "@aura/extensions";
+import { discoverAuraPluginDirectories } from "@aura/plugin-manager";
 
 const execute = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));

@@ -18,7 +18,7 @@
   "dependencies": {
     "@aura/demo": "workspace:*",
     "@aura/dsh-auth": "workspace:*",
-    "@aura/extensions": "workspace:*",
+    "@aura/plugin-manager": "workspace:*",
     "@aura/orchestration": "workspace:*",
     "@aura/plugin-sdk": "workspace:*",
     "@aura/protocol": "workspace:*",

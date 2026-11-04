@@ -5,7 +5,7 @@ import {
   AuraPluginManager,
   type AuraPluginResolution,
   type PluginContributionRoot,
-} from "@aura/extensions";
+} from "@aura/plugin-manager";
 import {
   GPT_IMAGE_CAPABILITY,
   MANAGED_PROCESS_PERMISSION,

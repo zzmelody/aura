@@ -1,4 +1,4 @@
-# @aura/extensions
+# @aura/plugin-manager
 
 Backend-only manager for explicitly enabled trusted local Aura plugins. It
 reads `.aura/plugins.json`, validates package manifests and contribution roots,
