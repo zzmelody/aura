@@ -90,7 +90,7 @@ export async function buildPlugins(
     ) {
       const pnpm = process.env.npm_execpath;
       if (!pnpm) throw new Error("Run plugin builds through pnpm.");
-      const nativePnpm = /\.exe$/iu.test(pnpm);
+      const nativePnpm = /(?:\.exe|[/\\]pnpm)$/iu.test(pnpm);
       await execute(
         nativePnpm ? pnpm : process.execPath,
         [...(nativePnpm ? [] : [pnpm]), "--dir", plugin, "run", "build"],

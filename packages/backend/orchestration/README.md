@@ -1,5 +1,7 @@
 # @aura/orchestration
 
+DSH 依赖统一固定为 `0.2.1-rc.5`，Cordis 为 `4.0.5`，loader / include 分别固定为 `1.0.6` / `1.0.10`。本包的 Zod 与 DSH domain 层统一为 `4.4.3`，Schema 持久化校验在 Aura 侧适配。升级使用已发布包，保留现有 profile、会话 ID、domain 与存储格式，不执行用户配置或历史数据迁移。集成测试通过隔离目录和本地合成模型验证授权、执行、取消与恢复，不调用真实付费模型。
+
 `personalAssistant(create = false)` 读取 Aura 专属主会话与其工作空间；只有显式传入 `true` 才在缺失时创建。索引对并发打开合并处理，固定身份为协议定义的 `coding-aura-personal-assistant`，沿用现有 domain 与 DSH 日志。再次打开不改写已有记录、不触发模型、不更换目录，重启后继续原上下文和模型配置。普通会话的关闭、归档和删除接口拒绝结束此主会话；普通任务保持独立。所属工作空间不可用时返回冲突，不自动重建或迁移用户数据。
 
 `conversations(projectId, includeStatus = true)` 默认沿用历史状态投影；启动时传入 `false` 仅返回索引元数据和当前进程的运行、等待回答状态，不逐项读取 DSH 日志。`coding/conversation-list.ts` 拥有该投影，历史日志失败不隐藏会话，旧日志中尚未结束的回合仍在完整查询时投影为已停止；不改写任何索引或日志。
@@ -103,7 +105,7 @@ V1 不支持 parallel 分支内的 checkpoint。运行时暂停会退出作用�
 
 `memo` 可封装时间、随机数和只读计算，必须返回 JSON；在结果落盘前崩溃时允许重新计算。外部写副作用必须通过 Action。普通 JS 代码每次重放都会重新执行，必须保证它基于固定输入、已存档结果和相同代码走出一致路径。重放时同一步骤的请求指纹变化，或完成时存在未访问的历史步骤，都会以 `FLOW_REPLAY_MISMATCH` 中断。
 
-输入、输出、memo 和人工答案使用不超过 256 KiB 的 JSON；Agent 输出为 1–80,000 字符。checkpoint/memo 的 Zod Schema 必须能转换为可存档和重新校验的 JSON Schema；依赖执行代码的 transforms、refine/superRefine、overwrite（包括 trim）及自定义 `when` 等规则会在持久化前明确报错，避免恢复时丢失校验。Zod 自身为字符串/数组 min/max/length 安装的长度类型条件按原生函数身份识别，仍可持久化为标准 JSON Schema；仅相同 check 名称不能放行自定义条件。
+输入、输出、memo 和人工答案使用不超过 256 KiB 的 JSON；Agent 输出为 1–80,000 字符。checkpoint/memo 的 Zod Schema 必须能转换为可存档和重新校验的 JSON Schema；依赖执行代码的 transforms、refine/superRefine、overwrite（包括 trim）及自定义 `when` 等规则会在持久化前明确报错，避免恢复时丢失校验。Zod 4.4 为每个字符串/数组 min/max/length 检查创建独立的长度类型条件，Aura 与当前安装版本的原生函数实现比对后将其保存为标准 JSON Schema；仅相同 check 名称或重写函数的 `toString` 不能放行自定义条件。该检查面向受信任插件的 Schema，不作为任意 JavaScript 闭包的安全隔离。
 
 ## 每个 Agent 的模型参数
 

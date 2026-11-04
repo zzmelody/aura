@@ -63,9 +63,13 @@ export const retryAt = (step: FlowStep) =>
       (step.retry?.multiplier ?? 2) **
         Math.max(0, (step.attempts?.length ?? 1) - 1),
   );
-// Zod installs a shared type guard on its built-in length checks. JSON Schema
-// represents these checks; an explicit/custom `when` can change their meaning.
-// Compare native function identity, never just the publicly settable check name.
+// Zod 4.4 creates a fresh native length guard for every check. Compare the
+// installed implementation, rather than function identity or just check names.
+// This handles trusted plugin schemas, not arbitrary hostile JavaScript closures.
+const functionSource = (value: unknown): string | undefined =>
+  typeof value === "function"
+    ? Function.prototype.toString.call(value)
+    : undefined;
 const nativeLengthConditions = new Map(
   z
     .string()
@@ -74,7 +78,7 @@ const nativeLengthConditions = new Map(
     .length(1)
     ._zod.def.checks!.map((check) => [
       check._zod.def.check,
-      check._zod.def.when,
+      functionSource(check._zod.def.when),
     ]),
 );
 export function savedSchema(schema: z.ZodType): JsonValue {
@@ -92,7 +96,7 @@ export function savedSchema(schema: z.ZodType): JsonValue {
                 !(
                   (zodSchema._zod.def.type === "string" ||
                     zodSchema._zod.def.type === "array") &&
-                  definition.when ===
+                  functionSource(definition.when) ===
                     nativeLengthConditions.get(definition.check)
                 ))
             );

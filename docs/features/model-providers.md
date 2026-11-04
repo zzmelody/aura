@@ -1,6 +1,6 @@
 # DSH 模型接入
 
-核对日期：2026-10-14。Aura 锁定 DSH `0.2.1-alpha.2`，模型能力必须通过 DSH provider 与授权 seam 接入。Bedrock 保持未配置。
+依赖更新日期：2026-11-04。Aura 锁定 DSH `0.2.1-rc.5`，模型能力必须通过 DSH provider 与授权 seam 接入。Bedrock 保持未配置。
 
 DSH 0.2 的 `llm-deepseek` 只讲 Messages 协议（`/v1/messages`），而开发演示模型是本地 OpenAI 兼容服务。因此 `aura-flow` profile 禁用 `llm-deepseek` 与 `llm-deepseek-account`，改由 `dsh-llm-pi-ai` 以手工声明的 `openai-completions` 路由提供 `deepseek-official`。路由 id 保持不变，已保存的 Run 无需迁移即可重放；演示模型声明为无思考档位，选择 `off` 时不发送推理参数，输出上限经 `max_completion_tokens` 透传。
 

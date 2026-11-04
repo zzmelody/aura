@@ -481,8 +481,8 @@ test("persisted schemas reject executable refinements instead of silently losing
 });
 
 test("persisted length checks retain native bounds but reject explicit conditional checks", () => {
-  // The former guard rejected Zod 4.6's built-in when function. Merely allowing
-  // its check names would instead lose explicit, executable conditions.
+  // Zod 4.4 allocates a fresh native when function for every length check.
+  // Merely allowing check names would lose explicit executable conditions.
   for (const schema of [
     z.string().min(1).max(2),
     z
@@ -524,6 +524,13 @@ test("persisted length checks retain native bounds but reject explicit condition
     () => savedSchema(z.string().refine(() => true, { when: () => true })),
     /Schema/,
   );
+  const spoofed = z.string().min(1);
+  const check = spoofed._zod.def.checks![0]!;
+  const nativeSource = Function.prototype.toString.call(check._zod.def.when);
+  const customWhen = () => false;
+  customWhen.toString = () => nativeSource;
+  check._zod.def.when = customWhen;
+  assert.throws(() => savedSchema(spoofed), /Schema/);
 });
 
 test("text, single and multiple clarification answers survive JSON persistence and engine restart", async () => {

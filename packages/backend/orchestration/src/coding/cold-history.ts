@@ -2,7 +2,7 @@ import { cp, lstat, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Context } from "@deepseek-ai/cordis";
-import JsonlSessionPersistence from "@deepseek-ai/dsh-session-persistence-jsonl";
+import * as JsonlSessionPersistence from "@deepseek-ai/dsh-session-persistence-jsonl";
 import Storage from "@deepseek-ai/dsh-storage";
 import * as JsonStorage from "@deepseek-ai/dsh-storage-json";
 import { DomainFacility, type Domain } from "@deepseek-ai/dsh-storage-domain";

@@ -228,7 +228,7 @@ export class PluginPageRegistry {
     const loader = await capture(
       LOADER_ID,
       this.#loaderPath,
-      { id: LOADER_ID, name: "DSH client modules", version: "0.2.1-alpha.2" },
+      { id: LOADER_ID, name: "DSH client modules", version: "0.2.1-rc.5" },
       this.#loader,
     );
     const next = new Map<string, BundleRecord>();

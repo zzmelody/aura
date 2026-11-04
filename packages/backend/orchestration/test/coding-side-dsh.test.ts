@@ -17,8 +17,21 @@ test(
     timeout: 180_000,
     skip: nodeMajor < 24 ? "DSH requires Node >=24" : false,
   },
-  async () => {
+  async (t) => {
     const root = await mkdtemp(join(tmpdir(), "aura-coding-side-"));
+    // The real PTY must not run personal zsh startup hooks or write user history.
+    const shellEnvironment = {
+      ZDOTDIR: process.env.ZDOTDIR,
+      HISTFILE: process.env.HISTFILE,
+    };
+    process.env.ZDOTDIR = root;
+    process.env.HISTFILE = join(root, "shell-history");
+    t.after(() => {
+      for (const [key, value] of Object.entries(shellEnvironment)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    });
     const project = join(root, "project");
     const flowRoot = join(root, "flow");
     await mkdir(project);

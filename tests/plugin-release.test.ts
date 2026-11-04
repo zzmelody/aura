@@ -1,10 +1,62 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { loadAuraPlugins } from "@aura/extensions";
 import { buildPlugins } from "../scripts/build-plugins.ts";
+
+test(
+  "release builds execute extensionless pnpm launchers and Node entrypoints",
+  {
+    skip:
+      process.platform === "win32" ? "Fixture uses a POSIX executable" : false,
+  },
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "aura-pnpm-release-"));
+    const previous = process.env.npm_execpath;
+    t.after(async () => {
+      if (previous === undefined) delete process.env.npm_execpath;
+      else process.env.npm_execpath = previous;
+      await rm(root, { recursive: true, force: true });
+    });
+    const source = join(root, "source with spaces");
+    await mkdir(source);
+    await writeFile(join(source, "aura.plugin.json"), "{}");
+    await writeFile(
+      join(source, "package.json"),
+      JSON.stringify({ files: ["built.txt"], scripts: { build: "fixture" } }),
+    );
+    for (const [name, content] of [
+      [
+        "pnpm",
+        '#!/bin/sh\n[ "$1" = "--dir" ] && [ "$3" = "run" ] && [ "$4" = "build" ] || exit 1\nprintf built > "$2/built.txt"\n',
+      ],
+      [
+        "pnpm.cjs",
+        'require("node:fs").writeFileSync(require("node:path").join(process.argv[3], "built.txt"), "built");\n',
+      ],
+    ]) {
+      const launcher = join(root, name);
+      await writeFile(launcher, content);
+      await chmod(launcher, 0o755);
+      process.env.npm_execpath = launcher;
+      await buildPlugins(source, join(root, "output"));
+      assert.equal(
+        await readFile(join(root, "output", "built.txt"), "utf8"),
+        "built",
+      );
+      await rm(join(source, "built.txt"));
+    }
+  },
+);
 
 test("release plugins preserve nested layout and load without source plugin directories", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "aura-plugin-release-"));
