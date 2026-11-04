@@ -65,7 +65,8 @@
   max-width: 220px;
   border-radius: 14px;
 }
-.chat-screen .from-user .message-images a {
+.chat-screen .from-user .message-images a,
+.chat-screen .from-user .message-images .image-thumbnail {
   border-radius: 14px;
 }
 

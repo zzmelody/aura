@@ -13,6 +13,7 @@ import type { WorkspaceController } from "../useWorkspace";
 import { writeClipboard } from "../clipboard";
 import { extractFlowCode } from "../flowDraft";
 import { chatImageUrl } from "../chatImages";
+import { ImageThumbnails } from "../ImageLightbox";
 import { WorkflowRichText } from "./WorkflowValue";
 import "./chat.css";
 function MessageView({
@@ -56,23 +57,15 @@ function MessageView({
         </div>
       ) : null}
       {user && message.images?.length ? (
-        <div className="message-images">
-          {message.images.map((image) => (
-            <a
-              key={image.assetId}
-              href={chatImageUrl(endpoint, image.assetId)}
-              target="_blank"
-              rel="noreferrer"
-              title={image.name}
-            >
-              <img
-                src={chatImageUrl(endpoint, image.assetId)}
-                alt={image.name ?? "附图"}
-                loading="lazy"
-              />
-            </a>
-          ))}
-        </div>
+        <ImageThumbnails
+          className="message-images"
+          lazy
+          images={message.images.map((image) => ({
+            key: image.assetId,
+            src: chatImageUrl(endpoint, image.assetId),
+            name: image.name ?? "附图",
+          }))}
+        />
       ) : null}
       {message.text || !user ? (
         <div

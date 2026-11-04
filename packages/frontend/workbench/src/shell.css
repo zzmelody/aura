@@ -124,6 +124,19 @@
   height: 100%;
   object-fit: cover;
 }
+.composer-attachment-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.composer-attachment-open:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: -2px;
+}
 .composer-attachment-state {
   position: absolute;
   inset: 0;
@@ -132,11 +145,13 @@
   background: color-mix(in srgb, var(--background) 55%, transparent);
   color: var(--text);
   font-weight: 600;
+  /* The overlay is decorative; clicks reach the preview button underneath. */
+  pointer-events: none;
 }
 .composer-attachment.failed .composer-attachment-state {
   color: var(--danger);
 }
-.composer-attachment > button {
+.composer-attachment > .composer-attachment-remove {
   position: absolute;
   top: 3px;
   right: 3px;
@@ -152,12 +167,12 @@
   opacity: 0;
   transition: opacity 110ms ease;
 }
-.composer-attachment:hover > button,
-.composer-attachment > button:focus-visible {
+.composer-attachment:hover > .composer-attachment-remove,
+.composer-attachment > .composer-attachment-remove:focus-visible {
   opacity: 1;
 }
 @media (hover: none) {
-  .composer-attachment > button {
+  .composer-attachment > .composer-attachment-remove {
     opacity: 1;
   }
 }
@@ -175,12 +190,21 @@
   margin-left: auto;
   margin-bottom: 6px;
 }
-.message-images a {
+.message-images a,
+.message-images .image-thumbnail {
   display: block;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--elevated);
+}
+.message-images .image-thumbnail {
+  padding: 0;
+  cursor: zoom-in;
+}
+.message-images .image-thumbnail:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
 }
 .message-images img {
   display: block;
@@ -189,13 +213,14 @@
   height: 160px;
   object-fit: cover;
 }
-.message-images a:only-child img {
+.message-images a:only-child img,
+.message-images .image-thumbnail:only-child img {
   max-width: 320px;
   height: auto;
   max-height: 260px;
 }
 @media (prefers-reduced-motion: reduce) {
-  .composer-attachment > button {
+  .composer-attachment > .composer-attachment-remove {
     transition: none;
   }
 }

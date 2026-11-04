@@ -677,7 +677,7 @@ function ArtifactDialog({
   );
 }
 
-function ImagePreview({ src, name }: { src: string; name: string }) {
+export function ImagePreview({ src, name }: { src: string; name: string }) {
   const stage = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
   const [status, setStatus] = useState<"loading" | "ready" | "error">(

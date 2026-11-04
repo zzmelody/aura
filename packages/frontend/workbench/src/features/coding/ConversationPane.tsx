@@ -87,6 +87,7 @@ import "./composer.css";
 import { writeClipboard } from "../../clipboard";
 import type { ChatImage } from "@aura/core/types";
 import { chatImageUrl } from "../../chatImages";
+import { ImageLightbox, ImageThumbnails } from "../../ImageLightbox";
 import { pastedImages, useImageAttachments } from "../../useImageAttachments";
 import { WorkflowApiError } from "../../workflowSessions";
 import {
@@ -828,21 +829,14 @@ function PromptImages({
 }) {
   if (!images?.length) return null;
   return (
-    <div className="message-images coding-prompt-images">
-      {images.map((image) => (
-        <a
-          key={image.assetId}
-          href={chatImageUrl(endpoint, image.assetId)}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <img
-            src={chatImageUrl(endpoint, image.assetId)}
-            alt={image.name ?? "附图"}
-          />
-        </a>
-      ))}
-    </div>
+    <ImageThumbnails
+      className="message-images coding-prompt-images"
+      images={images.map((image) => ({
+        key: image.assetId,
+        src: chatImageUrl(endpoint, image.assetId),
+        name: image.name ?? "附图",
+      }))}
+    />
   );
 }
 
@@ -1569,6 +1563,8 @@ export function ConversationPane({
   const awaitingService = useRef(new Set<string>());
   const [dragging, setDragging] = useState(false);
   const images = useImageAttachments(endpoint, draftKey);
+  /** Composer attachment currently opened in the full-size viewer. */
+  const [previewKey, setPreviewKey] = useState<string>();
   const fileInput = useRef<HTMLInputElement>(null);
   /** Conversations already read from the log; a live turn is never overwritten. */
   const loaded = useRef(new Set<string>());
@@ -2591,7 +2587,14 @@ export function ConversationPane({
                   className={`composer-attachment${item.error ? " failed" : ""}`}
                   title={item.error ?? item.name}
                 >
-                  <img src={item.preview} alt={item.name} />
+                  <button
+                    type="button"
+                    className="composer-attachment-open"
+                    aria-label={`查看大图 ${item.name}`}
+                    onClick={() => setPreviewKey(item.key)}
+                  >
+                    <img src={item.preview} alt={item.name} />
+                  </button>
                   {!item.image && !item.error ? (
                     <span className="composer-attachment-state" role="status">
                       <LoaderCircle size={16} className="coding-spin" />
@@ -2608,6 +2611,7 @@ export function ConversationPane({
                   ) : null}
                   <button
                     type="button"
+                    className="composer-attachment-remove"
                     aria-label={`移除图片 ${item.name}`}
                     onClick={() => images.detach(item.key)}
                   >
@@ -2615,6 +2619,18 @@ export function ConversationPane({
                   </button>
                 </figure>
               ))}
+              {previewKey &&
+              images.attachments.some((item) => item.key === previewKey) ? (
+                <ImageLightbox
+                  images={images.attachments.map((item) => ({
+                    key: item.key,
+                    src: item.preview,
+                    name: item.name,
+                  }))}
+                  initial={previewKey}
+                  close={() => setPreviewKey(undefined)}
+                />
+              ) : null}
             </div>
           ) : null}
           {dragging ? (
