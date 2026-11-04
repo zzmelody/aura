@@ -2,6 +2,7 @@ import { spawn, execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { cp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -27,7 +28,10 @@ export async function desktopExecutable(): Promise<string> {
   if (process.platform === "win32")
     return prepareWindowsDesktopExecutable(
       resolve(stock),
-      resolve(appRoot, "dist-host", "win32"),
+      // Keep the copy out of the workspace: new files inherit its ACL, and a
+      // Low integrity label there (set by sandboxed tooling) makes the copied
+      // Electron crash with EXCEPTION_BREAKPOINT at startup.
+      resolve(process.env.LOCALAPPDATA ?? tmpdir(), "Aura", "desktop-runtime"),
     );
   if (process.platform !== "darwin") return stock;
 
