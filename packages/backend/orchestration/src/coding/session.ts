@@ -50,6 +50,7 @@ import { projectCodingEvent } from "./activity.ts";
 import { codingCollaboration, isGoalIntent } from "./collaboration.ts";
 import { readSessionEvents } from "./history.ts";
 import { addTurnUsage, turnTokenUsage } from "./usage.ts";
+import { mountWorkspaceInstructions } from "./workspace-instructions.ts";
 import {
   approvalOutcome,
   approvalQuestion,
@@ -119,6 +120,7 @@ export function codingService(
   images: Pick<GeneratedArtifacts, "readImage">,
   workflows: ChatToolHost,
   isSideConversation: (id: string) => boolean,
+  isWorkspaceConversation: (id: string) => boolean,
   capabilities?: CodingCapabilityStore,
   integrations?: CodingIntegrations,
 ) {
@@ -169,7 +171,7 @@ export function codingService(
   });
 
   ctx.on("agent/created", async ({ agent }) => {
-    const parentId = agent.session.header.parentSession;
+    const { parentSession: parentId, cwd } = agent.session.header;
     const teammate =
       ctx.get("agentTeams")?.tryMembership(agent)?.role === "teammate";
     const preset = (await ctx.agentPresets.resolve("coder-v1")).id;
@@ -178,6 +180,8 @@ export function codingService(
     );
     if (agent.session.header.agentPreset === preset && !teammate) {
       owned.add(agent.id);
+      if (cwd && isWorkspaceConversation(agent.id))
+        mountWorkspaceInstructions(agent, cwd);
       await refreshTools(agent, false);
     } else if (
       teammate
@@ -187,6 +191,12 @@ export function codingService(
       if (!parentId || !owned.has(parentId))
         throw new FlowError("子 Agent 缺少有效的父对话。", 403);
       owned.add(agent.id);
+      if (
+        cwd &&
+        isWorkspaceConversation(parentId) &&
+        ctx.agents.get(parentId)?.session.header.cwd === cwd
+      )
+        mountWorkspaceInstructions(agent, cwd);
       await refreshTools(agent, true);
       const nativeQuestion = agent.ctx.tools.get("ask_user_question");
       if (!nativeQuestion) throw new FlowError("问答工具尚未就绪。", 503);

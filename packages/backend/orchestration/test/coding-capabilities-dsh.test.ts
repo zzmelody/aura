@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -30,7 +30,9 @@ test(
     const project = join(root, "project");
     await mkdir(flowRoot);
     await mkdir(project);
+    await writeFile(join(project, "AGENTS.md"), "DELEGATED_WORKSPACE_RULES\n");
     const calls: string[][] = [];
+    const childPrompts: string[] = [];
     const toolResults: unknown[] = [];
     let holdChild = false;
     let escapeChild = false;
@@ -50,6 +52,7 @@ test(
         ...request.messages.filter((message) => message.role === "tool"),
       );
       const child = !names.includes("write");
+      if (child) childPrompts.push(JSON.stringify(request.messages));
       const ask =
         child &&
         names.includes("ask_user_question") &&
@@ -196,6 +199,8 @@ test(
     assert.match(children[0]!.result, /child review complete/u);
     const childCalls = calls.filter((names) => !names.includes("write"));
     assert.ok(childCalls.length > 0);
+    for (const prompt of childPrompts)
+      assert.match(prompt, /DELEGATED_WORKSPACE_RULES/u);
     assert.ok(
       childCalls.every(
         (names) =>

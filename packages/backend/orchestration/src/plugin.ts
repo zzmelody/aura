@@ -789,6 +789,10 @@ export async function apply(ctx: Context) {
     workflowTools,
     (id) =>
       id.startsWith("side-") && Boolean(codingConversations.sideParent(id)),
+    (id) =>
+      Boolean(
+        codingConversations.get(id) ?? codingConversations.sideParent(id),
+      ),
     capabilities,
     integrations,
   );

@@ -119,8 +119,8 @@ export async function provisionProfile(
     "workflow-worker-thread",
     "tool-workflow",
     "tool-ralph",
-    // Prompt section, not a tool: the per-scope tool allow-list cannot keep it
-    // out, so an ambient instruction loader would reach every agent.
+    // Workspace instructions are mounted on the bound conversation Agent.
+    // The host-wide DSH loader would also apply to Flow Agents.
     "agent-instructions",
     "session-title-llm",
   ];
