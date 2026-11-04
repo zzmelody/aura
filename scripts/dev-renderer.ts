@@ -53,7 +53,8 @@ try {
     desktop = spawn(electron, [".", "--dev"], {
       cwd: appRoot,
       stdio: "inherit",
-      windowsHide: true,
+      // No windowsHide: spawning electron.exe directly would pass SW_HIDE to
+      // its first window on Windows, leaving the workbench invisible.
       env: { ...env, AURA_DEV_PARENT_PID: String(process.pid) },
     });
     desktop.once("error", (error) => {
