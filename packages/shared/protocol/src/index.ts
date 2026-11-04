@@ -2,7 +2,22 @@ import {
   CHAT_IMAGE_LIMIT,
   type ChatMessage,
   type ChatModelSelection,
+  type CodingPermission,
 } from "./types.ts";
+
+/** Permission presets a coding conversation may select, narrowest first. */
+export const CODING_PERMISSIONS: readonly CodingPermission[] = [
+  "read-only",
+  "workspace-write",
+  "danger-full-access",
+];
+
+export function isCodingPermission(value: unknown): value is CodingPermission {
+  return (
+    typeof value === "string" &&
+    (CODING_PERMISSIONS as readonly string[]).includes(value)
+  );
+}
 
 /** Correlates steering with its DSH user-message event. */
 export function isCodingSteerRequestId(value: unknown): value is string {

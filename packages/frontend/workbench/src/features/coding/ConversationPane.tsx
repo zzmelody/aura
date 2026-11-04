@@ -23,6 +23,7 @@ import {
 import { ComposerCommands, useComposerCommands } from "./ComposerCommands";
 import {
   ArrowUp,
+  Check,
   ChevronDown,
   ChevronRight,
   CircleCheck,
@@ -67,6 +68,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { providerMode } from "@aura/core";
+import { CODING_PERMISSIONS } from "@aura/protocol";
 import type { Workspace } from "@aura/core/types";
 import type {
   ChatModelSelection,
@@ -76,6 +78,7 @@ import type {
   FlowMode,
   CodingFileDiff,
   CodingHistoryTurn,
+  CodingPermission,
   CodingQuestionAnswer,
 } from "@aura/protocol/types";
 import { WorkflowRichText } from "../../screens/WorkflowValue";
@@ -1435,6 +1438,15 @@ export type ConversationSend = (
   options?: { preserveDraft?: boolean },
 ) => Promise<Turn | undefined>;
 
+const PERMISSION_OPTIONS = {
+  "read-only": { label: "只读", detail: "只读 · 写入需审批" },
+  "workspace-write": { label: "工作区写入", detail: "工作区写入 · 越界需审批" },
+  "danger-full-access": {
+    label: "完全访问",
+    detail: "完全访问 · 无沙箱限制，无需审批",
+  },
+} satisfies Record<CodingPermission, { label: string; detail: string }>;
+
 /**
  * One conversation's transcript and composer. The studio hosts the main
  * conversation and its retained side chat; both go through the
@@ -1476,6 +1488,10 @@ export function ConversationPane({
   onProvider,
   modelConfig,
   onModelConfig,
+  permission,
+  draftPermission,
+  permissionSaving = false,
+  onPermission,
   initialSend,
   onInitialSendTaken,
   sendRef,
@@ -1527,6 +1543,11 @@ export function ConversationPane({
   onProvider(provider: Workspace["provider"]): void;
   modelConfig: ChatModelSelection;
   onModelConfig(selection: ChatModelSelection): void;
+  permission?: CodingPermission;
+  /** A choice made before the conversation has been saved. */
+  draftPermission?: CodingPermission;
+  permissionSaving?: boolean;
+  onPermission?(permission: CodingPermission): Promise<void>;
   /** Sent once when it changes, for example a hand-off from another page. */
   initialSend?: { prompt: string; images?: ChatImage[] };
   onInitialSendTaken?(): void;
@@ -2157,6 +2178,7 @@ export function ConversationPane({
       images.uploading ||
       historyBlocked ||
       readOnly ||
+      permissionSaving ||
       (sessionId !== undefined && guidanceRequests.current.has(sessionId)) ||
       guidanceState?.phase === "retry" ||
       sending.current.has(draftKey) ||
@@ -2243,6 +2265,7 @@ export function ConversationPane({
           ...(context ? { context } : {}),
           mode,
           modelConfig: submittedConfig,
+          ...(draftPermission ? { permission: draftPermission } : {}),
         },
         abort.signal,
       )) {
@@ -2710,6 +2733,42 @@ export function ConversationPane({
               {composerLeading}
             </div>
             <div className="composer-trailing">
+              {!offline ? (
+                <WorkbenchMenu
+                  label={`对话权限 · ${permission ? PERMISSION_OPTIONS[permission].detail : "默认权限"}`}
+                  className={`composer-context composer-permission${permission === "danger-full-access" ? " danger" : ""}`}
+                  disabled={readOnly || !onPermission || permissionSaving}
+                  items={CODING_PERMISSIONS.map((preset) => ({
+                    id: preset,
+                    label: PERMISSION_OPTIONS[preset].detail,
+                    icon:
+                      preset === permission ? (
+                        <Check size={14} />
+                      ) : preset === "danger-full-access" ? (
+                        <ShieldAlert size={14} />
+                      ) : undefined,
+                    danger: preset === "danger-full-access",
+                    action: () => {
+                      setError("");
+                      void onPermission?.(preset).catch(() =>
+                        setError("权限保存失败，请检查服务连接后重试。"),
+                      );
+                    },
+                  }))}
+                >
+                  {permission === "danger-full-access" ? (
+                    <ShieldAlert size={14} aria-hidden="true" />
+                  ) : (
+                    <ShieldCheck size={14} aria-hidden="true" />
+                  )}
+                  <span>
+                    {permission
+                      ? PERMISSION_OPTIONS[permission].label
+                      : "默认权限"}
+                  </span>
+                  <ChevronDown size={12} aria-hidden="true" />
+                </WorkbenchMenu>
+              ) : null}
               <ChatModelControls
                 endpoint={endpoint}
                 mode={mode}
@@ -2751,6 +2810,7 @@ export function ConversationPane({
                     !projectId ||
                     historyBlocked ||
                     readOnly ||
+                    (!running && permissionSaving) ||
                     steering ||
                     (running &&
                       !!sessionId &&

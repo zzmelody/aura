@@ -1,4 +1,9 @@
-import type { ChatModelSelection, FlowMode } from "@aura/protocol/types";
+import type {
+  ChatModelSelection,
+  CodingPermission,
+  FlowMode,
+} from "@aura/protocol/types";
+import { conversationSides } from "@aura/protocol/conversations";
 import type { CodingStreamEvent, CodingTurn } from "../types.ts";
 import { FlowError } from "../schema.ts";
 import type { CodingConversationIndex } from "./index-record.ts";
@@ -12,7 +17,20 @@ export function conversationService(
   driver: ReturnType<typeof codingService>,
 ) {
   const admitted = new Set<string>();
-  return { stream, selectModel };
+  return { stream, selectModel, selectPermission };
+
+  /** Saves the choice and applies it to a live agent at once, mid-turn too. */
+  async function selectPermission(id: string, permission: CodingPermission) {
+    await index.selectPermission(id, permission);
+    const current = index.permission(id);
+    if (!current) return;
+    driver.applyPermission(id, current);
+    const parent = index.get(id);
+    if (parent)
+      for (const side of conversationSides(parent)) {
+        if (!side.permission) driver.applyPermission(side.id, current);
+      }
+  }
 
   async function selectModel(
     id: string,
@@ -64,6 +82,11 @@ export function conversationService(
       )
         throw new FlowError("对话来源不匹配。", 409);
       if (!request.forkFrom) {
+        const initialPermission =
+          request.permission ??
+          (request.branchFrom
+            ? index.permission(request.branchFrom)
+            : undefined);
         await index.open(id, projectId, request.prompt, {
           ...(request.history?.length ? { history: request.history } : {}),
           ...(request.branchFrom
@@ -72,8 +95,11 @@ export function conversationService(
                 sourceEndSeq: request.branchAt,
               }
             : {}),
+          ...(initialPermission ? { permission: initialPermission } : {}),
         });
       }
+      if (request.permission && (existing || request.forkFrom))
+        await selectPermission(id, request.permission);
       const saved =
         index.modelConfig(id)?.[request.mode] ??
         (parentId ? index.modelConfig(parentId)?.[request.mode] : undefined) ??
@@ -104,6 +130,7 @@ export function conversationService(
         },
         emit,
         signal,
+        () => index.permission(id),
       );
       if (!request.forkFrom) await projects.attach(projectId, id);
       return result;

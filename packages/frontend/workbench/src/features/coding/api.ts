@@ -6,6 +6,7 @@ import type {
 } from "@aura/protocol/types";
 import type {
   ChatModelSelection,
+  CodingPermission,
   CodingSteerModelConfig,
   ChatMessage,
   CodingActivity,
@@ -247,6 +248,8 @@ export async function* codingTurn(
     context?: string;
     mode: FlowMode;
     modelConfig?: ChatModelSelection;
+    /** Applied before the turn starts; omitted keeps the saved preset. */
+    permission?: CodingPermission;
   },
   signal: AbortSignal,
 ): AsyncGenerator<CodingChunk> {
@@ -494,6 +497,18 @@ export const saveConversationModel = (
     `/sessions/${encodeURIComponent(sessionId)}/model`,
     "POST",
     { mode, selection },
+  );
+
+export const saveConversationPermission = (
+  endpoint: string,
+  sessionId: string,
+  permission: CodingPermission,
+) =>
+  codingApi<{ updated: true }>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/permission`,
+    "POST",
+    { permission },
   );
 
 /** Sends the user's answer to a question the agent is waiting on. */

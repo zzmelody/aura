@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CodingConversationInfo,
+  CodingPermission,
   CodingProjectInfo,
   ChatModelSelection,
   FlowMode,
@@ -19,6 +20,7 @@ import {
   listProjects,
   openSideChat,
   saveConversationModel,
+  saveConversationPermission,
   personalAssistant,
 } from "./api";
 import { conversationInfoStatus, isActiveStatus } from "./conversationStatus";
@@ -58,6 +60,11 @@ export type CodingProjectsController = {
   open(projectId: string, conversationId?: string): void;
   refresh(signal?: AbortSignal): Promise<CodingProjectInfo[]>;
   refreshConversations(
+  pendingPermissions: Readonly<Partial<Record<string, CodingPermission>>>;
+  selectPermission(
+    sessionId: string,
+    permission: CodingPermission,
+  ): Promise<void>;
     projectId: string,
     signal?: AbortSignal,
     metadataOnly?: boolean,
@@ -106,6 +113,12 @@ export function useCodingProjects(
   const [error, setError] = useState("");
   const [loadedAssistant, setLoadedAssistant] = useState<{
     endpoint: string;
+  const [pendingPermissions, setPendingPermissions] = useState<
+    Partial<Record<string, CodingPermission>>
+  >({});
+  const permissionWrites = useRef(new Set<string>());
+  const currentEndpoint = useRef(endpoint);
+  currentEndpoint.current = endpoint;
     info: PersonalAssistantInfo;
   }>();
   const [assistantRequests, setAssistantRequests] = useState(0);
@@ -300,6 +313,7 @@ export function useCodingProjects(
   useEffect(() => {
     if (!enabled) {
       setProjects([]);
+    setPendingPermissions({});
       setConversations({});
       setConversationErrors({});
       setReadyEndpoint(undefined);
@@ -591,6 +605,58 @@ export function useCodingProjects(
     close,
     statuses: dataEndpoint === endpoint ? statuses : {},
     reportStatus,
+    pendingPermissions: dataEndpoint === endpoint ? pendingPermissions : {},
+    selectPermission: async (sessionId, permission) => {
+      const parent = Object.values(conversations)
+        .flat()
+        .find(
+          (item) =>
+            item.id === sessionId ||
+            conversationSides(item).some((side) => side.id === sessionId),
+        );
+      if (!parent) throw new Error("对话尚未保存，请稍后再试。");
+      const key = JSON.stringify([endpoint, sessionId]);
+      if (permissionWrites.current.has(key)) return;
+      permissionWrites.current.add(key);
+      setPendingPermissions((current) => ({
+        ...current,
+        [sessionId]: permission,
+      }));
+      try {
+        await saveConversationPermission(endpoint, sessionId, permission);
+        if (currentEndpoint.current !== endpoint) return;
+        const { projectId } = parent;
+        versions.current.set(
+          projectId,
+          (versions.current.get(projectId) ?? 0) + 1,
+        );
+        setConversations((current) => ({
+          ...current,
+          [projectId]: (current[projectId] ?? []).map((item) => {
+            if (item.id !== parent.id) return item;
+            if (item.id === sessionId) return { ...item, permission };
+            return {
+              ...item,
+              sideConversations: conversationSides(item).map((side) =>
+                side.id === sessionId ? { ...side, permission } : side,
+              ),
+            };
+          }),
+        }));
+      } catch (error) {
+        if (currentEndpoint.current === endpoint)
+          await refreshConversations(parent.projectId).catch(() => {});
+        throw error;
+      } finally {
+        permissionWrites.current.delete(key);
+        if (currentEndpoint.current === endpoint)
+          setPendingPermissions((current) => {
+            const next = { ...current };
+            delete next[sessionId];
+            return next;
+          });
+      }
+    },
     error,
   };
 }

@@ -16,6 +16,7 @@ import {
   SessionId,
   SessionLogOffset as sessionLogOffset,
   SessionSeq as sessionSeq,
+  type Session,
   type SessionEvent,
 } from "@deepseek-ai/dsh-session";
 import type { SessionRequestId } from "@deepseek-ai/dsh-api-session-controller";
@@ -28,6 +29,7 @@ import {
 } from "@deepseek-ai/dsh-agent";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type {
+  CodingPermission,
   CodingSteerModelConfig,
   CodingTurnUsage,
   FlowAgentConfig,
@@ -85,6 +87,15 @@ const CODING_TURN_TIMEOUT_MS = 30 * 60_000;
  * running agent's inbox, so it never waits out the turn it is steering.
  */
 const CODING_STEER_TIMEOUT_MS = 30_000;
+
+/**
+ * The slice of DSH's `ctx.permissionPresets` (mounted by `dsh-base`) used
+ * here. Typed locally so orchestration does not depend on the package.
+ */
+interface PermissionPresets {
+  current(session: Session): string;
+  set(session: Session, name: string): void;
+}
 
 export interface CodingSessionKey {
   /** Aura-owned coding session id; one DSH session per project conversation. */
@@ -262,6 +273,24 @@ export function codingService(
     });
   }
 
+  /**
+   * Switches a conversation's DSH permission preset (sandbox mode + approval
+   * policy) through `ctx.permissionPresets`, the same write path as DSH's
+   * `/permission` command. The knobs are session events, so the switch survives
+   * restart and reaches the model through the runtime-context snapshot; a
+   * running turn picks it up on its next confined call. Without a loaded
+   * session the saved choice is applied when the next turn starts.
+   */
+  function applyPermission(sessionId: string, permission: CodingPermission) {
+    const presets = ctx.get("permissionPresets") as
+      PermissionPresets | undefined;
+    if (!presets) throw new FlowError("DSH 对话权限服务不可用。", 503);
+    const id = SessionId(sessionId);
+    const session = ctx.agents.get(id)?.session ?? ctx.sessions.get(id);
+    if (!session || presets.current(session) === permission) return;
+    presets.set(session, permission);
+  }
+
   async function refreshTools(agent: Agent, child: boolean) {
     const previous = permissions.get(agent);
     const state = await capabilities?.snapshot();
@@ -370,6 +399,7 @@ export function codingService(
     steer: steerTurn,
     close: closeSession,
     closeSide: closeSession,
+    applyPermission,
     /** Whether a turn of this conversation is running right now. */
     running: (sessionId: string) => active.has(sessionId),
   };
@@ -502,6 +532,7 @@ export function codingService(
     turn: CodingTurn,
     emit: (event: CodingStreamEvent) => void,
     signal: AbortSignal,
+    permission: () => CodingPermission | undefined,
   ): Promise<{ model: string }> {
     if (active.has(turn.sessionId) || maintenance.has(turn.sessionId))
       throw new FlowError("这段对话还有一轮在进行，请先等它结束或停止。", 409);
@@ -509,7 +540,12 @@ export function codingService(
     emitters.set(turn.sessionId, emit);
     const own = new AbortController();
     turnStops.set(turn.sessionId, own);
-    const turnDone = run(turn, emit, AbortSignal.any([signal, own.signal]));
+    const turnDone = run(
+      turn,
+      emit,
+      AbortSignal.any([signal, own.signal]),
+      permission,
+    );
     settled.set(
       turn.sessionId,
       turnDone.then(
@@ -610,6 +646,7 @@ export function codingService(
     turn: CodingTurn,
     emit: (event: CodingStreamEvent) => void,
     signal: AbortSignal,
+    permission: () => CodingPermission | undefined,
   ): Promise<{ model: string }> {
     const cwd = codingCwd(turn.project);
     const stop = AbortSignal.any([
@@ -676,6 +713,9 @@ export function codingService(
       agent = handle.agent;
     }
     await refreshTools(agent, false);
+    // Session setup can await I/O while a permission change is being saved.
+    const presetPermission = permission();
+    if (presetPermission) applyPermission(turn.sessionId, presetPermission);
     const scoped: Array<() => void> = [];
     const disposers: Array<() => void> = [];
     try {

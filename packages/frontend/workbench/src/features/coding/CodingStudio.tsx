@@ -25,6 +25,7 @@ import type { ChatImage, Session, Workspace } from "@aura/core/types";
 import { providerMode } from "@aura/core";
 import type {
   ChatModelSelection,
+  CodingPermission,
   FlowMode,
   FlowCatalogEntry,
   WorkspaceTerminalInfo,
@@ -233,6 +234,9 @@ export function CodingStudio({
   const [modelConfigs, setModelConfigs] = useState<
     Record<string, Partial<Record<FlowMode, ChatModelSelection>>>
   >({});
+  const [draftPermissions, setDraftPermissions] = useState<
+    Partial<Record<string, CodingPermission>>
+  >({});
   const sideToggle = useRef<HTMLButtonElement>(null);
   const hideTools = useRef<HTMLButtonElement>(null);
   const moveToolFocus = useRef(false);
@@ -359,14 +363,23 @@ export function CodingStudio({
       : undefined;
   const mode = providerMode(provider);
   const sourceId = branchFrom ?? conversation?.sourceSessionId;
+  const sourceParent =
+    sourceId && sourceId !== PERSONAL_ASSISTANT_SESSION_ID
+      ? Object.values(workspaces.conversations)
+          .flat()
+          .find(
+            (item) =>
+              item.id === sourceId ||
+              conversationSides(item).some((side) => side.id === sourceId),
+          )
+      : undefined;
   const source =
     sourceId === PERSONAL_ASSISTANT_SESSION_ID
       ? workspaces.assistant?.conversation
-      : Object.values(workspaces.conversations)
-          .flatMap((conversations) =>
-            conversations.flatMap((item) => [item, ...conversationSides(item)]),
-          )
-          .find((item) => item.id === sourceId);
+      : sourceParent?.id === sourceId
+        ? sourceParent
+        : sourceParent &&
+          conversationSides(sourceParent).find((side) => side.id === sourceId);
   const configKey =
     conversationId ??
     (branchFrom
@@ -379,6 +392,30 @@ export function CodingStudio({
     legacy?.modelConfig?.[mode] ??
     source?.modelConfig?.[mode] ??
     {};
+  const permissionKey = JSON.stringify([endpoint, projectId, configKey]);
+  const draftPermission = !conversation
+    ? draftPermissions[permissionKey]
+    : undefined;
+  const { pendingPermissions } = workspaces;
+  const pendingPermission = conversationId
+    ? pendingPermissions[conversationId]
+    : undefined;
+  const sourcePermission =
+    branchFrom && !conversation
+      ? (source?.permission ?? sourceParent?.permission)
+      : undefined;
+  const permission =
+    pendingPermission ??
+    conversation?.permission ??
+    draftPermission ??
+    sourcePermission;
+  const changePermission = async (next: CodingPermission) => {
+    if (conversation) {
+      await workspaces.selectPermission(conversation.id, next);
+      return;
+    }
+    setDraftPermissions((current) => ({ ...current, [permissionKey]: next }));
+  };
   const changeModel = (key: string, selection: ChatModelSelection) => {
     if (key === conversation?.id || key.startsWith("side-")) {
       void workspaces.selectModel(key, mode, selection).catch(() => {});
@@ -548,6 +585,19 @@ ${summary}`,
                   side.modelConfig?.[mode] ?? parent.modelConfig?.[mode] ?? {}
                 }
                 onModelConfig={(selection) => changeModel(sessionId, selection)}
+                permission={
+                  pendingPermissions[sessionId] ??
+                  side.permission ??
+                  pendingPermissions[parent.id] ??
+                  parent.permission
+                }
+                permissionSaving={
+                  !!pendingPermissions[sessionId] ||
+                  (!side.permission && !!pendingPermissions[parent.id])
+                }
+                onPermission={(next) =>
+                  workspaces.selectPermission(sessionId, next)
+                }
                 onProvider={onProvider}
                 flows={flows}
                 flowsLoading={flowsLoading}
@@ -783,6 +833,16 @@ ${summary}`,
                   if (branchFrom) setView("chat");
                   if (id !== configKey)
                     setModelConfigs((current) => {
+                  if (draftPermission && !conversationId)
+                    setDraftPermissions((current) => {
+                      const next = {
+                        ...current,
+                        [JSON.stringify([endpoint, projectId, id])]:
+                          draftPermission,
+                      };
+                      delete next[permissionKey];
+                      return next;
+                    });
                       const next = {
                         ...current,
                         [id]: {
@@ -816,6 +876,14 @@ ${summary}`,
                 onModelConfig={(selection) => changeModel(configKey, selection)}
                 {...(initialSend ? { initialSend } : {})}
                 {...(onHandoffTaken
+                permission={permission}
+                draftPermission={draftPermission}
+                permissionSaving={!!pendingPermission}
+                onPermission={
+                  conversation || !conversationId || legacy
+                    ? changePermission
+                    : undefined
+                }
                   ? { onInitialSendTaken: onHandoffTaken }
                   : {})}
                 onRunning={setMainRunning}

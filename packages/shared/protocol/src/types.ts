@@ -422,6 +422,12 @@ export type CodingSteerModelConfig = {
 export type ConversationModelConfig = Partial<
   Record<FlowMode, ChatModelSelection>
 >;
+/**
+ * DSH permission preset of one coding conversation: the sandbox mode plus its
+ * approval policy. `danger-full-access` lifts the sandbox and never prompts.
+ */
+export type CodingPermission =
+  "read-only" | "workspace-write" | "danger-full-access";
 export type ChatModelInfo = {
   id: string;
   name: string;
@@ -595,6 +601,8 @@ export interface CodingSideConversationInfo {
   title: string;
   createdAt: number;
   modelConfig?: ConversationModelConfig;
+  /** Chosen permission preset; omitted inherits the parent's. */
+  permission?: CodingPermission;
 }
 
 /** One coding conversation listed under a project. */
@@ -610,6 +618,8 @@ export interface CodingConversationInfo {
   sideConversations?: CodingSideConversationInfo[];
   modelConfig?: ConversationModelConfig;
   sideModelConfig?: ConversationModelConfig;
+  /** Chosen permission preset; omitted leaves the DSH session preset in effect. */
+  permission?: CodingPermission;
   /** Source of a fork or an explicit continuation in another project. */
   sourceSessionId?: string;
   /**

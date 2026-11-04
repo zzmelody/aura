@@ -8,6 +8,7 @@ import {
   validateMessages,
   validateConversationHistory,
   validateChatModelSelection,
+  isCodingPermission,
 } from "@aura/protocol";
 import type { ChatEvent } from "@aura/protocol/types";
 import type { TripoPort } from "@aura/tripo";
@@ -356,7 +357,8 @@ export function createApiApp({
           !(body.images as string[] | undefined)?.length) ||
         !["codex", "lumina", "custom", "demo"].includes(String(body.mode)) ||
         (body.modelConfig !== undefined &&
-          !validateChatModelSelection(body.modelConfig))
+          !validateChatModelSelection(body.modelConfig)) ||
+        (body.permission !== undefined && !isCodingPermission(body.permission))
       )
         return context.text("无效的编码请求。", 400);
       if (!chat && !flows) return context.text("编码服务不可用。", 503);
@@ -411,6 +413,9 @@ export function createApiApp({
               ...(selection?.model ? { model: selection.model } : {}),
               ...(selection?.reasoningEffort
                 ? { reasoningEffort: selection.reasoningEffort }
+                : {}),
+              ...(isCodingPermission(body.permission)
+                ? { permission: body.permission }
                 : {}),
             },
             emit,

@@ -99,6 +99,38 @@ test("legacy single-side records remain readable without rewriting storage", asy
   assert.deepEqual(index.modelConfig("side-legacy"), record.sideModelConfig);
 });
 
+test("saved permissions survive index reload and unset sides follow their parent", async () => {
+  const table = memoryTable();
+  const index = new CodingConversationIndex(table);
+  await index.open("main", "project", "Main");
+  const inherited = await index.openSide("main");
+  const overridden = await index.openSide("main");
+  assert.equal(index.permission(inherited), undefined);
+  await index.selectPermission("main", "read-only");
+  assert.equal(index.permission(inherited), "read-only");
+  await index.selectPermission(overridden, "workspace-write");
+  await index.selectPermission("main", "danger-full-access");
+
+  const reloaded = new CodingConversationIndex(table);
+  const [main] = reloaded.list("project");
+  assert.equal(main?.permission, "danger-full-access");
+  assert.deepEqual(
+    main?.sideConversations?.map(({ permission }) => permission),
+    [undefined, "workspace-write"],
+  );
+  assert.equal(reloaded.permission(inherited), "danger-full-access");
+  assert.equal(reloaded.permission(overridden), "workspace-write");
+
+  await reloaded.closeSide(overridden);
+  await assert.rejects(reloaded.selectPermission(overridden, "read-only"), {
+    status: 404,
+  });
+  await reloaded.archive("main", true);
+  await assert.rejects(reloaded.selectPermission("main", "read-only"), {
+    status: 404,
+  });
+});
+
 test("explicit close clears only the requested side and a later open starts fresh", async () => {
   const index = new CodingConversationIndex(memoryTable());
   await index.open("main", "project", "Main");

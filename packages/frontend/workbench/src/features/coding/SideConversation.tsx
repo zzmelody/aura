@@ -3,6 +3,7 @@ import { CornerUpLeft } from "lucide-react";
 import type { Workspace } from "@aura/core/types";
 import type {
   ChatModelSelection,
+  CodingPermission,
   CodingProjectInfo,
   FlowCatalogEntry,
 } from "@aura/protocol/types";
@@ -27,6 +28,9 @@ export function SideConversation({
   visible,
   modelConfig,
   onModelConfig,
+  permission,
+  permissionSaving,
+  onPermission,
   onProvider,
   onSendBack,
   onSettled,
@@ -46,6 +50,9 @@ export function SideConversation({
   visible: boolean;
   modelConfig: ChatModelSelection;
   onModelConfig(selection: ChatModelSelection): void;
+  permission?: CodingPermission;
+  permissionSaving: boolean;
+  onPermission(permission: CodingPermission): Promise<void>;
   onProvider(provider: Workspace["provider"]): void;
   /** Refuses a handoff if the selected main conversation changed meanwhile. */
   onSendBack(parentId: string, sessionId: string, summary: string): boolean;
@@ -189,6 +196,9 @@ export function SideConversation({
           onProvider={onProvider}
           modelConfig={modelConfig}
           onModelConfig={onModelConfig}
+          permission={permission}
+          permissionSaving={permissionSaving}
+          onPermission={onPermission}
           sendRef={send}
           composerExtra={<div className="coding-side-actions">{handoff}</div>}
           onRunning={setRunning}

@@ -5,6 +5,7 @@ import { FlowError } from "@aura/orchestration";
 import { isRecord, validCodingImages } from "./validation.ts";
 import type { CodingSteerModelConfig } from "@aura/protocol/types";
 import {
+  isCodingPermission,
   isCodingSteerRequestId,
   validateChatModelSelection,
 } from "@aura/protocol";
@@ -269,6 +270,27 @@ export function createCodingApp(host: OrchestrationHost) {
           context.req.param("id"),
           body.mode as "demo" | "codex" | "lumina" | "custom",
           body.selection,
+        ),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
+  // Durable per conversation; a live agent switches immediately, mid-turn too.
+  app.post("/sessions/:id/permission", async (context) => {
+    const body: unknown = await context.req.json().catch(() => undefined);
+    if (
+      !isRecord(body) ||
+      Object.keys(body).some((key) => key !== "permission") ||
+      !isCodingPermission(body.permission)
+    )
+      return context.json({ message: "无效的权限设置。" }, 400);
+    try {
+      return context.json(
+        await host.selectConversationPermission(
+          context.req.param("id"),
+          body.permission,
         ),
       );
     } catch (error) {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import { z } from "zod";
+import { CODING_PERMISSIONS } from "@aura/protocol";
 import {
   conversationSides,
   PERSONAL_ASSISTANT_SESSION_ID,
@@ -10,6 +11,7 @@ import type { CodingConversation, Table } from "../types.ts";
 import type {
   ChatMessage,
   ChatModelSelection,
+  CodingPermission,
   FlowMode,
   CodingSideConversationInfo,
 } from "@aura/protocol/types";
@@ -45,6 +47,7 @@ const modelConfigSchema = z.partialRecord(
   z.enum(["demo", "codex", "lumina", "custom"]),
   conversationModelSchema,
 );
+export const codingPermissionSchema = z.enum(CODING_PERMISSIONS);
 
 const recordSchema = z.object({
   id: z.string(),
@@ -62,6 +65,7 @@ const recordSchema = z.object({
         title: z.string(),
         createdAt: z.number(),
         modelConfig: modelConfigSchema.optional(),
+        permission: codingPermissionSchema.optional(),
       }),
     )
     .optional(),
@@ -70,6 +74,7 @@ const recordSchema = z.object({
   history: z.array(conversationMessageSchema).max(200).optional(),
   modelConfig: modelConfigSchema.optional(),
   sideModelConfig: modelConfigSchema.optional(),
+  permission: codingPermissionSchema.optional(),
 });
 
 export const codingDomainSpec = defineDomain({
@@ -123,6 +128,7 @@ export class CodingConversationIndex {
       history?: ChatMessage[];
       sourceSessionId?: string;
       sourceEndSeq?: number;
+      permission?: CodingPermission;
     } = {},
   ): Promise<CodingConversationRecord> {
     if (id.startsWith("side-"))
@@ -197,6 +203,32 @@ export class CodingConversationIndex {
               }
             : item,
         ),
+      );
+    });
+  }
+
+  /** A side chat without its own choice inherits its parent's preset. */
+  permission(id: string): CodingPermission | undefined {
+    if (!id.startsWith("side-")) return this.get(id)?.permission;
+    const parent = this.sideParent(id);
+    return this.side(parent, id)?.permission ?? parent?.permission;
+  }
+
+  async selectPermission(id: string, permission: CodingPermission) {
+    const side = id.startsWith("side-");
+    const parent = side ? this.sideParent(id) : this.get(id);
+    if (!parent || parent.archivedAt !== undefined)
+      throw new FlowError("对话不存在或已归档。", 404);
+    await this.table.update(parent.id, (current) => {
+      if (current.closedAt !== undefined || current.archivedAt !== undefined)
+        throw new FlowError("对话不存在或已归档。", 404);
+      if (!side) return { ...current, permission };
+      const sides = conversationSides(current);
+      if (!sides.some((item) => item.id === id))
+        throw new FlowError("旁支已关闭。", 404);
+      return withSides(
+        current,
+        sides.map((item) => (item.id === id ? { ...item, permission } : item)),
       );
     });
   }
@@ -348,6 +380,7 @@ function conversation(record: CodingConversationRecord): CodingConversation {
     ...(record.sideModelConfig
       ? { sideModelConfig: record.sideModelConfig }
       : {}),
+    ...(record.permission ? { permission: record.permission } : {}),
     ...(record.sourceSessionId
       ? { sourceSessionId: record.sourceSessionId }
       : {}),

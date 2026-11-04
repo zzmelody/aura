@@ -22,6 +22,7 @@ import type {
   ActionRun,
   ChatModelCatalog,
   ChatModelSelection,
+  CodingPermission,
   CodingSteerModelConfig,
   CodingSkillInfo,
   CodingHistoryPage,
@@ -735,6 +736,17 @@ export class OrchestrationHost {
     selection: ChatModelSelection,
   ) {
     return this.request("coding/model", { sessionId, mode, selection });
+  /** Saves a conversation's permission preset and applies it to a live agent. */
+  selectConversationPermission(
+    sessionId: string,
+    permission: CodingPermission,
+  ) {
+    return this.request<{ updated: true }>("coding/permission", {
+      sessionId,
+      permission,
+    });
+  }
+
   }
 
   conversations(

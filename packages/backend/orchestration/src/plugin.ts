@@ -75,6 +75,7 @@ import {
 import {
   CodingConversationIndex,
   codingDomainSpec,
+  codingPermissionSchema,
   conversationMessageSchema,
   conversationModelSchema,
   type CodingConversationRecord,
@@ -295,6 +296,7 @@ export const inject = [
   "subagents",
   "sessions",
   "agents",
+  "permissionPresets",
   "agentPresets",
   "storageDomain",
   // Coding projects are DSH workspace records; injecting the registry keeps
@@ -1050,6 +1052,7 @@ export async function apply(ctx: Context) {
               mode: chatModeSchema,
               model: z.string().trim().min(1).max(200).optional(),
               reasoningEffort: z.string().trim().min(1).max(80).optional(),
+              permission: codingPermissionSchema.optional(),
             })
             .safeParse(params);
           if (
@@ -1298,6 +1301,22 @@ export async function apply(ctx: Context) {
             request.sessionId,
             request.mode,
             request.selection,
+          );
+          data = { updated: true };
+          break;
+        }
+        case "coding/permission": {
+          const request = z
+            .object({
+              sessionId: z.string().min(1).max(200),
+              permission: codingPermissionSchema,
+            })
+            .strict()
+            .safeParse(params);
+          if (!request.success) throw new FlowError("无效的权限设置。", 400);
+          await conversations.selectPermission(
+            request.data.sessionId,
+            request.data.permission,
           );
           data = { updated: true };
           break;

@@ -102,6 +102,18 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+.composer-permission {
+  flex-shrink: 0;
+}
+.composer-permission.danger {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+.composer-permission.danger:hover:not(:disabled),
+.composer-permission.danger[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--danger) 19%, transparent);
+  color: var(--danger);
+}
 .composer-trailing .chat-model-picker {
   flex: 0 1 auto;
   min-width: 0;

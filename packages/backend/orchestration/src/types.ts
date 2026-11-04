@@ -13,6 +13,7 @@ import type {
   ChatWorkflowStart,
   ConversationModelConfig,
   CodingSideConversationInfo,
+  CodingPermission,
 } from "@aura/protocol/types";
 import type { FlowImageReference } from "./flow-api.ts";
 import type {
@@ -179,6 +180,8 @@ export interface CodingTurn {
   mode: FlowMode;
   model?: string;
   reasoningEffort?: string;
+  /** Permission preset to apply before this turn; omitted keeps the saved one. */
+  permission?: CodingPermission;
   /** Resolved server-side for gateway modes; never accepted from a client. */
   defaults?: FlowAgentConfig;
 }
@@ -292,6 +295,8 @@ export interface CodingConversation {
   sideConversations?: CodingSideConversationInfo[];
   modelConfig?: ConversationModelConfig;
   sideModelConfig?: ConversationModelConfig;
+  /** Chosen permission preset; omitted leaves the DSH session preset in effect. */
+  permission?: CodingPermission;
   sourceSessionId?: string;
   /** Outcome of the last stored turn; omitted when the session has no turns. */
   lastTurnStatus?: "running" | "complete" | "stopped" | "error";
