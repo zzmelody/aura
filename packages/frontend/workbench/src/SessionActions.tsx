@@ -75,13 +75,22 @@ export function SessionActions({
   workspace,
   onDialog,
   className,
+  leadingItems = [],
 }: {
   session: Session;
   workspace: WorkspaceController;
   onDialog(request: SessionDialogRequest): void;
   className?: string;
+  /** View commands of the hosting page, listed above the session actions. */
+  leadingItems?: WorkbenchMenuItem[];
 }) {
-  const items = sessionMenuItems(session, workspace, onDialog);
+  const items = [
+    ...leadingItems,
+    ...(leadingItems.length
+      ? [{ id: "leading-divider", separator: true } as const]
+      : []),
+    ...sessionMenuItems(session, workspace, onDialog),
+  ];
   return (
     <WorkbenchMenu
       className={className ?? "icon-control session-more"}

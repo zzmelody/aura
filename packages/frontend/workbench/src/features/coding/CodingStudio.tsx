@@ -52,7 +52,7 @@ import {
   saveToolLayout,
   type ToolLayout,
 } from "./tool-layout";
-import { WorkbenchMenu } from "../../WorkbenchMenu";
+import { WorkbenchMenu, type WorkbenchMenuItem } from "../../WorkbenchMenu";
 import { WorkflowApiError } from "../../workflowSessions";
 import {
   codingConversationStatus,
@@ -109,7 +109,8 @@ export function CodingStudio({
   onHandoffTaken?(): void;
   onProvider(provider: Workspace["provider"]): void;
   onBack?(): void;
-  headerActions?: React.ReactNode;
+  /** Host header actions; view items join its session menu. */
+  headerActions?(viewItems: WorkbenchMenuItem[]): React.ReactNode;
   legacy?: Session;
   onOpened?(): void;
   onForkConversation?(
@@ -569,6 +570,18 @@ ${summary}`,
     }),
   );
 
+  const viewItems: WorkbenchMenuItem[] = project
+    ? [
+        { id: "chat", label: "对话", action: () => setView("chat") },
+        {
+          id: "trajectory",
+          label: "执行记录",
+          action: () => setView("trajectory"),
+          disabled: Boolean(branchFrom),
+        },
+      ]
+    : [];
+  const hostActions = headerActions?.(viewItems);
   const mainHeader = (
     <header className="coding-header coding-title-row">
       {onBack ? (
@@ -593,23 +606,14 @@ ${summary}`,
       legacy?.archivedAt !== undefined ? (
         <span className="header-archived">已归档</span>
       ) : null}
-      {project ? (
-        <WorkbenchMenu
-          label="对话菜单"
-          items={[
-            { id: "chat", label: "对话", action: () => setView("chat") },
-            {
-              id: "trajectory",
-              label: "执行记录",
-              action: () => setView("trajectory"),
-              disabled: Boolean(branchFrom),
-            },
-          ]}
-        >
-          <Ellipsis size={16} />
-        </WorkbenchMenu>
-      ) : null}
-      {headerActions}
+      {/* One "..." per header: the view items join the host's session menu,
+          and only stand alone when the host has no session menu to offer. */}
+      {hostActions ??
+        (project ? (
+          <WorkbenchMenu label="对话菜单" items={viewItems}>
+            <Ellipsis size={16} />
+          </WorkbenchMenu>
+        ) : null)}
       {project && !sideVisible ? (
         <button
           ref={sideToggle}

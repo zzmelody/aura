@@ -38,6 +38,7 @@ import { WorkspaceSidebar } from "./WorkspaceSidebar";
 import { WorkspaceMenubar } from "./WorkspaceMenubar";
 import { ResizableSidebar, DEFAULT_SIDEBAR_WIDTH } from "./ResizableSidebar";
 import { SessionActions, type SessionDialogRequest } from "./SessionActions";
+import type { WorkbenchMenuItem } from "./WorkbenchMenu";
 import { SessionDialog } from "./SessionDialog";
 import { SessionStatus } from "./SessionStatus";
 import { ToastProvider } from "./toast";
@@ -198,7 +199,7 @@ export default function App({ onReady }: AppProps) {
   }, [tab, hasAssistant, loadAssistant]);
   const [systemReduced, setSystemReduced] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -471,7 +472,8 @@ export default function App({ onReady }: AppProps) {
     tab === "assistant" ||
     (workspace.state.provider !== "offline" &&
       (tab === "studio:coding" || (tab === "chat" && !showWorkflowChat)));
-  const headerActions =
+  /** View commands of the hosting page join the session menu as one "..." entry. */
+  const headerActions = (viewItems: WorkbenchMenuItem[] = []) =>
     (tab === "chat" && workspace.active) ||
     (tab === "flows" && workflowDetail) ? (
       <div className="header-actions">
@@ -489,6 +491,7 @@ export default function App({ onReady }: AppProps) {
               workspace={workspace}
               onDialog={setSessionDialog}
               className="icon-control header-session-more"
+              leadingItems={viewItems}
             />
           </>
         ) : null}
@@ -627,7 +630,7 @@ export default function App({ onReady }: AppProps) {
                               <span className="header-archived">已归档</span>
                             ) : null}
                           </div>
-                          {headerActions}
+                          {headerActions()}
                         </header>
                       ) : null}
                       {workspace.saveError ? (
