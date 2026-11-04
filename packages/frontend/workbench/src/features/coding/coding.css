@@ -1253,22 +1253,6 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   display: block;
   margin-top: 4px;
 }
-.model-service-card {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 24px;
-}
-.model-service-card label {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.model-service-card input[type="password"] {
-  flex: 1;
-  min-width: 150px;
-}
-
 /* Floating actions over selected transcript text. */
 .selection-actions {
   position: fixed;
