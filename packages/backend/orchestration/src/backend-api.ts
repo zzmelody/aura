@@ -3,6 +3,12 @@ import type { ParameterSchemaSpec } from "./action-api.ts";
 import type { GeneratedArtifacts } from "./artifacts/generated.ts";
 import type { ArtifactFile } from "./artifacts/http.ts";
 import type { defineDomain } from "@deepseek-ai/dsh-storage-domain";
+import type { ManagedProcesses } from "./managed-process/process.ts";
+export type {
+  LaunchSpec,
+  ManagedProcesses,
+  OwnedProcess,
+} from "./managed-process/process.ts";
 
 /** A trusted plugin's private, non-JSON services. Never included in page DTOs. */
 export type PluginServices = Readonly<Record<string, unknown>>;
@@ -86,6 +92,8 @@ export interface BackendHost {
   readonly storage: PluginStorage;
   readonly workflows: PluginWorkflows;
   readonly media: GeneratedArtifacts;
+  /** Process ownership and OS resource leases, granted by aura.process.manage. */
+  readonly processes?: ManagedProcesses;
   /** Read-only view of this plugin's own Flow Runs. Other plugins' Runs are invisible. */
   readonly runs: {
     get(id: string): FlowRun | undefined;
@@ -181,6 +189,8 @@ export interface PluginBackend {
   ): Promise<void> | void;
   /** Called once after a root Run of this plugin completes, fails, is cancelled or interrupted. */
   runSettled?(run: FlowRun): Promise<void> | void;
+  /** A settled Run used this plugin's Action. Only the Run ID is shared. */
+  actionRunSettled?(runId: string): Promise<void> | void;
   close?(): Promise<void> | void;
 }
 

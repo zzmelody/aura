@@ -6,7 +6,11 @@ import {
   type AuraPluginResolution,
   type PluginContributionRoot,
 } from "@aura/extensions";
-import { OrchestrationHost } from "@aura/orchestration";
+import {
+  GPT_IMAGE_CAPABILITY,
+  MANAGED_PROCESS_PERMISSION,
+  OrchestrationHost,
+} from "@aura/orchestration";
 import { createTripoService } from "@aura/tripo";
 import { startApiServer } from "./api-server.ts";
 import { startDemoModel } from "./demo-model.ts";
@@ -81,7 +85,12 @@ export async function startAuraRuntime(
     defaultPluginsDirectory: config.defaultPluginsDirectory,
     auraVersion: "0.1.0",
     pluginSdkVersion,
-    supportedPermissions: ["aura.tripo.game-asset", "aura.flow.invoke"],
+    supportedPermissions: [
+      "aura.tripo.game-asset",
+      "aura.flow.invoke",
+      GPT_IMAGE_CAPABILITY,
+      MANAGED_PROCESS_PERMISSION,
+    ],
   });
   const plugins = pluginManager.resolution;
   const pluginPages = new PluginPageRegistry({

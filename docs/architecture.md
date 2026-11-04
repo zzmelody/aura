@@ -12,12 +12,12 @@ Aura 使用自己的代码、命名空间和发布流程，以固定版本的官
 Codex：客户端 → Aura runtime → DSH SDK profile → dsh-llm-pi-ai → openai-codex
 登录：客户端 → Aura runtime → DSH authorization → dsh-llm-pi-ai OAuth flow
 3D：客户端 → Aura runtime → @aura/tripo → Tripo v3 API
-图片：客户端 → Aura runtime → image-generate Action → Codex 订阅 image_generation（优先）或本机 Qwen-Image
+图片：客户端 → Aura runtime → local-media 插件 → Codex 图片能力或本机 Qwen-Image
 ```
 
 `@aura/dsh-auth` 是 Aura 对 DSH authorization/credentials seam 的后端适配层。包名描述稳定职责，不绑定当前供应商；其中 `CodexSubscriptionAuth` 组合 DSH 的 `dsh-credentials-local`、`dsh-authorization`、`dsh-llm` 和 `dsh-llm-pi-ai` 服务。它只把 notice、设备码、手动回调提示和最终状态投影到客户端；浏览器回调监听使用与 OpenAI redirect URI 一致的 `localhost`。OAuth grant 由 DSH 写入 `.aura/dsh/.credentials.yaml`，不会进入 HTTP 响应、前端存储或日志。
 
-对话与流程共用长驻的 `aura-flow` DSH profile：所有在线对话共用持久化的 `coder-v1` DSH session，具备文件、搜索、命令、规划、提问及工作流工具。未选项目时使用后端配置的默认工作目录；讨论、调研与执行由同一 Agent 根据当前请求和上下文衔接，没有额外分类模型或聊天/工作模式开关。工具启动的工作流继续显示运行卡片。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、Tripo 路由、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 不是 LLM provider，由 `@aura/tripo` 使用官方 v3 SDK 提交异步 3D 任务；Key 只从后端环境或已忽略的 `.aura/tripo/` 读取。图片生成由 `image-generate` Action 统一：已登录 Codex 时优先经订阅后端（`chatgpt.com/backend-api/codex/responses` 的 `image_generation` 工具）生成，复用对话的同一份 DSH 授权与令牌刷新，消耗 Codex 订阅额度而非按张计费，具体图片模型由 Codex 决定；每次调用只发一个请求，失败或结果未知时不重试也不改用其他引擎。未登录时改用本机 Qwen-Image；`image` 工作流与对话工具 `aura_image` 都经由它。插件可以贡献自己的后端（`contributes.backend`，见 `@aura/plugin-sdk/backend`），领域专用的外部工具由插件后端调用，不进 Aura。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](development/backend-runtime.md)。
+对话与流程共用长驻的 `aura-flow` DSH profile：所有在线对话共用持久化的 `coder-v1` DSH session，具备文件、搜索、命令、规划、提问及工作流工具。未选项目时使用后端配置的默认工作目录；讨论、调研与执行由同一 Agent 根据当前请求和上下文衔接，没有额外分类模型或聊天/工作模式开关。工具启动的工作流继续显示运行卡片。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、Tripo 路由、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 不是 LLM provider，由 `@aura/tripo` 使用官方 v3 SDK 提交异步 3D 任务；Key 只从后端环境或已忽略的 `.aura/tripo/` 读取。本机媒体插件 `local-media` 提供图片生成 Flow 和对话工具，并通过 `aura.codex.image` capability 复用 DSH 管理的 Codex 授权。插件可以贡献自己的后端（`contributes.backend`，见 `@aura/plugin-sdk/backend`），领域专用的外部工具由插件后端调用，不进 Aura。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](development/backend-runtime.md)。
 
 在线 Flow 的运行入口与主、侧边对话共用输入和结果界面。选择 Flow 后在当前对话填写参数，明确请求由同一 Agent 调用通用 Flow 工具；结果、产物与后续追问保留在该对话。运行卡片可以回填参数再次执行，查询结果使用原 Run ID。新 Run 在原格式中附加可选 `conversationId`，工作台据此避免创建重复的绑定 Flow 会话；旧执行记录通过显式「继续对话」接入，不迁移用户存储。
 
@@ -81,9 +81,7 @@ Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Sessi
 
 ## 当前取舍
 
-`comfy-workflow` Action 从对象或本地 API JSON 文件调用所选 ComfyUI，支持节点参数覆盖、受管图片资产到 `LoadImage` 的绑定和输出节点筛选；普通界面画布 JSON 不做转换。文件内容在排队前固定并记录 hash，图片资产通过上传端点或 `local-image` 登记为内容哈希 ID；ComfyUI 执行每次使用独立 input/output/temp 目录，输入图在启动前按 ID 校验并暂存，保存/预览产物归档后删除中间目录。`local-video` 的预置模板可选择首帧、末帧图片资产；前端不解释 ComfyUI 图或调度模型。
-
-本地媒体模型以同包 `local-image`、`local-video`、`local-tts` Action 接入已有 ComfyUI / Qwen3-TTS HTTP 服务，`local-ai-service` 负责状态与显式启停。`orchestration/src/local-ai/` 是这三套受信任 Windows 部署的后端适配：复用 DSH subprocess，并用其公开 Win32 bindings 补充 Job 崩溃回收及跨宿主 GPU lease。模型进程由后端插件持有，不属于热加载 Action fiber；详情见 [本地模型 Actions](../packages/backend/orchestration/docs/local-ai-actions.md)。这条媒体工具链不替代 Agent 的 DSH 模型路由。
+个人插件仓库 aura-studio 的 `local-media` 管理本机模型的部署参数、ComfyUI 图和视频作业。宿主提供受管进程、系统资源租约、Codex 生图和媒体产物接口。
 
 「工作流」首页用卡片展示用途与可用状态，点击卡片按需通过 `/flows/:flowId/source` 读取已注册入口源码，在卡片下方静态解析节点；编辑入口进入流程图/代码详情。画布与节点支持拖拽，位置只影响当前预览，不修改代码。注册时保留源码快照，热加载失败时预览与运行均继续使用最后可用版本；接口按目录 ID 查注册表，不接受文件路径，不返回辅助文件或凭据。源码预览不具备发布或修改后端代码的能力。
 

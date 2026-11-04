@@ -107,7 +107,7 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
     ],
   });
 
-  const started = await app.request("/research-report/runs", {
+  const started = await app.request("/fixture-report/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -116,11 +116,11 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
       input: { task: "x" },
     }),
   });
-  const source = await app.request("/research-report/source");
+  const source = await app.request("/fixture-report/source");
   assert.equal(source.status, 200);
   assert.deepEqual(await source.json(), {
     method: "source",
-    params: { id: "research-report" },
+    params: { id: "fixture-report" },
   });
   const servicesFlowSource = await app.request("/services/source");
   assert.deepEqual(await servicesFlowSource.json(), {
@@ -139,7 +139,7 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
     requestId: "test",
     mode: "demo",
     input: { task: "x" },
-    flowId: "research-report",
+    flowId: "fixture-report",
   });
 
   const invocationId = "0876c236-1fc9-44ce-9f4a-e25244cde371";
@@ -246,7 +246,7 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
   for (const body of ["no json", "null", "[]", '"scalar"']) {
     assert.equal(
       (
-        await app.request("/research-report/runs", {
+        await app.request("/fixture-report/runs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body,
@@ -257,7 +257,7 @@ test("Hono boundary delegates flow operations, bounds bodies and hides internal 
   }
   assert.equal(
     (
-      await app.request("/research-report/runs", {
+      await app.request("/fixture-report/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "x".repeat(270_000),

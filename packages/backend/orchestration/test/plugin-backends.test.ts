@@ -13,6 +13,7 @@ import test from "node:test";
 import type { FlowRun } from "@aura/protocol/types";
 import { actionCapabilities } from "../src/actions.ts";
 import { PluginBackends } from "../src/plugin-backends.ts";
+import { MANAGED_PROCESS_PERMISSION } from "../src/managed-process/process.ts";
 import { installHostPluginSdkResolution } from "../src/plugin-sdk-resolution.ts";
 import type { BackendRoot } from "../src/types.ts";
 
@@ -296,6 +297,74 @@ test("an entry without defineBackend fails the plugin and leaves nothing open", 
       /page_backend_unavailable/u,
     );
     await host.close();
+  }));
+
+test("a granted Action backend stays available for cleanup of another plugin's Run", () =>
+  fixture(async (dir) => {
+    const dataRoot = join(dir, "data");
+    const host = new PluginBackends({
+      dataRoot,
+      processes: {
+        async launch() {
+          throw new Error("unused in this fixture");
+        },
+        acquireLease: () => () => {},
+      },
+    });
+    const hooks = `
+      services: { processes: Boolean(host.processes) },
+      actionRunSettled(id) { log({ hook: "action-settled", id }); },`;
+    const media = await plugin(dir, "media", recordingBackend("media", hooks));
+    media.permissions = [MANAGED_PROCESS_PERMISSION];
+    const other = await plugin(dir, "other", recordingBackend("other", hooks));
+    let active = run("external", "caller", {
+      status: "running",
+      steps: [
+        {
+          id: "submit",
+          kind: "action",
+          actionId: "media/submit",
+          plugin: media.plugin,
+          input: {},
+          status: "completed",
+        },
+      ],
+    });
+    host.attachRuns(
+      (id) => (id === active.id ? active : undefined),
+      () => [active],
+    );
+    try {
+      await host.replace([media, other]);
+      assert.deepEqual(host.services("media"), { processes: true });
+      assert.deepEqual(host.services("other"), { processes: false });
+      await host.replace([other]);
+      assert.equal(
+        (await log(dataRoot, "media")).some((entry) => entry.hook === "close"),
+        false,
+      );
+      active = { ...active, status: "cancelled" };
+      await host.actionRunSettled(active);
+      assert.deepEqual(
+        (await log(dataRoot, "media")).filter(
+          (entry) => entry.hook === "action-settled",
+        ),
+        [{ hook: "action-settled", id: active.id }],
+      );
+      assert.equal(
+        (await log(dataRoot, "other")).some(
+          (entry) => entry.hook === "action-settled",
+        ),
+        false,
+      );
+      await host.refresh();
+      assert.equal(
+        (await log(dataRoot, "media")).some((entry) => entry.hook === "close"),
+        true,
+      );
+    } finally {
+      await host.close();
+    }
   }));
 
 test("page operations without invoke() are rejected and the backend is closed", () =>

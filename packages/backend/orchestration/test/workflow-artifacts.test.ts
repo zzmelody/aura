@@ -18,7 +18,6 @@ import { artifactResponse } from "../src/artifacts/http.ts";
 import { artifactCallBinding } from "../src/artifacts/bindings.ts";
 import { historicalArtifactReader } from "../src/artifacts/history.ts";
 import { selfContainedGlb } from "../src/artifacts/media.ts";
-import { createFlowApp } from "../src/index.ts";
 
 function glb(extra: object = {}) {
   const json = JSON.stringify({
@@ -86,8 +85,8 @@ test("images get bounded thumbnails; registrations survive restart and deduplica
     const result = { service: "qwen-image", seed: 1, files: [image] };
     const saved = JSON.stringify(result);
     await Promise.all([
-      index.capture(owner, result, "local-image"),
-      index.capture({ ...owner, stepKey: "second" }, result, "local-image"),
+      index.register(owner, image),
+      index.register({ ...owner, stepKey: "second" }, image),
     ]);
     assert.equal(JSON.stringify(result), saved);
     const reopened = new WorkflowArtifactIndex(store, root);
@@ -224,9 +223,9 @@ test("HTTP streams content/HEAD/ranges/ETags/download and denies changed bytes a
     assert.equal((await index.register(owner, linked))?.status, "unavailable");
   }));
 
-test("history migration admits only managed Comfy paths, preserves missing files, resumes and retries without generation", () =>
+test("plugin history projection limits admitted paths and can retry missing artifacts", () =>
   fixture(async (root, index, store) => {
-    const directory = join(root, ".aura/local-ai/outputs/job-test/artifacts");
+    const directory = join(root, "plugin-outputs");
     await mkdir(directory, { recursive: true });
     const image = join(directory, "image.png");
     const missing = join(directory, "missing.png");
@@ -237,12 +236,20 @@ test("history migration admits only managed Comfy paths, preserves missing files
       {
         id: "image",
         kind: "action",
-        actionId: "local-image",
+        actionId: "fixture/image",
         input: {},
         output: { files: [image, missing, external] },
         status: "completed",
       },
     ]);
+    index.setPluginCandidates((_output, producer) =>
+      producer === "fixture/image"
+        ? [image, missing, external].map((path) => ({
+            path,
+            admitted: path !== external,
+          }))
+        : [],
+    );
     const original = JSON.stringify(historical);
     index.attach(() => historical);
     assert.equal((await index.list("run")).pending, true);
@@ -263,22 +270,18 @@ test("history migration admits only managed Comfy paths, preserves missing files
     await reopened.close();
   }));
 
-test("nested runs aggregate with original provenance; producer wrappers capture Agent calls even when outer output is discarded", () =>
+test("nested runs aggregate with original provenance; an Agent Action can register artifacts without including them in outer output", () =>
   fixture(async (root, index) => {
     const image = join(root, "image.png");
     await png(image);
-    let calls = 0;
-    const binding = artifactCallBinding(
-      index,
-      { cwd: root, mode: "demo", runId: "child", stepId: "agent", attempt: 2 },
-      {
-        async image() {
-          calls++;
-          return { service: "qwen-image", seed: 1, files: [image] };
-        },
-      } as never,
-    )!("tool-1");
-    await binding.localAI!.image({ prompt: "test" }, AbortSignal.timeout(1000));
+    const binding = artifactCallBinding(index, {
+      cwd: root,
+      mode: "demo",
+      runId: "child",
+      stepId: "agent",
+      attempt: 2,
+    })!("tool-1");
+    await binding.artifacts?.register(image);
     index.attach((id) =>
       id === "run"
         ? run("run", [
@@ -302,7 +305,6 @@ test("nested runs aggregate with original provenance; producer wrappers capture 
     assert.equal(list.artifacts[0].runId, "child");
     assert.equal(list.artifacts[0].callId, "tool-1");
     assert.equal(list.artifacts[0].attempt, 2);
-    assert.equal(calls, 1);
     assert.ok(await index.resolve("run", list.artifacts[0].artifactId, false));
   }));
 
@@ -364,7 +366,7 @@ test("history reader pairs structured tool results to call and attempt, ignores 
           events: [
             {
               type: "tool/call",
-              data: { callId: "call", name: "local-image" },
+              data: { callId: "call", name: "fixture_image" },
             },
             {
               type: "tool/result",
@@ -433,43 +435,12 @@ test("history reader pairs structured tool results to call and attempt, ignores 
     [
       { runId: "run", stepKey: "agent", attempt: 2, callId: "call" },
       { files: ["/generated/image.png"] },
-      "local-image",
+      "fixture_image",
     ],
   ]);
 });
 
-test("artifact routes delegate only identifiers, support HEAD and preserve binary responses", async () => {
-  const calls: unknown[] = [];
-  const app = createFlowApp({
-    async request<T>(method: string, params?: object) {
-      calls.push([method, params]);
-      return { artifacts: [], pending: false } as T;
-    },
-    async artifactContent(id, artifactId, thumbnail, request) {
-      calls.push([id, artifactId, thumbnail, request.method]);
-      return new Response(request.method === "HEAD" ? null : "image", {
-        headers: { "content-type": "image/png" },
-      });
-    },
-  });
-  assert.equal((await app.request("/runs/run/artifacts?retry=1")).status, 200);
-  assert.equal(
-    await (await app.request("/runs/run/artifacts/abc/content")).text(),
-    "image",
-  );
-  assert.equal(
-    (await app.request("/runs/run/artifacts/abc/thumbnail", { method: "HEAD" }))
-      .status,
-    200,
-  );
-  assert.deepEqual(calls, [
-    ["artifacts/list", { id: "run", retry: true }],
-    ["run", "abc", false, "GET"],
-    ["run", "abc", true, "HEAD"],
-  ]);
-});
-
-test("local TTS WAV outputs become playable audio artifacts", () =>
+test("registered WAV outputs become playable audio artifacts", () =>
   fixture(async (root, index) => {
     const samples = 8000;
     const wav = Buffer.alloc(44 + samples * 2);
@@ -488,11 +459,7 @@ test("local TTS WAV outputs become playable audio artifacts", () =>
     wav.writeUInt32LE(samples * 2, 40);
     const speech = join(root, "speech.wav");
     await writeFile(speech, wav);
-    await index.capture(
-      { ...owner, stepKey: "speech" },
-      { service: "qwen3-tts", seed: 1, files: [speech] },
-      "local-tts",
-    );
+    await index.register({ ...owner, stepKey: "speech" }, speech);
     const { artifacts } = await index.list("run");
     await index.settle();
     const audio = artifacts.find((artifact) => artifact.stepKey === "speech");
@@ -502,64 +469,3 @@ test("local TTS WAV outputs become playable audio artifacts", () =>
     assert.equal(audio?.status, "ready");
     assert.equal(audio?.durationSeconds, 0.5);
   }));
-
-test("uploaded chat images are served and read back only by verified content ID", async () => {
-  const { OrchestrationHost } = await import("../src/index.ts");
-  const { artifactHash } = await import("../src/artifacts/media.ts");
-  const root = await realpath(
-    await mkdtemp(join(tmpdir(), "aura-chat-image-")),
-  );
-  try {
-    const dshHome = join(root, "dsh");
-    const store = new GeneratedArtifacts(
-      join(dshHome, "aura-generated-assets"),
-    );
-    const bytes = await sharp({
-      create: { width: 8, height: 6, channels: 3, background: "#8052EA" },
-    })
-      .png()
-      .toBuffer();
-    const { artifactId } = await store.registerImage(
-      bytes,
-      AbortSignal.timeout(5000),
-    );
-    assert.equal(artifactId, artifactHash(bytes));
-    const read = await store.readImage(artifactId, AbortSignal.timeout(5000));
-    assert.equal(read.mediaType, "image/png");
-    assert.equal(read.bytes.length, bytes.length);
-
-    const host = new OrchestrationHost({
-      root,
-      dshHome,
-      modelURL: "http://127.0.0.1:1/v1",
-    });
-    const ok = await host.imageAssetContent(
-      artifactId,
-      new Request("http://x/img"),
-    );
-    assert.equal(ok.status, 200);
-    assert.equal(ok.headers.get("content-type"), "image/png");
-    assert.equal((await ok.arrayBuffer()).byteLength, bytes.length);
-    await assert.rejects(
-      host.imageAssetContent("../etc", new Request("http://x/img")),
-      /图片不存在/u,
-    );
-    await assert.rejects(
-      host.imageAssetContent("f".repeat(64), new Request("http://x/img")),
-      /图片不存在/u,
-    );
-
-    // A file whose bytes no longer match its name is refused on both paths.
-    const forged = "e".repeat(64);
-    await writeFile(join(store.root, `${forged}.png`), bytes);
-    await assert.rejects(
-      store.readImage(forged, AbortSignal.timeout(5000)),
-      /内容已改变/u,
-    );
-    await assert.rejects(
-      host.imageAssetContent(forged, new Request("http://x/img")),
-    );
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});

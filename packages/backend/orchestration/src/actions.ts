@@ -1,5 +1,4 @@
 import type {} from "@deepseek-ai/dsh-tools";
-import type { GptImageClient } from "./gpt-image.ts";
 import { randomUUID } from "node:crypto";
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
@@ -8,7 +7,6 @@ import { ToolCallId } from "@deepseek-ai/dsh-llm";
 import { ACTION_FAILURE_CODE, type ActionBinding } from "./action-api.ts";
 import type { LoadedAction } from "./action-registry.ts";
 import { FlowError, jsonValue } from "./schema.ts";
-import type { LocalAIClient } from "./local-ai/api.ts";
 import type { AuraCapabilityClient } from "./action-api.ts";
 import type { WorkflowArtifactIndex } from "./artifacts/workflow-index.ts";
 import { artifactCallBinding } from "./artifacts/bindings.ts";
@@ -50,23 +48,17 @@ export function actionCapabilities(
 export class ActionRuntime {
   private ctx: Context;
   private directMasks = new Map<string, Array<() => void>>();
-  private localAI?: LocalAIClient;
   private aura?: AuraCapabilityClient;
   private artifacts?: WorkflowArtifactIndex;
-  private gptImage?: GptImageClient;
 
   constructor(
     ctx: Context,
-    localAI?: LocalAIClient,
     aura?: AuraCapabilityClient,
     artifacts?: WorkflowArtifactIndex,
-    gptImage?: GptImageClient,
   ) {
     this.ctx = ctx;
-    this.localAI = localAI;
     this.aura = aura;
     this.artifacts = artifacts;
-    this.gptImage = gptImage;
     // Direct calls require an unscoped DSH registration. Keep these short-lived,
     // pinned definitions out of every Agent's model surface, without changing presets.
     const hideDirectTools = (agent: Agent) => {
@@ -100,17 +92,12 @@ export class ActionRuntime {
           agent.ctx.tools.register(
             action.tool(action.toolName, {
               ...binding,
-              localAI: this.localAI,
               services: action.services,
               aura: actionCapabilities(action, this.aura, binding),
-              gptImage:
-                action.id === "image-generate" ? this.gptImage : undefined,
               bindCall: artifactCallBinding(
                 this.artifacts,
                 binding,
-                this.localAI,
                 actionCapabilities(action, this.aura, binding),
-                action.id === "image-generate" ? this.gptImage : undefined,
               ),
             }),
           ),
@@ -141,16 +128,12 @@ export class ActionRuntime {
       dispose = this.ctx.tools.register(
         action.tool(name, {
           ...binding,
-          localAI: this.localAI,
           services: action.services,
           aura: actionCapabilities(action, this.aura, binding),
-          gptImage: action.id === "image-generate" ? this.gptImage : undefined,
           bindCall: artifactCallBinding(
             this.artifacts,
             binding,
-            this.localAI,
             actionCapabilities(action, this.aura, binding),
-            action.id === "image-generate" ? this.gptImage : undefined,
           ),
         }),
       );

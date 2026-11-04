@@ -1,5 +1,5 @@
 import { readFile, realpath } from "node:fs/promises";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import type {
   FlowRun,
   WorkflowArtifact,
@@ -232,28 +232,6 @@ export class WorkflowArtifactIndex {
       }
       const result = object(value);
       if (!result) return;
-      if (
-        ["local-image", "comfy-workflow", "local-tts", "gpt-image"].includes(
-          producer,
-        ) &&
-        Array.isArray(result.files)
-      ) {
-        for (const path of result.files.slice(0, 100))
-          if (typeof path === "string" && fileFormat(path)) {
-            const rel = relative(
-              resolve(this.cwd, ".aura/local-ai/outputs"),
-              resolve(path),
-            );
-            const admitted =
-              !historical ||
-              (!rel.startsWith("..") &&
-                !rel.startsWith("/") &&
-                !resolve(path).includes("\0") &&
-                /^job-[^/\\]+[/\\](?:artifacts[/\\])?[^/\\]+$/.test(rel));
-            await this.register(owner, path, {}, admitted);
-          }
-        return;
-      }
       if (typeof result.modelPath === "string" && object(result.taskIds)) {
         const directory =
           typeof result.outputDirectory === "string"

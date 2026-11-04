@@ -72,7 +72,7 @@ test("demo model accepts an ordinary Flow agent prompt", async (t) => {
         {
           type: "function",
           function: {
-            name: "text-stats",
+            name: "fixture-text-tool",
             description: "统计文本",
             parameters: {
               type: "object",

@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFile, readdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import type { FlowCatalog } from "@aura/protocol/types";
-import { OrchestrationHost } from "../src/index.ts";
-import type { ComfyWorkflowResult } from "../src/local-ai/api.ts";
+import { localMediaFixture } from "./local-media-fixture.ts";
 
 test(
   "opt-in real ComfyUI API workflow Action: JSON/file/overrides/saved and preview outputs",
@@ -14,32 +12,20 @@ test(
     timeout: 480_000,
   },
   async () => {
-    const root = resolve(import.meta.dirname, "../../../..");
-    const parent = join(root, ".aura", "local-ai", "smoke");
-    await mkdir(parent, { recursive: true });
-    const dshHome = await mkdtemp(join(parent, "comfy-"));
-    const path = fileURLToPath(
-      new URL("../docs/examples/solid-image.api.json", import.meta.url),
-    );
-    const workflow = JSON.parse(await readFile(path, "utf8")) as Record<
-      string,
-      unknown
-    >;
-    const host = new OrchestrationHost({
-      root,
-      dshHome,
-      modelURL: "http://127.0.0.1:1/v1",
-    });
+    const fixture = await localMediaFixture();
+    const { host } = fixture;
     try {
+      const path = join(fixture.pluginRoot, "examples", "solid-image.api.json");
+      const workflow: unknown = JSON.parse(await readFile(path, "utf8"));
       const catalog = await host.request<FlowCatalog>("catalog");
       assert(
-        catalog.actions.some(
-          (a) => a.id === "comfy-workflow" && !a.unavailable,
+        catalog.actions?.some(
+          (a) => a.id === "local-media/comfy-workflow" && a.available,
         ),
       );
       for (const service of ["qwen-image", "minimax-h3"] as const) {
         console.log(`Submitting custom workflow to ${service}`);
-        const run = await host.invokeAction("comfy-workflow", {
+        const run = await host.invokeAction("local-media/comfy-workflow", {
           mode: "demo",
           input: {
             service,
@@ -52,7 +38,11 @@ test(
           },
         });
         assert.equal(run.status, "completed", JSON.stringify(run));
-        const result = run.output as unknown as ComfyWorkflowResult;
+        const result = run.output as unknown as {
+          workflowHash: string;
+          files: string[];
+          outputs: Record<string, unknown>;
+        };
         assert.match(result.workflowHash, /^[0-9a-f]{64}$/);
         assert.equal(result.files.length, 2);
         assert.deepEqual(Object.keys(result.outputs).sort(), [
@@ -74,7 +64,7 @@ test(
         assert.deepEqual(await readdir(dirname(dirname(result.files[0]))), [
           "artifacts",
         ]);
-        const status = await host.invokeAction("local-ai-service", {
+        const status = await host.invokeAction("local-media/local-ai-service", {
           mode: "demo",
           input: { service, operation: "status" },
         });
@@ -85,7 +75,7 @@ test(
         console.log(JSON.stringify(result));
       }
     } finally {
-      await host.close();
+      await fixture.close();
     }
   },
 );

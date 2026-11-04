@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { stat } from "node:fs/promises";
+
 import test from "node:test";
-import { OrchestrationHost } from "../src/index.ts";
-import type { MediaResult } from "../src/local-ai/api.ts";
+import { localMediaFixture } from "./local-media-fixture.ts";
 import type { FlowCatalog } from "@aura/protocol/types";
 
 // Explicit opt-in: ordinary pnpm check never starts a model or occupies the GPU.
@@ -14,15 +13,8 @@ test(
     timeout: 1_800_000,
   },
   async () => {
-    const root = resolve(import.meta.dirname, "../../../..");
-    const parent = join(root, ".aura", "local-ai", "smoke");
-    await mkdir(parent, { recursive: true });
-    const dshHome = await mkdtemp(join(parent, "dsh-"));
-    const host = new OrchestrationHost({
-      root,
-      dshHome,
-      modelURL: "http://127.0.0.1:1/v1",
-    });
+    const fixture = await localMediaFixture();
+    const { host } = fixture;
     try {
       const catalog = await host.request<FlowCatalog>("catalog");
       for (const id of [
@@ -32,7 +24,9 @@ test(
         "local-ai-service",
       ])
         assert(
-          catalog.actions.some((a) => a.id === id && !a.unavailable),
+          catalog.actions?.some(
+            (a) => a.id === `local-media/${id}` && a.available,
+          ),
           `${id} must load`,
         );
       const cases = [
@@ -74,12 +68,18 @@ test(
         )
           continue;
         console.log(`Starting deployed Action: ${id}`);
-        const run = await host.invokeAction(id, { input, mode: "demo" });
+        const run = await host.invokeAction(`local-media/${id}`, {
+          input,
+          mode: "demo",
+        });
         assert.equal(run.status, "completed", JSON.stringify(run));
-        const output = run.output as unknown as MediaResult;
+        const output = run.output as unknown as {
+          files: string[];
+          service: string;
+        };
         for (const path of output.files) assert((await stat(path)).size > 0);
         console.log(JSON.stringify({ action: id, output }));
-        const status = await host.invokeAction("local-ai-service", {
+        const status = await host.invokeAction("local-media/local-ai-service", {
           input: { service: output.service, operation: "status" },
           mode: "demo",
         });
@@ -89,7 +89,7 @@ test(
         );
       }
     } finally {
-      await host.close();
+      await fixture.close();
     }
   },
 );

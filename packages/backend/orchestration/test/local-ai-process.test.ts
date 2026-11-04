@@ -8,7 +8,7 @@ import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { Context } from "@deepseek-ai/cordis";
 import LocalSubprocessRuntime from "@deepseek-ai/dsh-subprocess-local";
-import { launchOwned } from "../src/local-ai/process.ts";
+import { launchOwned } from "../src/managed-process/process.ts";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 
@@ -145,7 +145,9 @@ test(
       const gated = sub.spawn({
         argv: [
           process.execPath,
-          fileURLToPath(new URL("../src/local-ai/worker.ts", import.meta.url)),
+          fileURLToPath(
+            new URL("../src/managed-process/worker.ts", import.meta.url),
+          ),
         ],
         cwd: root,
         stdio: {

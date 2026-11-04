@@ -17,6 +17,8 @@ import { StartupTimer } from "./startup-timing.ts";
 import { artifactResponse, type ArtifactFile } from "./artifacts/http.ts";
 import { GeneratedArtifacts } from "./artifacts/generated.ts";
 import { ActionFailure } from "./action-api.ts";
+export { GPT_IMAGE_CAPABILITY } from "./gpt-image.ts";
+export { MANAGED_PROCESS_PERMISSION } from "./managed-process/process.ts";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
 import type {
   ActionRun,

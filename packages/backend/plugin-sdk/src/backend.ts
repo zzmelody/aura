@@ -13,4 +13,7 @@ export {
   type PluginHttpDefinition,
   type PluginTaskTool,
   type ServiceAdmission,
+  type LaunchSpec,
+  type ManagedProcesses,
+  type OwnedProcess,
 } from "@aura/orchestration/backend";

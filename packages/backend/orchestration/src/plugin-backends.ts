@@ -16,8 +16,23 @@ import type { GeneratedArtifacts } from "./artifacts/generated.ts";
 import { inspectArtifact } from "./artifacts/media.ts";
 import type { BackendRoot } from "./types.ts";
 import { PluginModules } from "./plugin-modules.ts";
+import {
+  MANAGED_PROCESS_PERMISSION,
+  type ManagedProcesses,
+} from "./managed-process/process.ts";
 
 const SETTLE_TIMEOUT_MS = 30_000;
+
+function actionProviders(run: FlowRun): Set<string> {
+  const providers = new Set<string>();
+  for (const step of run.steps) {
+    if (step.kind === "action" && step.plugin) providers.add(step.plugin.id);
+    if ("actions" in step)
+      for (const action of step.actions ?? [])
+        if (action.plugin) providers.add(action.plugin.id);
+  }
+  return providers;
+}
 
 interface OpenPlugin {
   key: string;
@@ -52,6 +67,7 @@ export class PluginBackends {
   readonly #tempRoot: string;
   readonly #log: Log;
   readonly #media: BackendMedia | undefined;
+  readonly #processes: ManagedProcesses | undefined;
   readonly #plugins = new Map<string, OpenPlugin>();
   #runs: (id: string) => FlowRun | undefined = () => undefined;
   #allRuns: () => Iterable<FlowRun> = () => [];
@@ -78,6 +94,7 @@ export class PluginBackends {
     tempRoot?: string;
     log?: Log;
     media?: BackendMedia;
+    processes?: ManagedProcesses;
     host?: {
       storage: PluginDomainStorage;
       artifacts: GeneratedArtifacts;
@@ -90,6 +107,7 @@ export class PluginBackends {
     this.#tempRoot = options.tempRoot ?? join(dirname(options.dataRoot), "tmp");
     this.#log = options.log ?? (() => undefined);
     this.#media = options.media;
+    this.#processes = options.processes;
     this.#host = options.host;
   }
 
@@ -132,7 +150,8 @@ export class PluginBackends {
         (run) =>
           (run.flow.plugin?.id === id ||
             (!run.flow.plugin &&
-              Boolean(open.root.compatibility?.flows?.[run.flow.id]))) &&
+              Boolean(open.root.compatibility?.flows?.[run.flow.id])) ||
+            (open.backend.actionRunSettled && actionProviders(run).has(id))) &&
           !["completed", "failed", "cancelled", "interrupted"].includes(
             run.status,
           ),
@@ -315,6 +334,9 @@ export class PluginBackends {
           },
         });
       },
+      processes: root.permissions?.includes(MANAGED_PROCESS_PERMISSION)
+        ? this.#processes
+        : undefined,
       settings: settings === undefined ? undefined : structuredClone(settings),
       runs: Object.freeze({
         get: (id: string) => owned(this.#runs(id)),
@@ -542,28 +564,51 @@ export class PluginBackends {
           : Boolean(open.root.compatibility?.flows?.[run.flow.id]),
     );
     for (const [id, open] of owners) {
-      if (!open.backend.runSettled) continue;
-      open.active++;
-      let timer: NodeJS.Timeout | undefined;
-      try {
-        await Promise.race([
-          Promise.resolve(open.backend.runSettled(structuredClone(run))),
-          new Promise((_, reject) => {
-            timer = setTimeout(
-              () => reject(new Error("runSettled timed out")),
-              SETTLE_TIMEOUT_MS,
-            );
-          }),
-        ]);
-      } catch (error) {
-        this.#log("error", `${id} runSettled failed`, {
-          runId: run.id,
-          message: String((error as Error)?.message ?? error),
-        });
-      } finally {
-        clearTimeout(timer);
-        open.active--;
-      }
+      const settled = open.backend.runSettled;
+      if (settled)
+        await this.#settled(id, open, run.id, () =>
+          settled.call(open.backend, structuredClone(run)),
+        );
+    }
+  }
+
+  async actionRunSettled(run: FlowRun): Promise<void> {
+    const providers = actionProviders(run);
+    for (const [id, open] of [...this.#plugins, ...this.#retired]) {
+      const settled = open.backend.actionRunSettled;
+      if (settled && providers.has(id))
+        await this.#settled(id, open, run.id, () =>
+          settled.call(open.backend, run.id),
+        );
+    }
+  }
+
+  async #settled(
+    id: string,
+    open: OpenPlugin,
+    runId: string,
+    notify: () => Promise<void> | void,
+  ) {
+    open.active++;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        Promise.resolve(notify()),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("runSettled timed out")),
+            SETTLE_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch (error) {
+      this.#log("error", `${id} runSettled failed`, {
+        runId,
+        message: String((error as Error)?.message ?? error),
+      });
+    } finally {
+      clearTimeout(timer);
+      open.active--;
     }
   }
 

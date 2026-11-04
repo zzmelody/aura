@@ -9,6 +9,21 @@ or frontend code.
 Plugin dependencies must be installed before Aura starts. Aura discovery is
 read-only and never runs package-manager or lifecycle commands.
 
+## Version 2.2
+
+`aura.process.manage` grants a backend access to `host.processes` for owned
+Windows process trees and OS resource leases. `aura.codex.image` grants Actions
+availability checks and image generation through the host's signed-in Codex
+provider. The provider and credentials stay in Aura.
+
+`actionRunSettled(runId)` lets an Action provider clean up work created for a
+different plugin's Flow. The callback receives the Run ID and is scoped to
+providers referenced by that Run's Action steps. The media SDK also exports
+`mediaCommand` for cancellable FFmpeg operations.
+
+The `local-media` plugin in aura-studio requires SDK 2.2. Existing `^2.0.0`
+manifest ranges accept this version.
+
 ## Version 2.1
 
 Aura loads plugin modules directly without hashing their source or static import

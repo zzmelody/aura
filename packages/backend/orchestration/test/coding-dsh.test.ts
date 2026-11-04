@@ -259,8 +259,6 @@ test(
         ...codingTools,
         "bash",
         "pwsh",
-        "aura_tts",
-        "aura_image",
         "aura_flow_catalog",
         "aura_run_flow",
         "aura_flow_status",
@@ -292,7 +290,7 @@ test(
       // Its own workflow tools prove the request did carry a tool list, so the
       // assertions below are not passing on an empty set.
       assert.ok(
-        chatTools.has("aura_tts"),
+        chatTools.has("aura_run_flow"),
         `ordinary chat should expose its workflow tools; saw ${[...chatTools].join(", ")}`,
       );
       for (const name of ["read", "write", "edit", "glob"])

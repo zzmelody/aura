@@ -5,8 +5,19 @@ import {
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
-import { ActionFailure } from "./action-api.ts";
+import { ActionFailure, type AuraCapabilityClient } from "./action-api.ts";
 import type { GeneratedArtifacts } from "./artifacts/generated.ts";
+import { z } from "zod";
+
+export const GPT_IMAGE_CAPABILITY = "aura.codex.image";
+
+const imageInput = z
+  .object({
+    prompt: z.string().trim().min(1).max(2000),
+    aspect: z.enum(["square", "portrait", "landscape"]),
+    quality: z.enum(["low", "medium", "high"]).optional(),
+  })
+  .strict();
 
 export type GptImageAspect = "square" | "portrait" | "landscape";
 
@@ -44,6 +55,25 @@ export interface GptImageClient {
   /** True while a Codex subscription login is stored. */
   available(): Promise<boolean>;
   generate(input: GptImageInput, signal: AbortSignal): Promise<GptImageResult>;
+}
+
+export function gptImageCapability(
+  client: GptImageClient,
+): AuraCapabilityClient {
+  return {
+    async invoke(capability, operation, input, signal) {
+      signal.throwIfAborted();
+      if (capability !== GPT_IMAGE_CAPABILITY)
+        throw new ActionFailure("codex_image_capability: 无效的图片能力。");
+      if (operation === "available") return client.available();
+      if (operation !== "generate")
+        throw new ActionFailure("codex_image_operation: 无效的图片操作。");
+      const parsed = imageInput.safeParse(input);
+      if (!parsed.success)
+        throw new ActionFailure("codex_image_input: 无效的图片生成参数。");
+      return { ...(await client.generate(parsed.data, signal)) };
+    },
+  };
 }
 
 /**

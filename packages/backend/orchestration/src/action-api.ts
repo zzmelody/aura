@@ -1,4 +1,3 @@
-import type { GptImageClient } from "./gpt-image.ts";
 import type { Context, Plugin } from "@deepseek-ai/cordis";
 import { HarnessError } from "@deepseek-ai/dsh-llm";
 import {
@@ -15,7 +14,6 @@ import type { FlowMode } from "@aura/protocol/types";
 import type { AuraPluginIdentity } from "@aura/protocol/types";
 import type { JsonValue } from "@aura/protocol/types";
 import { jsonValue } from "./schema.ts";
-import type { LocalAIClient } from "./local-ai/api.ts";
 
 export type { InferArgs, InferValue, ParameterSchemaSpec, ValueSchemaSpec };
 
@@ -89,14 +87,10 @@ export interface ActionContext {
       options?: { name?: string; poster?: string },
     ): Promise<void>;
   };
-  /** Host-owned local model lifecycle; absent in hosts without this capability. */
-  readonly localAI?: LocalAIClient;
   /** Host-owned external service ports. Credentials never enter Action input. */
   readonly aura?: AuraCapabilityClient;
   /** Private services supplied only by this Action's owning plugin provider. */
   readonly services?: Readonly<Record<string, unknown>>;
-  /** GPT Image 2.5 via the host's Tripo account; `available` is false when unconfigured. */
-  readonly gptImage?: GptImageClient;
 }
 
 export type ActionBinding = Omit<
@@ -104,9 +98,7 @@ export type ActionBinding = Omit<
   "signal" | "callId" | "directory"
 > & {
   /** Host-only call-scoped adapters; never exposed to model/tool parameters. */
-  bindCall?: (
-    callId: string,
-  ) => Pick<ActionContext, "localAI" | "aura" | "artifacts" | "gptImage">;
+  bindCall?: (callId: string) => Pick<ActionContext, "aura" | "artifacts">;
 };
 
 export type ActionDefinition<

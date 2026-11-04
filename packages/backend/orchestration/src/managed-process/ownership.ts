@@ -7,7 +7,7 @@ import {
 
 function bindings() {
   if (process.platform !== "win32" || process.arch !== "x64")
-    throw new Error("本地 AI 部署目前只支持 Windows x64。");
+    throw new Error("当前受管进程服务支持 Windows x64。");
   return extendWin32ProcessBindings(({ kernel32, bind }) => ({
     openProcess: bind(kernel32, "OpenProcess", "void *", [
       "uint32",
@@ -32,12 +32,13 @@ function bindings() {
 
 const heldLeases = new Set<string>();
 
-/** Cross-host GPU lease. Unlike a lock file/semaphore it is released on a crash. */
-export function acquireGpuLease(
-  name = "Local\\Aura.LocalAI.CUDA0",
-): () => void {
+/** Cross-host resource lease that the OS releases on a crash. */
+export function acquireProcessLease(resource: string): () => void {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9.-]{0,79}$/u.test(resource))
+    throw new Error("无效的受管资源名称。");
+  const name = `Local\\Aura.${resource}`;
   // Win32 mutexes are recursive on the same thread; independent local owners aren't.
-  if (heldLeases.has(name)) throw new Error("本地 AI 显卡已有持有者。");
+  if (heldLeases.has(name)) throw new Error("受管资源已有持有者。");
   const api = bindings();
   const mutex = api.createMutex(null, 0, name);
   if (isNullPtr(mutex)) throwLastError(api, "CreateMutexW");
@@ -45,7 +46,7 @@ export function acquireGpuLease(
   // WAIT_ABANDONED grants ownership after another host died.
   if (result !== 0 && result !== 0x80) {
     api.closeHandle(mutex);
-    throw new Error("另一 Aura 进程正在使用本地 AI 显卡，请稍后重试。");
+    throw new Error("另一 Aura 进程正在使用此资源，请稍后重试。");
   }
   heldLeases.add(name);
   let released = false;

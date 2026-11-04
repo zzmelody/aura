@@ -16,6 +16,13 @@ export interface OwnedProcess {
   stop(): Promise<void>;
 }
 
+export const MANAGED_PROCESS_PERMISSION = "aura.process.manage";
+
+export interface ManagedProcesses {
+  launch(spec: LaunchSpec): Promise<OwnedProcess>;
+  acquireLease(name: string): () => void;
+}
+
 function readWorkerPid(stream: Readable): Promise<number> {
   return new Promise((resolve, reject) => {
     let buffer = "";
@@ -29,12 +36,12 @@ function readWorkerPid(stream: Readable): Promise<number> {
       cleanup();
       reject(error);
     };
-    const onEnd = () => fail(new Error("本地 AI worker 未报告进程身份。"));
+    const onEnd = () => fail(new Error("受管进程 worker 未报告进程身份。"));
     const onError = (error: Error) => fail(error);
     const onData = (chunk: Buffer | string) => {
       buffer += chunk.toString();
       if (buffer.length > 256)
-        return fail(new Error("本地 AI worker 的进程身份无效。"));
+        return fail(new Error("受管进程 worker 的进程身份无效。"));
       const newline = buffer.indexOf("\n");
       if (newline < 0) return;
       try {
@@ -45,7 +52,7 @@ function readWorkerPid(stream: Readable): Promise<number> {
           !Number.isSafeInteger(identity.pid) ||
           (identity.pid as number) <= 0
         )
-          throw new Error("本地 AI worker 的进程身份无效。");
+          throw new Error("受管进程 worker 的进程身份无效。");
         cleanup();
         stream.resume(); // Drain later child output without copying it to logs.
         resolve(identity.pid as number);
@@ -53,12 +60,12 @@ function readWorkerPid(stream: Readable): Promise<number> {
         fail(
           error instanceof Error
             ? error
-            : new Error("本地 AI worker 的进程身份无效。"),
+            : new Error("受管进程 worker 的进程身份无效。"),
         );
       }
     };
     const timer = setTimeout(
-      () => fail(new Error("本地 AI worker 进程身份等待超时。")),
+      () => fail(new Error("受管进程 worker 进程身份等待超时。")),
       5_000,
     );
     stream.on("data", onData);
@@ -96,7 +103,7 @@ export async function launchOwned(
       job?.close();
       await handle.done.catch(() => undefined);
       if (!(await handle.waitForExit(AbortSignal.timeout(10_000))))
-        throw new Error("本地 AI 进程未完成回收；禁止启动下一个模型。");
+        throw new Error("受管进程未完成回收。");
     })());
   void handle.done.then(
     () => {
@@ -111,7 +118,7 @@ export async function launchOwned(
   });
   try {
     if (!handle.stdout || !handle.stdin)
-      throw new Error("无法启动本地 AI worker。");
+      throw new Error("无法启动受管进程 worker。");
     const pid = await readWorkerPid(handle.stdout);
     job = ownProcessTree(pid);
     handle.stdin.write(JSON.stringify(spec) + "\n");

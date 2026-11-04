@@ -53,7 +53,11 @@ import type {
   FlowDomain,
   Table,
 } from "./types.ts";
-import type { ActionRun, AuraPluginStatus } from "@aura/protocol/types";
+import type {
+  ActionRun,
+  AuraPluginStatus,
+  FlowRun,
+} from "@aura/protocol/types";
 import { ActionRegistry } from "./action-registry.ts";
 import { ActionRuntime } from "./actions.ts";
 import { AuraCapabilityRouter } from "./capability-router.ts";
@@ -64,7 +68,8 @@ import { GeneratedArtifacts } from "./artifacts/generated.ts";
 import { WorkflowArtifactIndex } from "./artifacts/workflow-index.ts";
 import { historicalArtifactReader } from "./artifacts/history.ts";
 import { ActionRuns } from "./action-runs.ts";
-import { LocalAIManager } from "./local-ai/manager.ts";
+import { launchOwned } from "./managed-process/process.ts";
+import { acquireProcessLease } from "./managed-process/ownership.ts";
 import { createTripoService, TRIPO_GAME_ASSET_CAPABILITY } from "@aura/tripo";
 import { configureDshNetwork } from "./dsh-network.ts";
 import { chatService } from "./chat.ts";
@@ -97,7 +102,12 @@ import { WorkspaceTerminals } from "./coding/terminals.ts";
 import { codingSkills } from "./coding/skills.ts";
 import { CodingQuestions } from "./coding/questions.ts";
 import { chatModelCatalog, RejectedChatModels } from "./chat-models.ts";
-import { GptImageService, codexImageRequest } from "./gpt-image.ts";
+import {
+  GPT_IMAGE_CAPABILITY,
+  GptImageService,
+  codexImageRequest,
+  gptImageCapability,
+} from "./gpt-image.ts";
 import {
   codexTokenSource,
   readAiServices,
@@ -416,14 +426,6 @@ export async function apply(ctx: Context) {
       "aura-generated-assets",
     ),
   );
-  const localAI = new LocalAIManager(
-    ctx.subprocess,
-    process.env.AURA_FLOW_CWD ?? process.cwd(),
-    { assets: artifacts },
-  );
-  // This owner survives individual Action Loader/HMR fibers.
-  ctx.effect(() => () => localAI.close(), "aura-local-ai.lifecycle");
-  const capabilityRoutes: Array<[string, AuraCapabilityClient]> = [];
   // GPT images use the signed-in Codex subscription, the same login as chat.
   const codexModel = process.env.AURA_CODEX_MODEL || "gpt-6.1-sol";
   const codexTokens = codexTokenSource(ctx, codexModel);
@@ -434,10 +436,13 @@ export async function apply(ctx: Context) {
     outputRoot: resolve(
       process.env.AURA_FLOW_CWD ?? process.cwd(),
       ".aura",
-      "local-ai",
+      "codex-image",
       "outputs",
     ),
   });
+  const capabilityRoutes: Array<[string, AuraCapabilityClient]> = [
+    [GPT_IMAGE_CAPABILITY, gptImageCapability(gptImage)],
+  ];
   const tripoCredentialPath = process.env.AURA_TRIPO_CREDENTIAL_PATH;
   if (tripoCredentialPath) {
     const region = process.env.AURA_TRIPO_REGION;
@@ -473,9 +478,7 @@ export async function apply(ctx: Context) {
     ] as const);
   }
   // Built-in host capabilities, granted to Actions and backends by `permissions`.
-  const builtins = capabilityRoutes.length
-    ? new AuraCapabilityRouter(capabilityRoutes)
-    : undefined;
+  const builtins = new AuraCapabilityRouter(capabilityRoutes);
   // One backend per plugin.
   const workflowPort: { current?: PluginWorkflows } = {};
   const pluginBackends = new PluginBackends({
@@ -516,6 +519,10 @@ export async function apply(ctx: Context) {
         resolve(process.env.AURA_FLOW_CWD ?? process.cwd(), "local", "runtime"),
       "plugins",
     ),
+    processes: {
+      launch: (spec) => launchOwned(ctx.subprocess, spec),
+      acquireLease: acquireProcessLease,
+    },
     media: {
       artifacts,
       saveImage: (input) => ctx.attachments.saveImage(input),
@@ -550,13 +557,7 @@ export async function apply(ctx: Context) {
     pluginBackends.artifactCandidates(output, producer),
   );
   ctx.effect(() => () => artifactIndex.close(), "aura-artifacts.lifecycle");
-  const actionRuntime = new ActionRuntime(
-    ctx,
-    localAI,
-    builtins,
-    artifactIndex,
-    gptImage,
-  );
+  const actionRuntime = new ActionRuntime(ctx, builtins, artifactIndex);
 
   const domain = await measure("flow-storage", () =>
     ctx.storageDomain.open(spec),
@@ -653,13 +654,15 @@ export async function apply(ctx: Context) {
     },
     plugins: pluginStatuses(),
     onRootSettled: async (run) => {
-      const cancelJobs = async (id: string) => {
-        await localAI.jobs.cancelOwner(id);
-        for (const step of engine.runs.get(id)?.steps ?? [])
-          if (step.kind === "flow" && step.childRunId)
-            await cancelJobs(step.childRunId);
+      const notifyActionProviders = async (settled: FlowRun) => {
+        await pluginBackends.actionRunSettled(settled);
+        for (const step of settled.steps) {
+          if (step.kind !== "flow" || !step.childRunId) continue;
+          const child = engine.runs.get(step.childRunId);
+          if (child) await notifyActionProviders(child);
+        }
       };
-      await cancelJobs(run.id);
+      await notifyActionProviders(run);
       await pluginBackends.runSettled(run);
     },
     presets: async () =>
@@ -1714,7 +1717,6 @@ export async function apply(ctx: Context) {
           await terminals.close();
           await engine.close();
           await actionRuns.close();
-          await localAI.close();
           data = { closed: true };
           setImmediate(() => void disposeAndExit());
           break;
@@ -1775,7 +1777,6 @@ export async function apply(ctx: Context) {
       try {
         await engine.close();
         await actionRuns.close();
-        await localAI.close();
         await Promise.all([discoveries.close(), actionDiscoveries.close()]);
         transport.close();
         await domain.close();

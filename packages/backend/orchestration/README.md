@@ -24,7 +24,7 @@ HMR 覆盖插件源码和 helper，并合并相同的 Flow/Action 监听根。DS
 
 只读窗口每页最多十个完整回合，沿用原日志的 `beforeSeq` / `throughSeq`，可以与宿主就绪后的分页互接；继承前缀和最早一页的导入历史规则一致。未完成日志、索引过大、格式暂不可读等情况回退原宿主路径；存在非空的 home 级 `cordis.patch.yml` 时也回退，避免忽略用户对存储根或编码的覆盖。运行状态始终由执行宿主确认；已就绪的宿主继续提供包含内存状态的实时读取。HTTP 请求取消会传递到只读加载；该优化不预热、恢复或重发模型请求。`agent-failure.ts` 独立提供相同的安全错误投影，读取历史无需加载 Agent 执行适配器。
 
-`src/` 根模块拥有执行引擎、恢复、注册和 DSH 集成；业务模块按 `content/`、`video/`、`topics/` 归拢，产物登记、历史绑定和 HTTP 交付在 `artifacts/`，模型进程适配在 `local-ai/`。各领域的 library、production 与 routes 分开，公共 package 子路径名称保持稳定。完整职责见 [模块边界](../../../docs/development/module-boundaries.md)。
+`src/` 根模块拥有执行引擎、恢复、注册和 DSH 集成；业务模块按 `content/`、`video/`、`topics/` 归拢，产物登记、历史绑定和 HTTP 交付在 `artifacts/`，受管进程与系统资源租约在 `managed-process/`。各领域的 library、production 与 routes 分开，公共 package 子路径名称保持稳定。完整职责见 [模块边界](../../../docs/development/module-boundaries.md)。
 
 Aura 的 durable workflow script 引擎。脚本负责控制流；Graph 是只读静态投影。恢复从 `run()` 入口重放，完成的关键调用返回存档结果。运行时不保存 JS 栈、闭包、Promise 或任意局部变量。
 
@@ -214,7 +214,7 @@ Action `recovery` 默认为 `manual`。只有显式 `idempotent` 的直接 Actio
 
 外部插件可以通过 `@aura/plugin-sdk/action` 的 `auraCapability(ctx, id)` 使用 manifest `permissions` 已声明且宿主支持的领域能力；本插件后端的私有服务经 `ctx.services` 提供。能力实现由长驻宿主或插件后端持有，Action 只收到固定操作及 JSON 结果，不接触凭据、任意 URL 或进程句柄。
 
-Flow Agent 使用 fail-closed 工具白名单：固定为原生工具呈现并屏蔽 DSH、preset 及 profile 的全部继承工具，只把 `flow.agent({actions:["text-stats"],...})` 显式声明的 Action 注册到当前 Agent scope；未声明时模型工具集合为空。profile 对已知内置工具的禁用继续作为纵深防护，未来新增的 DSH 默认工具也不会自动进入 Flow Agent 上下文。Action 名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。全部内置和仓库插件的 Action 超时统一为 30 分钟，最大也为 30 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
+Flow Agent 使用 fail-closed 工具白名单：固定为原生工具呈现并屏蔽 DSH、preset 及 profile 的全部继承工具，只把 `flow.agent({actions:["your-action"],...})` 显式声明的 Action 注册到当前 Agent scope；未声明时模型工具集合为空。profile 对已知内置工具的禁用继续作为纵深防护，未来新增的 DSH 默认工具也不会自动进入 Flow Agent 上下文。Action 名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。全部内置和仓库插件的 Action 超时统一为 30 分钟，最大也为 30 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
 
 ## 队列、恢复与人工处理
 
@@ -232,12 +232,6 @@ Run 创建时先写入持久化 FIFO，默认最多同时执行 32 个顶层 Run
 暂停采用 cooperative drain：queued 立即 paused；running 先 pausing，停止发起新步骤，让已开始步骤完成，再退出为 paused。继续运行从入口重放并复用结果。checkpoint 提交答案后重新排队。
 
 unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算）、`submit_output`（校验 Action 输出 Schema 或 Agent 字符串）、`terminate`（取消 Run，保留未知 attempt 审计）。一个 parallel 可能产生多个 unknown，全部处理完毕才继续。
-
-### 本地模型 Actions
-
-`comfy-workflow` 支持由 Aura 调用 ComfyUI 自定义 API workflow：传 JSON 对象或本地文件、按节点覆盖入参、收集保存/预览产物和非文件输出。`local-image` / `local-video` 复用同一执行器作为默认模板；每次执行独立目录，取消和结束后回收受管服务及中间文件。完整参数和可运行示例见 [本地模型 Actions](docs/local-ai-actions.md#自定义-comfyui-workflow)。
-
-`local-image`、`local-video`、`local-tts` 分别访问已部署的 Qwen-Image-2512、MiniMax H3 和 Qwen3-TTS，另有 `local-ai-service` 管理启停和状态。它们是可供未来 Flow / Agent 复用的独立 Action，不新增 Workflow。后端统一串行使用 GPU，生成结束、取消或失败后回收受管进程，单独启动有 60 秒空闲期限。配置、参数、调用示例及 Windows 异常退出资源所有权见 [本地模型 Actions](docs/local-ai-actions.md)。
 
 ### macOS 保持唤醒 Action
 
@@ -350,7 +344,7 @@ Discovery 对旧根 `ctx.agent/action` 和原生 Promise 并发给出行号诊�
 
 图片（PNG/JPEG/WebP）、MP4 视频和自包含 GLB 通过 `GeneratedArtifacts` 按 SHA-256 归档，图片限制 32 MiB / 4000 万像素，视频和模型限制 200 MiB。图片缩略图为最长 640×480 的 WebP；Tripo 模型使用已有海报，不为预览再次调用生成服务。含外部资源 URI 或无法解析的 GLB 仅允许下载。
 
-`WorkflowArtifactIndex` 在同一受管目录的 `runs/` 保存版本化 sidecar，记录 run、step、attempt 和工具 call 的关联、补登记状态与后端恢复信息。文件路径仅留在后端索引；公开 DTO 不包含路径或上游 URL。原 Action 输出、JSON Schema、运行记录与重放指纹均保持原样。`localAI.image`、`localAI.comfyWorkflow` 和 Tripo game-asset capability 在调用上下文内自动登记，因此直接 Action 和 Agent 工具都可在生成后立即展示文件。受信任 Action 也可调用 `await ctx.artifacts?.register(path, { name, poster })`，该端口没有模型可调用的任意文件读取接口。
+`WorkflowArtifactIndex` 在同一受管目录的 `runs/` 保存版本化 sidecar，记录 run、step、attempt 和工具 call 的关联、补登记状态与后端恢复信息。文件路径仅留在后端索引；公开 DTO 不包含路径或上游 URL。原 Action 输出、JSON Schema、运行记录与重放指纹均保持原样。Tripo game-asset capability 在调用上下文内自动登记，因此直接 Action 和 Agent 工具都可在生成后立即展示文件。受信任 Action 也可调用 `await ctx.artifacts?.register(path, { name, poster })`，该端口没有模型可调用的任意文件读取接口。
 
 Runtime 挂载以下 Hono 路由；JSON-RPC 只解析关联与元数据，HTTP 进程从受管目录按文件描述符校验内容 hash 并流式发送：
 
