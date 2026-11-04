@@ -13,7 +13,19 @@ test(
   { timeout: 90_000 },
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), "aura-capabilities-"));
-    t.after(() => rm(root, { recursive: true, force: true }));
+    let host: OrchestrationHost;
+    let closeServer: (() => Promise<void>) | undefined;
+    t.after(async () => {
+      try {
+        await host?.close();
+      } finally {
+        try {
+          await closeServer?.();
+        } finally {
+          await rm(root, { recursive: true, force: true, maxRetries: 3 });
+        }
+      }
+    });
     const flowRoot = join(root, "flow");
     const project = join(root, "project");
     await mkdir(flowRoot);
@@ -125,7 +137,6 @@ test(
         await stream.writeSSE({ data: "[DONE]" });
       });
     });
-    let closeServer: (() => Promise<void>) | undefined;
     const port = await new Promise<number>((resolve) => {
       const server = serve(
         { fetch: app.fetch, hostname: "127.0.0.1", port: 0 },
@@ -137,15 +148,13 @@ test(
           server.close((error) => (error ? reject(error) : done()));
         });
     });
-    t.after(() => closeServer?.());
     const options = {
       root,
       flowRoot,
       dshHome: join(root, "dsh"),
       modelURL: `http://127.0.0.1:${port}/v1`,
     };
-    let host = new OrchestrationHost(options);
-    t.after(() => host.close());
+    host = new OrchestrationHost(options);
     const created = await host.createProject(project, "Synthetic");
     await host.codingCapabilities({
       revision: 0,

@@ -6,6 +6,9 @@ import test from "node:test";
 import { serve, type ServerType } from "@hono/node-server";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import { Context } from "@deepseek-ai/cordis";
+import { SessionId, SessionSeq as sessionSeq } from "@deepseek-ai/dsh-session";
+import * as JsonlSessionPersistence from "@deepseek-ai/dsh-session-persistence-jsonl";
 import { OrchestrationHost } from "../src/index.ts";
 import type { WorkspaceTerminalInfo } from "@aura/protocol/types";
 
@@ -36,7 +39,15 @@ test(
     const flowRoot = join(root, "flow");
     await mkdir(project);
     await mkdir(flowRoot);
-    const requests: unknown[] = [];
+    const requests: Array<{
+      messages: Array<{ role: string; content: unknown }>;
+    }> = [];
+    const lastSystemPrompt = () =>
+      JSON.stringify(
+        requests.at(-1)?.messages.filter(({ role }) => role === "system") ?? [],
+      );
+    const sideTaskRule = /以侧边会话中的用户消息确定当前任务/u;
+    const planModeRule = /You are in plan mode\./u;
     const modelApp = new Hono();
     modelApp.post("/v1/chat/completions", async (context) => {
       requests.push(await context.req.json());
@@ -121,6 +132,7 @@ test(
           AbortSignal.timeout(60_000),
         );
       await turn("main-a", "PARENT_ONLY_CONTEXT");
+      assert.doesNotMatch(lastSystemPrompt(), sideTaskRule);
       await turn("main-b", "OTHER_PARENT_CONTEXT");
       const { sessionId: sideA } = await host.openCodingSide("main-a");
       const { sessionId: blankSide } = await host.openCodingSide("main-b");
@@ -133,6 +145,8 @@ test(
       assert.ok(
         JSON.stringify(requests.at(-1)).includes("PARENT_ONLY_CONTEXT"),
       );
+      assert.match(lastSystemPrompt(), sideTaskRule);
+      assert.match(lastSystemPrompt(), /只有用户在侧边明确要求继续/u);
       await turn(sibling, "SIBLING_ONLY_CONTEXT", "main-a");
       assert.ok(
         JSON.stringify(requests.at(-1)).includes("PARENT_ONLY_CONTEXT"),
@@ -148,6 +162,35 @@ test(
       await assert.rejects(host.codingHistory("side-unregistered"));
 
       await host.close();
+      // Simulate a stored DSH plan-mode selection from a different client.
+      const storage = new Context();
+      try {
+        await storage.plugin(JsonlSessionPersistence, {
+          root: join(options.dshHome, "aura-flow-sessions"),
+          compression: "none",
+        });
+        const handle = await storage.sessionPersistence.open(
+          SessionId("main-b"),
+          "write",
+        );
+        try {
+          const { events } = await handle.read();
+          const last = events.at(-1);
+          assert.ok(last);
+          await handle.append([
+            {
+              type: "plan/mode",
+              seq: sessionSeq(last.seq + 1),
+              time: Date.now(),
+              data: { active: true },
+            },
+          ]);
+        } finally {
+          await handle.close();
+        }
+      } finally {
+        await storage.root.fiber.dispose();
+      }
       host = new OrchestrationHost(options);
       const restored = await host.conversations(space.id);
       assert.equal(
@@ -174,6 +217,7 @@ test(
       assert.ok(resumed.includes("SIDE_ONLY_CONTEXT"));
       assert.ok(!resumed.includes("OTHER_PARENT_CONTEXT"));
       assert.ok(!resumed.includes("SIBLING_ONLY_CONTEXT"));
+      assert.match(lastSystemPrompt(), sideTaskRule);
       assert.equal((await host.codingHistory(sideA)).turns.length, 2);
       const paged = await host.codingHistory(sideA, { page: true });
       assert.deepEqual(
@@ -208,6 +252,7 @@ test(
       assert.match(branchedRequest, /PARENT_ONLY_CONTEXT/u);
       assert.match(branchedRequest, /SIDE_ONLY_CONTEXT/u);
       assert.doesNotMatch(branchedRequest, /SIDE_AFTER_RESTART/u);
+      assert.doesNotMatch(lastSystemPrompt(), sideTaskRule);
       const branch = await host.codingHistory("branched-from-side", {
         page: true,
       });
@@ -232,6 +277,14 @@ test(
       const { sessionId: nextSide } = await host.openCodingSide("main-b");
       assert.notEqual(nextSide, blankSide);
       await assert.rejects(turn(blankSide, "do not resurrect", "main-b"));
+      await turn("main-b", "PLAN_THE_PARENT_TASK");
+      assert.match(lastSystemPrompt(), planModeRule);
+      await turn(nextSide, "IMPLEMENT_A_NEW_SIDE_TASK", "main-b");
+      assert.match(JSON.stringify(requests.at(-1)), /PLAN_THE_PARENT_TASK/u);
+      assert.match(lastSystemPrompt(), sideTaskRule);
+      assert.doesNotMatch(lastSystemPrompt(), planModeRule);
+      await turn("main-b", "REFINE_THE_PARENT_PLAN");
+      assert.match(lastSystemPrompt(), planModeRule);
 
       await host.archiveCodingConversation("main-a", true);
       await assert.rejects(host.codingHistory(sideA));
@@ -262,7 +315,7 @@ test(
     } finally {
       await host.close();
       model.close();
-      await rm(root, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true, maxRetries: 5 });
     }
   },
 );

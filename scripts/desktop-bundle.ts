@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { prepareWindowsDesktopExecutable } from "./desktop-windows.ts";
 
 const run = promisify(execFile);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -15,17 +16,19 @@ const BUNDLE_ID = "dev.aura.desktop";
 const BUNDLE_REVISION = 1;
 
 /**
- * The Electron binary to launch. On macOS the Dock and app switcher show the
- * running bundle's `CFBundleName`, so development uses a renamed copy of the
- * stock `Electron.app`. The copy lives in the ignored `dist-host/` folder and
- * leaves `node_modules` untouched. Electron's userData path comes from
- * `package.json`, so renaming the bundle keeps existing local state.
+ * Selects the Electron binary for development and static preview. Windows
+ * uses a branded executable and macOS reads the Dock name from the bundle.
  */
 export async function desktopExecutable(): Promise<string> {
   const require = createRequire(resolve(appRoot, "package.json"));
   const stock = require("electron") as unknown;
   if (typeof stock !== "string")
     throw new Error("Electron binary path is unavailable.");
+  if (process.platform === "win32")
+    return prepareWindowsDesktopExecutable(
+      resolve(stock),
+      resolve(appRoot, "dist-host", "win32"),
+    );
   if (process.platform !== "darwin") return stock;
 
   const source = resolve(stock, "../../..");

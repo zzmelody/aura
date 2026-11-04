@@ -579,3 +579,36 @@ test("coding preserves safe image admission errors and hides unexpected failures
   assert.doesNotMatch(unexpected, /private-provider-token/u);
   assert.match(unexpected, /编码请求暂时不可用/u);
 });
+
+test("coding forwards only supported collaboration intents", async () => {
+  const intents: unknown[] = [];
+  const app = createApiApp({
+    codexAuth,
+    chat: {
+      ...chat,
+      async coding(turn) {
+        intents.push(turn.intent);
+        return { model: "fixture" };
+      },
+    },
+  });
+  const send = (body: Record<string, unknown>) =>
+    app.request("/coding/turn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: "fixture",
+        prompt: "Work on this",
+        mode: "demo",
+        ...body,
+      }),
+    });
+  assert.equal((await send({ intent: "unsupported" })).status, 400);
+  assert.equal(
+    (await send({ intent: "goal", images: ["a".repeat(64)] })).status,
+    400,
+  );
+  for (const intent of ["plan", "execute", "goal", "resume-goal"])
+    assert.match(await (await send({ intent })).text(), /"type":"done"/u);
+  assert.deepEqual(intents, ["plan", "execute", "goal", "resume-goal"]);
+});

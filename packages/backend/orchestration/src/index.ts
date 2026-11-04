@@ -22,6 +22,8 @@ import type {
   ActionRun,
   ChatModelCatalog,
   ChatModelSelection,
+  CodingCollaboration,
+  CodingCollaborationAction,
   CodingPermission,
   CodingSteerModelConfig,
   CodingSkillInfo,
@@ -37,7 +39,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
   defaultActionRoot,
   defaultFlowRoot,
-  dshBin,
+  dshHostEntry,
   provisionProfile,
 } from "./profile.ts";
 import { FlowError, jsonValue } from "./schema.ts";
@@ -271,9 +273,7 @@ export class OrchestrationHost {
         "--expose-internals",
         "--import",
         new URL("./host-bootstrap.ts", import.meta.url).href,
-        dshBin,
-        "--profile",
-        "aura-flow",
+        dshHostEntry,
       ],
       {
         cwd: root,
@@ -288,6 +288,7 @@ export class OrchestrationHost {
           AURA_DSH_STARTUP_ORIGIN: String(startup.origin),
           AURA_FLOW_CWD: root,
           AURA_DEFAULT_WORKSPACE: defaultWorkspace,
+          AURA_LOCAL_INTEGRATIONS: this.options.localIntegrations ? "1" : "0",
           AURA_TEMP_DIR: tempDir,
           AURA_FLOW_ROOT: flowRoot,
           AURA_ACTION_ROOT: actionRoot,
@@ -433,6 +434,22 @@ export class OrchestrationHost {
     }
     if (!result.ok) throw new FlowError(result.message, result.status);
     return result.data;
+  }
+
+  async transcribeVoice(id: string, audio: string, signal: AbortSignal) {
+    const { rpc } = await this.open();
+    signal.throwIfAborted();
+    const cancel = () => rpc.notify("integrations/voice/cancel", { id });
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      return await this.request<{ text: string }>(
+        "integrations/voice/transcribe",
+        { id, audio },
+        AbortSignal.any([signal, AbortSignal.timeout(125_000)]),
+      );
+    } finally {
+      signal.removeEventListener("abort", cancel);
+    }
   }
 
   /**
@@ -582,6 +599,18 @@ export class OrchestrationHost {
       "coding/compact",
       { sessionId },
       AbortSignal.timeout(5 * 60_000),
+    );
+  }
+
+  codingCollaboration(
+    sessionId: string,
+    action?: CodingCollaborationAction,
+    signal?: AbortSignal,
+  ) {
+    return this.request<CodingCollaboration>(
+      "coding/collaboration",
+      { sessionId, action },
+      signal,
     );
   }
 

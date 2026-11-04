@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  collaborationCommand,
   composerEntries,
   composerIndex,
   skillDraft,
@@ -38,7 +39,7 @@ test("the slash root stays compact and opens separate command, skill and flow ca
   );
   assert.deepEqual(
     root.map((entry) => entry.kind === "group" && entry.count),
-    [4, 1, 2],
+    [6, 1, 2],
   );
   const flows = composerEntries({ ...catalog, group: "flows" });
   assert.deepEqual(
@@ -49,6 +50,21 @@ test("the slash root stays compact and opens separate command, skill and flow ca
     ],
   );
   assert.equal(catalog.flows[0]?.id, "video-offline");
+});
+
+test("plan and goal commands distinguish objectives from session controls", () => {
+  assert.deepEqual(collaborationCommand("/plan Check the design"), {
+    action: "plan",
+    prompt: "Check the design",
+  });
+  assert.deepEqual(collaborationCommand("/plan off"), { action: "execute" });
+  assert.deepEqual(collaborationCommand("/goal Verify\nall steps"), {
+    action: "goal",
+    prompt: "Verify\nall steps",
+  });
+  for (const action of ["pause", "resume", "clear"])
+    assert.deepEqual(collaborationCommand(`/goal ${action}`), { action });
+  assert.equal(collaborationCommand("/goals"), undefined);
 });
 
 test("search reaches every category and command names take precedence over skills", () => {

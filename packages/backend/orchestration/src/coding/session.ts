@@ -5,6 +5,7 @@ import type {} from "@deepseek-ai/dsh-subagent";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { CodingCompactionResult } from "@aura/protocol/types";
 import type { CodingCapabilityStore } from "./capabilities.ts";
+import { redactMcpResult, type CodingIntegrations } from "./integrations.ts";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { conversationPrompt } from "@aura/protocol/conversations";
@@ -29,6 +30,8 @@ import {
 } from "@deepseek-ai/dsh-agent";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import type {
+  CodingCollaboration,
+  CodingCollaborationAction,
   CodingPermission,
   CodingSteerModelConfig,
   CodingTurnUsage,
@@ -44,6 +47,7 @@ import type {
 } from "../types.ts";
 import type { GeneratedArtifacts } from "../artifacts/generated.ts";
 import { projectCodingEvent } from "./activity.ts";
+import { codingCollaboration, isGoalIntent } from "./collaboration.ts";
 import { readSessionEvents } from "./history.ts";
 import { addTurnUsage, turnTokenUsage } from "./usage.ts";
 import {
@@ -114,11 +118,15 @@ export function codingService(
   questions: CodingQuestions,
   images: Pick<GeneratedArtifacts, "readImage">,
   workflows: ChatToolHost,
+  isSideConversation: (id: string) => boolean,
   capabilities?: CodingCapabilityStore,
+  integrations?: CodingIntegrations,
 ) {
   const controller = ctx.sessionController;
+  const collaboration = codingCollaboration(ctx);
   /** Sessions with a turn in progress in this process. */
   const active = new Set<string>();
+  const goalRuns = new Set<string>();
   /** Settles when the session's in-progress turn ends, however it ends. */
   const settled = new Map<string, Promise<void>>();
   /** Agents and cancellation scopes survive navigation, not explicit closure. */
@@ -142,16 +150,40 @@ export function codingService(
   const owned = new Set<string>();
   const maintenance = new Map<string, AbortController>();
 
+  ctx.on("system-prompt/assemble", async (_assembly, { agent }, next) => {
+    const assembled = await next();
+    if (agent && goalRuns.has(agent.id)) return assembled;
+    return {
+      ...assembled,
+      sections: assembled.sections.filter(({ name }) => name !== "tool:goal"),
+    };
+  });
+
+  ctx.systemPrompt.section({
+    name: "aura:side-conversation-task",
+    order: ctx.systemPrompt.getSectionOrder("DEPLOYMENT_PERSONA_SUFFIX"),
+    text: ({ agent }) =>
+      agent && isSideConversation(agent.session.id)
+        ? "你在侧边会话中。使用继承的主会话历史理解项目背景、已有结论和用户的指代。以侧边会话中的用户消息确定当前任务。只有用户在侧边明确要求继续某项旧任务时，才接手该任务。围绕当前任务制定计划和调用工具。"
+        : "",
+  });
+
   ctx.on("agent/created", async ({ agent }) => {
+    const parentId = agent.session.header.parentSession;
+    const teammate =
+      ctx.get("agentTeams")?.tryMembership(agent)?.role === "teammate";
     const preset = (await ctx.agentPresets.resolve("coder-v1")).id;
     const children = await Promise.all(
       childPresets.map(async (id) => (await ctx.agentPresets.resolve(id)).id),
     );
-    if (agent.session.header.agentPreset === preset) {
+    if (agent.session.header.agentPreset === preset && !teammate) {
       owned.add(agent.id);
       await refreshTools(agent, false);
-    } else if (children.includes(agent.session.header.agentPreset ?? "")) {
-      const parentId = agent.session.header.parentSession;
+    } else if (
+      teammate
+        ? parentId && owned.has(parentId)
+        : children.includes(agent.session.header.agentPreset ?? "")
+    ) {
       if (!parentId || !owned.has(parentId))
         throw new FlowError("子 Agent 缺少有效的父对话。", 403);
       owned.add(agent.id);
@@ -220,15 +252,35 @@ export function codingService(
           ? "compaction"
           : agent?.session.header.origin === "subagent"
             ? "subagent"
-            : undefined;
+            : options.sessionId && goalRuns.has(options.sessionId)
+              ? "goal"
+              : undefined;
       if (!kind || !options.sessionId || !owned.has(options.sessionId))
         return next();
       const sessionId = options.sessionId;
       return (async function* () {
         options.signal?.throwIfAborted();
-        const id = await capabilities.reserve(kind, sessionId);
-        let complete = false;
+        if (
+          agent &&
+          ctx.agentTeams.tryMembership(agent)?.role === "teammate" &&
+          !integrations?.enabled("agentTeam")
+        )
+          throw new FlowError("Agent 团队已停用。", 409);
+        const id = await capabilities
+          .reserve(kind, sessionId)
+          .catch((error: unknown) => {
+            if (kind === "goal" && error instanceof FlowError)
+              emitters.get(sessionId)?.({
+                type: "notice",
+                id: `goal-budget-${randomUUID()}`,
+                text: error.message,
+                at: Date.now(),
+              });
+            throw error;
+          });
+        let complete = options.signal?.aborted === true;
         try {
+          options.signal?.throwIfAborted();
           for await (const chunk of next()) {
             if (chunk.type === "finish")
               complete =
@@ -242,9 +294,53 @@ export function codingService(
       })();
     });
     ctx.on("tools/execute", async (exec, next) => {
+      if (integrations?.teamTool(exec.name, exec.agent?.id)) {
+        if (
+          !exec.agent ||
+          !owned.has(exec.agent.id) ||
+          !integrations.enabled("agentTeam")
+        )
+          throw new FlowError("当前对话未启用 Agent 团队。", 409);
+      }
+      if (exec.name.startsWith("mcp__")) {
+        const agent = exec.agent;
+        if (
+          !agent ||
+          !owned.has(agent.id) ||
+          agent.session.header.origin === "subagent" ||
+          !integrations?.mcpTools().includes(exec.name)
+        )
+          throw new FlowError("当前对话未启用此 MCP 工具。", 403);
+        if (!canUseMcp(agent))
+          throw new FlowError(
+            "只读权限或计划模式下无法执行外部 MCP 工具。",
+            403,
+          );
+        exec.signal.throwIfAborted();
+        const secrets = integrations.mcpSecrets();
+        const reservation = await capabilities.reserve("mcp", agent.id);
+        let complete = false;
+        try {
+          const result = redactMcpResult(await next(), secrets);
+          complete = !result.isError;
+          return result;
+        } catch {
+          throw new FlowError("MCP 工具调用未完成。", 502);
+        } finally {
+          await capabilities.settle(reservation, complete);
+        }
+      }
       if (!exec.agent || !owned.has(exec.agent.id)) return next();
+      if (
+        (exec.name === "get_goal" || exec.name === "update_goal") &&
+        !goalRuns.has(exec.agent.id)
+      )
+        throw new FlowError("请先从输入框启动或继续目标。", 409);
       if (exec.name === "subagent") {
-        if (!capabilities.config().subagents)
+        if (
+          !capabilities.config().subagents ||
+          integrations?.enabled("agentTeam")
+        )
           throw new FlowError("子 Agent 已停用。", 409);
         const args = exec.arguments as { cwd?: unknown };
         if (
@@ -291,16 +387,33 @@ export function codingService(
     presets.set(session, permission);
   }
 
+  function canUseMcp(agent: Agent) {
+    const presets = ctx.get("permissionPresets") as
+      PermissionPresets | undefined;
+    return (
+      !!presets &&
+      presets.current(agent.session) !== "read-only" &&
+      !collaboration.current(agent).planning
+    );
+  }
+
   async function refreshTools(agent: Agent, child: boolean) {
+    await integrations?.ready();
     const previous = permissions.get(agent);
     const state = await capabilities?.snapshot();
     const base = child
       ? ["read", "glob", "grep", "ask_user_question", "send_message"]
-      : [...codingTools];
+      : [
+          ...codingTools,
+          ...(goalRuns.has(agent.id) ? ["get_goal", "update_goal"] : []),
+        ];
     const extra = [
       ...(state?.web && state.hasWebKey ? ["web_search", "web_fetch"] : []),
-      ...(!child && state?.subagents
+      ...(!child && state?.subagents && !integrations?.enabled("agentTeam")
         ? ["subagent", "send_message", "interrupt_agent", "list_agents"]
+        : []),
+      ...(!child && integrations?.enabled("mcp") && canUseMcp(agent)
+        ? integrations.mcpTools()
         : []),
     ];
     if (!permissions.has(agent)) agent.ctx.tools.presentAs("native");
@@ -319,33 +432,76 @@ export function codingService(
     previous?.();
   }
 
+  async function existingAgent(
+    id: string,
+    signal: AbortSignal,
+  ): Promise<Agent | undefined> {
+    const sessionId = SessionId(id);
+    const live = ctx.agents.get(sessionId);
+    if (live) return live;
+    if (!(await readSessionEvents(controller, sessionId, signal, 1))) return;
+    const preset = (await ctx.agentPresets.resolve("coder-v1")).id;
+    const handle = await ctx.agents.resume({
+      resumeSessionId: sessionId,
+      signal,
+      setup: async (scope) => {
+        await ctx.agentPresets.mount(scope, preset);
+      },
+    });
+    handles.set(id, handle);
+    return handle.agent;
+  }
+
+  async function collaborationState(
+    id: string,
+    signal: AbortSignal,
+  ): Promise<CodingCollaboration> {
+    const sessionId = SessionId(id);
+    const agent = ctx.agents.get(sessionId);
+    return agent
+      ? collaboration.current(agent)
+      : collaboration.stored(sessionId, signal);
+  }
+
+  async function changeCollaboration(
+    id: string,
+    action: CodingCollaborationAction,
+  ): Promise<CodingCollaboration> {
+    if (active.has(id) || maintenance.has(id))
+      throw new FlowError("请先等待本轮结束或停止生成。", 409);
+    const abort = new AbortController();
+    maintenance.set(id, abort);
+    try {
+      const signal = AbortSignal.any([
+        abort.signal,
+        sessionStop(id).signal,
+        AbortSignal.timeout(30_000),
+      ]);
+      const agent = await existingAgent(id, signal);
+      signal.throwIfAborted();
+      if (!agent) throw new FlowError("请在发送首条消息时选择协作模式。", 409);
+      if (agent.status === "running")
+        throw new FlowError("请先等待本轮结束或停止生成。", 409);
+      collaboration.change(agent, action);
+      await ctx.sessions.flush(agent.session);
+      return collaboration.current(agent);
+    } finally {
+      maintenance.delete(id);
+    }
+  }
+
   async function compact(id: string): Promise<CodingCompactionResult> {
     if (active.has(id) || maintenance.has(id))
       throw new FlowError("请先等待本轮结束或停止生成。", 409);
     const abort = new AbortController();
     maintenance.set(id, abort);
     try {
-      let agent = ctx.agents.get(SessionId(id));
-      if (!agent) {
-        const events = await readSessionEvents(
-          controller,
-          SessionId(id),
-          abort.signal,
-          1,
-        );
-        if (!events)
-          return { compacted: false, replacedMessages: 0, previousTokens: 0 };
-        const preset = (await ctx.agentPresets.resolve("coder-v1")).id;
-        const handle = await ctx.agents.resume({
-          resumeSessionId: SessionId(id),
-          signal: sessionStop(id).signal,
-          setup: async (scope) => {
-            await ctx.agentPresets.mount(scope, preset);
-          },
-        });
-        handles.set(id, handle);
-        agent = handle.agent;
-      }
+      const agent = await existingAgent(
+        id,
+        AbortSignal.any([abort.signal, sessionStop(id).signal]),
+      );
+      if (!agent)
+        return { compacted: false, replacedMessages: 0, previousTokens: 0 };
       const beforeTokens = ctx.tokenMeter.measure(agent.session).surfaceTokens;
       let result: CodingCompactionResult = {
         compacted: false,
@@ -400,6 +556,8 @@ export function codingService(
     close: closeSession,
     closeSide: closeSession,
     applyPermission,
+    collaborationState,
+    changeCollaboration,
     /** Whether a turn of this conversation is running right now. */
     running: (sessionId: string) => active.has(sessionId),
   };
@@ -416,6 +574,9 @@ export function codingService(
     }
     const turn = turnStops.get(sessionId);
     if (!turn) return false;
+    const agent =
+      goalRuns.has(sessionId) && ctx.agents.get(SessionId(sessionId));
+    if (agent) collaboration.pause(agent);
     turn.abort(new FlowError("已停止生成。"));
     await settled.get(sessionId);
     return true;
@@ -536,6 +697,16 @@ export function codingService(
   ): Promise<{ model: string }> {
     if (active.has(turn.sessionId) || maintenance.has(turn.sessionId))
       throw new FlowError("这段对话还有一轮在进行，请先等它结束或停止。", 409);
+    if (isGoalIntent(turn.intent)) {
+      if (turn.images?.length)
+        throw new FlowError(
+          "目标指令需要纯文本。请先在普通消息中发送参考图片。",
+          400,
+        );
+      if (!capabilities) throw new FlowError("对话额度账本不可用。", 503);
+      capabilities.assertBudgetAvailable();
+      goalRuns.add(turn.sessionId);
+    }
     active.add(turn.sessionId);
     emitters.set(turn.sessionId, emit);
     const own = new AbortController();
@@ -559,6 +730,7 @@ export function codingService(
       // In-flight guidance must never spill into a later turn of this agent.
       own.abort(new FlowError("这一轮已经结束了，请重新发送。", 409));
       active.delete(turn.sessionId);
+      goalRuns.delete(turn.sessionId);
       emitters.delete(turn.sessionId);
       settled.delete(turn.sessionId);
       if (turnStops.get(turn.sessionId) === own)
@@ -649,6 +821,7 @@ export function codingService(
     permission: () => CodingPermission | undefined,
   ): Promise<{ model: string }> {
     const cwd = codingCwd(turn.project);
+    const goalIntent = isGoalIntent(turn.intent) ? turn.intent : undefined;
     const stop = AbortSignal.any([
       signal,
       AbortSignal.timeout(CODING_TURN_TIMEOUT_MS),
@@ -681,6 +854,8 @@ export function codingService(
     const stored =
       !live &&
       (await readSessionEvents(controller, sessionId, stop, 1)) !== undefined;
+    if (goalIntent && !live && !stored && turn.history?.length)
+      throw new FlowError("请先发送一条普通消息导入旧对话，再启动目标。", 409);
     let agent = live;
     if (!agent) {
       const handle = stored
@@ -711,6 +886,13 @@ export function codingService(
             });
       handles.set(turn.sessionId, handle);
       agent = handle.agent;
+      if (!stored && turn.forkFrom) collaboration.change(agent, "clear-goal");
+      // A new side task starts outside any plan mode inherited from its parent.
+      if (!stored && turn.forkFrom && isSideConversation(turn.sessionId)) {
+        const planMode = ctx.get("planMode") as
+          { set(agent: Agent, active: boolean): void } | undefined;
+        planMode?.set(agent, false);
+      }
     }
     await refreshTools(agent, false);
     // Session setup can await I/O while a permission change is being saved.
@@ -718,6 +900,7 @@ export function codingService(
     if (presetPermission) applyPermission(turn.sessionId, presetPermission);
     const scoped: Array<() => void> = [];
     const disposers: Array<() => void> = [];
+    let goalStarted = false;
     try {
       // Snapshot route, reasoning and token limits together at prompt assembly.
       const selection: ModelSelectionRef = {
@@ -873,6 +1056,22 @@ export function codingService(
         finish = { resolve, reject };
       });
       completed.catch(() => {});
+      let finishGoal!: { resolve(): void; reject(reason: unknown): void };
+      const goalFinished = new Promise<void>((resolve, reject) => {
+        finishGoal = { resolve, reject };
+      });
+      goalFinished.catch(() => {});
+      const reportCollaboration = () => {
+        const state = collaboration.current(agent);
+        emit({ type: "collaboration", state });
+        if (goalStarted && !state.goal?.armed) finishGoal.resolve();
+      };
+      if (goalIntent)
+        disposers.push(
+          ctx.on("goal/activation-changed", ({ sessionId: changed }) => {
+            if (changed === sessionId) reportCollaboration();
+          }),
+        );
       // New-file content from `write` calls, keyed by call id until the
       // result arrives (DSH attaches no hunks for a file that did not exist).
       const created = new Map<string, CodingFileDiff>();
@@ -887,6 +1086,8 @@ export function codingService(
       disposers.push(
         ctx.on("session/event", (session, event) => {
           if (session.id !== sessionId) return;
+          if (["plan/mode", "goal/change"].includes(event.type))
+            reportCollaboration();
           if (event.type === "turn/start") nativeTurn = [];
           nativeTurn?.push(event);
           const ended = event.type === "turn/end" ? nativeTurn : undefined;
@@ -895,10 +1096,14 @@ export function codingService(
           if (event.type === "turn/start") turnNumber = event.data.turn;
           if (
             event.type === "user/message" &&
-            "rpcId" in event.data.source &&
-            event.data.source.rpcId === requestId
-          )
-            matched = turnNumber;
+            (goalIntent
+              ? String(event.data.source.kind) === "goal"
+              : "rpcId" in event.data.source &&
+                event.data.source.rpcId === requestId)
+          ) {
+            matched ??= turnNumber;
+            if (goalIntent) reportCollaboration();
+          }
           if (matched === undefined) return;
           if (
             event.type === "turn/end" &&
@@ -952,6 +1157,8 @@ export function codingService(
       );
       let childrenStopping: Promise<void> | undefined;
       const onAbort = () => {
+        finishGoal.reject(stop.reason);
+        if (goalStarted) collaboration.pause(agent);
         controller.cancel({ sessionId });
         childrenStopping = ctx.subagents
           .listChildren(sessionId)
@@ -968,49 +1175,69 @@ export function codingService(
       stop.addEventListener("abort", onAbort, { once: true });
       try {
         stop.throwIfAborted();
-        const imported =
-          !live && !stored && !turn.forkFrom && turn.history?.length
-            ? await chatImages(
+        if (goalIntent) {
+          collaboration.startGoal(agent, goalIntent, turn.prompt);
+          goalStarted = true;
+          reportCollaboration();
+          // DSH may be briefly idle while it checkpoints between goal rounds.
+          // Keep the interaction and accounting scopes until continuation ends.
+          await Promise.race([
+            goalFinished,
+            completed.then(() => goalFinished),
+          ]);
+        } else {
+          if (turn.intent === "plan" || turn.intent === "execute")
+            collaboration.change(agent, turn.intent);
+          reportCollaboration();
+          const imported =
+            !live && !stored && !turn.forkFrom && turn.history?.length
+              ? await chatImages(
+                  {
+                    mode: turn.mode,
+                    messages: [
+                      ...turn.history,
+                      { role: "user", text: turn.prompt, images: turn.images },
+                    ],
+                  },
+                  images,
+                  stop,
+                )
+              : undefined;
+          const pictures =
+            imported?.parts ?? (await promptImages(turn.images ?? [], stop));
+          await submitPrompt(
+            {
+              sessionId,
+              requestId,
+              mode: "queue",
+              content: [
+                // DSH needs a text part; an image-only request gets a short cue.
                 {
-                  mode: turn.mode,
-                  messages: [
-                    ...turn.history,
-                    { role: "user", text: turn.prompt, images: turn.images },
-                  ],
+                  type: "text",
+                  text: conversationPrompt(
+                    turn.prompt.trim() || "请查看我附上的图片。",
+                    imported?.history.slice(0, -1),
+                    turn.context,
+                  ),
                 },
-                images,
-                stop,
-              )
-            : undefined;
-        const pictures =
-          imported?.parts ?? (await promptImages(turn.images ?? [], stop));
-        await submitPrompt(
-          {
-            sessionId,
-            requestId,
-            mode: "queue",
-            content: [
-              // DSH needs a text part; an image-only request gets a short cue.
-              {
-                type: "text",
-                text: conversationPrompt(
-                  turn.prompt.trim() || "请查看我附上的图片。",
-                  imported?.history.slice(0, -1),
-                  turn.context,
-                ),
-              },
-              ...pictures,
-            ],
-          },
-          stop,
-          config,
-        );
-        await completed;
+                ...pictures,
+              ],
+            },
+            stop,
+            config,
+          );
+          await completed;
+        }
         await agent.whenIdle();
         while (await ctx.subagents.waitForChildren(agent))
           await agent.whenIdle();
         await agent.whenIdle();
         stop.throwIfAborted();
+        if (goalIntent && matched === undefined)
+          throw new FlowError(
+            "目标未能开始续跑，请检查目标状态和请求额度。",
+            409,
+          );
         if (followupFailure) throw followupFailure;
         if (usage) emit({ type: "usage", usage });
         if (endSeq !== undefined) emit({ type: "turn-boundary", endSeq });
@@ -1022,6 +1249,10 @@ export function codingService(
       return { model: config.model };
     } finally {
       try {
+        if (goalStarted) {
+          collaboration.disarm(agent);
+          emit({ type: "collaboration", state: collaboration.current(agent) });
+        }
         // An errored parent must not leave charged child work running after
         // its question/approval bridge has been removed. Completed children
         // remain in DSH's catalog and can be explicitly continued later.

@@ -16,7 +16,7 @@ const settings = z.object({
   maxRequests: z.number().int().min(0).max(100_000),
 });
 const entry = z.object({
-  kind: z.enum(["compaction", "subagent", "web"]),
+  kind: z.enum(["compaction", "subagent", "web", "goal", "mcp"]),
   sessionId: z.string(),
   state: z.enum(["reserved", "complete", "unknown", "acknowledged"]),
   at: z.number(),
@@ -132,22 +132,7 @@ export class CodingCapabilityStore {
   ): Promise<string> {
     return this.serialize(async () => {
       const prior = this.config();
-      if (
-        Object.entries(prior.entries).some(
-          ([id, item]) =>
-            item.state === "unknown" ||
-            (item.state === "reserved" && !this.live.has(id)),
-        )
-      )
-        throw new FlowError(
-          "有结果未知的额外请求，请在对话能力设置中核对后继续。",
-          409,
-        );
-      if (Object.keys(prior.entries).length >= prior.maxRequests)
-        throw new FlowError(
-          "额外请求额度不足，请在对话能力设置中增加额度。",
-          409,
-        );
+      this.assertBudgetAvailable(prior);
       const id = randomUUID();
       await this.table.put("settings", {
         ...prior,
@@ -159,6 +144,24 @@ export class CodingCapabilityStore {
       this.live.add(id);
       return id;
     });
+  }
+  assertBudgetAvailable(prior = this.config()): void {
+    if (
+      Object.entries(prior.entries).some(
+        ([id, item]) =>
+          item.state === "unknown" ||
+          (item.state === "reserved" && !this.live.has(id)),
+      )
+    )
+      throw new FlowError(
+        "有结果未知的额外请求，请在对话能力设置中核对后继续。",
+        409,
+      );
+    if (Object.keys(prior.entries).length >= prior.maxRequests)
+      throw new FlowError(
+        "额外请求额度不足，请在对话能力设置中增加额度。",
+        409,
+      );
   }
   async settle(id: string, complete: boolean): Promise<void> {
     await this.serialize(async () => {

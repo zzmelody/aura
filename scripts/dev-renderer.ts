@@ -45,15 +45,14 @@ try {
   await server.listen();
   server.printUrls();
   if (target === "desktop") {
-    // A renamed bundle on macOS, so the Dock shows "Aura" instead of "Electron".
-    const electron = await desktopExecutable();
+    const executable = await desktopExecutable();
     // An inherited ELECTRON_RUN_AS_NODE (set by some IDE and agent hosts)
     // would start Electron as plain Node, without its `app` and window APIs.
     const { ELECTRON_RUN_AS_NODE: _runAsNode, ...env } = process.env;
-    desktop = spawn(electron, [".", "--dev"], {
+    desktop = spawn(executable, [".", "--dev"], {
       cwd: appRoot,
       stdio: "inherit",
-      // No windowsHide: spawning electron.exe directly would pass SW_HIDE to
+      // No windowsHide: spawning the desktop executable would pass SW_HIDE to
       // its first window on Windows, leaving the workbench invisible.
       env: { ...env, AURA_DEV_PARENT_PID: String(process.pid) },
     });

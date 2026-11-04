@@ -68,3 +68,5 @@ Runtime 启动时默认读取 `<Aura root>/.aura/plugins.json`。只加载被显
 
 Coding HTTP 适配增加能力配置、压缩与子 Agent 查询/停止路由；浏览器资源注册表提供
 原生 DSH secret-mask bundle，由工作台适配公开注册接口。参见[对话能力](../../../docs/dsh-conversation-capabilities.md)。
+
+`/integrations` 提供功能开关、MCP 服务器配置、市场浏览、语音和会话搜索及团队视图。设置写入限制在仅绑定本机的服务，由编排宿主检查配置 revision。语音上传接收至多 30 秒的 PCM WAV。

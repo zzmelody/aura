@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { conversationProject } from "../src/features/coding/conversation-project.ts";
+import {
+  canChooseConversationWorkspace,
+  conversationProject,
+} from "../src/features/coding/conversation-project.ts";
 
 const projects = [
   { id: "work", title: "工作项目", directory: "/work" },
@@ -11,6 +14,28 @@ const projects = [
     isDefault: true,
   },
 ];
+
+test("the global task draft can choose a workspace even when one is preselected", () => {
+  assert.equal(canChooseConversationWorkspace({}), true);
+  assert.equal(canChooseConversationWorkspace({ projectId: "default" }), true);
+});
+
+test("workspace drafts and saved conversations keep their assigned workspace", () => {
+  assert.equal(
+    canChooseConversationWorkspace({
+      projectId: "work",
+      workspaceLocked: true,
+    }),
+    false,
+  );
+  assert.equal(
+    canChooseConversationWorkspace({
+      projectId: "work",
+      conversationId: "task",
+    }),
+    false,
+  );
+});
 
 test("opening a new or legacy chat keeps a workspace when the default marker is absent", () => {
   const olderProjects = projects.map(({ id, title, directory }) => ({

@@ -25,7 +25,9 @@ installBrowserHost();
 installWorkflowFileHost();
 installWindowHost();
 installFileRevealHost();
-const development = !app.isPackaged && process.argv.includes("--dev");
+// Renaming Electron on Windows sets isPackaged even through the default loader.
+const development =
+  process.defaultApp === true && process.argv.includes("--dev");
 if (development) {
   const parentPid = Number(process.env.AURA_DEV_PARENT_PID);
   if (Number.isInteger(parentPid) && parentPid > 0) {

@@ -24,7 +24,11 @@ import {
   personalAssistant,
 } from "./api";
 import { conversationInfoStatus, isActiveStatus } from "./conversationStatus";
-import { conversationProject } from "./conversation-project";
+import {
+  canChooseConversationWorkspace,
+  conversationProject,
+  type ConversationWorkspaceSelection,
+} from "./conversation-project";
 import { createAssistantLoader } from "./assistant-loader";
 import { startupCache } from "../../startup-cache.ts";
 
@@ -43,13 +47,14 @@ export type CodingProjectsController = {
   conversationErrors: Record<string, string>;
   /** The workspace coding mode works in; the sidebar and studio share it. */
   selectedId?: string;
+  canChooseWorkspace: boolean;
   /** The open conversation; undefined starts a new one in the workspace. */
   conversationId?: string;
   branchFrom?: string;
   branchAt?: number;
   continueIn(projectId: string): void;
   fork(projectId: string, sessionId: string, endSeq: number): void;
-  newChat(): void;
+  newChat(preferredProjectId?: string): void;
   selectModel(
     sessionId: string,
     mode: FlowMode,
@@ -61,7 +66,7 @@ export type CodingProjectsController = {
     permission: CodingPermission,
   ): Promise<void>;
   select(id: string | undefined): void;
-  /** Opens a conversation, or a new one when `conversationId` is omitted. */
+  /** Opens a conversation, or a draft bound to the given workspace. */
   open(projectId: string, conversationId?: string): void;
   refresh(signal?: AbortSignal): Promise<CodingProjectInfo[]>;
   refreshConversations(
@@ -104,12 +109,9 @@ export function useCodingProjects(
   const [conversationErrors, setConversationErrors] = useState<
     Record<string, string>
   >({});
-  const [selection, setSelection] = useState<{
-    projectId?: string;
-    conversationId?: string;
-    branchFrom?: string;
-    branchAt?: number;
-  }>({ projectId: conversationProject(restored.projects)?.id });
+  const [selection, setSelection] = useState<
+    ConversationWorkspaceSelection & { branchFrom?: string; branchAt?: number }
+  >({ projectId: conversationProject(restored.projects)?.id });
   const [error, setError] = useState("");
   const [pendingPermissions, setPendingPermissions] = useState<
     Partial<Record<string, CodingPermission>>
@@ -290,7 +292,7 @@ export function useCodingProjects(
       );
       setError("");
       setSelection((current) =>
-        current.conversationId ||
+        !canChooseConversationWorkspace(current) ||
         (current.projectId &&
           list.some((item) => item.id === current.projectId))
           ? current
@@ -399,7 +401,11 @@ export function useCodingProjects(
   );
   const open = useCallback(
     (projectId: string, conversationId?: string) =>
-      setSelection({ projectId, conversationId }),
+      setSelection({
+        projectId,
+        conversationId,
+        workspaceLocked: !conversationId,
+      }),
     [],
   );
 
@@ -534,6 +540,8 @@ export function useCodingProjects(
     conversations: dataEndpoint === endpoint ? conversations : {},
     conversationErrors: dataEndpoint === endpoint ? conversationErrors : {},
     selectedId: dataEndpoint === endpoint ? selection.projectId : undefined,
+    canChooseWorkspace:
+      dataEndpoint !== endpoint || canChooseConversationWorkspace(selection),
     conversationId:
       dataEndpoint === endpoint ? selection.conversationId : undefined,
     branchFrom: dataEndpoint === endpoint ? selection.branchFrom : undefined,
@@ -550,8 +558,10 @@ export function useCodingProjects(
               branchAt: current.branchAt,
             },
       ),
-    newChat: () =>
-      setSelection({ projectId: conversationProject(projects)?.id }),
+    newChat: (preferredProjectId) =>
+      setSelection({
+        projectId: preferredProjectId ?? conversationProject(projects)?.id,
+      }),
     selectModel: (sessionId, mode, selection) => {
       const parent = Object.values(conversations)
         .flat()

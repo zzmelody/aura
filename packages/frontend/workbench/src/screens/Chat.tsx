@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import { VoiceInput } from "../features/coding/VoiceInput.tsx";
+import { useIntegrations } from "../integrations.tsx";
 import {
   ArrowUp,
   Check,
@@ -145,6 +147,8 @@ export function ChatScreen({
   onApplyFlow?(code: string): void;
 }) {
   const scroll = useRef<HTMLDivElement>(null);
+  const editor = useRef<HTMLTextAreaElement>(null);
+  const { flags } = useIntegrations();
   const session = workspace.active;
   const messages = session?.messages;
   const running = workspace.busy;
@@ -180,6 +184,7 @@ export function ChatScreen({
         <div className="chat-composer-area">
           <div className="chat-composer">
             <textarea
+              ref={editor}
               aria-label="消息输入框"
               placeholder="发送消息…"
               value={workspace.draft}
@@ -217,6 +222,19 @@ export function ChatScreen({
                 </select>
               </label>
               <span className="composer-spacer" />
+              {flags?.voice && !connecting ? (
+                <VoiceInput
+                  key={session?.id ?? "draft"}
+                  endpoint={workspace.workflows.endpoint}
+                  onText={(text) => {
+                    const draft = workspace.draft.trimEnd();
+                    workspace.setDraft(
+                      (draft ? `${draft} ${text}` : text).slice(0, 4000),
+                    );
+                    editor.current?.focus();
+                  }}
+                />
+              ) : null}
               <button
                 className="send-button"
                 aria-label={running ? "停止生成" : "发送消息"}

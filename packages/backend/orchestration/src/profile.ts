@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import { readdir, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL, URL } from "node:url";
@@ -9,11 +8,8 @@ import {
   customProfiles,
 } from "@aura/dsh-auth";
 
-const require = createRequire(import.meta.url);
-export const dshBin = join(
-  dirname(require.resolve("@deepseek-ai/dsh/package.json")),
-  "lib",
-  "bin.js",
+export const dshHostEntry = fileURLToPath(
+  new URL("./host-entry.ts", import.meta.url),
 );
 export const defaultFlowRoot = fileURLToPath(
   new URL("../flow", import.meta.url),
@@ -119,7 +115,6 @@ export async function provisionProfile(
     "tool-jobs",
     "llm-retry",
     "command-goal",
-    "tool-goal",
     "tool-subagent-fork",
     "workflow-worker-thread",
     "tool-workflow",
@@ -227,6 +222,10 @@ ${Object.entries(profiles)
   config:
     root: !!js dshHomePath('aura-flow-storages')
 - insert:
+    - id: aura-agent-team
+      name: ${JSON.stringify(new URL("./coding/team-plugin.ts", import.meta.url).href)}
+      config:
+        maxMembers: 2
     - id: aura-host-diagnostics
       name: ${JSON.stringify(new URL("./diagnostics-plugin.ts", import.meta.url).href)}
     - id: aura-orchestration

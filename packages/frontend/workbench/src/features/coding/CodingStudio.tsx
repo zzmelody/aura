@@ -16,6 +16,8 @@ import {
   MessageSquare,
   MessageSquareQuote,
   SquareTerminal,
+  Search,
+  Users,
 } from "lucide-react";
 import {
   conversationSides,
@@ -36,6 +38,11 @@ import {
   type FlowConversationRequest,
 } from "../../flow-conversation";
 import { ConversationPane } from "./ConversationPane";
+import {
+  AgentTeamPanel,
+  ConversationSearch,
+} from "./ConversationIntegrations.tsx";
+import { useIntegrations } from "../../integrations.tsx";
 import { ConversationSplit } from "./ConversationSplit";
 import { SideConversation } from "./SideConversation";
 import { ToolTabs } from "./ToolTabs";
@@ -127,6 +134,8 @@ export function CodingStudio({
   flowRequest?: FlowConversationRequest;
   onFlowRequestTaken?(): void;
 }) {
+  const { flags } = useIntegrations();
+  const [integrationPanel, setIntegrationPanel] = useState<"search" | "team">();
   const {
     projects,
     selectedId,
@@ -656,6 +665,38 @@ ${summary}`,
       legacy?.archivedAt !== undefined ? (
         <span className="header-archived">已归档</span>
       ) : null}
+      {flags?.sessionSearch && projectId && !legacy && !personalAssistant ? (
+        <button
+          type="button"
+          className="icon-control"
+          aria-label="会话全文搜索"
+          aria-expanded={integrationPanel === "search"}
+          title="会话全文搜索"
+          onClick={() =>
+            setIntegrationPanel((current) =>
+              current === "search" ? undefined : "search",
+            )
+          }
+        >
+          <Search size={16} />
+        </button>
+      ) : null}
+      {flags?.agentTeam && conversationId && conversation && !legacy ? (
+        <button
+          type="button"
+          className="icon-control"
+          aria-label="Agent 团队"
+          aria-expanded={integrationPanel === "team"}
+          title="Agent 团队"
+          onClick={() =>
+            setIntegrationPanel((current) =>
+              current === "team" ? undefined : "team",
+            )
+          }
+        >
+          <Users size={16} />
+        </button>
+      ) : null}
       {/* One "..." per header: the view items join the host's session menu,
           and only stand alone when the host has no session menu to offer. */}
       {hostActions ??
@@ -693,7 +734,39 @@ ${summary}`,
         <SelectionActions root={studioRoot} actions={selectionActions} />
       ) : null}
       <ConversationSplit
-        mainHeader={mainHeader}
+        mainHeader={
+          <>
+            {mainHeader}
+            {visible &&
+            flags?.sessionSearch &&
+            integrationPanel === "search" &&
+            projectId &&
+            !legacy &&
+            !personalAssistant ? (
+              <ConversationSearch
+                key={projectId}
+                endpoint={endpoint}
+                projectId={projectId}
+                open={(id) => {
+                  open(projectId, id);
+                  setIntegrationPanel(undefined);
+                }}
+              />
+            ) : null}
+            {visible &&
+            flags?.agentTeam &&
+            integrationPanel === "team" &&
+            conversationId &&
+            conversation &&
+            !legacy ? (
+              <AgentTeamPanel
+                key={conversationId}
+                endpoint={endpoint}
+                id={conversationId}
+              />
+            ) : null}
+          </>
+        }
         sideHeader={
           <ToolTabs
             tabs={tabs}
@@ -785,7 +858,7 @@ ${summary}`,
                 flowRequest={flowRequest}
                 onFlowRequestTaken={onFlowRequestTaken}
                 composerLeading={
-                  !conversationId ? (
+                  !conversationId && workspaces.canChooseWorkspace ? (
                     <WorkbenchMenu
                       label="选择工作空间"
                       className="composer-context"
@@ -822,7 +895,9 @@ ${summary}`,
                   offline
                     ? "工作空间需要连接 Aura 服务，请切换到 Codex 订阅或其他模式"
                     : !project
-                      ? "工作空间暂不可用，仍可查看历史和编辑草稿；选择或新建工作空间后可继续发送。"
+                      ? !conversationId && !workspaces.canChooseWorkspace
+                        ? "此任务的工作空间暂不可用。恢复该工作空间后可继续发送。"
+                        : "工作空间暂不可用，仍可查看历史和编辑草稿；选择或新建工作空间后可继续发送。"
                       : !workspaces.ready
                         ? "服务正在连接，你可以先提交任务。"
                         : undefined
@@ -987,7 +1062,7 @@ ${summary}`,
           onSaved={(saved) => {
             void workspaces
               .refresh()
-              .then(() => open(saved.id))
+              .then(() => workspaces.newChat(saved.id))
               .catch(() => {});
           }}
           onClose={() => setCreating(false)}

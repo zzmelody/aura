@@ -26,6 +26,7 @@ import "./workflow-output.css";
 import { ThemeContext } from "@aura/ui/components";
 import { fonts, palettes } from "@aura/ui/theme";
 import { useWorkspace } from "./useWorkspace";
+import { IntegrationProvider } from "./integrations.tsx";
 import { providerMode } from "@aura/core";
 import { useChatModels } from "./useChatModels";
 import { useCodexAuth } from "./useCodexAuth";
@@ -526,7 +527,7 @@ export default function App({ onReady }: AppProps) {
     />
   );
   const navigationInDrawer = !wide && sidebarOpen;
-  return (
+  const workbench = (
     <PluginResultsProvider results={pluginPages.results}>
       <ThemeContext.Provider value={{ colors, dark, reduced }}>
         <div
@@ -988,6 +989,11 @@ export default function App({ onReady }: AppProps) {
         </div>
       </ThemeContext.Provider>
     </PluginResultsProvider>
+  );
+  return (
+    <IntegrationProvider endpoint={codexAuth.endpoint}>
+      {workbench}
+    </IntegrationProvider>
   );
 }
 

@@ -16,7 +16,9 @@ macOS 宽窗口的会话列表使用原生 `sidebar` 毛玻璃和轻微渐变，
 
 在仓库根运行 `.\scripts\aura.ps1 run desktop`。命令先生成桌面 renderer，再打开原生窗口。Codex OAuth 始终交给 DSH；桌面壳只把授权页交给系统浏览器，不接触 token。
 
-macOS 的 Dock 和应用切换器显示的是运行中 bundle 的 `CFBundleName`，代码里的 `app.setName` 改不了它。因此 `pnpm desktop` 和 `pnpm desktop:preview` 由 `scripts/desktop-bundle.ts` 把 `Electron.app` 复制为 `dist-host/Aura.app`，改名称和 bundle ID 后本地 ad-hoc 重签再启动；不修改 `node_modules`。复制在 APFS 上用克隆完成，按 Electron 版本加修订号缓存，只在升级后重建。userData 路径来自 `package.json`，改名不影响已有本地数据。其他系统直接使用原版 Electron。
+Windows 下，`pnpm desktop` 和 `pnpm desktop:preview` 首次启动会在 `dist-host/win32/` 生成并缓存 `Aura.exe` 及其运行时。可执行文件内嵌从现有 Aura 图标生成的 `assets/aura.ico`，任务管理器「进程」显示 Aura 和应用图标，「详细信息」显示 `Aura.exe`。Electron 或图标更新后会生成新的副本。实现依据 [Electron 应用品牌定制](https://www.electronjs.org/docs/latest/tutorial/application-distribution#rebranding-with-downloaded-binaries)。
+
+macOS 下，两个命令由 `scripts/desktop-bundle.ts` 把 `Electron.app` 复制为 `dist-host/Aura.app`，修改 Dock 和应用切换器使用的 bundle 名称及 bundle ID，再本地 ad-hoc 重签。复制在 APFS 上用克隆完成，按 Electron 版本和修订号缓存。Linux 直接使用原版 Electron。Windows 和 macOS 均使用本地副本，Electron 用户数据路径仍由桌面包的 `package.json` 决定。
 
 `package.json#main` 指向 Electron 的 `src/main.ts`；renderer 入口是 `src/renderer.tsx`，只由 Vite 构建。两者不得互相导入，确保 Node/DSH 后端依赖不会进入浏览器 bundle。
 

@@ -23,6 +23,10 @@ import type { WorkspaceController } from "../useWorkspace";
 import type { CodexAuthController } from "../useCodexAuth";
 import { CodexLoginButton } from "../CodexLoginButton";
 import { PluginDirectorySettings } from "./PluginDirectorySettings.tsx";
+import {
+  IntegrationSettingsPanel,
+  PluginMarket,
+} from "./IntegrationSettings.tsx";
 import { PluginList } from "./Plugins.tsx";
 import { ModelServiceSettings } from "./ModelServiceSettings.tsx";
 import "./settings.css";
@@ -31,6 +35,7 @@ const sections = [
   { id: "appearance", label: "外观", icon: Palette },
   { id: "models", label: "模型与账号", icon: Sparkles },
   { id: "connection", label: "连接", icon: Wifi },
+  { id: "features", label: "功能开关", icon: Radio },
   { id: "plugins", label: "插件", icon: PlugZap },
   { id: "records", label: "会话记录", icon: Clock3 },
   { id: "about", label: "关于", icon: Info },
@@ -531,6 +536,20 @@ export function SettingsScreen({
           </section>
 
           <section
+            id="settings-features"
+            aria-labelledby="settings-features-title"
+          >
+            <header className="settings-section-head">
+              <h2 id="settings-features-title">功能开关</h2>
+              <p>按需开启额外的对话和插件功能。</p>
+            </header>
+            <IntegrationSettingsPanel
+              key={codexAuth.endpoint}
+              endpoint={codexAuth.endpoint}
+            />
+          </section>
+
+          <section
             id="settings-plugins"
             aria-labelledby="settings-plugins-title"
           >
@@ -547,6 +566,10 @@ export function SettingsScreen({
             <h3 className="settings-subhead">插件目录</h3>
             <PluginDirectorySettings
               endpoint={workspace.state.endpoint || "http://127.0.0.1:4311"}
+            />
+            <PluginMarket
+              key={codexAuth.endpoint}
+              endpoint={codexAuth.endpoint}
             />
           </section>
 

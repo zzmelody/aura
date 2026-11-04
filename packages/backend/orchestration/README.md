@@ -2,6 +2,8 @@
 
 DSH 依赖统一固定为 `0.2.1-rc.5`，Cordis 为 `4.0.5`，loader / include 分别固定为 `1.0.6` / `1.0.10`。本包的 Zod 与 DSH domain 层统一为 `4.4.3`，Schema 持久化校验在 Aura 侧适配。升级使用已发布包，保留现有 profile、会话 ID、domain 与存储格式，不执行用户配置或历史数据迁移。集成测试通过隔离目录和本地合成模型验证授权、执行、取消与恢复，不调用真实付费模型。
 
+Aura 的编排子进程通过 DSH 的公开 `runProfile()` 启动 `aura-flow`。环境分层、profile 合并、Cordis 服务装配和退出清理由 DSH 处理。父子进程通过 stdio RPC 通信，启动异常通过 Aura 的脱敏诊断输出。
+
 DSH 启动阶段耗时写入终端和 `.aura/dsh/logs/aura-host.log`，`event: "startup"` 的记录按 `startupId` 关联一次启动。`stage` 包括 profile 准备、进程创建、DSH 加载、插件 preset/backend 激活、各 domain 打开、工作空间、Action 恢复、Flow/Action 发现、Loader 等待、Flow 恢复和握手。`status` 为 started/completed/failed；`durationMs` 是本阶段耗时，`elapsedMs` 是从本次启动开始的累计耗时。total、handshake、dsh-load 和 orchestration-setup 包含子阶段，不能相加。启动失败会保留最后开始的阶段和已完成阶段；日志只接受固定阶段、UUID 与数值，不记录配置、凭据、原始错误或上游响应。
 
 HMR 覆盖插件源码和 helper，并合并相同的 Flow/Action 监听根。DSH 的忽略匹配使用 POSIX glob，而 Windows `path.relative()` 返回反斜杠，因此生成的 profile 同时提供两种分隔符的忽略规则，避免为 `node_modules` 和隐藏目录注册大量文件监听。使用 DSH 0.2.1-alpha.2、Windows Electron 44.7.0、Node 24.21.0、相同的五个插件和独立空存储进行对照时，优化前启动 79.5 秒（DSH 加载 70.4 秒），优化后两次新进程启动分别为 13.3 秒与 22.4 秒。耗时受机器负载和文件缓存影响。
@@ -39,6 +41,8 @@ Aura 的 durable workflow script 引擎。脚本负责控制流；Graph 是只�
 `POST /flows/assets/images` 在图片路由上执行 32 MiB 请求体限制，超出时返回图片大小错误。普通 Flow 请求的请求体上限为 256 KiB。
 
 工作空间对话的 `openCodingSide(parentId)` 每次显式调用都创建独立旁支，`closeCodingSide(id)` 仅关闭指定旁支。多个旁支分别通过 DSH fork/resume 继承主对话并保存自己的上下文和模型设置；首条提问成为旁支列表标题。关闭或归档主对话会释放它的全部旁支。索引在原 `aura_coding_conversations` domain 中添加可选 `sideConversations` 元数据，保留原 ID、domain 版本和旧字段；单旁支历史只在读取时投影，不扫描、迁移或重写用户数据。DSH 日志保持原样。
+
+旁支每轮使用专属系统规则，将主对话历史作为背景，并以旁支用户消息确定当前任务。用户可在旁支明确要求继续主对话的任务。新旁支首次 fork 后通过 DSH 关闭继承的计划模式，已建立的旁支恢复自身的计划状态。
 
 ## 编写 Flow
 
@@ -325,6 +329,10 @@ curl -i -X POST http://127.0.0.1:4311/flows/xxx/invoke \
 ```
 
 调用方随后读取 `GET /flows/runs/:runId`。终态为 `completed` 时结果在 `output`；`waiting_input` 时根据步骤的 `outputSchema` 调用 `answer`；`needs_attention` 时调用 `resolve`。网络超时后应复用同一个 `Idempotency-Key`，Aura 会返回原 Run，输入或模式不同则返回 409。也可以在 JSON 请求体内传 `requestId`；若头和请求体同时存在，两者必须一致。
+
+## DSH 可选集成
+
+编排宿主持久化五个功能开关，并按需装载原生 DSH MCP 客户端、SenseVoice、团队工具和全文索引。MCP 配置保存的是后端环境变量引用。MCP 工具调用和团队模型调用共用对话能力的额外请求账本。市场浏览通过 DSH 市场索引的校验器读取公开目录。参见[对话能力](../../../docs/dsh-conversation-capabilities.md)。
 
 ## 实现与部署
 

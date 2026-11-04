@@ -186,7 +186,7 @@ export function useComposerCommands({
     choose,
     handleKey,
     submitCommand: () => {
-      const name = /^\/(model|stop|clear)\s*$/u.exec(draft)?.[1];
+      const name = /^\/(model|stop|clear|plan|goal)\s*$/u.exec(draft)?.[1];
       if (!name) return false;
       const entry = composerEntries({
         flows,

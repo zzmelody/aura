@@ -1,5 +1,5 @@
 import { isCodingSteerRequestId } from "@aura/protocol";
-import type { CodingFileDiff, CodingStreamEvent } from "../types.ts";
+import type { CodingFileDiff, CodingTimelineEvent } from "../types.ts";
 
 /**
  * Projects one DSH session event into the coding activity stream. Live turns
@@ -13,7 +13,7 @@ import type { CodingFileDiff, CodingStreamEvent } from "../types.ts";
  */
 export function projectCodingEvent(
   event: { type: string; time: number; data?: unknown },
-  emit: (event: CodingStreamEvent) => void,
+  emit: (event: CodingTimelineEvent) => void,
   created: Map<string, CodingFileDiff>,
   ownPrompt?: (message: Record<string, unknown>) => boolean,
 ) {

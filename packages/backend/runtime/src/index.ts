@@ -124,6 +124,7 @@ export async function startAuraRuntime(
       tripoRegion: config.tripoRegion,
       tempDir: config.tempDir,
       defaultWorkspace: config.defaultWorkspace,
+      localIntegrations: isLoopbackRuntimeHost(config.host),
       pluginSdkPackage,
     });
     let activePageRoots = plugins.pageRoots;

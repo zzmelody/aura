@@ -428,6 +428,21 @@ export type ConversationModelConfig = Partial<
  */
 export type CodingPermission =
   "read-only" | "workspace-write" | "danger-full-access";
+export type CodingRunIntent = "plan" | "execute" | "goal" | "resume-goal";
+export type CodingCollaborationAction = "plan" | "execute" | "clear-goal";
+
+export interface CodingGoalInfo {
+  objective: string;
+  phase: "active" | "paused" | "blocked" | "complete";
+  armed: boolean;
+  roundsStarted: number;
+  maxGoalRounds: number;
+}
+
+export interface CodingCollaboration {
+  planning: boolean;
+  goal?: CodingGoalInfo;
+}
 export type ChatModelInfo = {
   id: string;
   name: string;
@@ -720,6 +735,7 @@ export interface CodingHistoryTurn {
 export interface CodingHistoryPage {
   turns: CodingHistoryTurn[];
   running: boolean;
+  collaboration?: CodingCollaboration;
   hasMore: boolean;
   beforeSeq?: number;
   throughSeq?: number;
@@ -844,3 +860,4 @@ export type CodingCapabilityActivity =
       statusCode?: number;
       at: number;
     };
+export type * from "./integrations.ts";

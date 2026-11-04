@@ -64,7 +64,7 @@ payload 作为通用代理透传。完整配置见 [Tripo 3D 接入](../features
 
 ## 5. 生命周期与失败策略
 
-启动顺序为：解析配置与网络设置 → 校验插件配置 → 创建授权服务与 Tripo adapter → 启动 loopback 演示模型 → 创建编排宿主并绑定插件激活器 → 启动 API。编排宿主同时预热常驻 DSH profile，不做空闲回收。
+启动顺序为：解析配置与网络设置 → 校验插件配置 → 创建授权服务与 Tripo adapter → 启动 loopback 演示模型 → 创建编排宿主并绑定插件激活器 → 启动 API。编排宿主在独立子进程中调用 DSH 公开的 `runProfile()` 预热常驻的 `aura-flow`，通过 stdio RPC 等待握手。
 
 `GET /health` 是就绪检查：只有 DSH 完成 Aura `initialize` 握手，并且当前 JSON-RPC `ping` 在 500ms 内成功，才返回 HTTP 200 和 `status: "ready"`。启动中返回 `starting`，启动失败、进程退出或 RPC 无响应返回 `unavailable`，关闭中返回 `stopped`，这些状态均为 HTTP 503；响应包含 `dsh.status`，使用 `Cache-Control: no-store`，不包含本机路径、错误栈或凭据。健康探测不触发 DSH 启动，也不等待最长 120 秒的冷启动。
 
@@ -94,7 +94,11 @@ Runtime 以 Node.js 24 为最低运行环境，workspace 直接导出 `.ts` 源�
 
 会话索引在原 `aura_coding_conversations` v1 记录上增加可选模型配置、导入历史和来源 ID，已有记录无需重写。旧历史仅在无 DSH 日志时进入首轮上下文，后端重放会隐藏上下文封装、保留用户原请求；导入不伪造工具调用。跨项目 `branchFrom` 校验来源后以 DSH seed fork，继承已完成上下文，自己的时间线只显示分叉后的轮次。`forkFrom` 继续专用于受父记录约束的旁支，两者不能同时传入。模型选择在后端保存、每轮固定，Flow 的模型配置独立。
 
+编排根据索引中的旁支身份挂载 DSH 系统提示段。继承的主对话内容用于理解背景，当前任务以旁支用户消息为准。首次创建旁支会话时，编排通过 DSH 在旁支关闭继承的计划模式。恢复已有会话时使用该会话已保存的状态。
+
 `POST /coding/sessions/:id/permission` 接受 `{ permission }`，可选 `read-only`、`workspace-write`、`danger-full-access`。草稿通过首轮 `POST /coding/turn` 携带选择。索引保存可选权限字段，未单独选择的旁支读取主对话的值，新分叉在首轮保存来源的选择。编排使用 DSH 的 `permissionPresets` 写入会话事件，活跃会话及其继承权限的旁支在下一次受限调用时使用新预设。没有会话选择时沿用 DSH 会话权限。新会话的部署默认值为 `workspace-write`，可由 `DSH_PERMISSION_MODE` 覆盖。
+
+`GET /coding/sessions/:id/collaboration` 读取 DSH 的计划和目标状态，`POST` 切换已有会话的 Plan 或清除目标。首轮模式、目标启动及继续通过 `POST /coding/turn` 的可选 `intent` 提交。目标续跑使用 DSH 的同会话驱动，多个轮次共用 Aura 的流、问答、停止与请求账本。计划状态和目标进度存入 DSH 会话日志，已保存的目标需要用户明确继续才会在新连接上重新启动。
 
 侧栏同步恢复按服务地址缓存的工作空间和对话目录，后台用只读元数据列表校验，不等待 DSH 冷启动或历史状态扫描才展示已有标题。缓存仅含目录字段，实际会话历史和运行状态仍由后端读取；首次没有快照时显示加载中，失败提供重试，后端确认空列表后才显示为空。移除工作空间同步清理其客户端目录缓存。默认空间以当前运行时的 `isDefault` 标记为准；默认目录变化后留下的旧注册只由用户明确移除，不在启动或升级时自动删除、迁移用户数据。
 

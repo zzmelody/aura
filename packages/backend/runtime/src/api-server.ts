@@ -9,6 +9,7 @@ import {
   validateConversationHistory,
   validateChatModelSelection,
   isCodingPermission,
+  isCodingRunIntent,
 } from "@aura/protocol";
 import type { ChatEvent } from "@aura/protocol/types";
 import type { TripoPort } from "@aura/tripo";
@@ -22,6 +23,7 @@ import { bodyLimit } from "hono/body-limit";
 import { stream } from "hono/streaming";
 import { createCodexAuthApp } from "./codex-auth-routes.ts";
 import { createCodingApp } from "./coding-routes.ts";
+import { createIntegrationApp } from "./integration-routes.ts";
 import {
   closeHonoServer,
   formatHttpUrl,
@@ -247,6 +249,11 @@ export function createApiApp({
   if (flows) app.route("/flows", createFlowApp(flows));
   // Coding projects ride on the same host; a runtime without it omits the set.
   if (flows) app.route("/coding", createCodingApp(flows));
+  if (flows)
+    app.route(
+      "/integrations",
+      createIntegrationApp(flows, pluginSettingsAccessible),
+    );
   if (services) app.route("/services", createServiceApp(services));
   if (aiServices)
     app.route(
@@ -358,7 +365,11 @@ export function createApiApp({
         !["codex", "lumina", "custom", "demo"].includes(String(body.mode)) ||
         (body.modelConfig !== undefined &&
           !validateChatModelSelection(body.modelConfig)) ||
-        (body.permission !== undefined && !isCodingPermission(body.permission))
+        (body.permission !== undefined &&
+          !isCodingPermission(body.permission)) ||
+        (body.intent !== undefined && !isCodingRunIntent(body.intent)) ||
+        ((body.intent === "goal" || body.intent === "resume-goal") &&
+          !!(body.images as string[] | undefined)?.length)
       )
         return context.text("无效的编码请求。", 400);
       if (!chat && !flows) return context.text("编码服务不可用。", 503);
@@ -416,6 +427,9 @@ export function createApiApp({
                 : {}),
               ...(isCodingPermission(body.permission)
                 ? { permission: body.permission }
+                : {}),
+              ...(isCodingRunIntent(body.intent)
+                ? { intent: body.intent }
                 : {}),
             },
             emit,

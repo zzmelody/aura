@@ -1,7 +1,26 @@
 import type { CodingSkillInfo, FlowCatalogEntry } from "@aura/protocol/types";
 
 export type ComposerGroup = "commands" | "skills" | "flows";
-export type ComposerCommand = "model" | "stop" | "clear" | "compact";
+export type ComposerCommand =
+  "model" | "stop" | "clear" | "compact" | "plan" | "goal";
+
+export function collaborationCommand(
+  draft: string,
+):
+  | { action: "execute" | "pause" | "resume" | "clear" }
+  | { action: "plan" | "goal"; prompt: string }
+  | undefined {
+  const match = /^\/(plan|goal)[ \t]+([\s\S]+)$/u.exec(draft.trim());
+  const prompt = match?.[2]?.trim();
+  if (!match || !prompt) return undefined;
+  if (match[1] === "plan")
+    return prompt === "off"
+      ? { action: "execute" }
+      : { action: "plan", prompt };
+  if (prompt === "pause" || prompt === "resume" || prompt === "clear")
+    return { action: prompt };
+  return { action: "goal", prompt };
+}
 
 export const composerGroups = {
   commands: { title: "内置命令", description: "模型、生成与输入操作" },
@@ -43,6 +62,26 @@ export function composerEntries({
   canRunFlow: boolean;
 }): ComposerEntry[] {
   const commands: ComposerEntry[] = [
+    {
+      kind: "command",
+      command: "plan",
+      id: "command:plan",
+      name: "plan",
+      title: "计划模式",
+      description: "先规划，再通过审阅卡批准执行",
+      group: "commands",
+      disabled: running,
+    },
+    {
+      kind: "command",
+      command: "goal",
+      id: "command:goal",
+      name: "goal",
+      title: "目标模式",
+      description: "将下一条消息设为目标，按额度自动续跑",
+      group: "commands",
+      disabled: running,
+    },
     {
       kind: "command",
       command: "compact",

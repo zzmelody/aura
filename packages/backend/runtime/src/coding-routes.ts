@@ -6,6 +6,7 @@ import { isRecord, validCodingImages } from "./validation.ts";
 import type { CodingSteerModelConfig } from "@aura/protocol/types";
 import {
   isCodingPermission,
+  isCodingCollaborationAction,
   isCodingSteerRequestId,
   validateChatModelSelection,
 } from "@aura/protocol";
@@ -69,6 +70,35 @@ export function createCodingApp(host: OrchestrationHost) {
   app.post("/sessions/:id/compact", async (context) => {
     try {
       return context.json(await host.compactCoding(context.req.param("id")));
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+  app.get("/sessions/:id/collaboration", async (context) => {
+    try {
+      return context.json(
+        await host.codingCollaboration(
+          context.req.param("id"),
+          undefined,
+          context.req.raw.signal,
+        ),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+  app.post("/sessions/:id/collaboration", async (context) => {
+    const body: unknown = await context.req.json().catch(() => undefined);
+    if (
+      !isRecord(body) ||
+      Object.keys(body).length !== 1 ||
+      !isCodingCollaborationAction(body.action)
+    )
+      return context.json({ message: "无效的协作模式请求。" }, 400);
+    try {
+      return context.json(
+        await host.codingCollaboration(context.req.param("id"), body.action),
+      );
     } catch (error) {
       return failure(context, error);
     }

@@ -1,6 +1,10 @@
 import { SubagentPanel } from "./SubagentPanel.tsx";
 import { MaskedUserText } from "./MaskedUserText.tsx";
-import { compactCoding } from "./api.ts";
+import {
+  changeCodingCollaboration,
+  compactCoding,
+  readCodingCollaboration,
+} from "./api.ts";
 import React, {
   memo,
   useCallback,
@@ -21,6 +25,7 @@ import {
   type FlowConversationRequest,
 } from "../../flow-conversation";
 import { ComposerCommands, useComposerCommands } from "./ComposerCommands";
+import { collaborationCommand } from "./composer-commands";
 import {
   ArrowUp,
   Check,
@@ -58,6 +63,7 @@ import {
   Search,
   Square,
   Terminal,
+  Target,
   SquareTerminal,
   MessageCircleQuestion,
   ShieldAlert,
@@ -73,6 +79,9 @@ import type { Workspace } from "@aura/core/types";
 import type {
   ChatModelSelection,
   ChatMessage,
+  CodingCollaboration,
+  CodingCollaborationAction,
+  CodingRunIntent,
   FlowCatalogEntry,
   FlowRun,
   FlowMode,
@@ -87,6 +96,8 @@ import { modelCatalogs } from "../../model-catalog-store";
 import { WorkbenchMenu } from "../../WorkbenchMenu";
 import { TurnActions } from "./TurnActions.tsx";
 import "./composer.css";
+import { VoiceInput } from "./VoiceInput.tsx";
+import { useIntegrations } from "../../integrations.tsx";
 import { writeClipboard } from "../../clipboard";
 import type { ChatImage } from "@aura/core/types";
 import { chatImageUrl } from "../../chatImages";
@@ -183,6 +194,8 @@ const toolIcons: Record<string, LucideIcon> = {
   todo_write: ListTodo,
   present: PackageCheck,
   exit_plan_mode: ClipboardCheck,
+  get_goal: Target,
+  update_goal: Target,
   ask_user_question: MessageCircleQuestion,
 };
 
@@ -284,6 +297,8 @@ const toolLabels: Record<string, string> = {
   todo_write: "更新任务清单",
   present: "交付文件",
   exit_plan_mode: "提交计划",
+  get_goal: "读取目标",
+  update_goal: "更新目标",
   ask_user_question: "向你提问",
 };
 
@@ -1435,7 +1450,7 @@ function TurnDuration({ turn, visible }: { turn: Turn; visible: boolean }) {
 export type ConversationSend = (
   text?: string,
   attached?: ChatImage[],
-  options?: { preserveDraft?: boolean },
+  options?: { preserveDraft?: boolean; intent?: CodingRunIntent },
 ) => Promise<Turn | undefined>;
 
 const PERMISSION_OPTIONS = {
@@ -1562,6 +1577,7 @@ export function ConversationPane({
     (branchFrom ? `fork:${branchFrom}:${branchAt ?? "latest"}` : "draft");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const draft = drafts[draftKey] ?? initialDraft ?? "";
+  const { flags } = useIntegrations();
   const setDraft = useCallback(
     (value: React.SetStateAction<string>) =>
       setDrafts((current) => ({
@@ -1575,6 +1591,28 @@ export function ConversationPane({
   );
   const [modelOpenRequest, setModelOpenRequest] = useState(0);
   const [error, setError] = useState("");
+  const [collaborations, setCollaborations] = useState<
+    Partial<Record<string, CodingCollaboration>>
+  >({});
+  const [draftIntents, setDraftIntents] = useState<
+    Partial<Record<string, CodingRunIntent>>
+  >({});
+  const [collaborationSaving, setCollaborationSaving] = useState(false);
+  const collaboration = sessionId ? collaborations[sessionId] : undefined;
+  const goal = collaboration?.goal;
+  const draftIntent = draftIntents[draftKey];
+  const selectedMode =
+    draftIntent === "goal" || goal?.armed
+      ? "goal"
+      : (draftIntent ? draftIntent === "plan" : collaboration?.planning)
+        ? "plan"
+        : "execute";
+  const modeLabel =
+    selectedMode === "goal"
+      ? "目标"
+      : selectedMode === "plan"
+        ? "计划"
+        : "执行";
   const [historyRequest, setHistoryRequest] = useState<{
     id: string;
     state: "loading" | "error";
@@ -1756,6 +1794,46 @@ export function ConversationPane({
       update(false, cause instanceof Error ? cause.message : "压缩未完成。");
     }
   }
+  const chooseCollaboration = async (
+    action: CodingCollaborationAction | "goal",
+  ) => {
+    if (
+      offline ||
+      readOnly ||
+      running ||
+      goal?.armed ||
+      historyBlocked ||
+      collaborationSaving
+    )
+      return false;
+    setError("");
+    if (action === "goal" && goal && goal.phase !== "complete") {
+      setError("这段对话已有目标，请先继续或清除它。");
+      return false;
+    }
+    if (
+      action === "goal" ||
+      !sessionId ||
+      (!shown.length && !collaboration?.planning && !goal)
+    ) {
+      if (action !== "clear-goal")
+        setDraftIntents((current) => ({ ...current, [draftKey]: action }));
+      return true;
+    }
+    const id = sessionId;
+    setCollaborationSaving(true);
+    try {
+      const state = await changeCodingCollaboration(endpoint, id, action);
+      setCollaborations((current) => ({ ...current, [id]: state }));
+      setDraftIntents((current) => ({ ...current, [draftKey]: undefined }));
+      return true;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "协作模式更新失败。");
+      return false;
+    } finally {
+      setCollaborationSaving(false);
+    }
+  };
   const commands = useComposerCommands({
     endpoint,
     projectId,
@@ -1770,6 +1848,8 @@ export function ConversationPane({
       if (command === "model") setModelOpenRequest((value) => value + 1);
       else if (command === "stop") void stop();
       else if (command === "compact") void compact();
+      else if (command === "plan" || command === "goal")
+        void chooseCollaboration(command);
       else editor.current?.focus();
     },
   });
@@ -1817,6 +1897,11 @@ export function ConversationPane({
     );
     for (const id of evicted) loaded.current.delete(id);
     setTurns(retained);
+    setCollaborations((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([id]) => !evicted.has(id)),
+      ),
+    );
     setHistoryPages((current) =>
       Object.fromEntries(
         Object.entries(current).filter(([id]) => !evicted.has(id)),
@@ -1836,6 +1921,21 @@ export function ConversationPane({
       .then((history) => {
         if (abort.signal.aborted) return;
         loaded.current.add(id);
+        const rememberCollaboration = (
+          state: CodingCollaboration | undefined,
+        ) => {
+          if (abort.signal.aborted || !state) return;
+          setCollaborations((current) =>
+            current[id] ? current : { ...current, [id]: state },
+          );
+        };
+        if (history.collaboration) rememberCollaboration(history.collaboration);
+        else
+          void readCodingCollaboration(endpoint, id, abort.signal)
+            .then(rememberCollaboration)
+            .catch(() => {
+              // Cold history remains usable while the execution host starts.
+            });
         setHistoryPages((current) => ({
           ...current,
           [id]: {
@@ -1907,6 +2007,13 @@ export function ConversationPane({
     try {
       if (awaitingService.current.has(id)) return;
       await stopCodingTurn(endpoint, id);
+      if (goal) {
+        const state = await readCodingCollaboration(endpoint, id).catch(
+          () => undefined,
+        );
+        if (state)
+          setCollaborations((current) => ({ ...current, [id]: state }));
+      }
       // A turn restored from history has no stream to settle it.
       setTurns((current) => ({
         ...current,
@@ -2008,10 +2115,16 @@ export function ConversationPane({
     )
       return;
     const abort = new AbortController();
-    void waitForCodingTurnEnd(endpoint, sessionId, abort.signal, (recorded) =>
-      updateTurn(sessionId, runningTurnId, (turn) =>
-        confirmRecordedSteers(turn, recorded),
-      ),
+    void waitForCodingTurnEnd(
+      endpoint,
+      sessionId,
+      abort.signal,
+      (recorded) =>
+        updateTurn(sessionId, runningTurnId, (turn) =>
+          confirmRecordedSteers(turn, recorded),
+        ),
+      (state) =>
+        setCollaborations((current) => ({ ...current, [sessionId]: state })),
     ).then(
       (recorded) => {
         if (abort.signal.aborted) return;
@@ -2172,6 +2285,11 @@ export function ConversationPane({
     options,
   ) => {
     const prompt = text.trim();
+    const intent = options?.intent;
+    if ((intent === "goal" || intent === "resume-goal") && attached.length) {
+      setError("目标指令需要纯文本。请先在普通消息中发送参考图片。");
+      return undefined;
+    }
     if (
       (!prompt && !attached.length) ||
       running ||
@@ -2179,6 +2297,8 @@ export function ConversationPane({
       historyBlocked ||
       readOnly ||
       permissionSaving ||
+      collaborationSaving ||
+      !!goal?.armed ||
       (sessionId !== undefined && guidanceRequests.current.has(sessionId)) ||
       guidanceState?.phase === "retry" ||
       sending.current.has(draftKey) ||
@@ -2202,6 +2322,8 @@ export function ConversationPane({
       images.moveTo(id);
     }
     const submittedConfig = submittedModelConfig();
+    if (intent)
+      setDraftIntents((current) => ({ ...current, [draftKey]: undefined }));
     onOpen?.(id, submittedConfig);
     setError("");
     if (guidanceState?.phase === "ready")
@@ -2266,10 +2388,13 @@ export function ConversationPane({
           mode,
           modelConfig: submittedConfig,
           ...(draftPermission ? { permission: draftPermission } : {}),
+          ...(intent ? { intent } : {}),
         },
         abort.signal,
       )) {
-        if (chunk.type === "steer" && chunk.requestId && !reconciled) {
+        if (chunk.type === "collaboration") {
+          setCollaborations((current) => ({ ...current, [id]: chunk.state }));
+        } else if (chunk.type === "steer" && chunk.requestId && !reconciled) {
           latest = applyTurnEvent(latest, chunk);
           setTurns((current) => ({
             ...current,
@@ -2315,13 +2440,50 @@ export function ConversationPane({
    * guidance, anything else starts a turn. Only the composer routes this way;
    * `send` stays the new-turn path its programmatic callers expect.
    */
-  const submit = () => {
+  const resumeGoal = () =>
+    goal &&
+    !goal.armed &&
+    goal.phase !== "complete" &&
+    goal.roundsStarted < goal.maxGoalRounds
+      ? send(goal.objective, [], { preserveDraft: true, intent: "resume-goal" })
+      : undefined;
+  const submit = async () => {
+    const directive = collaborationCommand(draft);
+    if (directive && !offline && !readOnly) {
+      if (directive.action === "pause") {
+        if (!goal?.armed) return false;
+        await stop();
+        setDraft("");
+        return true;
+      }
+      if (pending || running || goal?.armed) return false;
+      if (directive.action === "execute" || directive.action === "clear") {
+        const changed = await chooseCollaboration(
+          directive.action === "clear" ? "clear-goal" : "execute",
+        );
+        if (changed) setDraft("");
+        return changed;
+      }
+      if (directive.action === "resume") {
+        if (await resumeGoal()) {
+          setDraft((current) => (current === draft ? "" : current));
+          return true;
+        }
+        return false;
+      }
+      if ("prompt" in directive)
+        return Boolean(
+          await send(directive.prompt, images.ready, {
+            intent: directive.action,
+          }),
+        );
+    }
     if (pending) return Promise.resolve(false);
     if (commands.submitCommand() || commands.slash !== undefined)
       return Promise.resolve(false);
     return running || guidanceState?.phase === "retry"
       ? steer(draft, images.ready)
-      : send().then(Boolean);
+      : send(draft, images.ready, { intent: draftIntent }).then(Boolean);
   };
 
   // The host and the hand-off read the latest `send` through refs, so typing
@@ -2497,6 +2659,69 @@ export function ConversationPane({
         style={readOnly ? { display: "none" } : undefined}
       >
         {composerExtra}
+        {goal ? (
+          <section className="coding-goal" aria-label="当前目标">
+            <div className="coding-goal-detail">
+              <strong title={goal.objective}>{goal.objective}</strong>
+              <span role="status">
+                {goal.armed
+                  ? "正在续跑"
+                  : goal.phase === "complete"
+                    ? "已完成"
+                    : goal.phase === "blocked"
+                      ? "已阻塞"
+                      : goal.phase === "paused"
+                        ? "已暂停"
+                        : "待继续"}
+                {" · "}
+                {goal.roundsStarted}/{goal.maxGoalRounds} 轮
+              </span>
+            </div>
+            {!readOnly && !offline ? (
+              <div className="coding-goal-actions">
+                {goal.armed ? (
+                  <button
+                    type="button"
+                    className="tool-button"
+                    disabled={stopping}
+                    onClick={() => void stop()}
+                  >
+                    暂停目标
+                  </button>
+                ) : (
+                  <>
+                    {goal.phase !== "complete" ? (
+                      <button
+                        type="button"
+                        className="tool-button"
+                        disabled={
+                          running ||
+                          collaborationSaving ||
+                          goal.roundsStarted >= goal.maxGoalRounds
+                        }
+                        onClick={() => void resumeGoal()}
+                      >
+                        继续目标
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="tool-button"
+                      disabled={running || collaborationSaving}
+                      onClick={() => void chooseCollaboration("clear-goal")}
+                    >
+                      清除目标
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
+          </section>
+        ) : draftIntent === "goal" ? (
+          <p className="coding-goal-hint">
+            下一条纯文本消息将成为目标。续跑使用「对话能力」里的额外请求额度。
+          </p>
+        ) : null}
         {flowForm && !questionDocked ? (
           <WorkflowRunForm
             key={`${draftKey}:${flowForm.flow.id}`}
@@ -2733,6 +2958,58 @@ export function ConversationPane({
               {composerLeading}
             </div>
             <div className="composer-trailing">
+              {visible && flags?.voice && !questionDocked && !readOnly ? (
+                <VoiceInput
+                  key={draftKey}
+                  endpoint={endpoint}
+                  onText={(text) => {
+                    setDraft((current) =>
+                      current.trim() ? `${current.trimEnd()} ${text}` : text,
+                    );
+                    editor.current?.focus();
+                  }}
+                />
+              ) : null}
+              {!offline ? (
+                <WorkbenchMenu
+                  label={`协作模式 · ${modeLabel}`}
+                  className="composer-context composer-mode"
+                  disabled={
+                    !projectId ||
+                    historyBlocked ||
+                    readOnly ||
+                    running ||
+                    !!goal?.armed ||
+                    collaborationSaving
+                  }
+                  items={[
+                    {
+                      id: "execute",
+                      label: "执行模式",
+                      action: () => void chooseCollaboration("execute"),
+                    },
+                    {
+                      id: "plan",
+                      label: "计划模式 · 先规划，再审阅",
+                      action: () => void chooseCollaboration("plan"),
+                    },
+                    {
+                      id: "goal",
+                      label: "目标模式 · 按额度自动续跑",
+                      disabled: !!goal && goal.phase !== "complete",
+                      action: () => void chooseCollaboration("goal"),
+                    },
+                  ]}
+                >
+                  {selectedMode === "goal" ? (
+                    <Target size={14} aria-hidden="true" />
+                  ) : (
+                    <ClipboardCheck size={14} aria-hidden="true" />
+                  )}
+                  <span>{modeLabel}</span>
+                  <ChevronDown size={12} aria-hidden="true" />
+                </WorkbenchMenu>
+              ) : null}
               {!offline ? (
                 <WorkbenchMenu
                   label={`对话权限 · ${permission ? PERMISSION_OPTIONS[permission].detail : "默认权限"}`}
@@ -2811,6 +3088,7 @@ export function ConversationPane({
                     historyBlocked ||
                     readOnly ||
                     (!running && permissionSaving) ||
+                    collaborationSaving ||
                     steering ||
                     (running &&
                       !!sessionId &&

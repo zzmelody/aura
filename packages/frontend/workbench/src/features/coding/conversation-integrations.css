@@ -1,0 +1,39 @@
+.conversation-integrations {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  max-block-size: 35vh;
+  overflow: auto;
+}
+
+.conversation-integrations form {
+  display: flex;
+  gap: 8px;
+}
+
+.conversation-integrations input {
+  flex: 1;
+  min-width: 0;
+}
+
+.conversation-integrations ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.conversation-integrations li {
+  padding-block: 6px;
+  overflow-wrap: anywhere;
+}
+
+.conversation-search-hit {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  text-align: start;
+}
+
+.voice-input-message {
+  font-size: 0.75rem;
+  max-width: 24ch;
+}

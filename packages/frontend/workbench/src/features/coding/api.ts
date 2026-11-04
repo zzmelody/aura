@@ -7,6 +7,9 @@ import type {
 import type {
   ChatModelSelection,
   CodingPermission,
+  CodingCollaboration,
+  CodingCollaborationAction,
+  CodingRunIntent,
   CodingSteerModelConfig,
   ChatMessage,
   CodingActivity,
@@ -201,7 +204,9 @@ export const listConversations = (
   );
 
 /** Reply text or one activity entry from a streamed coding turn. */
-export type CodingChunk = { type: "delta"; text: string } | CodingActivity;
+type CodingTurnChunk = { type: "delta"; text: string } | CodingActivity;
+export type CodingChunk =
+  CodingTurnChunk | { type: "collaboration"; state: CodingCollaboration };
 
 /**
  * Streams one coding turn. The runtime sends NDJSON: text deltas, activity
@@ -250,6 +255,7 @@ export async function* codingTurn(
     modelConfig?: ChatModelSelection;
     /** Applied before the turn starts; omitted keeps the saved preset. */
     permission?: CodingPermission;
+    intent?: CodingRunIntent;
   },
   signal: AbortSignal,
 ): AsyncGenerator<CodingChunk> {
@@ -278,6 +284,11 @@ export async function* codingTurn(
       for (const line of lines) {
         if (!line) continue;
         const event = JSON.parse(line) as Record<string, unknown>;
+        if (event.type === "collaboration") {
+          const state = parseCollaboration(event.state);
+          if (state) yield { type: "collaboration", state };
+          continue;
+        }
         const parsed = parseCodingEvent(event);
         if (parsed) yield parsed;
         else if (event.type === "error")
@@ -302,7 +313,7 @@ export async function* codingTurn(
  */
 function parseCodingEvent(
   event: Record<string, unknown>,
-): CodingChunk | undefined {
+): CodingTurnChunk | undefined {
   if (event.type === "usage") {
     const usage = codingUsage(event.usage);
     return usage ? { type: "usage", usage } : undefined;
@@ -511,6 +522,39 @@ export const saveConversationPermission = (
     { permission },
   );
 
+export async function changeCodingCollaboration(
+  endpoint: string,
+  sessionId: string,
+  action: CodingCollaborationAction,
+): Promise<CodingCollaboration> {
+  const state = parseCollaboration(
+    await codingApi<unknown>(
+      endpoint,
+      `/sessions/${encodeURIComponent(sessionId)}/collaboration`,
+      "POST",
+      { action },
+    ),
+  );
+  if (!state) throw new Error("无法读取更新后的协作模式。");
+  return state;
+}
+
+export async function readCodingCollaboration(
+  endpoint: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<CodingCollaboration | undefined> {
+  return parseCollaboration(
+    await codingApi<unknown>(
+      endpoint,
+      `/sessions/${encodeURIComponent(sessionId)}/collaboration`,
+      "GET",
+      undefined,
+      signal,
+    ),
+  );
+}
+
 /** Sends the user's answer to a question the agent is waiting on. */
 export const answerQuestion = (
   endpoint: string,
@@ -633,6 +677,7 @@ export async function conversationHistory(
 ): Promise<{
   turns: CodingHistoryTurn[];
   running: boolean;
+  collaboration?: CodingCollaboration;
   hasMore: boolean;
   beforeSeq?: number;
   throughSeq?: number;
@@ -661,6 +706,7 @@ export async function conversationHistory(
   const body = value as {
     turns?: unknown;
     running?: unknown;
+    collaboration?: unknown;
     hasMore?: unknown;
     beforeSeq?: unknown;
     throughSeq?: unknown;
@@ -670,6 +716,7 @@ export async function conversationHistory(
   const turns = Array.isArray(body?.turns) ? body.turns : [];
   return {
     running: body.running,
+    collaboration: parseCollaboration(body.collaboration),
     hasMore: body?.hasMore === true,
     beforeSeq: typeof body?.beforeSeq === "number" ? body.beforeSeq : undefined,
     throughSeq:
@@ -707,17 +754,44 @@ export async function conversationHistory(
   };
 }
 
+function parseCollaboration(value: unknown): CodingCollaboration | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { planning, goal } = value as { planning?: unknown; goal?: unknown };
+  if (typeof planning !== "boolean") return undefined;
+  if (typeof goal !== "object" || goal === null) return { planning };
+  const { objective, phase, armed, roundsStarted, maxGoalRounds } =
+    goal as Record<string, unknown>;
+  if (
+    typeof objective !== "string" ||
+    (phase !== "active" &&
+      phase !== "paused" &&
+      phase !== "blocked" &&
+      phase !== "complete") ||
+    typeof armed !== "boolean" ||
+    !validCount(roundsStarted) ||
+    !validCount(maxGoalRounds) ||
+    maxGoalRounds === 0
+  )
+    return { planning };
+  return {
+    planning,
+    goal: { objective, phase, armed, roundsStarted, maxGoalRounds },
+  };
+}
+
 /** The agent can stop accepting guidance before the host finishes the turn. */
 export async function waitForCodingTurnEnd(
   endpoint: string,
   sessionId: string,
   signal: AbortSignal,
   onRunningTurn?: (turn: CodingHistoryTurn) => void,
+  onCollaboration?: (state: CodingCollaboration) => void,
 ): Promise<CodingHistoryTurn | undefined> {
   while (true) {
     signal.throwIfAborted();
     const history = await conversationHistory(endpoint, sessionId, signal);
     signal.throwIfAborted();
+    if (history.collaboration) onCollaboration?.(history.collaboration);
     const latest = history.turns.at(-1);
     if (!history.running) return latest;
     if (latest?.status === "running") onRunningTurn?.(latest);

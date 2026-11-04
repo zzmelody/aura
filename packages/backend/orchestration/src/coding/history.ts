@@ -15,7 +15,7 @@ import type {
   CodingFileDiff,
   CodingHistoryTurn,
   CodingQuestionAnswer,
-  CodingStreamEvent,
+  CodingTimelineEvent,
 } from "../types.ts";
 import {
   messageText as text,
@@ -254,8 +254,8 @@ export function historyTurns(
   let wroteText = false;
   const created = new Map<string, CodingFileDiff>();
   // Calls and approvals asked but not yet resolved, keyed by their log id.
-  const asked = new Map<string, CodingStreamEvent>();
-  const emit = (event: CodingStreamEvent) => current?.events.push(event);
+  const asked = new Map<string, CodingTimelineEvent>();
+  const emit = (event: CodingTimelineEvent) => current?.events.push(event);
 
   for (const event of events) {
     const data = (event.data ?? {}) as Record<string, unknown>;
@@ -280,7 +280,8 @@ export function historyTurns(
       continue;
     }
     if (event.type === "user/message") {
-      const source = (data as { source?: { kind?: unknown } }).source;
+      const source = (data as { source?: { kind?: unknown; round?: unknown } })
+        .source;
       // The turn's opening request, then any steering the user sent into it
       // while it ran. On replay the opening request is identified by its
       // position. Later messages retain their ID in the shared projector.
@@ -288,6 +289,14 @@ export function historyTurns(
         current.prompt = conversationPromptText(
           text((data as { content?: unknown }).content),
         );
+        continue;
+      }
+      if (
+        source?.kind === "goal" &&
+        typeof source.round === "number" &&
+        !current.prompt
+      ) {
+        current.prompt = `目标续跑 · 第 ${source.round} 轮`;
         continue;
       }
       projectCodingEvent(event, emit, created, () => false);

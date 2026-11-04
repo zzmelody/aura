@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   ChatModelCatalog,
   ChatModelSelection,
+  CodingRunIntent,
   CodexAuthStatus,
   CodexLoginRequest,
   AuraPluginSettingsState,
@@ -93,6 +94,7 @@ export interface ChatPort {
       forkFrom?: string;
       branchFrom?: string;
       branchAt?: number;
+      intent?: CodingRunIntent;
       mode: ChatRoute["mode"];
     } & ChatModelSelection,
     emit: (event: unknown) => void,

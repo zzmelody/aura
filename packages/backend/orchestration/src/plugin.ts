@@ -1,10 +1,16 @@
 import { codingSubagents } from "./coding/subagents.ts";
 import {
+  CodingIntegrations,
+  integrationsDomain,
+  MAX_VOICE_BYTES,
+} from "./coding/integrations.ts";
+import {
   CodingCapabilityStore,
   capabilitiesDomain,
   type CapabilityRecord,
 } from "./coding/capabilities.ts";
 import { PluginPresets } from "./plugin-presets.ts";
+import { pluginMarket } from "./plugin-market.ts";
 import { childStartup, type StartupStage } from "./startup-timing.ts";
 import { finishDshLoad } from "./host-bootstrap.ts";
 import { installHostPluginSdkResolutionFromEnv } from "./plugin-sdk-resolution.ts";
@@ -34,7 +40,11 @@ import { actionRunSchema, FlowError, runSchema } from "./schema.ts";
 import { dshSessions } from "./sessions.ts";
 import type { FlowMode } from "@aura/protocol/types";
 import { CHAT_IMAGE_LIMIT } from "@aura/protocol/types";
-import { isCodingSteerRequestId } from "@aura/protocol";
+import {
+  CODING_COLLABORATION_ACTIONS,
+  CODING_RUN_INTENTS,
+  isCodingSteerRequestId,
+} from "@aura/protocol";
 
 const chatModeSchema = z.enum(["demo", "codex", "lumina", "custom"]);
 import type {
@@ -60,6 +70,7 @@ import { configureDshNetwork } from "./dsh-network.ts";
 import { chatService } from "./chat.ts";
 import type { ChatToolHost } from "./chat-tools.ts";
 import { codingService } from "./coding/session.ts";
+import { isGoalIntent } from "./coding/collaboration.ts";
 import { conversationService } from "./coding/conversations.ts";
 import { automationService } from "./coding/automation.ts";
 import {
@@ -297,6 +308,8 @@ export const inject = [
   "sessions",
   "agents",
   "permissionPresets",
+  "planMode",
+  "goals",
   "agentPresets",
   "storageDomain",
   // Coding projects are DSH workspace records; injecting the registry keeps
@@ -306,6 +319,7 @@ export const inject = [
   "loader",
   "hmr",
   "tools",
+  "systemPrompt",
   "skills",
   "llm",
   "settings",
@@ -313,6 +327,8 @@ export const inject = [
   "attachments",
   // Automation tasks are DSH Schedule reminders on coding sessions.
   "schedule",
+  "sessionQuery",
+  "agentTeams",
 ];
 
 function contributionRoots(
@@ -757,12 +773,24 @@ export async function apply(ctx: Context) {
     capabilityDomain.table("settings") as unknown as Table<CapabilityRecord>,
     ctx.credentials,
   );
+  const integrationDomain = await ctx.storageDomain.open(integrationsDomain);
+  const integrations = new CodingIntegrations(
+    ctx,
+    integrationDomain.table("settings"),
+    codingConversations,
+    process.env.DSH_HOME ?? process.cwd(),
+    process.env.AURA_LOCAL_INTEGRATIONS === "1",
+  );
+  integrations.start();
   const coding = codingService(
     ctx,
     codingAnswers,
     artifacts,
     workflowTools,
+    (id) =>
+      id.startsWith("side-") && Boolean(codingConversations.sideParent(id)),
     capabilities,
+    integrations,
   );
   const conversations = conversationService(
     codingProjects,
@@ -775,6 +803,8 @@ export async function apply(ctx: Context) {
   transport.onNotification((method, params) => {
     if (method === "chat/cancel" && typeof params.chatId === "string")
       chats.get(params.chatId)?.abort(new Error("客户端已取消对话。"));
+    if (method === "integrations/voice/cancel" && typeof params.id === "string")
+      integrations.cancelRecording(params.id);
   });
 
   transport.onRequest(async (method, params) => {
@@ -784,6 +814,56 @@ export async function apply(ctx: Context) {
       const stepId = typeof params.stepId === "string" ? params.stepId : "";
       let data;
       switch (method) {
+        case "integrations/settings":
+          data = integrations.snapshot();
+          break;
+        case "integrations/flags":
+          data = integrations.flags();
+          break;
+        case "integrations/save":
+          data = await integrations.update(params);
+          break;
+        case "integrations/voice/prepare":
+          await integrations.prepareVoice(params.cancel === true);
+          data = integrations.snapshot();
+          break;
+        case "integrations/voice/transcribe": {
+          const input = z
+            .object({
+              id: z.uuid(),
+              audio: z.base64().max(Math.ceil(MAX_VOICE_BYTES / 3) * 4),
+            })
+            .safeParse(params);
+          if (!input.success) throw new FlowError("录音格式无效。", 400);
+          data = await integrations.transcribe(input.data.id, input.data.audio);
+          break;
+        }
+        case "integrations/search": {
+          const input = z
+            .object({
+              projectId: z.string().min(1),
+              query: z.string().trim().min(1).max(256),
+            })
+            .safeParse(params);
+          if (!input.success) throw new FlowError("请输入有效的搜索词。", 400);
+          data = await integrations.search(
+            input.data.projectId,
+            input.data.query,
+          );
+          break;
+        }
+        case "integrations/team":
+          data = await integrations.teamView(id);
+          break;
+        case "integrations/market":
+          if (!integrations.enabled("market"))
+            throw new FlowError("插件市场未启用。", 409);
+          data = await pluginMarket(
+            typeof params.query === "string"
+              ? params.query.trim().slice(0, 256)
+              : "",
+          );
+          break;
         case "ping":
           data = {};
           break;
@@ -1053,6 +1133,7 @@ export async function apply(ctx: Context) {
               model: z.string().trim().min(1).max(200).optional(),
               reasoningEffort: z.string().trim().min(1).max(80).optional(),
               permission: codingPermissionSchema.optional(),
+              intent: z.enum(CODING_RUN_INTENTS).optional(),
             })
             .safeParse(params);
           if (
@@ -1060,7 +1141,8 @@ export async function apply(ctx: Context) {
             chatId.length > 200 ||
             !turn.success ||
             // An image-only request is fine; an empty one is not.
-            (!turn.data.prompt.trim() && !turn.data.images?.length)
+            (!turn.data.prompt.trim() && !turn.data.images?.length) ||
+            (isGoalIntent(turn.data.intent) && !!turn.data.images?.length)
           )
             throw new FlowError("无效的编码请求。", 400);
           const abort = new AbortController();
@@ -1114,6 +1196,30 @@ export async function apply(ctx: Context) {
           if (!parent || parent.archivedAt !== undefined)
             throw new FlowError("对话不存在或已归档。", 404);
           data = await coding.compact(params.sessionId);
+          break;
+        }
+        case "coding/collaboration": {
+          const request = z
+            .object({
+              sessionId: z.string().min(1).max(200),
+              action: z.enum(CODING_COLLABORATION_ACTIONS).optional(),
+            })
+            .strict()
+            .safeParse(params);
+          if (!request.success)
+            throw new FlowError("无效的协作模式请求。", 400);
+          const { sessionId, action } = request.data;
+          const parent =
+            codingConversations.get(sessionId) ??
+            codingConversations.sideParent(sessionId);
+          if (!parent || (action && parent.archivedAt !== undefined))
+            throw new FlowError("对话不存在或已归档。", 404);
+          data = action
+            ? await coding.changeCollaboration(sessionId, action)
+            : await coding.collaborationState(
+                sessionId,
+                AbortSignal.timeout(30_000),
+              );
           break;
         }
         case "coding/stop": {
@@ -1553,9 +1659,18 @@ export async function apply(ctx: Context) {
                 questionId: item.questionId,
                 questions: item.questions,
               });
+          const collaboration =
+            beforeSeq === undefined
+              ? await coding
+                  .collaborationState(params.sessionId, signal)
+                  .catch(() => undefined)
+              : undefined;
           data = {
             turns,
             running,
+            ...(collaboration && (collaboration.planning || collaboration.goal)
+              ? { collaboration }
+              : {}),
             ...(page
               ? {
                   hasMore: page.hasMore,

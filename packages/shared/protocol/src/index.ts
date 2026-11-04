@@ -3,6 +3,8 @@ import {
   type ChatMessage,
   type ChatModelSelection,
   type CodingPermission,
+  type CodingRunIntent,
+  type CodingCollaborationAction,
 } from "./types.ts";
 
 /** Permission presets a coding conversation may select, narrowest first. */
@@ -17,6 +19,28 @@ export function isCodingPermission(value: unknown): value is CodingPermission {
     typeof value === "string" &&
     (CODING_PERMISSIONS as readonly string[]).includes(value)
   );
+}
+
+export const CODING_RUN_INTENTS = [
+  "plan",
+  "execute",
+  "goal",
+  "resume-goal",
+] as const;
+export const CODING_COLLABORATION_ACTIONS = [
+  "plan",
+  "execute",
+  "clear-goal",
+] as const;
+
+export function isCodingRunIntent(value: unknown): value is CodingRunIntent {
+  return CODING_RUN_INTENTS.some((intent) => intent === value);
+}
+
+export function isCodingCollaborationAction(
+  value: unknown,
+): value is CodingCollaborationAction {
+  return CODING_COLLABORATION_ACTIONS.some((action) => action === value);
 }
 
 /** Correlates steering with its DSH user-message event. */

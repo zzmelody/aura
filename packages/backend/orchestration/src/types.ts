@@ -1,5 +1,7 @@
 import type {
   CodingCapabilityActivity,
+  CodingCollaboration,
+  CodingRunIntent,
   CodingTurnUsage,
 } from "@aura/protocol/types";
 import type {
@@ -47,6 +49,7 @@ export interface HostOptions {
   tempDir?: string;
   /** Directory for conversations without a project. Defaults to `<root>/.aura/workspace`. */
   defaultWorkspace?: string;
+  localIntegrations?: boolean;
   /**
    * Host `@aura/plugin-sdk/package.json`; plugins resolve the SDK from here.
    * Defaults to the SDK this package resolves.
@@ -182,6 +185,7 @@ export interface CodingTurn {
   reasoningEffort?: string;
   /** Permission preset to apply before this turn; omitted keeps the saved one. */
   permission?: CodingPermission;
+  intent?: CodingRunIntent;
   /** Resolved server-side for gateway modes; never accepted from a client. */
   defaults?: FlowAgentConfig;
 }
@@ -192,6 +196,9 @@ export interface CodingTurn {
  * the agent declared, rather than only its final answer.
  */
 export type CodingStreamEvent =
+  CodingTimelineEvent | { type: "collaboration"; state: CodingCollaboration };
+
+export type CodingTimelineEvent =
   | CodingCapabilityActivity
   | { type: "usage"; usage: CodingTurnUsage }
   | { type: "turn-boundary"; endSeq: number }
@@ -257,7 +264,7 @@ export interface CodingHistoryTurn {
   status: "running" | "complete" | "stopped" | "error";
   error?: string;
   /** The same events a live turn streams, in log order. */
-  events: CodingStreamEvent[];
+  events: CodingTimelineEvent[];
 }
 
 /** The user's answer to one question. */

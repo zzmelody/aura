@@ -114,6 +114,45 @@
   background: color-mix(in srgb, var(--danger) 19%, transparent);
   color: var(--danger);
 }
+.composer-mode {
+  flex-shrink: 0;
+}
+.coding-goal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--elevated);
+  font-size: 12px;
+}
+.coding-goal-detail {
+  display: grid;
+  flex: 1 1 140px;
+  min-width: 0;
+  gap: 3px;
+}
+.coding-goal-detail > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coding-goal-detail > span,
+.coding-goal-hint {
+  color: var(--muted);
+}
+.coding-goal-actions {
+  display: flex;
+  gap: 4px;
+}
+.coding-goal-hint {
+  margin: 0 8px 8px;
+  font-size: 12px;
+}
 .composer-trailing .chat-model-picker {
   flex: 0 1 auto;
   min-width: 0;

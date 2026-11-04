@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,7 +20,7 @@ import {
   HOST_DIAGNOSTIC_PREFIX,
   type HostErrorDiagnostic,
 } from "../src/host-diagnostics.ts";
-import { dshBin, provisionProfile } from "../src/profile.ts";
+import { dshHostEntry, provisionProfile } from "../src/profile.ts";
 
 test("diagnostics preserve compiler location and discard raw secrets, snippets and forged fields", () => {
   const error = Object.assign(
@@ -119,7 +126,7 @@ test(
     );
     const child = spawn(
       process.execPath,
-      ["--expose-internals", dshBin, "--profile", "aura-flow"],
+      ["--expose-internals", dshHostEntry],
       {
         cwd: root,
         stdio: ["pipe", "pipe", "pipe"],
@@ -132,7 +139,7 @@ test(
       },
     );
     const exited = new Promise<void>((resolve) =>
-      child.once("exit", () => resolve()),
+      child.once("close", () => resolve()),
     );
     stop = async () => {
       child.kill("SIGKILL");
@@ -175,5 +182,7 @@ test(
     assert.match(log, /broken.ts:1/);
     assert.match(log, /SyntaxError/);
     assert.doesNotMatch(log, /secret-provider-token/);
+    const logs = await readdir(join(home, "logs"));
+    assert.ok(logs.every((name) => !name.startsWith("startup-")));
   },
 );
