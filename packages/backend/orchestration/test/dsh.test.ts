@@ -176,7 +176,7 @@ export default defineFlow({
     try {
       const initial = await waitForCatalog(host, (flow) => flow.available);
       assert.equal(initial.title, "HMR integration v1");
-      const firstHash = initial.sourceHash;
+      const firstRevision = initial.revision;
 
       const codexCatalog = await host.chatModels(
         "codex",
@@ -304,9 +304,9 @@ export default defineFlow({
       );
       const updated = await waitForCatalog(
         host,
-        (flow) => flow.sourceHash !== firstHash && flow.title.endsWith("v2"),
+        (flow) => flow.revision !== firstRevision && flow.title.endsWith("v2"),
       );
-      assert.notEqual(updated.sourceHash, firstHash);
+      assert.notEqual(updated.revision, firstRevision);
       const second = await host.invokeFlow("hmr-check", {
         input: { task: "integration" },
         mode: "demo",
@@ -320,9 +320,10 @@ export default defineFlow({
         join(flowDirectory, "helper.js"),
         "export const version = ;\n",
       );
+      await delay(250);
       const rolledBack = await waitForCatalog(
         host,
-        (flow) => flow.sourceHash === updated.sourceHash && Boolean(flow.error),
+        (flow) => flow.revision === updated.revision,
       );
       assert.equal(rolledBack.available, true);
       const lastKnownGood = await host.invokeFlow("hmr-check", {
@@ -341,7 +342,7 @@ export default defineFlow({
       const repaired = await waitForCatalog(
         host,
         (flow) =>
-          flow.sourceHash !== updated.sourceHash &&
+          flow.revision !== updated.revision &&
           flow.title.endsWith("v3") &&
           !flow.error,
       );

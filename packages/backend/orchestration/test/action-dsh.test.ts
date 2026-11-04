@@ -197,7 +197,7 @@ test(
       const first = await eventually(catalog, (c) =>
         Boolean(probe(c)?.available),
       );
-      const firstHash = probe(first)!.sourceHash;
+      const firstRevision = probe(first)!.revision;
       const run = await host.invokeFlow("action-check", {
         input: {},
         mode: "demo",
@@ -231,9 +231,7 @@ test(
       }
       const allowed = run.steps.find((s) => s.id === "allowed");
       assert.ok(allowed && allowed.kind !== "action");
-      assert.deepEqual(allowed.actions, [
-        { id: "probe-action", sourceHash: firstHash },
-      ]);
+      assert.deepEqual(allowed.actions, [{ id: "probe-action" }]);
       const history = await host.request<FlowHistory>("history", {
         id: run.id,
         stepId: "main/batch/agent/allowed",
@@ -256,7 +254,7 @@ test(
         mode: "demo",
       });
       assert.equal(local.output, "v1:local");
-      assert.equal(local.sourceHash, firstHash);
+      assert.equal(local.sourceHash, undefined);
       assert.equal(
         (await host.request<ActionRun>("action/get", { id: local.id })).status,
         "completed",
@@ -310,12 +308,12 @@ test(
         catalog,
         (c) => probe(c)?.title === "Probe v2",
       );
-      assert.notEqual(probe(updated)?.sourceHash, firstHash);
+      assert.notEqual(probe(updated)?.revision, firstRevision);
       const oldResult = await host.request<ActionRun>("action/wait", {
         id: old.id,
       });
       assert.equal(oldResult.output, "v1:pinned");
-      assert.equal(oldResult.sourceHash, firstHash);
+      assert.equal(oldResult.sourceHash, undefined);
       assert.equal(
         (
           await host.invokeAction("probe-action", {
@@ -327,7 +325,9 @@ test(
       );
 
       await writeFile(helper, "export const version = ;");
-      await eventually(catalog, (c) => Boolean(probe(c)?.error));
+      // Let DSH's existing debounced reload run; Aura no longer hashes code for a badge.
+      await delay(250);
+      assert.equal(probe(await catalog())?.title, "Probe v2");
       assert.equal(
         (
           await host.invokeAction("probe-action", {
@@ -390,14 +390,14 @@ test(
       // A finished tool effect does not make an unfinished Agent turn safe to repeat.
       // Agent setup can take longer than the normal two-second direct Action.
       // Keep that branch in flight until the crash instead of relying on timing.
-      const beforeCrashHash = probe(await catalog())!.sourceHash;
+      const beforeCrashRevision = probe(await catalog())!.revision;
       await writeFile(
         entry,
         actionSource.replace("timeoutMs: 3000", "timeoutMs: 60000"),
       );
       await eventually(
         catalog,
-        (c) => probe(c)?.sourceHash !== beforeCrashHash,
+        (c) => probe(c)?.revision !== beforeCrashRevision,
       );
       holdToolResult = true;
       const crash = await host.request<FlowRun>("start", {

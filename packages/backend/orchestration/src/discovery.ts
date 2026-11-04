@@ -1,15 +1,14 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Loader } from "@deepseek-ai/cordis-plugin-loader";
-import { flowIdSchema, FlowError } from "./schema.ts";
-import { validateFlowSource } from "./flow-diagnostics.ts";
-import { hashFlowDirectory, type FlowRegistry } from "./registry.ts";
+import { flowIdSchema } from "./schema.ts";
+import type { FlowRegistry } from "./registry.ts";
 import type { ContributionRoot } from "./types.ts";
 
 type DiscoveryRegistry = Pick<
   FlowRegistry,
-  | "sourceHash"
+  | "has"
   | "remove"
   | "problem"
   | "clearProblem"
@@ -55,7 +54,6 @@ export class CodeDiscovery {
   readonly permissions?: ContributionRoot["permissions"];
   readonly compatibility?: ContributionRoot["compatibility"];
   private mounted = new Map<string, MountedFlow>();
-  private failures = new Map<string, string>();
   private issues = new Set<string>();
   private queue: Promise<void> = Promise.resolve();
   private refreshTask: Promise<void> | undefined;
@@ -102,7 +100,10 @@ export class CodeDiscovery {
   }
 
   hasUnavailableContributions(): boolean {
-    return [...this.issues].some((id) => !this.mounted.has(id));
+    return (
+      [...this.issues].some((id) => !this.mounted.has(id)) ||
+      [...this.mounted.keys()].some((id) => !this.registry.has(id))
+    );
   }
 
   private async scan() {
@@ -159,56 +160,10 @@ export class CodeDiscovery {
         continue;
       }
 
-      let signature: string;
-      try {
-        signature = await hashFlowDirectory(directory, this.pluginRoot);
-      } catch {
-        issues.add(flowId);
-        if (this.mounted.has(flowId))
-          this.registry.reloadProblem(
-            flowId,
-            "Plugin dependency revision could not be validated.",
-          );
-        else
-          this.registry.problem(
-            flowId,
-            "Plugin dependency revision could not be validated.",
-          );
-        continue;
-      }
       const current = this.mounted.get(flowId);
-      if (this.kind === "flow") {
-        try {
-          validateFlowSource(await readFile(expected, "utf8"), {
-            allowRootOperations: Boolean(this.plugin),
-          });
-        } catch (error) {
-          const message =
-            error instanceof FlowError
-              ? error.message
-              : "Flow 源码语法错误，请检查入口文件。";
-          issues.add(flowId);
-          if (current) this.registry.reloadProblem(flowId, message);
-          else this.registry.problem(flowId, message);
-          continue;
-        }
-      }
-      if (current?.entry === expected) {
-        if (this.registry.sourceHash(flowId) === signature)
-          this.registry.clearReloadProblem(flowId);
-        else
-          this.registry.reloadProblem(
-            flowId,
-            "检测到新版本，但热加载尚未成功；当前仍使用最后一个可用版本。",
-          );
-        continue;
-      }
+      if (current?.entry === expected) continue;
       if (current) await this.unmount(flowId);
 
-      if (this.failures.get(flowId) === signature) {
-        issues.add(flowId);
-        continue;
-      }
       const config = {
         [this.kind === "flow" ? "flowId" : "actionId"]: flowId,
         directory,
@@ -224,11 +179,9 @@ export class CodeDiscovery {
           config,
         });
         this.mounted.set(flowId, { loaderId, entry: expected });
-        this.failures.delete(flowId);
         this.registry.clearProblem(flowId);
       } catch (error) {
         issues.add(flowId);
-        this.failures.set(flowId, signature);
         const missing =
           error instanceof Error
             ? error.message.match(/Cannot find package '([^']+)'/u)?.[1]
@@ -247,8 +200,6 @@ export class CodeDiscovery {
     for (const id of previousIssues)
       if (!discovered.has(id) || !issues.has(id))
         this.registry.clearProblem(id);
-    for (const id of [...this.failures.keys()])
-      if (!discovered.has(id)) this.failures.delete(id);
     this.issues = issues;
   }
 
@@ -267,7 +218,6 @@ export class CodeDiscovery {
       this.registry.clearReloadProblem(id);
     }
     this.issues.clear();
-    this.failures.clear();
   }
 }
 

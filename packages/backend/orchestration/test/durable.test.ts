@@ -13,7 +13,12 @@ import { DEFAULT_TOP_LEVEL_RUN_CONCURRENCY } from "../src/scheduler.ts";
 import { runSchema } from "../src/schema.ts";
 import { recoverStep } from "../src/recovery.ts";
 import { validateFlowSource } from "../src/flow-diagnostics.ts";
-import { savedSchema, validateSaved, StorageFailure } from "../src/durable.ts";
+import {
+  savedSchema,
+  validateSaved,
+  StorageFailure,
+  fingerprint,
+} from "../src/durable.ts";
 import { agentConfig, agentDefaults } from "../src/agent-config.ts";
 import {
   agentOptionsSchema,
@@ -1233,7 +1238,7 @@ test("reconciliation distinguishes known completion, exhausted budget, and any s
   );
 });
 
-test("hash changes and replay request mismatches interrupt without executing changed effects", async () => {
+test("code changes resume while replay request mismatches still stop changed effects", async () => {
   for (const kind of ["flow", "action", "request", "omitted"] as const) {
     let prompt = "same";
     let omit = false;
@@ -1267,14 +1272,101 @@ test("hash changes and replay request mismatches interrupt without executing cha
     );
     assert.equal(
       (await fixture.engine.wait(run.id)).status,
-      "interrupted",
+      kind === "flow" || kind === "action" ? "completed" : "interrupted",
       kind,
     );
     assert.equal(calls, 1);
   }
 });
 
-test("resume revision rejection persists an idempotent command receipt", async () => {
+test("legacy source hashes remain readable while current code resumes without replaying completed effects", async () => {
+  let actionCalls = 0;
+  let agentCalls = 0;
+  const workflow = async (scope: FlowScope) => {
+    await scope.action({ id: "before", action: "write", input: { value: 1 } });
+    await scope.agent({ ...agent("one"), actions: ["write"] });
+    await scope.checkpoint({
+      id: "approve",
+      prompt: "Continue?",
+      schema: z.boolean(),
+    });
+    await scope.action({ id: "after", action: "write", input: { value: 2 } });
+    return { done: true };
+  };
+  const ports = {
+    executeAction: async () => {
+      actionCalls++;
+      return { done: true };
+    },
+    sessions: {
+      execute: async () => {
+        agentCalls++;
+        return "saved";
+      },
+    },
+  };
+  const first = await setup(workflow, ports);
+  const started = await first.engine.start(req());
+  await first.engine.wait(started.id);
+  await first.engine.close();
+  const legacy = structuredClone(first.records.get(started.id)!);
+  legacy.flow.sourceHash = hash;
+  for (const ref of legacy.actionVersions ?? []) ref.sourceHash = hash;
+  for (const step of legacy.steps) {
+    if (step.kind === "action") {
+      step.sourceHash = hash;
+      step.requestHash = fingerprint({
+        kind: "action",
+        path: ["main"],
+        request: {
+          id: step.id,
+          action: step.actionId,
+          input: step.input,
+          sourceHash: hash,
+        },
+      });
+    } else if (step.kind === "agent") {
+      for (const ref of step.actions ?? []) ref.sourceHash = hash;
+      step.requestHash = fingerprint({
+        kind: "agent",
+        path: ["main"],
+        request: {
+          ...agentRequestSchema.parse({ ...agent("one"), actions: ["write"] }),
+          actionVersions: step.actions,
+          config: step.config,
+        },
+      });
+    }
+  }
+  await first.records.put(legacy.id, runSchema.parse(legacy));
+  const second = await setup(workflow, {
+    ...ports,
+    table: first.records,
+    flow: { sourceHash: undefined },
+    action: { ...action, sourceHash: undefined },
+  });
+  try {
+    await second.engine.command(
+      legacy.id,
+      "answer",
+      { requestId: randomUUID(), output: true },
+      "main/approve",
+    );
+    const finished = await second.engine.wait(legacy.id);
+    assert.equal(finished.status, "completed", finished.error);
+    assert.equal(actionCalls, 2, "the completed Action is not replayed");
+    assert.equal(agentCalls, 1, "the completed model request is not replayed");
+    assert.equal(
+      finished.flow.sourceHash,
+      hash,
+      "legacy metadata is preserved",
+    );
+  } finally {
+    await second.engine.close();
+  }
+});
+
+test("resume plugin identity rejection persists an idempotent command receipt", async () => {
   let release: ((value: string) => void) | undefined;
   const fixture = await setup((flow) => flow.agent(agent("one")), {
     sessions: {
@@ -1290,7 +1382,9 @@ test("resume revision rejection persists an idempotent command receipt", async (
     await fixture.engine.pause(run.id);
     release!("saved");
     assert.equal((await fixture.engine.wait(run.id)).status, "paused");
-    fixture.replaceFlow({ sourceHash: "b".repeat(64) });
+    fixture.replaceFlow({
+      plugin: { id: "different", name: "Different", version: "1.0.0" },
+    });
     const request = { requestId: randomUUID() };
     assert.equal(
       (await fixture.engine.command(run.id, "resume", request)).status,
@@ -1467,15 +1561,15 @@ test("reviewed builtin relocation replays old Action fingerprints and keeps dura
   const plugin = { id: "relocated", name: "Relocated", version: "1.0.0" };
   const second = await setup(workflow, {
     table: first.records,
-    flow: { sourceHash: "b".repeat(64), plugin, legacySourceHashes: [hash] },
+    flow: { sourceHash: "b".repeat(64), plugin, legacyIdentity: true },
     action: {
       ...action,
       sourceHash: "c".repeat(64),
       plugin,
-      legacySourceHashes: [hash],
+      legacyIdentity: true,
     },
     executeAction: async (definition) => {
-      assert.equal(definition.sourceHash, hash);
+      assert.equal(definition.sourceHash, "c".repeat(64));
       assert.equal(definition.plugin, undefined);
       calls++;
       return { done: true };
@@ -1519,7 +1613,7 @@ test("unreviewed relocation is rejected before a saved checkpoint resumes", asyn
     flow: {
       sourceHash: "b".repeat(64),
       plugin: { id: "relocated", name: "Relocated", version: "1.0.0" },
-      legacySourceHashes: ["c".repeat(64)],
+      legacyIdentity: false,
     },
   });
   try {

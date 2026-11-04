@@ -13,6 +13,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { StartupTimer } from "./startup-timing.ts";
 import { artifactResponse, type ArtifactFile } from "./artifacts/http.ts";
 import { GeneratedArtifacts } from "./artifacts/generated.ts";
 import { ActionFailure } from "./action-api.ts";
@@ -212,22 +213,31 @@ export class OrchestrationHost {
     if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
     if (!this.opening) {
       this.phase = "starting";
-      this.opening = this.launch().catch((error: unknown) => {
-        this.opening = undefined;
-        this.phase = this.closed ? "stopped" : "unavailable";
-        if (!this.closed)
-          for (const diagnostic of hostErrorDiagnostics(error))
-            this.logger.write("startup-failed", diagnostic);
-        throw new FlowError(
-          "DSH 编排服务启动失败，请查看 .aura/dsh/logs/aura-host.log。",
-          503,
-        );
-      });
+      const startup = new StartupTimer(randomUUID(), (timing) =>
+        this.logger.writeStartup(timing),
+      );
+      this.opening = startup
+        .measure("total", () => this.launch(startup))
+        .catch((error: unknown) => {
+          this.opening = undefined;
+          this.phase = this.closed ? "stopped" : "unavailable";
+          if (!this.closed)
+            for (const diagnostic of hostErrorDiagnostics(error))
+              this.logger.write("startup-failed", diagnostic);
+          throw new FlowError(
+            "DSH 编排服务启动失败，请查看 .aura/dsh/logs/aura-host.log。",
+            503,
+          );
+        });
     }
     return this.opening;
   }
 
-  async launch(): Promise<HostProcess> {
+  async launch(
+    startup = new StartupTimer(randomUUID(), (timing) =>
+      this.logger.writeStartup(timing),
+    ),
+  ): Promise<HostProcess> {
     const { root, dshHome, modelURL, codexModel } = this.options;
     const flowRoot = this.options.flowRoot ?? defaultFlowRoot;
     const actionRoot = this.options.actionRoot ?? defaultActionRoot;
@@ -243,17 +253,27 @@ export class OrchestrationHost {
     // Disposable scratch space handed to Actions and plugin backends.
     const tempDir = this.options.tempDir ?? join(root, "local", "runtime");
     await mkdir(tempDir, { recursive: true });
-    await provisionProfile(
-      dshHome,
-      flowRoots.map((entry) => entry.pluginRoot ?? entry.root),
-      actionRoots.map((entry) => entry.pluginRoot ?? entry.root),
-      root,
-      modelURL,
+    await startup.measure("profile", () =>
+      provisionProfile(
+        dshHome,
+        flowRoots.map((entry) => entry.pluginRoot ?? entry.root),
+        actionRoots.map((entry) => entry.pluginRoot ?? entry.root),
+        root,
+        modelURL,
+      ),
     );
     if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
+    const spawned = startup.start("process-spawn");
     const child = spawn(
       process.execPath,
-      ["--expose-internals", dshBin, "--profile", "aura-flow"],
+      [
+        "--expose-internals",
+        "--import",
+        new URL("./host-bootstrap.ts", import.meta.url).href,
+        dshBin,
+        "--profile",
+        "aura-flow",
+      ],
       {
         cwd: root,
         windowsHide: true,
@@ -263,6 +283,8 @@ export class OrchestrationHost {
           ELECTRON_RUN_AS_NODE: "1",
           DSH_HOME: dshHome,
           DSH_TELEMETRY_DISABLED: "1",
+          AURA_DSH_STARTUP_ID: startup.startupId,
+          AURA_DSH_STARTUP_ORIGIN: String(startup.origin),
           AURA_FLOW_CWD: root,
           AURA_DEFAULT_WORKSPACE: defaultWorkspace,
           AURA_TEMP_DIR: tempDir,
@@ -287,12 +309,18 @@ export class OrchestrationHost {
         },
       },
     );
+    child.once("spawn", () => spawned());
+    child.once("error", () => spawned(true));
     const rpc = new JsonRpcLineTransport(child.stdout, child.stdin);
     const startupAbort = new AbortController();
     this.startupAbort = startupAbort;
     const diagnostics = new HostDiagnosticReader(
       (error) => this.logger.write("plugin-error", error),
       () => startupAbort.abort(new Error("Aura plugin did not activate")),
+      (timing) => {
+        if (timing.startupId === startup.startupId)
+          this.logger.writeStartup(timing);
+      },
     );
     // Only the allowlisted Cordis error projection reaches terminal/local logs.
     child.stderr.setEncoding("utf8");
@@ -337,10 +365,12 @@ export class OrchestrationHost {
     try {
       // A cold DSH start loads its profile and TypeScript sources and has been
       // measured at 20–35 s on Windows, so 30 s rejected healthy starts.
-      const result = (await rpc.request(
-        "initialize",
-        {},
-        AbortSignal.any([startupAbort.signal, AbortSignal.timeout(120_000)]),
+      const result = (await startup.measure("handshake", () =>
+        rpc.request(
+          "initialize",
+          {},
+          AbortSignal.any([startupAbort.signal, AbortSignal.timeout(120_000)]),
+        ),
       )) as FlowRpcResult<{ name: string; version: number }>;
       if (
         !result.ok ||

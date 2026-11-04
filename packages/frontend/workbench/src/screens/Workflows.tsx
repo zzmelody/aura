@@ -35,7 +35,7 @@ function WorkflowPreview({
   const { source, error, refresh } = useFlowSource(
     endpoint,
     flow.available ? flow.id : "",
-    flow.sourceHash,
+    flow.revision ?? flow.sourceHash,
   );
   return (
     <div

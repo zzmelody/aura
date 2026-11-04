@@ -85,7 +85,6 @@ export class ActionRuns {
       id: randomUUID(),
       requestId: request.requestId,
       actionId: action.id,
-      sourceHash: action.sourceHash,
       plugin: action.plugin,
       input: args,
       mode: request.mode,

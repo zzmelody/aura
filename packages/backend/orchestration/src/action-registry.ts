@@ -3,15 +3,15 @@ import type {
   ActionRegistration,
   ActionRegistrationConfig,
 } from "./action-api.ts";
-import { hashFlowDirectory } from "./registry.ts";
 import { contributionIdSchema, FlowError, jsonValue, parse } from "./schema.ts";
 import { z } from "zod";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { AuraPluginIdentity } from "@aura/protocol/types";
 
 export interface LoadedAction extends ActionRegistration {
   id: string;
-  sourceHash: string;
+  sourceHash?: string;
+  revision?: string;
   inputSchema: JsonValue;
   outputSchema: JsonValue;
   toolName: string;
@@ -19,7 +19,7 @@ export interface LoadedAction extends ActionRegistration {
   services?: Readonly<Record<string, unknown>>;
   retainServices?: () => () => void;
   permissions: readonly string[];
-  legacySourceHashes?: readonly string[];
+  legacyIdentity?: boolean;
   ownerPlugin?: AuraPluginIdentity;
 }
 
@@ -35,6 +35,8 @@ export class ActionRegistry {
   private loaded = new Map<string, LoadedAction>();
   private problems = new Map<string, string>();
   private warnings = new Map<string, string>();
+  private revision = 0;
+  private readonly loadId = randomUUID();
   private services: (pluginId: string) => Readonly<Record<string, unknown>> =
     () => ({});
   private retain: (pluginId: string) => () => () => void = () => () => () =>
@@ -82,10 +84,6 @@ export class ActionRegistry {
       throw new FlowError("Action timeoutMs 必须在 1 到 1800000 毫秒之间。");
     const inputSchema = jsonValue(tool.parameters, "Action input schema");
     const outputSchema = jsonValue(tool.output.schema, "Action output schema");
-    const sourceHash = await hashFlowDirectory(
-      config.directory,
-      config.pluginRoot,
-    );
     if (
       this.loaded.has(id) &&
       this.loaded.get(id)?.plugin?.id !== config.plugin?.id
@@ -96,15 +94,12 @@ export class ActionRegistry {
       id,
       title,
       description,
-      sourceHash,
+      revision: `${this.loadId}:${++this.revision}`,
       inputSchema,
       outputSchema,
       toolName: dshToolName,
       plugin: config.plugin,
-      legacySourceHashes:
-        config.legacyRevision?.to === sourceHash
-          ? Object.freeze([...config.legacyRevision.from])
-          : undefined,
+      legacyIdentity: Boolean(config.legacyRevision),
       permissions: Object.freeze([...(config.permissions ?? [])]),
     });
     this.problems.delete(id);
@@ -125,8 +120,8 @@ export class ActionRegistry {
       );
     return this.bind(action);
   }
-  sourceHash(id: string) {
-    return this.loaded.get(id)?.sourceHash;
+  has(id: string): boolean {
+    return this.loaded.has(id);
   }
   remove(id: string) {
     this.loaded.delete(id);
@@ -153,7 +148,7 @@ export class ActionRegistry {
           id,
           title,
           description,
-          sourceHash,
+          revision,
           inputSchema,
           outputSchema,
           plugin,
@@ -161,7 +156,7 @@ export class ActionRegistry {
           id,
           title,
           description,
-          sourceHash,
+          revision,
           inputSchema,
           outputSchema,
           ...(plugin ? { plugin } : {}),

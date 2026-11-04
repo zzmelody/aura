@@ -157,9 +157,9 @@ export class FlowEngine {
       throw new StorageFailure(error);
     }
   }
-  async initialize() {
+  async initialize(options: { discovered?: boolean } = {}) {
     if (this.initialized) return;
-    await this.options.refreshFlows();
+    if (!options.discovered) await this.options.refreshFlows();
     for (const [id, run] of this.runs.entries()) {
       if (!executable(run.status)) continue;
       if (run.durableVersion && !(await this.revision(id))) continue;
@@ -287,7 +287,6 @@ export class FlowEngine {
           id: flow.id,
           title: flow.title,
           description: flow.description,
-          sourceHash: flow.sourceHash,
           plugin: flow.plugin,
         },
         input: args,
@@ -304,13 +303,10 @@ export class FlowEngine {
         durableVersion: 1,
         agentDefaults: defaults,
         requestInputHash: fingerprint(jsonValue(request.input, "Flow 入参")),
-        actionVersions: [...actions.values()].map(
-          ({ id, sourceHash, plugin }) => ({
-            id,
-            sourceHash,
-            plugin,
-          }),
-        ),
+        actionVersions: [...actions.values()].map(({ id, plugin }) => ({
+          id,
+          plugin,
+        })),
       };
       await this.runs.put(run.id, run);
       this.revisions.set(run.id, {
@@ -356,7 +352,6 @@ export class FlowEngine {
     return {
       id: flow.id,
       title: flow.title,
-      sourceHash: flow.sourceHash,
       plugin: flow.plugin,
       input: parseJson(flow.inputSchema, input, "子 Flow 入参"),
       outputSchema: jsonValue(
@@ -387,7 +382,6 @@ export class FlowEngine {
           previous.parent?.runId !== parentRunId ||
           previous.parent.stepKey !== step.stepKey ||
           previous.flow.id !== step.flowId ||
-          previous.flow.sourceHash !== step.sourceHash ||
           previous.requestInputHash !== step.requestInputHash
         )
           throw new FlowError("子 Flow 请求 ID 已用于不同调用。", 409);
@@ -407,10 +401,7 @@ export class FlowEngine {
         this.options.registry.get(step.flowId),
         step,
       );
-      if (
-        flow.sourceHash !== step.sourceHash ||
-        !samePlugin(flow.plugin, step.plugin)
-      )
+      if (!samePlugin(flow.plugin, step.plugin))
         throw new FlowError(
           `子 Flow ${step.flowId} 的固定版本已不可用，请新建运行。`,
           409,
@@ -428,7 +419,6 @@ export class FlowEngine {
           id: flow.id,
           title: flow.title,
           description: flow.description,
-          sourceHash: flow.sourceHash,
           plugin: flow.plugin,
         },
         input: step.input,
@@ -446,9 +436,10 @@ export class FlowEngine {
             )
           : agentDefaults(parent.mode, flow.agentDefaults, flow.agentTimeoutMs),
         requestInputHash: step.requestInputHash,
-        actionVersions: [...actions.values()].map(
-          ({ id, sourceHash, plugin }) => ({ id, sourceHash, plugin }),
-        ),
+        actionVersions: [...actions.values()].map(({ id, plugin }) => ({
+          id,
+          plugin,
+        })),
         parent: { runId: parentRunId, stepKey: step.stepKey! },
         rootRunId: parent.rootRunId ?? parent.id,
         ancestry: [...(parent.ancestry ?? []), parent.flow.id],
@@ -539,10 +530,7 @@ export class FlowEngine {
         const action = actions.get(ref.id);
         if (action) actions.set(ref.id, compatibleRevision(action, ref));
       }
-      if (
-        flow.sourceHash !== run.flow.sourceHash ||
-        !samePlugin(flow.plugin, run.flow.plugin)
-      ) {
+      if (!samePlugin(flow.plugin, run.flow.plugin)) {
         if (
           pinned &&
           pluginDetached(pinned?.flow.ownerPlugin ?? run.flow.plugin)
@@ -558,7 +546,7 @@ export class FlowEngine {
       );
       for (const step of run.steps) {
         const refs =
-          step.kind === "action" && step.sourceHash
+          step.kind === "action"
             ? [
                 {
                   id: step.actionId,
@@ -571,12 +559,12 @@ export class FlowEngine {
               : [];
         for (const ref of refs) {
           if (
-            actions.get(ref.id)?.sourceHash !== ref.sourceHash ||
+            !actions.has(ref.id) ||
             !samePlugin(actions.get(ref.id)?.plugin, ref.plugin)
           ) {
             const pinnedAction = pinned?.actions.get(ref.id);
             if (
-              pinnedAction?.sourceHash === ref.sourceHash &&
+              pinnedAction &&
               samePlugin(pinnedAction.plugin, ref.plugin) &&
               pluginDetached(pinnedAction.ownerPlugin ?? ref.plugin)
             ) {
@@ -597,7 +585,7 @@ export class FlowEngine {
         finishedAt: Date.now(),
         error: missingConfig
           ? "agent_config_unrecoverable: 旧运行未保存 Agent 模型配置，无法保证恢复时配置一致，请新建运行。"
-          : "revision_mismatch: Flow 或已引用 Action 的代码已变化，请新建运行。",
+          : "revision_mismatch: Flow 或已引用 Action 不可用，或插件身份已变化，请新建运行。",
         commands: rejectedCommand
           ? [
               ...(current.commands ?? []),

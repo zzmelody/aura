@@ -265,7 +265,7 @@ test("Action steps and Agents share admission, ids, version snapshots and failur
   );
   assert.equal(
     result.steps[1]?.kind === "action" && result.steps[1].sourceHash,
-    hash(),
+    undefined,
   );
   await assert.rejects(
     engine.history(result.id, "main/direct"),
@@ -607,12 +607,12 @@ test("request ids are idempotent and an in-flight run pins its loaded Flow", asy
   release();
   const oldRun = await engine.wait(a.id);
   assert.deepEqual(oldRun.output, { report: "old" });
-  assert.equal(oldRun.flow.sourceHash, hash());
+  assert.equal(oldRun.flow.sourceHash, undefined);
 
   const newer = await engine.start(request());
   const newRun = await engine.wait(newer.id);
   assert.deepEqual(newRun.output, { report: "new" });
-  assert.equal(newRun.flow.sourceHash, hash("b"));
+  assert.equal(newRun.flow.sourceHash, undefined);
 });
 
 test("restart marks unfinished code runs interrupted and never replays them", async () => {

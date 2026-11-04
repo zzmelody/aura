@@ -24,23 +24,18 @@ export const httpContributionSchema = z
   })
   .strict();
 
-/** A reviewed one-time relocation, bound to exact old and new content hashes. */
+/** Only explicit compatibility grants may retain a pre-plugin identity. */
 export function compatibleRevision<
   T extends {
-    sourceHash: string;
+    sourceHash?: string;
     plugin?: AuraPluginIdentity;
     ownerPlugin?: AuraPluginIdentity;
-    legacySourceHashes?: readonly string[];
+    legacyIdentity?: boolean;
   },
->(loaded: T, saved: { sourceHash: string; plugin?: AuraPluginIdentity }): T {
-  if (
-    !saved.plugin &&
-    loaded.plugin &&
-    loaded.legacySourceHashes?.includes(saved.sourceHash)
-  ) {
+>(loaded: T, saved: { sourceHash?: string; plugin?: AuraPluginIdentity }): T {
+  if (!saved.plugin && loaded.plugin && loaded.legacyIdentity) {
     return {
       ...loaded,
-      sourceHash: saved.sourceHash,
       ownerPlugin: loaded.plugin,
       plugin: undefined,
     };

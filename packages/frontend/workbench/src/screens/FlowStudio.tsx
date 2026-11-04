@@ -59,7 +59,7 @@ export function FlowStudio({
   const source = useFlowSource(
     endpoint,
     selectedFlow?.available ? flowId : "",
-    selectedFlow?.sourceHash,
+    selectedFlow?.revision ?? selectedFlow?.sourceHash,
   );
   const code = isDraft ? draft.code : (source.source?.code ?? "");
   const deferredDraft = useDeferredValue(draft.code);

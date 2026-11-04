@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { hashContribution } from "./contribution-hash.ts";
+import { randomUUID } from "node:crypto";
 import type {
   FlowCatalogEntry,
   FlowSource,
@@ -23,7 +23,9 @@ export interface LoadedFlow {
   title: string;
   description: string;
   service: boolean;
-  sourceHash: string;
+  /** Legacy metadata only; current definitions have no content hash. */
+  sourceHash?: string;
+  revision?: string;
   inputSchema: z.ZodType;
   outputSchema: z.ZodType;
   concurrency: number;
@@ -32,7 +34,7 @@ export interface LoadedFlow {
   agentDefaults?: FlowAgentOptions;
   plugin?: AuraPluginIdentity;
   permissions: readonly string[];
-  legacySourceHashes?: readonly string[];
+  legacyIdentity?: boolean;
   ownerPlugin?: AuraPluginIdentity;
   run: FlowDefinition["run"];
 }
@@ -64,22 +66,18 @@ const definitionSchema = z
   })
   .strict();
 
-export { hashContribution as hashFlowDirectory } from "./contribution-hash.ts";
-
 /** Last-known-good Flow registry populated by Loader-managed Flow plugins. */
 export class FlowRegistry {
   private loaded = new Map<string, LoadedFlow>();
   private sources = new Map<string, FlowSource>();
   private problems = new Map<string, string>();
   private warnings = new Map<string, string>();
+  private revision = 0;
+  private readonly loadId = randomUUID();
 
   async register(config: FlowRegistrationConfig, input: FlowDefinition) {
     const id = parse(contributionIdSchema, config.flowId);
     const definition = parse(definitionSchema, input);
-    const sourceHash = await hashContribution(
-      config.directory,
-      config.pluginRoot,
-    );
     const code = await readFile(config.entry, "utf8");
     validateFlowSource(code, {
       allowRootOperations: Boolean(config.plugin),
@@ -97,7 +95,7 @@ export class FlowRegistry {
       title: definition.title,
       description: definition.description,
       service: definition.service,
-      sourceHash,
+      revision: `${this.loadId}:${++this.revision}`,
       inputSchema: definition.input,
       outputSchema: definition.output,
       concurrency: definition.concurrency,
@@ -105,16 +103,17 @@ export class FlowRegistry {
       agentTimeoutMs: definition.agentTimeoutMs,
       agentDefaults: definition.agentDefaults,
       plugin: config.plugin,
-      legacySourceHashes:
-        config.legacyRevision?.to === sourceHash
-          ? Object.freeze([...config.legacyRevision.from])
-          : undefined,
+      legacyIdentity: Boolean(config.legacyRevision),
       permissions: Object.freeze([...(config.permissions ?? [])]),
       run: definition.run,
     });
     this.problems.delete(id);
     this.warnings.delete(id);
-    this.sources.set(id, { id, code, sourceHash });
+    this.sources.set(id, {
+      id,
+      code,
+      revision: `${this.loadId}:${this.revision}`,
+    });
   }
 
   source(id: string): FlowSource {
@@ -129,6 +128,10 @@ export class FlowRegistry {
       throw new FlowError(problem ?? `Flow 不存在：${id}`, problem ? 422 : 404);
     }
     return flow;
+  }
+
+  has(id: string): boolean {
+    return this.loaded.has(id);
   }
 
   remove(id: string) {
@@ -148,10 +151,6 @@ export class FlowRegistry {
     this.problems.delete(id);
   }
 
-  sourceHash(id: string) {
-    return this.loaded.get(id)?.sourceHash;
-  }
-
   reloadProblem(id: string, message: string) {
     if (this.loaded.has(id)) this.warnings.set(id, message);
   }
@@ -166,7 +165,7 @@ export class FlowRegistry {
       title: flow.title,
       description: flow.description,
       available: true,
-      sourceHash: flow.sourceHash,
+      revision: flow.revision,
       inputSchema: z.toJSONSchema(flow.inputSchema) as JsonValue,
       outputSchema: z.toJSONSchema(flow.outputSchema) as JsonValue,
       service: flow.service,

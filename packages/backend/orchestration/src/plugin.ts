@@ -5,6 +5,8 @@ import {
   type CapabilityRecord,
 } from "./coding/capabilities.ts";
 import { PluginPresets } from "./plugin-presets.ts";
+import { childStartup, type StartupStage } from "./startup-timing.ts";
+import { finishDshLoad } from "./host-bootstrap.ts";
 import { installHostPluginSdkResolutionFromEnv } from "./plugin-sdk-resolution.ts";
 import {
   compatibilitySchema,
@@ -361,6 +363,10 @@ const actionSpec = defineDomain({
 });
 
 export async function apply(ctx: Context) {
+  finishDshLoad?.();
+  const finishSetup = childStartup?.start("orchestration-setup");
+  const measure = <T>(stage: StartupStage, work: () => Promise<T>) =>
+    childStartup ? childStartup.measure(stage, work) : work();
   // Before any Action, Flow or provider module loads.
   installHostPluginSdkResolutionFromEnv();
   // Electron's bundled Node does not inherit the parent's global dispatcher.
@@ -499,12 +505,16 @@ export async function apply(ctx: Context) {
       process.stderr.write(`${JSON.stringify({ level, message, data })}\n`),
   });
   const pluginPresets = new PluginPresets(ctx.agentPresets);
-  await pluginPresets.replace(backendRootsFromEnv());
+  await measure("plugin-presets", () =>
+    pluginPresets.replace(backendRootsFromEnv()),
+  );
   ctx.effect(
     () => () => pluginPresets.close(),
     "aura-plugin-presets.lifecycle",
   );
-  await pluginBackends.replace(backendRootsFromEnv());
+  await measure("plugin-backends", () =>
+    pluginBackends.replace(backendRootsFromEnv()),
+  );
   actionRegistry.setServicesResolver((id) => pluginBackends.services(id));
   actionRegistry.setServiceRetention((id) =>
     pluginBackends.serviceRetention(id),
@@ -529,18 +539,24 @@ export async function apply(ctx: Context) {
     gptImage,
   );
 
-  const domain = await ctx.storageDomain.open(spec);
-  const actionDomain = await ctx.storageDomain.open(actionSpec);
+  const domain = await measure("flow-storage", () =>
+    ctx.storageDomain.open(spec),
+  );
+  const actionDomain = await measure("action-storage", () =>
+    ctx.storageDomain.open(actionSpec),
+  );
   // Coding projects ride on DSH's workspace registry; only conversation
   // titles need Aura's own index, since a session header carries none.
-  const codingDomain = await ctx.storageDomain.open(codingDomainSpec);
+  const codingDomain = await measure("coding-storage", () =>
+    ctx.storageDomain.open(codingDomainSpec),
+  );
   const codingConversations = new CodingConversationIndex(
     codingDomain.table(
       "conversations",
     ) as unknown as Table<CodingConversationRecord>,
   );
   const codingProjects = new CodingProjects(ctx, codingConversations);
-  await codingProjects.defaultProject();
+  await measure("workspace", () => codingProjects.defaultProject());
   const terminals = new WorkspaceTerminals(ctx.subprocess, (id) =>
     codingProjects.directory(id),
   );
@@ -644,7 +660,7 @@ export async function apply(ctx: Context) {
     },
   );
   workflowPort.current = engine;
-  await actionRuns.initialize();
+  await measure("action-recovery", () => actionRuns.initialize());
   artifactIndex.attach((id) => engine.get(id), historicalArtifactReader(ctx));
 
   let activePlugins = pluginStatuses();
@@ -778,9 +794,13 @@ export async function apply(ctx: Context) {
           );
           break;
         case "initialize":
-          await refreshFlows();
-          await ctx.get("loader")?.await();
-          await engine.initialize();
+          await measure("discovery", refreshFlows);
+          await measure("loader-settle", async () => {
+            await ctx.get("loader")?.await();
+          });
+          await measure("flow-recovery", () =>
+            engine.initialize({ discovered: true }),
+          );
           for (const [runId] of engine.runs.entries())
             artifactIndex.enqueue(runId);
           data = { name: "aura-orchestration", version: 4 };
@@ -1588,6 +1608,7 @@ export async function apply(ctx: Context) {
   });
 
   ctx.effect(() => {
+    finishSetup?.();
     transport.start();
     // The host lives as long as the Aura runtime that spawned it: Flow
     // schedules, chat and the model catalog all need it warm. Parent death

@@ -2,11 +2,15 @@
 
 DSH 依赖统一固定为 `0.2.1-rc.5`，Cordis 为 `4.0.5`，loader / include 分别固定为 `1.0.6` / `1.0.10`。本包的 Zod 与 DSH domain 层统一为 `4.4.3`，Schema 持久化校验在 Aura 侧适配。升级使用已发布包，保留现有 profile、会话 ID、domain 与存储格式，不执行用户配置或历史数据迁移。集成测试通过隔离目录和本地合成模型验证授权、执行、取消与恢复，不调用真实付费模型。
 
+DSH 启动阶段耗时写入终端和 `.aura/dsh/logs/aura-host.log`，`event: "startup"` 的记录按 `startupId` 关联一次启动。`stage` 包括 profile 准备、进程创建、DSH 加载、插件 preset/backend 激活、各 domain 打开、工作空间、Action 恢复、Flow/Action 发现、Loader 等待、Flow 恢复和握手。`status` 为 started/completed/failed；`durationMs` 是本阶段耗时，`elapsedMs` 是从本次启动开始的累计耗时。total、handshake、dsh-load 和 orchestration-setup 包含子阶段，不能相加。启动失败会保留最后开始的阶段和已完成阶段；日志只接受固定阶段、UUID 与数值，不记录配置、凭据、原始错误或上游响应。
+
+HMR 覆盖插件源码和 helper，并合并相同的 Flow/Action 监听根。DSH 的忽略匹配使用 POSIX glob，而 Windows `path.relative()` 返回反斜杠，因此生成的 profile 同时提供两种分隔符的忽略规则，避免为 `node_modules` 和隐藏目录注册大量文件监听。使用 DSH 0.2.1-alpha.2、Windows Electron 44.7.0、Node 24.21.0、相同的五个插件和独立空存储进行对照时，优化前启动 79.5 秒（DSH 加载 70.4 秒），优化后两次新进程启动分别为 13.3 秒与 22.4 秒。耗时受机器负载和文件缓存影响。
+
 `personalAssistant(create = false)` 读取 Aura 专属主会话与其工作空间；只有显式传入 `true` 才在缺失时创建。索引对并发打开合并处理，固定身份为协议定义的 `coding-aura-personal-assistant`，沿用现有 domain 与 DSH 日志。再次打开不改写已有记录、不触发模型、不更换目录，重启后继续原上下文和模型配置。普通会话的关闭、归档和删除接口拒绝结束此主会话；普通任务保持独立。所属工作空间不可用时返回冲突，不自动重建或迁移用户数据。
 
 `conversations(projectId, includeStatus = true)` 默认沿用历史状态投影；启动时传入 `false` 仅返回索引元数据和当前进程的运行、等待回答状态，不逐项读取 DSH 日志。`coding/conversation-list.ts` 拥有该投影，历史日志失败不隐藏会话，旧日志中尚未结束的回合仍在完整查询时投影为已停止；不改写任何索引或日志。
 
-目录读取直接投影已加载的最后可用定义，不触发磁盘扫描；HTTP 目录提供 ETag / 304。发现保留 Cordis HMR，新增/移除的兜底扫描为 5 秒，并合并同一发现器上并发的扫描请求。创建 Run 的版本固定与 revision 校验保持原有路径。
+目录读取直接投影已加载的最后可用定义，不触发磁盘扫描；HTTP 目录提供 ETag / 304。发现保留 Cordis HMR，新增/移除的兜底扫描为 5 秒，并合并同一发现器上并发的扫描请求。发现只处理目录和入口增删，已挂载模块由 DSH HMR 更新；不扫描源码依赖、不计算源码哈希。
 
 在线对话通过 `aura_flow_catalog` 读取所有可用 Flow 的公开输入 Schema，通过 `aura_run_flow` 调用相同的 durable 引擎，通过 `aura_flow_status` 读取原 Run 的当前输入与结果。明确的重复执行生成新 Run；同一工具 call ID 沿用原算法的稳定 requestId，保留旧执行的幂等身份。未知提交或读取结果阻止本轮自动重新启动，已接收运行的引用仍进入工具结果以便历史恢复。新运行可带可选 `conversationId`，在原 Run 格式中附加归属，列表同步返回，避免工作台重复导入为另一段会话；不迁移或重写旧记录。模型和执行仍经 DSH，停止聊天不会自动取消独立 Run。
 
@@ -103,13 +107,13 @@ V1 不支持 parallel 分支内的 checkpoint。运行时暂停会退出作用�
 
 ### 嵌套 Flow
 
-`flow.flow()` 接受 catalog 中的规范 Flow ID。引擎先用子 Flow 的 input Schema 校验输入，随后把子 Flow 的版本 hash、插件身份、稳定请求 ID 和 child Run ID 保存到父步骤；子 Run 继续使用自己的 output Schema、步骤、重试和恢复记录。父流程重放时认领原 child Run，不会重复创建或把调用降级为隐藏 Action。子流程的 completed、waiting_input、needs_attention、paused、cancelled 和失败状态会传播到父流程；暂停和取消也沿父子关系向下传递。
+`flow.flow()` 接受 catalog 中的规范 Flow ID。引擎先用子 Flow 的 input Schema 校验输入，随后把子 Flow 的插件身份、稳定请求 ID 和 child Run ID 保存到父步骤；子 Run 继续使用自己的 output Schema、步骤、重试和恢复记录。父流程重放时认领原 child Run，不会重复创建或把调用降级为隐藏 Action。子流程的 completed、waiting_input、needs_attention、paused、cancelled 和失败状态会传播到父流程；暂停和取消也沿父子关系向下传递。
 
 子 Run 由等待它的父执行片段内联调度，不占顶层 FIFO 的 32 个运行槽，因此多个父 Run 不会因等待排队中的子 Run 而死锁。最多嵌套 8 层；调用链中出现相同规范 ID 会在创建子 Run 前以循环调用拒绝。子 Run 不单独出现在顶层运行历史，但可通过完整 Run API 读取，并在父步骤内展开查看和处理 checkpoint。
 
 内置 Flow 可以调用任意已注册 Flow。插件 Flow 可直接调用同一插件命名空间的 Flow；跨插件或调用内置 Flow 时，插件 manifest 必须声明宿主支持的 `aura.flow.invoke` capability。权限按调用方已固定的插件版本检查，目标仍必须使用 catalog 中的规范 ID。
 
-`memo` 可封装时间、随机数和只读计算，必须返回 JSON；在结果落盘前崩溃时允许重新计算。外部写副作用必须通过 Action。普通 JS 代码每次重放都会重新执行，必须保证它基于固定输入、已存档结果和相同代码走出一致路径。重放时同一步骤的请求指纹变化，或完成时存在未访问的历史步骤，都会以 `FLOW_REPLAY_MISMATCH` 中断。
+`memo` 可封装时间、随机数和只读计算，必须返回 JSON；在结果落盘前崩溃时允许重新计算。外部写副作用必须通过 Action。普通 JS 代码每次重放都会重新执行，必须保证它基于固定输入和已存档结果走出一致路径。重放时同一步骤的请求指纹变化，或完成时存在未访问的历史步骤，都会以 `FLOW_REPLAY_MISMATCH` 中断。
 
 输入、输出、memo 和人工答案使用不超过 256 KiB 的 JSON；Agent 输出为 1–80,000 字符。checkpoint/memo 的 Zod Schema 必须能转换为可存档和重新校验的 JSON Schema；依赖执行代码的 transforms、refine/superRefine、overwrite（包括 trim）及自定义 `when` 等规则会在持久化前明确报错，避免恢复时丢失校验。Zod 4.4 为每个字符串/数组 min/max/length 检查创建独立的长度类型条件，Aura 与当前安装版本的原生函数实现比对后将其保存为标准 JSON Schema；仅相同 check 名称或重写函数的 `toString` 不能放行自定义条件。该检查面向受信任插件的 Schema，不作为任意 JavaScript 闭包的安全隔离。
 
@@ -241,11 +245,11 @@ unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算�
 
 ### Flow / Action 定义
 
-`FlowDiscovery` 在首次启动、catalog 读取、运行开始前和后台短周期扫描时检查内置及已启用外部根的直接子目录。非法 ID、入口名不一致、缺少入口或多个 `*.flow.js` 都会作为不可用项进入 catalog。外部贡献使用 `<plugin-id>/<local-id>` 规范 ID，内置贡献保持原有 ID；DSH 工具名由后端映射为安全名称，持久化和公开接口始终保留规范 ID。
+`FlowDiscovery` 在首次启动、运行开始前和后台短周期扫描时检查内置及已启用外部根的直接子目录。非法 ID、入口名不一致、缺少入口或多个 `*.flow.js` 都会作为不可用项进入 catalog。外部贡献使用 `<plugin-id>/<local-id>` 规范 ID，内置贡献保持原有 ID；DSH 工具名由后端映射为安全名称，持久化和公开接口始终保留规范 ID。
 
-外部插件的 manifest、信任、能力声明和根目录由 `@aura/extensions` 在进入编排宿主前校验，插件代码只通过 `@aura/plugin-sdk/action` 与 `@aura/plugin-sdk/flow` 接入。宿主不支持 manifest 请求的任一 capability 时插件整体保持不可用，不带着缺失能力部分加载。运行时可通过内部 `plugins/configure` RPC 动态替换多根发现器并扩展 HMR 监听；加载失败会恢复上一组根。插件版本与贡献 hash 随定义固定到运行记录。hash 包含贡献目录和插件根内静态 ESM 依赖闭包，共享 schema/prompt 修改也使版本变化。可信 pluginRoot 仅由 Extensions 内部传递；本地依赖越界和计算式动态 import 被拒绝。HMR 监听整个插件根，目录启停和内容更新只影响新运行。进程内已有运行继续使用固定版本；重启后原版本不存在则以 `revision_mismatch` 停止，不能使用新 helper 重放旧运行。Aura 不替插件执行安装、构建或生命周期脚本。
+外部插件的 manifest、信任、能力声明和根目录由 `@aura/extensions` 在进入编排宿主前校验，插件代码只通过 `@aura/plugin-sdk/action` 与 `@aura/plugin-sdk/flow` 接入。宿主不支持 manifest 请求的任一 capability 时插件整体保持不可用，不带着缺失能力部分加载。运行时可通过内部 `plugins/configure` RPC 动态替换多根发现器并扩展 HMR 监听；加载失败会恢复上一组根。源码直接交给模块加载器，不计算贡献目录或静态依赖闭包的哈希，动态 import 按 Node/DSH 的原生规则加载。旧记录里的可选 `sourceHash` 继续读取并保留，新记录不再生成该字段；恢复或续接使用当前已加载的代码，不比较源码哈希。插件身份、模型配置、调用请求指纹、输入和步骤幂等检查仍生效；未知结果和已完成副作用不因代码更新而重发。显式 compatibility 仍决定旧 ID 和 pre-plugin 身份能否保留；旧配置中的 from/to 哈希只作为兼容字段读取。运行中已开始的执行片段持有其模块引用；后续恢复可使用更新后的代码。Aura 不替插件执行安装、构建或生命周期脚本。
 
-`contributes.backend` 入口及其静态本地 ESM 依赖也按一秒周期检测内容变化。
+`contributes.backend` 通过原生递归文件事件观察插件源码；目录、入口和 backend 不做源码哈希或依赖树解析。通知变更后在后台扫描或显式替换时加载新模块，未变化的设置和源码不会反复打开后端。
 宿主等待进行中的调用和该插件的活跃 Flow 结束后，准备新后端并切换版本；
 加载失败保留上一版。版本标签沿插件自己的本地模块图传递，SDK 和已安装依赖保持共享，
 不重新安装依赖、不写插件清单。资源与业务状态的回收仍由后端的 `close` 负责。

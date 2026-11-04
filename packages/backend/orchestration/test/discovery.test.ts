@@ -12,7 +12,7 @@ import type {
   FlowDefinition,
   FlowRegistrationConfig,
 } from "../src/flow-api.ts";
-import { FlowRegistry, hashFlowDirectory } from "../src/registry.ts";
+import { FlowRegistry } from "../src/registry.ts";
 
 async function withRoot(run: (root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "aura-flow-discovery-test-"));
@@ -191,20 +191,6 @@ test("discovery reports illegal ids, mismatched names and nested extra entries",
     );
   }));
 
-test("directory hash includes nested helper names and contents", async () =>
-  withRoot(async (root) => {
-    const directory = await addEntry(root, "hash-check");
-    await mkdir(join(directory, "lib"));
-    const helper = join(directory, "lib", "prompt.js");
-    await writeFile(helper, 'export const prompt = "v1";\n');
-    const first = await hashFlowDirectory(directory);
-    await writeFile(helper, 'export const prompt = "v2";\n');
-    const second = await hashFlowDirectory(directory);
-    assert.notEqual(first, second);
-    assert.equal(first.length, 64);
-    assert.equal(second.length, 64);
-  }));
-
 test("source preview stays with the registered revision until a successful reload", async () =>
   withRoot(async (root) => {
     const directory = await addEntry(root, "preview");
@@ -214,13 +200,16 @@ test("source preview stays with the registered revision until a successful reloa
     await registry.register(config, definition);
     const first = registry.source("preview");
     assert.equal(first.code, "export default {};\n");
-    assert.equal(first.sourceHash, registry.catalog()[0].sourceHash);
+    assert.equal(first.revision, registry.catalog()[0].revision);
     await writeFile(entry, "export default { version: 2 };\n");
     registry.reloadProblem("preview", "reload pending");
     assert.deepEqual(registry.source("preview"), first);
     await registry.register(config, definition);
     assert.match(registry.source("preview").code, /version: 2/);
-    assert.notEqual(registry.source("preview").sourceHash, first.sourceHash);
+    assert.notEqual(registry.source("preview").revision, first.revision);
+    const restarted = new FlowRegistry();
+    await restarted.register(config, definition);
+    assert.notEqual(restarted.source("preview").revision, first.revision);
     assert.throws(() => registry.source("../preview"), /不存在/);
     registry.remove("preview");
     assert.throws(() => registry.source("preview"), /不存在/);
@@ -284,10 +273,9 @@ test("Action discovery enforces directory ids and exactly one matching entry", a
     await discovery.close();
   }));
 
-test("legacy IDs require explicit grants and recovery hashes expire when plugin code changes", async () =>
+test("legacy IDs retain explicit compatibility grants across code changes", async () =>
   withRoot(async (root) => {
     const directory = await addEntry(root, "relocated");
-    const target = await hashFlowDirectory(directory, root);
     const registry = new FlowRegistry();
     const mock = loaderFor(registry);
     const plugin = { id: "example.product", name: "Product", version: "1.0.0" };
@@ -297,21 +285,19 @@ test("legacy IDs require explicit grants and recovery hashes expire when plugin 
       namespace: plugin.id,
       plugin,
       compatibility: {
-        flows: { relocated: { from: ["a".repeat(64)], to: target } },
+        flows: { relocated: { from: ["a".repeat(64)], to: "b".repeat(64) } },
       },
     });
     try {
       await discovery.refresh();
       assert.equal(registry.catalog()[0]?.id, "relocated");
-      assert.deepEqual(registry.get("relocated").legacySourceHashes, [
-        "a".repeat(64),
-      ]);
+      assert.equal(registry.get("relocated").legacyIdentity, true);
       await writeFile(
         join(directory, "relocated.flow.js"),
         "export default {}; // changed\n",
       );
       await registry.register(mock.created[0], definition);
-      assert.equal(registry.get("relocated").legacySourceHashes, undefined);
+      assert.equal(registry.get("relocated").legacyIdentity, true);
       assert.equal(registry.catalog()[0]?.id, "relocated");
     } finally {
       await discovery.close();

@@ -9,6 +9,19 @@ or frontend code.
 Plugin dependencies must be installed before Aura starts. Aura discovery is
 read-only and never runs package-manager or lifecycle commands.
 
+## Version 2.1
+
+Aura loads plugin modules directly without hashing their source or static import
+closure. Historical `FlowRun`, Action and step `sourceHash` fields are optional:
+old records retain them, while new records omit them. Resume uses currently
+loaded code and still enforces plugin identity, request fingerprints, model
+configuration and step idempotency; completed effects and unknown requests are
+not automatically repeated. Runtime load tokens only invalidate UI previews.
+
+Plugins in the separate aura-studio repository that read `sourceHash` must treat
+it as optional. Existing `^2.0.0` SDK engine ranges accept 2.1; no plugin IDs,
+domain names, credentials or saved configuration are rewritten.
+
 ## JavaScript authoring standard
 
 Before writing or changing an external plugin Action, Flow, backend or helper, read [the Airbnb-based JavaScript standard](../../../docs/plugin-javascript-code-style.md).

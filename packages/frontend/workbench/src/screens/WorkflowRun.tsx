@@ -262,9 +262,7 @@ function StepHistory({
           <>
             <h4>子工作流输入</h4>
             <WorkflowData value={step.input} />
-            <p className="muted">
-              固定版本 {step.sourceHash.slice(0, 10)} · {step.flowId}
-            </p>
+            <p className="muted">子工作流 · {step.flowId}</p>
             {step.childRunId ? (
               <NestedFlowRun endpoint={endpoint} runId={step.childRunId} />
             ) : (

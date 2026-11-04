@@ -83,7 +83,21 @@ export async function provisionProfile(
       realpath(resolve(root)).catch(() => resolve(root)),
     ),
   );
-  const watchRoots = [...flowWatchRoots, ...actionWatchRoots];
+  const seen = new Set<string>();
+  const watchRoots = [...flowWatchRoots, ...actionWatchRoots].filter((path) => {
+    const key = process.platform === "win32" ? path.toLowerCase() : path;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  // DSH HMR matches path.relative() with picomatch's POSIX defaults. On Windows
+  // the original globs miss backslashes and recursively watch dependencies/git.
+  const ignored = [
+    "**/node_modules",
+    "**/.*",
+    String.raw`**\\node_modules`,
+    String.raw`**\\.*`,
+  ];
   // A sibling root must not be watched as ../action: ignored dot directories
   // would otherwise suppress it. Different-drive roots stay absolute.
   let watchBase = dirname(watchRoots[0] ?? resolve(dshHome));
@@ -170,7 +184,7 @@ export async function provisionProfile(
   config:
     base: ${JSON.stringify(pathToFileURL(watchBase).href)}
     root: ${JSON.stringify(watchRoots)}
-    ignored: ['**/node_modules', '**/.*']
+    ignored: ${JSON.stringify(ignored)}
     debounce: 100
 - id: sdk-app-startup
   config:

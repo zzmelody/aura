@@ -84,7 +84,6 @@ export default defineFlow({
   async run(ctx, input) {
     await ctx.sequence({ id: "main" }, async (flow) => {
       const context = await flow.action({ id: "context", action: "test.live/context", input: {} });
-      if (context.output !== version) throw new Error("Action version changed");
       if (input.checkpoint) await flow.checkpoint({
         id: "approval",
         prompt: "Continue",
@@ -141,7 +140,7 @@ export default defineFlow({
       });
       assert.deepEqual(first.output, { report: "v1" });
 
-      const firstHash = loaded.flow!.sourceHash;
+      const firstRevision = loaded.flow!.revision;
       await writeFile(helper, 'export const version = "v2";\n');
       await catalogFlow(
         host,
@@ -149,7 +148,7 @@ export default defineFlow({
         (flow) =>
           flow?.available === true &&
           flow.title.endsWith("v2") &&
-          flow.sourceHash !== firstHash,
+          flow.revision !== firstRevision,
       );
 
       const pinned = await host.request<FlowRun>("start", {
@@ -166,10 +165,7 @@ export default defineFlow({
       await catalogFlow(
         host,
         "test.live/story",
-        (flow) =>
-          flow?.available === true &&
-          flow.title.endsWith("v2-hot") &&
-          flow.sourceHash !== waiting.flow.sourceHash,
+        (flow) => flow?.available === true && flow.title.endsWith("v2-hot"),
       );
 
       await host.configureContributions({
@@ -188,6 +184,10 @@ export default defineFlow({
       const completed = await host.request<FlowRun>("wait", { id: pinned.id });
       assert.equal(completed.status, "completed", JSON.stringify(completed));
       assert.deepEqual(completed.output, { report: "v2" });
+      assert.equal(
+        completed.steps[0]?.kind === "action" && completed.steps[0].output,
+        "v2",
+      );
 
       await host.configureContributions(configuration);
       await catalogFlow(
@@ -257,12 +257,15 @@ export default defineFlow({
           requestId: randomUUID(),
           output: { ok: true },
         });
-        const rejected = await restarted.request<FlowRun>("wait", {
+        const resumed = await restarted.request<FlowRun>("wait", {
           id: restartRun.id,
         });
-        assert.equal(rejected.status, "interrupted");
-        assert.match(rejected.error ?? "", /revision_mismatch/u);
-        assert.equal(rejected.flow.sourceHash, restartWaiting.flow.sourceHash);
+        assert.equal(resumed.status, "completed", resumed.error);
+        assert.deepEqual(resumed.output, { report: "v3" });
+        assert.equal(
+          resumed.steps[0]?.kind === "action" && resumed.steps[0].output,
+          "v2-hot",
+        );
       } finally {
         await restarted.close();
       }

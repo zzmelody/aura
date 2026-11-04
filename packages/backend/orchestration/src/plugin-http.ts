@@ -1,7 +1,6 @@
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import type { BackendRoot } from "./types.ts";
 import type { PluginHttpDefinition, PluginHttpHost } from "./backend-api.ts";
-import { hashContribution } from "./contribution-hash.ts";
 import { PluginModules } from "./plugin-modules.ts";
 import { FlowError } from "./schema.ts";
 
@@ -39,12 +38,7 @@ export class PluginHttpRegistry {
             throw new FlowError("Plugin HTTP mount conflict.", 409);
           mounts.add(mount);
         }
-        const hash = await hashContribution(dirname(entry), root.pluginRoot);
-        const module = (await this.#modules.import(
-          entry,
-          root.pluginRoot,
-          hash,
-        )) as {
+        const module = (await this.#modules.import(entry, root.pluginRoot)) as {
           default?: (
             host: PluginHttpHost,
           ) => PluginHttpDefinition | Promise<PluginHttpDefinition>;

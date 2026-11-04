@@ -331,7 +331,7 @@ test("a child Flow is pinned, persisted and executed inline without becoming top
     const step = result.steps[0];
     assert.equal(step?.kind, "flow");
     if (step?.kind !== "flow") return;
-    assert.equal(step.sourceHash, child.sourceHash);
+    assert.equal(step.sourceHash, undefined);
     assert.ok(step.childRunId);
     const childRun = engine.get(step.childRunId!);
     assert.deepEqual(childRun.parent, {

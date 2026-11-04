@@ -1,6 +1,11 @@
 import { appendFile, mkdir, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import {
+  parseStartupTiming,
+  STARTUP_TIMING_PREFIX,
+  type StartupTiming,
+} from "./startup-timing.ts";
 
 export const HOST_DIAGNOSTIC_PREFIX = "AURA_DSH_DIAGNOSTIC ";
 const errorNames = new Set([
@@ -152,12 +157,15 @@ export class HostDiagnosticReader {
   private pending = "";
   private readonly report: (error: HostErrorDiagnostic) => void;
   private readonly unavailable: () => void;
+  private readonly timing?: (timing: StartupTiming) => void;
   constructor(
     report: (error: HostErrorDiagnostic) => void,
     unavailable: () => void,
+    timing?: (timing: StartupTiming) => void,
   ) {
     this.report = report;
     this.unavailable = unavailable;
+    this.timing = timing;
   }
 
   push(chunk: string): void {
@@ -166,6 +174,16 @@ export class HostDiagnosticReader {
     while ((end = this.pending.indexOf("\n")) >= 0) {
       const line = stripVTControlCharacters(this.pending.slice(0, end));
       this.pending = this.pending.slice(end + 1);
+      if (line.startsWith(STARTUP_TIMING_PREFIX) && line.length <= 1024) {
+        try {
+          const timing = parseStartupTiming(
+            JSON.parse(line.slice(STARTUP_TIMING_PREFIX.length)),
+          );
+          if (timing) this.timing?.(timing);
+        } catch {
+          // Ignore malformed child output.
+        }
+      }
       if (line.startsWith(HOST_DIAGNOSTIC_PREFIX) && line.length <= 4096) {
         try {
           this.report(
@@ -208,11 +226,25 @@ export class HostLogger {
   }
 
   write(event: string, error?: HostErrorDiagnostic): void {
-    const line = JSON.stringify({
+    this.append({
       time: new Date().toISOString(),
       event,
       ...(error ? { error } : {}),
     });
+  }
+
+  writeStartup(value: StartupTiming): void {
+    const timing = parseStartupTiming(value);
+    if (timing)
+      this.append({
+        time: new Date().toISOString(),
+        event: "startup",
+        ...timing,
+      });
+  }
+
+  private append(record: object): void {
+    const line = JSON.stringify(record);
     console.error("[Aura DSH]", line);
     this.writing = this.writing
       .then(async () => {

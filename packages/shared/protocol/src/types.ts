@@ -195,6 +195,8 @@ export interface FlowCatalogEntry {
   description: string;
   available: boolean;
   sourceHash?: string;
+  /** Opaque load token for preview cache invalidation; never a code fingerprint. */
+  revision?: string;
   inputSchema?: JsonValue;
   outputSchema?: JsonValue;
   agentDefaults?: FlowAgentOptions;
@@ -218,7 +220,8 @@ export interface FlowCatalog {
 export interface FlowSource {
   id: string;
   code: string;
-  sourceHash: string;
+  sourceHash?: string;
+  revision?: string;
 }
 interface FlowStepBase {
   id: string;
@@ -239,7 +242,7 @@ interface FlowStepBase {
 }
 export interface ActionReference {
   id: string;
-  sourceHash: string;
+  sourceHash?: string;
   plugin?: AuraPluginIdentity;
 }
 export interface FlowAgentStep extends FlowStepBase {
@@ -279,7 +282,7 @@ export interface FlowChildStep extends FlowStepBase {
   kind: "flow";
   /** Canonical registry id of the pinned child Flow revision. */
   flowId: string;
-  sourceHash: string;
+  sourceHash?: string;
   plugin?: AuraPluginIdentity;
   input: JsonValue;
   outputSchema: JsonValue;
@@ -305,7 +308,7 @@ export interface ActionRun {
   id: string;
   requestId: string;
   actionId: string;
-  sourceHash: string;
+  sourceHash?: string;
   plugin?: AuraPluginIdentity;
   input: JsonValue;
   output?: JsonValue;
@@ -324,7 +327,7 @@ export interface FlowRun {
     id: string;
     title: string;
     description: string;
-    sourceHash: string;
+    sourceHash?: string;
     plugin?: AuraPluginIdentity;
   };
   input: JsonValue;

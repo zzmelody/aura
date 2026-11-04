@@ -15,7 +15,6 @@ import { jsonValue } from "./schema.ts";
 import type { GeneratedArtifacts } from "./artifacts/generated.ts";
 import { inspectArtifact } from "./artifacts/media.ts";
 import type { BackendRoot } from "./types.ts";
-import { hashContribution } from "./contribution-hash.ts";
 import { PluginModules } from "./plugin-modules.ts";
 
 const SETTLE_TIMEOUT_MS = 30_000;
@@ -167,11 +166,10 @@ export class PluginBackends {
         const previous = this.#plugins.get(id);
         if (automatic && previous && this.#busy(id, previous)) continue;
         try {
-          const hash = await hashContribution(
-            dirname(root.root),
-            root.pluginRoot,
+          const generation = await this.#modules.revision(
+            root.pluginRoot ?? dirname(root.root),
           );
-          const key = `${pluginKey(root)}:${hash}`;
+          const key = `${pluginKey(root)}:${generation}`;
           if (previous?.key === key) continue;
           if (
             this.#retired.some(
@@ -181,7 +179,7 @@ export class PluginBackends {
             throw new Error("plugin_backend_busy");
           if (previous && this.#busy(id, previous))
             throw new Error("plugin_backend_busy");
-          const backend = await this.#open(root, hash);
+          const backend = await this.#open(root);
           if (automatic && previous && this.#busy(id, previous)) {
             await closeBackend(id, backend, this.#log);
             continue;
@@ -217,7 +215,7 @@ export class PluginBackends {
     }
   }
 
-  async #open(root: BackendRoot, hash: string): Promise<PluginBackend> {
+  async #open(root: BackendRoot): Promise<PluginBackend> {
     const pluginId = root.plugin!.id;
     const dataDir = join(this.#dataRoot, pluginId);
     await mkdir(dataDir, { recursive: true, mode: 0o700 });
@@ -226,7 +224,6 @@ export class PluginBackends {
     const module = (await this.#modules.import(
       root.root,
       root.pluginRoot ?? dirname(root.root),
-      hash,
     )) as { default?: unknown };
     if (!isBackendDefinition(module.default))
       throw new Error(

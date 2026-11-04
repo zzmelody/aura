@@ -163,7 +163,7 @@ const stepBase = {
 
 const actionRefSchema = z.object({
   id: contributionIdSchema,
-  sourceHash: z.string().length(64),
+  sourceHash: z.string().length(64).optional(),
   plugin: pluginIdentitySchema.optional(),
 });
 export const stepSchema = z.union([
@@ -206,7 +206,7 @@ export const stepSchema = z.union([
     ...stepBase,
     kind: z.literal("flow"),
     flowId: contributionIdSchema,
-    sourceHash: z.string().length(64),
+    sourceHash: z.string().length(64).optional(),
     plugin: pluginIdentitySchema.optional(),
     input: z.json(),
     outputSchema: z.json(),
@@ -249,7 +249,7 @@ export const actionRunSchema = z.object({
   id: z.uuid(),
   requestId: z.uuid(),
   actionId: contributionIdSchema,
-  sourceHash: z.string().length(64),
+  sourceHash: z.string().length(64).optional(),
   plugin: pluginIdentitySchema.optional(),
   input: z.json(),
   output: z.json().optional(),
@@ -268,7 +268,7 @@ export const runSchema = z.object({
     id: contributionIdSchema,
     title: z.string(),
     description: z.string(),
-    sourceHash: z.string().length(64),
+    sourceHash: z.string().length(64).optional(),
     plugin: pluginIdentitySchema.optional(),
   }),
   input: z.json(),

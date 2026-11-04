@@ -2,7 +2,11 @@ import { useEffect, useState } from "react";
 import type { FlowSource } from "@aura/protocol/types";
 
 /** Fetch only the selected entry; switching selection cancels stale previews. */
-export function useFlowSource(endpoint: string, id: string, revision?: string) {
+export function useFlowSource(
+  endpoint: string,
+  id: string,
+  revision?: string | number,
+) {
   const key = `${endpoint}\n${id}\n${revision ?? ""}`;
   const [result, setResult] = useState<{
     key: string;

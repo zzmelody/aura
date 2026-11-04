@@ -151,6 +151,7 @@ test("a backend opens once with settings, reaches built-ins and sees only its ow
     });
 
     // Same plugin version and settings: no reopen.
+    await writeFile(join(veya.pluginRoot!, "runtime.log"), "runtime output\n");
     await host.replace([{ ...veya, settings: { session: "x" } }]);
     assert.equal(
       (await log(dataRoot, "veya")).filter((e) => e.hook === "open").length,
@@ -190,6 +191,40 @@ export default defineBackend({ open(host) {
     assert.equal(paths.tempDir, join(tempRoot, "scratch"));
     assert.ok((await stat(paths.tempDir)).isDirectory());
     await host.close();
+  }));
+
+test("a backend loads its actual imports without parsing unrelated files or hashing dynamic imports", () =>
+  fixture(async (dir) => {
+    const descriptor = await plugin(
+      dir,
+      "direct",
+      `
+import { defineBackend } from ${JSON.stringify(backendApi)};
+export default defineBackend({ async open() {
+  const helper = "./shared.js";
+  const { version } = await import(helper);
+  return { pageOperations: ["version"], invoke: async () => version };
+} });
+`,
+    );
+    await writeFile(
+      join(descriptor.pluginRoot!, "backend/shared.js"),
+      'export const version = "loaded";',
+    );
+    await writeFile(
+      join(descriptor.pluginRoot!, "backend/unused.js"),
+      "intentionally invalid and never imported",
+    );
+    const host = new PluginBackends({ dataRoot: join(dir, "data") });
+    try {
+      await host.replace([descriptor]);
+      assert.equal(
+        await host.invokeFromPage("direct", "version", null, signal()),
+        "loaded",
+      );
+    } finally {
+      await host.close();
+    }
   }));
 
 test("pages reach only their own backend's declared page operations", () =>

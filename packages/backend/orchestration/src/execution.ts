@@ -58,7 +58,7 @@ interface ExecutionOptions {
     ): Promise<{
       id: string;
       title: string;
-      sourceHash: string;
+      sourceHash?: string;
       plugin?: FlowChildStep["plugin"];
       input: JsonValue;
       outputSchema: JsonValue;
@@ -142,8 +142,36 @@ export class FlowExecution {
     if (this.visited.has(key))
       throw new FlowError(`Flow 步骤 ID 不能重复：${key}`);
     this.visited.add(key);
-    const requestHash = fingerprint({ kind: draft.kind, path, request });
     const existing = this.step(key);
+    // Legacy request fingerprints included source hashes. Reconstruct only that
+    // old envelope; inputs, prompts, action ids and plugin identities still match.
+    let comparable = request;
+    if (existing && typeof request === "object" && request !== null) {
+      if (existing.kind === "action" || existing.kind === "flow") {
+        comparable = { ...request, sourceHash: existing.sourceHash };
+      } else if (
+        (existing.kind === "agent" || existing.kind === undefined) &&
+        "actionVersions" in request &&
+        Array.isArray(request.actionVersions)
+      ) {
+        comparable = {
+          ...request,
+          actionVersions: request.actionVersions.map((value: unknown) => {
+            if (typeof value !== "object" || value === null || !("id" in value))
+              return value;
+            const prior = existing.actions?.find((ref) => ref.id === value.id);
+            return prior?.sourceHash
+              ? { ...value, sourceHash: prior.sourceHash }
+              : value;
+          }),
+        };
+      }
+    }
+    const requestHash = fingerprint({
+      kind: draft.kind,
+      path,
+      request: comparable,
+    });
     if (existing) {
       if (
         existing.kind !== draft.kind ||
@@ -184,9 +212,7 @@ export class FlowExecution {
       .actionVersions?.find((ref) => ref.id === id);
     if (
       (action || version) &&
-      (!version ||
-        version.sourceHash !== action?.sourceHash ||
-        !samePlugin(version.plugin, action?.plugin))
+      (!version || !action || !samePlugin(version.plugin, action?.plugin))
     ) {
       this.fatalError = new ReplayMismatch(
         `Action ${id} 不再是运行创建时的版本。`,
@@ -371,7 +397,7 @@ export class FlowExecution {
     const definitions = request.actions.map((id) => this.actionDefinition(id));
     const refs = definitions
       .filter((action): action is LoadedAction => Boolean(action))
-      .map(({ id, sourceHash, plugin }) => ({ id, sourceHash, plugin }));
+      .map(({ id, plugin }) => ({ id, plugin }));
     const prepared = await this.prepare(
       path,
       {
@@ -449,7 +475,6 @@ export class FlowExecution {
         id: request.id,
         label: request.label ?? action?.title ?? request.action,
         actionId: request.action,
-        sourceHash: action?.sourceHash,
         plugin: action?.plugin,
         input: args,
         status: "queued",
@@ -458,7 +483,7 @@ export class FlowExecution {
         outputSchema: action?.outputSchema,
         idempotencyKey: randomUUID(),
       },
-      { ...request, input: args, sourceHash: action?.sourceHash },
+      { ...request, input: args },
     );
     if (!this.reusable(prepared.step)) {
       if (!action || !this.options.ports.actions)
@@ -526,7 +551,6 @@ export class FlowExecution {
       ? {
           id: pinned.flowId,
           title: pinned.label,
-          sourceHash: pinned.sourceHash,
           plugin: pinned.plugin,
           input: pinned.input,
           outputSchema: pinned.outputSchema,
@@ -543,7 +567,6 @@ export class FlowExecution {
         id: request.id,
         label: request.label ?? target.title,
         flowId: target.id,
-        sourceHash: target.sourceHash,
         plugin: target.plugin,
         input: target.input,
         outputSchema: target.outputSchema,
@@ -556,7 +579,6 @@ export class FlowExecution {
         id: request.id,
         label: request.label,
         flow: target.id,
-        sourceHash: target.sourceHash,
         plugin: target.plugin,
         requestInputHash: fingerprint(rawInput),
       },
