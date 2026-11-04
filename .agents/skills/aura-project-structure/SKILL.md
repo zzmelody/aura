@@ -31,13 +31,13 @@ description: Aura 仓库的目录规范、应用与包放置、三层依赖方�
 
 ## 各包边界
 
-现有包：frontend 为 `workbench`、`ui`、`plugin-ui`；backend 为 `runtime`、`orchestration`、`extensions`、`plugin-sdk`、`dsh-auth`、`tripo`；shared 为 `protocol`、`core`、`demo`。
+现有包：frontend 为 `workbench`、`ui`、`plugin-ui`；backend 为 `runtime`、`orchestration`、`plugin-manager`、`plugin-sdk`、`dsh-auth`、`tripo`；shared 为 `protocol`、`core`、`demo`。
 
 容易越界的几处：
 
 - `runtime` 是后端组合根。配置、HTTP 路由、DSH 进程执行、本地模型适配和生命周期各自独立成 TypeScript 模块。它不执行业务 Flow，也不拥有业务持久化。
 - `orchestration` 保留通用执行、恢复、插件生命周期、存储、HTTP、preset 与兼容映射，不绑定业务库或业务 ID。
-- `extensions` 的插件发现是只读的，不执行也不安装插件。
+- `plugin-manager` 的插件发现是只读的，不执行也不安装插件。
 - `plugin-sdk` 只导出公开的 Action/Flow/provider、backend、storage、media、browser、errors 契约，不暴露运行时组合、凭据或 DSH 内部。
 - `dsh-auth` 只组合 DSH 授权与凭据适配，不放 HTTP 路由和模型执行。
 - `tripo` 拥有 Tripo 网络与凭据适配和固定的付费资产链路，不公开密钥。
