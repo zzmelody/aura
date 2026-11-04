@@ -598,12 +598,14 @@ export class OrchestrationHost {
     prompt: string,
     images?: string[],
     modelConfig?: CodingSteerModelConfig,
+    requestId?: string,
   ): Promise<{ steered: boolean }> {
     return this.request<{ steered: boolean }>("coding/steer", {
       sessionId,
       prompt,
       ...(images?.length ? { images } : {}),
       ...(modelConfig ? { modelConfig } : {}),
+      ...(requestId ? { requestId } : {}),
     });
   }
 

@@ -134,7 +134,15 @@ export type TimelineItem =
   | { kind: "question"; questionId: string }
   | { kind: "workflow"; runId: string }
   /** Guidance the user sent while this turn was running. */
-  | { kind: "steer"; text: string };
+  | SteerEntry;
+
+type SteerEntry = {
+  kind: "steer";
+  text: string;
+  requestId?: string;
+  images?: ChatImage[];
+  delivery?: "waiting" | "unconfirmed";
+};
 
 /** One request and everything the agent did to answer it. */
 export type Turn = {
@@ -180,7 +188,7 @@ export function turnPresentation(turn: Turn): {
   for (const [index, item] of turn.timeline.entries()) {
     if (item.kind === "steer") {
       hasInterleavedInput ||= hasOutput;
-      finalReplyIndex = -1;
+      if (!item.delivery) finalReplyIndex = -1;
     } else if (item.kind === "text" && item.text.trim()) {
       hasOutput = true;
       finalReplyIndex = index;
@@ -299,14 +307,31 @@ export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
         }
       : turn;
   }
-  if (event.type === "steer")
+  if (event.type === "steer") {
+    const index = event.requestId
+      ? turn.timeline.findIndex(
+          (item) => item.kind === "steer" && item.requestId === event.requestId,
+        )
+      : -1;
+    const existing = turn.timeline[index];
+    if (existing?.kind === "steer" && !existing.delivery) return turn;
+    const item: SteerEntry =
+      existing?.kind === "steer"
+        ? { ...existing, delivery: undefined }
+        : {
+            kind: "steer",
+            text: event.text,
+            ...(event.requestId ? { requestId: event.requestId } : {}),
+          };
     return {
       ...turn,
       steers: [...turn.steers, event.at],
-      // Guidance is its own entry, so the reply text before and after it stay
-      // separate paragraphs instead of merging across the interruption.
-      timeline: [...turn.timeline, { kind: "steer", text: event.text }],
+      timeline:
+        index < 0
+          ? [...turn.timeline, item]
+          : turn.timeline.map((entry, at) => (at === index ? item : entry)),
     };
+  }
   if (event.phase === "start")
     return turn.tools.some((tool) => tool.callId === event.callId)
       ? turn
@@ -337,6 +362,67 @@ export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
         : tool,
     ),
   };
+}
+
+/** Show the user message at its submission position before DSH reads it. */
+export function addPendingSteer(
+  turn: Turn,
+  requestId: string,
+  text: string,
+  images: ChatImage[],
+): Turn {
+  return {
+    ...turn,
+    timeline: [
+      ...turn.timeline,
+      {
+        kind: "steer",
+        requestId,
+        text,
+        ...(images.length ? { images } : {}),
+        delivery: "waiting",
+      },
+    ],
+  };
+}
+
+/** A failed admission can only change an entry the agent has yet to read. */
+export function settlePendingSteer(
+  turn: Turn,
+  requestId: string,
+  delivery?: "unconfirmed",
+): Turn {
+  return {
+    ...turn,
+    timeline: turn.timeline.flatMap((item) => {
+      if (
+        item.kind !== "steer" ||
+        item.requestId !== requestId ||
+        !item.delivery
+      )
+        return [item];
+      return delivery ? [{ ...item, delivery }] : [];
+    }),
+  };
+}
+
+/** DSH can consume a parked message in a later turn after cancellation. */
+export function confirmConversationSteer(
+  turns: readonly Turn[],
+  turnId: string,
+  event: Extract<CodingActivity, { type: "steer" }>,
+): Turn[] {
+  const original = event.requestId
+    ? turns.find((turn) =>
+        turn.timeline.some(
+          (item) => item.kind === "steer" && item.requestId === event.requestId,
+        ),
+      )
+    : undefined;
+  const target = original?.id ?? turnId;
+  return turns.map((turn) =>
+    turn.id === target ? applyTurnEvent(turn, event) : turn,
+  );
 }
 
 /** Text streams in fragments; adjacent fragments form one paragraph block. */
@@ -423,6 +509,28 @@ export function turnsFromHistory(
   });
 }
 
+/** A restored running turn has history snapshots in place of a live stream. */
+export function confirmRecordedSteers(
+  turn: Turn,
+  recorded: CodingHistoryTurn,
+): Turn {
+  if (recorded.startedAt !== turn.startedAt) return turn;
+  const pendingIds = new Set(
+    turn.timeline.flatMap((item) =>
+      item.kind === "steer" && item.delivery ? [item.requestId] : [],
+    ),
+  );
+  return recorded.events.reduce(
+    (current, event) =>
+      event.type === "steer" &&
+      event.requestId &&
+      pendingIds.has(event.requestId)
+        ? applyTurnEvent(current, event)
+        : current,
+    turn,
+  );
+}
+
 /** Recover a stale local turn only after the backend has reported idle. */
 export function reconcileFinishedTurn(
   turn: Turn,
@@ -438,8 +546,21 @@ export function reconcileFinishedTurn(
     recorded.prompt === prompt
   ) {
     const [restored] = turnsFromHistory(turn.id, [recorded]);
+    const sent = new Map<string, SteerEntry>();
+    for (const item of turn.timeline)
+      if (item.kind === "steer" && item.requestId)
+        sent.set(item.requestId, item);
+    const timeline = restored!.timeline.map((item) => {
+      if (item.kind !== "steer" || !item.requestId) return item;
+      const local = sent.get(item.requestId);
+      if (!local) return item;
+      sent.delete(item.requestId);
+      return { ...local, delivery: undefined };
+    });
+    timeline.push(...Array.from(sent.values()).filter((item) => item.delivery));
     return {
       ...restored!,
+      timeline,
       id: turn.id,
       prompt: turn.prompt,
       images: turn.images,

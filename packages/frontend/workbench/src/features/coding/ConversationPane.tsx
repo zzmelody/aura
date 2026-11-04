@@ -88,6 +88,7 @@ import { writeClipboard } from "../../clipboard";
 import type { ChatImage } from "@aura/core/types";
 import { chatImageUrl } from "../../chatImages";
 import { pastedImages, useImageAttachments } from "../../useImageAttachments";
+import { WorkflowApiError } from "../../workflowSessions";
 import {
   codingTurn,
   conversationHistory,
@@ -109,12 +110,16 @@ import {
   type FileKind,
 } from "./fileKinds";
 import {
+  addPendingSteer,
   answerTurn,
   applyTurnEvent,
+  confirmConversationSteer,
+  confirmRecordedSteers,
   finishTurn,
   newTurn,
   pendingQuestion,
   reconcileFinishedTurn,
+  settlePendingSteer,
   summarizeTurn,
   summarizeToolGroup,
   describeToolGroup,
@@ -126,7 +131,7 @@ import {
 } from "./turns";
 
 type GuidanceState = {
-  phase: "sending" | "submitted" | "checking" | "retry" | "ready";
+  phase: "sending" | "checking" | "retry" | "ready";
   turnId: string;
 };
 
@@ -814,6 +819,33 @@ function DeliverableItem({
   );
 }
 
+function PromptImages({
+  endpoint,
+  images,
+}: {
+  endpoint: string;
+  images?: ChatImage[];
+}) {
+  if (!images?.length) return null;
+  return (
+    <div className="message-images coding-prompt-images">
+      {images.map((image) => (
+        <a
+          key={image.assetId}
+          href={chatImageUrl(endpoint, image.assetId)}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <img
+            src={chatImageUrl(endpoint, image.assetId)}
+            alt={image.name ?? "附图"}
+          />
+        </a>
+      ))}
+    </div>
+  );
+}
+
 const TurnView = memo(function TurnView({
   turn,
   latest,
@@ -910,23 +942,7 @@ const TurnView = memo(function TurnView({
           <MaskedUserText text={turn.prompt} />
         </div>
       ) : null}
-      {turn.images?.length ? (
-        <div className="message-images coding-prompt-images">
-          {turn.images.map((image) => (
-            <a
-              key={image.assetId}
-              href={chatImageUrl(endpoint, image.assetId)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <img
-                src={chatImageUrl(endpoint, image.assetId)}
-                alt={image.name ?? "附图"}
-              />
-            </a>
-          ))}
-        </div>
-      ) : null}
+      <PromptImages endpoint={endpoint} images={turn.images} />
       {canCollapse ||
       hasSteps ||
       turn.status !== "complete" ||
@@ -1121,8 +1137,21 @@ const TurnView = memo(function TurnView({
           ) : null;
         }
         return (
-          <div key={index} className="coding-prompt coding-steer">
-            <MaskedUserText text={item.text} />
+          <div
+            key={item.requestId ?? index}
+            className="coding-prompt coding-steer"
+          >
+            {item.text ? <MaskedUserText text={item.text} /> : null}
+            <PromptImages endpoint={endpoint} images={item.images} />
+            {item.delivery ? (
+              <div className="coding-steer-status" role="status">
+                {item.delivery === "unconfirmed"
+                  ? "送达状态未确认"
+                  : running
+                    ? "等待 Agent 读取"
+                    : "本轮结束前未确认读取"}
+              </div>
+            ) : null}
           </div>
         );
       })}
@@ -1936,17 +1965,50 @@ export function ConversationPane({
     }
   };
 
-  const updateTurn = (
-    id: string,
-    turnId: string,
-    change: (turn: Turn) => Turn,
-  ) =>
-    setTurns((current) => ({
-      ...current,
-      [id]: (current[id] ?? []).map((turn) =>
-        turn.id === turnId ? change(turn) : turn,
+  const updateTurn = useCallback(
+    (id: string, turnId: string, change: (turn: Turn) => Turn) =>
+      setTurns((current) => {
+        const turns = current[id] ?? noTurns;
+        const index = turns.findIndex((turn) => turn.id === turnId);
+        const previous = turns[index];
+        if (!previous) return current;
+        const updated = change(previous);
+        if (updated === previous) return current;
+        const next = turns.slice();
+        next[index] = updated;
+        return { ...current, [id]: next };
+      }),
+    [],
+  );
+  const runningTurnId = shown.find((turn) => turn.status === "running")?.id;
+
+  useEffect(() => {
+    if (
+      !visible ||
+      !sessionId ||
+      !runningTurnId ||
+      streams.current.has(sessionId)
+    )
+      return;
+    const abort = new AbortController();
+    void waitForCodingTurnEnd(endpoint, sessionId, abort.signal, (recorded) =>
+      updateTurn(sessionId, runningTurnId, (turn) =>
+        confirmRecordedSteers(turn, recorded),
       ),
-    }));
+    ).then(
+      (recorded) => {
+        if (abort.signal.aborted) return;
+        const checkedAt = Date.now();
+        updateTurn(sessionId, runningTurnId, (turn) =>
+          reconcileFinishedTurn(turn, recorded, checkedAt),
+        );
+      },
+      () => {
+        if (!abort.signal.aborted) setError("暂时无法读取本轮进度。");
+      },
+    );
+    return () => abort.abort();
+  }, [endpoint, sessionId, runningTurnId, updateTurn, visible]);
 
   /** Sends an answer; the card shows it once the backend accepted it. */
   const answer = useCallback(
@@ -1984,15 +2046,12 @@ export function ConversationPane({
   /**
    * Sends guidance into the running turn. DSH joins it to that turn, which
    * picks it up at its next step boundary, so the model changes course with
-   * its work so far intact. The guidance and whatever the model does with it
-   * arrive on the turn's own stream, which is why nothing is added to the
-   * transcript here.
+   * its work so far intact. Show the submission immediately and match the
+   * stream's read event to that same entry.
    */
   const steer = async (text: string, attached: ChatImage[]) => {
     const retry = guidanceState?.phase === "retry";
-    const turnId = retry
-      ? guidanceState.turnId
-      : shown.find((turn) => turn.status === "running")?.id;
+    const turnId = retry ? guidanceState.turnId : runningTurnId;
     // An image-only message is allowed, as it is for a turn.
     if (
       !projectId ||
@@ -2007,6 +2066,7 @@ export function ConversationPane({
     )
       return false;
     const id = sessionId;
+    const requestId = retry ? undefined : crypto.randomUUID();
     const stream = streams.current.get(id);
     const abort = new AbortController();
     guidanceRequests.current.set(id, abort);
@@ -2018,7 +2078,12 @@ export function ConversationPane({
     updateGuidance(retry ? "checking" : "sending");
     setError("");
     try {
-      if (!retry) {
+      if (requestId) {
+        nearBottom.current = true;
+        setHistoryWindow(undefined);
+        updateTurn(id, turnId, (turn) =>
+          addPendingSteer(turn, requestId, text.trim(), attached),
+        );
         const { steered } = await steerCodingTurn(
           endpoint,
           id,
@@ -2026,15 +2091,17 @@ export function ConversationPane({
           attached.map((image) => image.assetId),
           { mode, selection: submittedModelConfig() },
           abort.signal,
+          requestId,
         );
         abort.signal.throwIfAborted();
         if (steered) {
           setDraft((current) => (current === text ? "" : current));
           for (const item of images.attachments)
             if (item.image) images.detach(item.key);
-          updateGuidance("submitted");
+          updateGuidance();
           return true;
         }
+        updateTurn(id, turnId, (turn) => settlePendingSteer(turn, requestId));
       }
       updateGuidance("checking");
       try {
@@ -2059,9 +2126,22 @@ export function ConversationPane({
       return false;
     } catch (reason) {
       if (abort.signal.aborted) return false;
+      const rejected =
+        reason instanceof WorkflowApiError &&
+        reason.status >= 400 &&
+        reason.status < 500 &&
+        reason.status !== 408;
+      if (requestId)
+        updateTurn(id, turnId, (turn) =>
+          settlePendingSteer(
+            turn,
+            requestId,
+            rejected ? undefined : "unconfirmed",
+          ),
+        );
       updateGuidance();
       setError(
-        `发送失败：${reason instanceof Error ? reason.message : String(reason)}`,
+        `${rejected ? "发送失败" : "无法确认追加消息是否送达"}：${reason instanceof Error ? reason.message : String(reason)}`,
       );
       return false;
     } finally {
@@ -2106,7 +2186,7 @@ export function ConversationPane({
     const submittedConfig = submittedModelConfig();
     onOpen?.(id, submittedConfig);
     setError("");
-    if (guidanceState)
+    if (guidanceState?.phase === "ready")
       setGuidance((current) => ({ ...current, [id]: undefined }));
     if (!options?.preserveDraft) {
       setDraft("");
@@ -2169,8 +2249,17 @@ export function ConversationPane({
           modelConfig: submittedConfig,
         },
         abort.signal,
-      ))
-        change((turn) => applyTurnEvent(turn, chunk));
+      )) {
+        if (chunk.type === "steer" && chunk.requestId && !reconciled) {
+          latest = applyTurnEvent(latest, chunk);
+          setTurns((current) => ({
+            ...current,
+            [id]: confirmConversationSteer(current[id] ?? [], turnId, chunk),
+          }));
+        } else {
+          change((turn) => applyTurnEvent(turn, chunk));
+        }
+      }
       change((turn) =>
         finishTurn(
           turn,
@@ -2389,16 +2478,6 @@ export function ConversationPane({
         style={readOnly ? { display: "none" } : undefined}
       >
         {composerExtra}
-        {guidanceState?.phase === "sending" ||
-        guidanceState?.phase === "submitted" ? (
-          <p className="coding-notice coding-guidance-status" role="status">
-            {guidanceState.phase === "sending"
-              ? "正在提交追加消息…"
-              : running
-                ? "追加消息已提交。Agent 在步骤切换时读取追加内容。"
-                : "追加消息已提交。"}
-          </p>
-        ) : null}
         {flowForm && !questionDocked ? (
           <WorkflowRunForm
             key={`${draftKey}:${flowForm.flow.id}`}

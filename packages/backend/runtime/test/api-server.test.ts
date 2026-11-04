@@ -410,6 +410,7 @@ test("the steer route validates its content and reports admission", async () => 
     prompt: string;
     images?: string[];
     modelConfig?: CodingSteerModelConfig;
+    requestId?: string;
   }> = [];
   const flows = {
     async steerCoding(
@@ -417,12 +418,14 @@ test("the steer route validates its content and reports admission", async () => 
       prompt: string,
       images?: string[],
       modelConfig?: CodingSteerModelConfig,
+      requestId?: string,
     ) {
       sent.push({
         sessionId,
         prompt,
         ...(images ? { images } : {}),
         ...(modelConfig ? { modelConfig } : {}),
+        ...(requestId ? { requestId } : {}),
       });
       return { steered: sessionId === "coding-1" };
     },
@@ -436,7 +439,8 @@ test("the steer route validates its content and reports admission", async () => 
       body: JSON.stringify(body),
     });
 
-  const live = await steer("coding-1", { prompt: "改用 map" });
+  const requestId = "00000000-0000-4000-8000-000000000001";
+  const live = await steer("coding-1", { prompt: "改用 map", requestId });
   assert.equal(live.status, 200);
   assert.deepEqual(await live.json(), { steered: true });
   // A turn that ended first is reported, not treated as an error.
@@ -446,8 +450,8 @@ test("the steer route validates its content and reports admission", async () => 
   // An image-only message is allowed, as it is for a turn.
   const imageOnly = await steer("coding-1", { prompt: "", images: [id] });
   assert.equal(imageOnly.status, 200);
-  assert.deepEqual(sent, [
-    { sessionId: "coding-1", prompt: "改用 map" },
+  assert.deepEqual(sent.slice(), [
+    { sessionId: "coding-1", prompt: "改用 map", requestId },
     { sessionId: "coding-idle", prompt: "x" },
     { sessionId: "coding-1", prompt: "", images: [id] },
   ]);
@@ -463,6 +467,7 @@ test("the steer route validates its content and reports admission", async () => 
   assert.deepEqual(sent.at(-1)?.modelConfig, modelConfig);
 
   for (const invalid of [
+    { prompt: "x", requestId: "bad" },
     { prompt: "x", modelConfig: null },
     {
       prompt: "x",

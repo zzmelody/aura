@@ -4,6 +4,16 @@ import {
   type ChatModelSelection,
 } from "./types.ts";
 
+/** Correlates steering with its DSH user-message event. */
+export function isCodingSteerRequestId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u.test(
+      value,
+    )
+  );
+}
+
 /** Bounded model controls only; endpoint/provider/credentials are server-owned. */
 export function validateChatModelSelection(
   value: unknown,

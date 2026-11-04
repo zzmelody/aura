@@ -15,6 +15,7 @@ test("guidance sends the captured model and effort together with its content", a
     mode: "codex" as const,
     selection: { model: "gpt-6.1-sol", reasoningEffort: "high" },
   };
+  const requestId = "00000000-0000-4000-8000-000000000001";
   assert.deepEqual(
     await steerCodingTurn(
       "http://fixture",
@@ -22,13 +23,15 @@ test("guidance sends the captured model and effort together with its content", a
       "继续检查",
       undefined,
       modelConfig,
+      undefined,
+      requestId,
     ),
     { steered: true },
   );
   assert.deepEqual(requests, [
     {
       url: "http://fixture/coding/sessions/coding-1/steer",
-      body: { prompt: "继续检查", modelConfig },
+      body: { prompt: "继续检查", modelConfig, requestId },
     },
   ]);
 });

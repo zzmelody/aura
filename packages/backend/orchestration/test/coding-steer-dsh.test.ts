@@ -209,11 +209,18 @@ test(
         }),
         /不支持图片输入/u,
       );
+      const requestId = "00000000-0000-4000-8000-000000000001";
       assert.deepEqual(
-        await host.steerCoding(sessionId, GUIDANCE, undefined, {
-          mode: "demo",
-          selection: { model: "deepseek-v4-pro", reasoningEffort: "off" },
-        }),
+        await host.steerCoding(
+          sessionId,
+          GUIDANCE,
+          undefined,
+          {
+            mode: "demo",
+            selection: { model: "deepseek-v4-pro", reasoningEffort: "off" },
+          },
+          requestId,
+        ),
         { steered: true },
       );
 
@@ -253,6 +260,7 @@ test(
       const live = events.filter((event) => event.type === "steer");
       assert.equal(live.length, 1);
       assert.equal(live[0]!.text, GUIDANCE);
+      assert.equal(live[0]!.requestId, requestId);
       assert.equal(typeof live[0]!.at, "number");
       assert.deepEqual(
         history.turns[0]!.events.filter((event) => event.type === "steer"),

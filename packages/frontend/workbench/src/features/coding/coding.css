@@ -16,9 +16,6 @@
   color: var(--danger);
   font-size: 13px;
 }
-.coding-guidance-status {
-  color: var(--muted);
-}
 
 /*
  * Layout: the panes fill the studio below its toolbar, and each pane is a
@@ -339,6 +336,11 @@
   position: absolute;
   left: 9px;
   color: var(--muted);
+}
+.coding-steer-status {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
 }
 /*
  * Execution process, after DSH Desktop's turn process + tool rows: no card,

@@ -666,7 +666,7 @@ export type CodingActivity =
   | { type: "progress"; done: number; total: number }
   | { type: "deliverable"; path: string }
   /** Guidance the user sent into this turn while it was already running. */
-  | { type: "steer"; text: string; at: number }
+  | { type: "steer"; text: string; at: number; requestId?: string }
   | {
       type: "question";
       questionId: string;

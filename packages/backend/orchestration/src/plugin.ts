@@ -34,6 +34,7 @@ import { actionRunSchema, FlowError, runSchema } from "./schema.ts";
 import { dshSessions } from "./sessions.ts";
 import type { FlowMode } from "@aura/protocol/types";
 import { CHAT_IMAGE_LIMIT } from "@aura/protocol/types";
+import { isCodingSteerRequestId } from "@aura/protocol";
 
 const chatModeSchema = z.enum(["demo", "codex", "lumina", "custom"]);
 import type {
@@ -1125,6 +1126,7 @@ export async function apply(ctx: Context) {
             .object({
               sessionId: z.string().trim().min(1).max(200),
               prompt: z.string().max(80_000),
+              requestId: z.custom<string>(isCodingSteerRequestId).optional(),
               images: z
                 .array(z.string().regex(/^[a-f0-9]{64}$/u))
                 .max(CHAT_IMAGE_LIMIT)
@@ -1158,6 +1160,7 @@ export async function apply(ctx: Context) {
                   ),
                 }
               : undefined,
+            steer.data.requestId,
           );
           if (steered && steer.data.modelConfig)
             await conversations.selectModel(

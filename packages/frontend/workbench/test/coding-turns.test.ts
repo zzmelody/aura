@@ -3,14 +3,18 @@ import assert from "node:assert/strict";
 import type { CodingHistoryTurn } from "@aura/protocol/types";
 import {
   HANDOFF_SUMMARY_PROMPT,
+  addPendingSteer,
   answerTurn,
   applyTurnEvent,
+  confirmConversationSteer,
+  confirmRecordedSteers,
   finishTurn,
   handoffResult,
   newTurn,
   pendingQuestion,
   reconcileFinishedTurn,
   reusableHandoffSummary,
+  settlePendingSteer,
   summarizeTurn,
   turnPresentation,
   turnsFromHistory,
@@ -293,6 +297,92 @@ test("steering is its own entry and does not merge the reply around it", () => {
   ]);
   // The reply is the turn's whole text; the bubble renders from the timeline.
   assert.equal(turn.reply, "先看看改好了");
+});
+
+test("each steering confirmation updates the matching submitted bubble in place", () => {
+  let turn = newTurn("turn", "检查", 1);
+  turn = addPendingSteer(turn, "first", "继续", []);
+  turn = applyTurnEvent(turn, { type: "delta", text: "正在执行" });
+  turn = addPendingSteer(turn, "second", "继续", []);
+  const read = {
+    type: "steer",
+    requestId: "first",
+    text: "继续",
+    at: 5,
+  } as const;
+  assert.deepEqual(turn.steers, []);
+  turn = applyTurnEvent(turn, read);
+  assert.deepEqual(turn.timeline, [
+    { kind: "steer", requestId: "first", text: "继续", delivery: undefined },
+    { kind: "text", text: "正在执行" },
+    { kind: "steer", requestId: "second", text: "继续", delivery: "waiting" },
+  ]);
+  assert.deepEqual(turn.steers, [5]);
+  assert.equal(applyTurnEvent(turn, read), turn);
+  assert.deepEqual(settlePendingSteer(turn, "first").timeline, turn.timeline);
+  assert.deepEqual(
+    settlePendingSteer(turn, "second").timeline,
+    turn.timeline.slice(0, 2),
+  );
+});
+
+test("a later turn can confirm a message that was parked when execution stopped", () => {
+  const waiting = addPendingSteer(
+    newTurn("first-turn", "检查", 1),
+    "one",
+    "继续",
+    [],
+  );
+  const next = newTurn("next-turn", "重新开始", 3);
+  const [first, second] = confirmConversationSteer(
+    [finishTurn(waiting, "stopped", 2), next],
+    next.id,
+    { type: "steer", requestId: "one", text: "继续", at: 4 },
+  );
+  assert.deepEqual(first?.timeline, [
+    { kind: "steer", requestId: "one", text: "继续", delivery: undefined },
+  ]);
+  assert.equal(second, next);
+});
+
+test("a restored turn confirms an image-only submission from its history without replacing the preview", () => {
+  const image = { assetId: "image", mimeType: "image/png" } as const;
+  const waiting = addPendingSteer(newTurn("turn", "检查", 1), "image", "", [
+    image,
+  ]);
+  const uncertain = settlePendingSteer(waiting, "image", "unconfirmed");
+  const recorded: CodingHistoryTurn = {
+    prompt: "检查",
+    startedAt: 1,
+    status: "running",
+    events: [
+      {
+        type: "steer",
+        requestId: "image",
+        text: "请查看我附上的图片。",
+        at: 3,
+      },
+    ],
+  };
+  const confirmed = confirmRecordedSteers(uncertain, recorded);
+  assert.deepEqual(confirmed.timeline, [
+    {
+      kind: "steer",
+      requestId: "image",
+      text: "",
+      images: [image],
+      delivery: undefined,
+    },
+  ]);
+  const finished = reconcileFinishedTurn(
+    addPendingSteer(confirmed, "unread", "继续", []),
+    { ...recorded, status: "stopped", endedAt: 4 },
+    5,
+  );
+  assert.deepEqual(finished.timeline, [
+    ...confirmed.timeline,
+    { kind: "steer", requestId: "unread", text: "继续", delivery: "waiting" },
+  ]);
 });
 
 test("replayed history matches the live fold and keeps its outcome", () => {

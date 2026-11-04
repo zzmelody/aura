@@ -1,3 +1,4 @@
+import { isCodingSteerRequestId } from "@aura/protocol";
 import type {
   CodingSubagent,
   CodingCapabilities,
@@ -401,7 +402,14 @@ function parseCodingEvent(
   if (event.type === "deliverable" && typeof event.path === "string")
     return { type: "deliverable", path: event.path };
   if (event.type === "steer" && typeof event.text === "string" && event.text)
-    return { type: "steer", text: event.text, at };
+    return {
+      type: "steer",
+      text: event.text,
+      at,
+      ...(isCodingSteerRequestId(event.requestId)
+        ? { requestId: event.requestId }
+        : {}),
+    };
   if (
     event.type === "question" &&
     typeof event.questionId === "string" &&
@@ -560,6 +568,7 @@ export const steerCodingTurn = (
   images?: string[],
   modelConfig?: CodingSteerModelConfig,
   signal?: AbortSignal,
+  requestId?: string,
 ) =>
   codingApi<{ steered: boolean }>(
     endpoint,
@@ -569,6 +578,7 @@ export const steerCodingTurn = (
       prompt,
       ...(images?.length ? { images } : {}),
       ...(modelConfig ? { modelConfig } : {}),
+      ...(requestId ? { requestId } : {}),
     },
     signal,
   );
@@ -687,12 +697,15 @@ export async function waitForCodingTurnEnd(
   endpoint: string,
   sessionId: string,
   signal: AbortSignal,
+  onRunningTurn?: (turn: CodingHistoryTurn) => void,
 ): Promise<CodingHistoryTurn | undefined> {
   while (true) {
     signal.throwIfAborted();
     const history = await conversationHistory(endpoint, sessionId, signal);
     signal.throwIfAborted();
-    if (!history.running) return history.turns.at(-1);
+    const latest = history.turns.at(-1);
+    if (!history.running) return latest;
+    if (latest?.status === "running") onRunningTurn?.(latest);
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         signal.removeEventListener("abort", cancel);

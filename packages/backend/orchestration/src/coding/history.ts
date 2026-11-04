@@ -282,9 +282,8 @@ export function historyTurns(
     if (event.type === "user/message") {
       const source = (data as { source?: { kind?: unknown } }).source;
       // The turn's opening request, then any steering the user sent into it
-      // while it ran. `rpcId` identifies the live request but means nothing
-      // on replay, so position inside the turn stands in for it: the shared
-      // projector applies the same rule to the live stream.
+      // while it ran. On replay the opening request is identified by its
+      // position. Later messages retain their ID in the shared projector.
       if (source?.kind === "user" && !current.prompt) {
         current.prompt = conversationPromptText(
           text((data as { content?: unknown }).content),

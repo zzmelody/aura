@@ -121,6 +121,7 @@ export function codingService(
     imageIds: readonly string[],
     config: SteerConfig | undefined,
     signal: AbortSignal,
+    requestId: SessionRequestId,
   ) => Promise<boolean>;
   const guides = new Map<string, Guide>();
 
@@ -407,6 +408,7 @@ export function codingService(
     prompt: string,
     imageIds: readonly string[] = [],
     config?: SteerConfig,
+    requestId: string = randomUUID(),
   ): Promise<boolean> {
     const turn = turnStops.get(sessionId);
     if (!turn || !active.has(sessionId)) return false;
@@ -419,7 +421,13 @@ export function codingService(
     const guide = guides.get(sessionId);
     if (!guide) return false;
     try {
-      return await guide(prompt, imageIds, config, stop);
+      return await guide(
+        prompt,
+        imageIds,
+        config,
+        stop,
+        requestId as SessionRequestId,
+      );
     } catch (error) {
       // A turn that stops during admission never receives the guidance.
       if (turn.signal.aborted && error === turn.signal.reason) return false;
@@ -703,7 +711,7 @@ export function codingService(
       );
       // Serialize guidance so a slower validation cannot overwrite a later choice.
       let guiding: Promise<unknown> = Promise.resolve();
-      guides.set(turn.sessionId, (prompt, imageIds, requested, signal) => {
+      const guide: Guide = (prompt, imageIds, requested, signal, requestId) => {
         const admission = guiding.then(async () => {
           signal.throwIfAborted();
           if (!active.has(turn.sessionId) || agent.status !== "running")
@@ -733,7 +741,7 @@ export function codingService(
           return submitPrompt(
             {
               sessionId,
-              requestId: randomUUID() as SessionRequestId,
+              requestId,
               mode: "steer",
               content,
             },
@@ -754,7 +762,8 @@ export function codingService(
         });
         guiding = admission.catch(() => {});
         return admission;
-      });
+      };
+      guides.set(turn.sessionId, guide);
       // Record the pending choice without changing the deployment default.
       agent.session.append("model/selection", {
         provider: config.provider,

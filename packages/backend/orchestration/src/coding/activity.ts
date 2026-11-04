@@ -1,3 +1,4 @@
+import { isCodingSteerRequestId } from "@aura/protocol";
 import type { CodingFileDiff, CodingStreamEvent } from "../types.ts";
 
 /**
@@ -48,10 +49,19 @@ export function projectCodingEvent(
   if (event.type === "user/message" && ownPrompt && !ownPrompt(fields)) {
     // Only what the user actually typed: injected context, model-selection
     // notices and other producers carry their own source kind.
-    const source = fields.source as { kind?: unknown } | undefined;
+    const source = fields.source as
+      { kind?: unknown; rpcId?: unknown } | undefined;
     if (source?.kind !== "user") return;
     const text = messageText(fields.content);
-    if (text) emit({ type: "steer", text, at });
+    if (text)
+      emit({
+        type: "steer",
+        text,
+        at,
+        ...(isCodingSteerRequestId(source.rpcId)
+          ? { requestId: source.rpcId }
+          : {}),
+      });
     return;
   }
   if (event.type === "tool/call") {
