@@ -831,8 +831,6 @@ ${summary}`,
                   if (!project) return;
                   if (personalAssistant) return;
                   if (branchFrom) setView("chat");
-                  if (id !== configKey)
-                    setModelConfigs((current) => {
                   if (draftPermission && !conversationId)
                     setDraftPermissions((current) => {
                       const next = {
@@ -843,6 +841,8 @@ ${summary}`,
                       delete next[permissionKey];
                       return next;
                     });
+                  if (id !== configKey)
+                    setModelConfigs((current) => {
                       const next = {
                         ...current,
                         [id]: {
@@ -874,8 +874,6 @@ ${summary}`,
                 onProvider={onProvider}
                 modelConfig={modelConfig}
                 onModelConfig={(selection) => changeModel(configKey, selection)}
-                {...(initialSend ? { initialSend } : {})}
-                {...(onHandoffTaken
                 permission={permission}
                 draftPermission={draftPermission}
                 permissionSaving={!!pendingPermission}
@@ -884,6 +882,8 @@ ${summary}`,
                     ? changePermission
                     : undefined
                 }
+                {...(initialSend ? { initialSend } : {})}
+                {...(onHandoffTaken
                   ? { onInitialSendTaken: onHandoffTaken }
                   : {})}
                 onRunning={setMainRunning}

@@ -55,16 +55,16 @@ export type CodingProjectsController = {
     mode: FlowMode,
     selection: ChatModelSelection,
   ): Promise<void>;
-  select(id: string | undefined): void;
-  /** Opens a conversation, or a new one when `conversationId` is omitted. */
-  open(projectId: string, conversationId?: string): void;
-  refresh(signal?: AbortSignal): Promise<CodingProjectInfo[]>;
-  refreshConversations(
   pendingPermissions: Readonly<Partial<Record<string, CodingPermission>>>;
   selectPermission(
     sessionId: string,
     permission: CodingPermission,
   ): Promise<void>;
+  select(id: string | undefined): void;
+  /** Opens a conversation, or a new one when `conversationId` is omitted. */
+  open(projectId: string, conversationId?: string): void;
+  refresh(signal?: AbortSignal): Promise<CodingProjectInfo[]>;
+  refreshConversations(
     projectId: string,
     signal?: AbortSignal,
     metadataOnly?: boolean,
@@ -111,14 +111,14 @@ export function useCodingProjects(
     branchAt?: number;
   }>({ projectId: conversationProject(restored.projects)?.id });
   const [error, setError] = useState("");
-  const [loadedAssistant, setLoadedAssistant] = useState<{
-    endpoint: string;
   const [pendingPermissions, setPendingPermissions] = useState<
     Partial<Record<string, CodingPermission>>
   >({});
   const permissionWrites = useRef(new Set<string>());
   const currentEndpoint = useRef(endpoint);
   currentEndpoint.current = endpoint;
+  const [loadedAssistant, setLoadedAssistant] = useState<{
+    endpoint: string;
     info: PersonalAssistantInfo;
   }>();
   const [assistantRequests, setAssistantRequests] = useState(0);
@@ -311,9 +311,9 @@ export function useCodingProjects(
   );
 
   useEffect(() => {
+    setPendingPermissions({});
     if (!enabled) {
       setProjects([]);
-    setPendingPermissions({});
       setConversations({});
       setConversationErrors({});
       setReadyEndpoint(undefined);
@@ -595,16 +595,6 @@ export function useCodingProjects(
         throw error;
       });
     },
-    select,
-    open,
-    refresh,
-    refreshConversations,
-    openSide,
-    closeSide,
-    archive,
-    close,
-    statuses: dataEndpoint === endpoint ? statuses : {},
-    reportStatus,
     pendingPermissions: dataEndpoint === endpoint ? pendingPermissions : {},
     selectPermission: async (sessionId, permission) => {
       const parent = Object.values(conversations)
@@ -657,6 +647,16 @@ export function useCodingProjects(
           });
       }
     },
+    select,
+    open,
+    refresh,
+    refreshConversations,
+    openSide,
+    closeSide,
+    archive,
+    close,
+    statuses: dataEndpoint === endpoint ? statuses : {},
+    reportStatus,
     error,
   };
 }

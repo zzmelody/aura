@@ -736,6 +736,8 @@ export class OrchestrationHost {
     selection: ChatModelSelection,
   ) {
     return this.request("coding/model", { sessionId, mode, selection });
+  }
+
   /** Saves a conversation's permission preset and applies it to a live agent. */
   selectConversationPermission(
     sessionId: string,
@@ -745,8 +747,6 @@ export class OrchestrationHost {
       sessionId,
       permission,
     });
-  }
-
   }
 
   conversations(
