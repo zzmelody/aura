@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="tile" x1="27" y1="14" x2="228" y2="250" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#faf4ff" />
+      <stop offset=".48" stop-color="#e8d8ff" />
+      <stop offset="1" stop-color="#b598f3" />
+    </linearGradient>
+    <linearGradient id="edge" x1="32" y1="16" x2="230" y2="246" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d7baf6" />
+      <stop offset="1" stop-color="#8c68d4" />
+    </linearGradient>
+    <radialGradient id="planet" cx="110" cy="103" r="67" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9874ef" />
+      <stop offset=".57" stop-color="#7250d2" />
+      <stop offset="1" stop-color="#452783" />
+    </radialGradient>
+    <linearGradient id="orbit" x1="46" y1="116" x2="214" y2="149" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#39216d" />
+      <stop offset=".58" stop-color="#4d2a91" />
+      <stop offset="1" stop-color="#5f38a9" />
+    </linearGradient>
+    <clipPath id="disc">
+      <circle cx="128" cy="128" r="38" />
+    </clipPath>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="55" fill="url(#tile)" stroke="url(#edge)" stroke-width="3" />
+  <path d="M22 62a40 40 0 0 1 40-40h84" fill="none" stroke="#fff9ff" stroke-width="3" stroke-linecap="round" opacity=".85" />
+  <ellipse cx="128" cy="128" rx="86" ry="37" transform="rotate(-33 128 128)" fill="none" stroke="url(#orbit)" stroke-width="16" />
+  <circle cx="128" cy="128" r="38" fill="url(#planet)" />
+  <path d="M102 116a29 29 0 0 1 28-17" fill="none" stroke="#c6a8ff" stroke-width="3.5" stroke-linecap="round" opacity=".8" />
+  <g clip-path="url(#disc)">
+    <path d="M42 128a86 37 0 0 0 172 0" transform="rotate(-33 128 128)" fill="none" stroke="#d1b9ff" stroke-width="23" />
+  </g>
+  <path d="M42 128a86 37 0 0 0 172 0" transform="rotate(-33 128 128)" fill="none" stroke="url(#orbit)" stroke-width="16" />
+  <circle cx="200" cy="81" r="8.5" fill="#fff5ff" stroke="#5f38a9" stroke-width="3" />
+</svg>

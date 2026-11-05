@@ -77,7 +77,7 @@ const host = document.querySelector(".studio-area");
 const results = [];
 const pane = (content) => '<div class="coding-pane"><div class="studio-scroll coding-transcript"><article class="coding-turn"><div class="coding-prompt">检查长内容</div><div class="coding-reply"><div class="workflow-rich-text">' + content + '</div></div>' + ${JSON.stringify(report)} + '<section class="coding-recap">本轮小结</section></article></div><div class="chat-composer-area"><div class="coding-decision approval"><div class="coding-decision-strip">等待审批</div><div class="coding-decision-body">允许运行构建吗？</div><div class="coding-decision-actions"><button>拒绝</button><button>允许这一次</button></div></div><div class="chat-composer"><textarea>检查宽度</textarea><div class="composer-tools coding-composer-tools"><div class="composer-leading"><button class="icon-control composer-add-trigger">+</button></div><div class="composer-trailing"><div class="chat-model-picker"><button class="chat-model-trigger"><span class="chat-model-name">a-very-long-model-name</span><span class="chat-model-effort">High</span></button></div><button class="icon-control composer-stop">■</button><button class="send-button">↑</button></div></div></div></div></div>';
 for (const content of ${JSON.stringify([code, table, code + table, diff])}) {
-  for (const width of [1600, 1200, 920, 700, 648, 600, 375])
+  for (const width of [1920, 1600, 1200, 920, 700, 648, 600, 375])
   for (const stale of [false, true]) {
     const stacked = width < 648;
     host.style.width = width + 'px';
@@ -145,7 +145,7 @@ document.getElementById('layout-result').textContent = JSON.stringify(results);
         "--no-first-run",
         "--no-default-browser-check",
         `--user-data-dir=${join(temporary, "profile")}`,
-        "--window-size=1600,1000",
+        "--window-size=1920,1000",
         "--dump-dom",
         pathToFileURL(fixture).href,
       ],
@@ -197,7 +197,16 @@ document.getElementById('layout-result').textContent = JSON.stringify(results);
         controlsRight: number;
       }>;
     }>;
-    assert.equal(layouts.length, 56);
+    assert.equal(layouts.length, 64);
+    assert.ok(
+      layouts.some(({ columns }) =>
+        columns.some(
+          ({ textLeft, textRight, cardLeft, cardRight }) =>
+            textRight - textLeft === 920 && cardRight - cardLeft === 952,
+        ),
+      ),
+      "The widest conversation should reach both desktop width limits",
+    );
     for (const layout of layouts) {
       assert.equal(
         layout.frame.left,
@@ -276,13 +285,15 @@ document.getElementById('layout-result').textContent = JSON.stringify(results);
         );
       }
       for (const column of layout.columns) {
-        // Only the input card's border and subpixel rounding may differ.
+        assert.ok(column.textRight - column.textLeft <= 920);
+        assert.ok(column.cardRight - column.cardLeft <= 952);
+        // Allow for subpixel rounding on split panes.
         assert.ok(
-          Math.abs(column.textLeft - column.inputLeft) <= 2,
+          Math.abs(column.textLeft - column.inputLeft) <= 0.5,
           JSON.stringify({ width: layout.width, column }),
         );
         assert.ok(
-          Math.abs(column.textRight - column.inputRight) <= 2,
+          Math.abs(column.textRight - column.inputRight) <= 0.5,
           JSON.stringify({ width: layout.width, column }),
         );
         assert.equal(column.approvalLeft, column.cardLeft);
