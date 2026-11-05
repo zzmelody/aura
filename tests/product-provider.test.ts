@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { loadAuraPlugins } from "@aura/extensions";
+import { loadAuraPlugins } from "@aura/plugin-manager";
 import { PluginBackends } from "../packages/backend/orchestration/src/plugin-backends.ts";
 type JsonValue = Parameters<PluginBackends["invokeFromPage"]>[2];
 

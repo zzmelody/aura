@@ -82,13 +82,13 @@ test("public Action capability helper binds identity and cancellation", async ()
     },
   } as ActionContext;
 
-  const output = await auraCapability(context, "aura.tripo.game-asset").invoke(
+  const output = await auraCapability(context, "aura.codex.image").invoke(
     "worlds.list",
     {},
   );
   assert.deepEqual(output, { ok: true });
   assert.deepEqual(calls, [
-    ["aura.tripo.game-asset", "worlds.list", {}, abort.signal],
+    ["aura.codex.image", "worlds.list", {}, abort.signal],
   ]);
   assert.throws(
     () => auraCapability({ ...context, aura: undefined }, "missing"),

@@ -1,8 +1,8 @@
 # Agent 会话、工作区与 Flow 编排拆分方案
 
-状态为待实施。等并行改动完成并合入后，以合入版本为基线开始迁移。
+状态为已实施。包职责见 [模块边界](../development/module-boundaries.md)。
 
-`@aura/orchestration` 目前同时承载 Flow 引擎、对话 Agent、工作区和终端。拆分后，每项能力的状态、规则、持久化和测试归同一个包。`@aura/runtime` 负责 HTTP、进程生命周期和服务装配。各能力继续共用一个 DSH 宿主进程。
+拆分前，`@aura/orchestration` 同时承载 Flow 引擎、对话 Agent、工作区和终端。拆分后，每项能力的状态、规则、持久化和测试归同一个包。`@aura/runtime` 负责 HTTP、进程生命周期和服务装配。各能力继续共用一个 DSH 宿主进程。
 
 ## 包职责
 
@@ -13,7 +13,7 @@
 | `@aura/orchestration` | Action 与 Flow 执行、步骤依赖和并行、运行记录、checkpoint、恢复、幂等及运行产物。Flow 步骤使用模型时，本包负责将 Flow 步骤和结果映射到 DSH。 |
 | `@aura/runtime`       | Hono 路由、流式传输、DSH 进程与 RPC 生命周期。装配各包服务，把 HTTP 与内部 RPC 请求交给对应的能力所有者。                                    |
 
-会话索引中的项目归属、侧边关系和历史投影一起迁入 `agent-runtime`。侧边首轮继续通过 DSH fork 获取主会话背景，系统提示以侧边用户消息确定任务。首次 fork 的计划模式初始化和重启恢复也由同一包负责。工作区则沿用 DSH 的工作区注册表和子进程服务。[会话驱动](../../packages/backend/orchestration/src/coding/session.ts) · [工作区注册](../../packages/backend/orchestration/src/coding/projects.ts) · [终端](../../packages/backend/orchestration/src/coding/terminals.ts)
+会话索引中的项目归属、侧边关系和历史投影一起迁入 `agent-runtime`。侧边首轮继续通过 DSH fork 获取主会话背景，系统提示以侧边用户消息确定任务。首次 fork 的计划模式初始化和重启恢复也由同一包负责。工作区则沿用 DSH 的工作区注册表和子进程服务。[会话驱动](../../packages/backend/agent-runtime/src/conversations/session.ts) · [工作区注册](../../packages/backend/workspace/src/projects.ts) · [终端](../../packages/backend/workspace/src/terminals.ts)
 
 ## 跨包调用
 

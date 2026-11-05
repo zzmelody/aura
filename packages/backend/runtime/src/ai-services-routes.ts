@@ -46,9 +46,6 @@ export function createAiServicesApp(
   app.post("/model", async (context) =>
     context.json(await services.saveModel(await context.req.json())),
   );
-  app.post("/tripo", async (context) =>
-    context.json(await services.saveTripo(await context.req.json())),
-  );
   app.post("/lumina", async (context) =>
     context.json(await services.saveLumina(await context.req.json())),
   );
@@ -69,13 +66,6 @@ export function createAiServicesApp(
   app.post("/models", async (context) =>
     context.json(
       await services.refreshModels(
-        AbortSignal.any([context.req.raw.signal, AbortSignal.timeout(15_000)]),
-      ),
-    ),
-  );
-  app.post("/check/tripo", async (context) =>
-    context.json(
-      await services.checkTripo(
         AbortSignal.any([context.req.raw.signal, AbortSignal.timeout(15_000)]),
       ),
     ),

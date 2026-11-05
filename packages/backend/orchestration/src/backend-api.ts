@@ -3,6 +3,12 @@ import type { ParameterSchemaSpec } from "./action-api.ts";
 import type { GeneratedArtifacts } from "./artifacts/generated.ts";
 import type { ArtifactFile } from "./artifacts/http.ts";
 import type { defineDomain } from "@deepseek-ai/dsh-storage-domain";
+import type { ManagedProcesses } from "./managed-process/process.ts";
+export type {
+  LaunchSpec,
+  ManagedProcesses,
+  OwnedProcess,
+} from "./managed-process/process.ts";
 
 /** A trusted plugin's private, non-JSON services. Never included in page DTOs. */
 export type PluginServices = Readonly<Record<string, unknown>>;
@@ -37,6 +43,8 @@ export interface PluginTaskTool {
 
 /** Binary HTTP runs in the API process, outside the bounded JSON RPC channel. */
 export interface PluginHttpHost {
+  /** True when the HTTP listener is bound to loopback for local configuration. */
+  readonly localConfiguration?: boolean;
   request<T>(method: string, input?: unknown, signal?: AbortSignal): Promise<T>;
   readonly artifacts: GeneratedArtifacts;
   artifactContent(
@@ -70,9 +78,19 @@ export interface BackendArtifact {
   readonly height?: number;
 }
 
+export interface BackendImageReference {
+  readonly attachmentId: string;
+  readonly mediaType: "image/png" | "image/jpeg" | "image/webp";
+  readonly bytes: number;
+  readonly width: number;
+  readonly height: number;
+}
+
 /** Host services handed to a plugin backend once, when Aura activates the plugin. */
 export interface BackendHost {
   readonly pluginId: string;
+  /** True when the runtime is bound to loopback and accepts local settings changes. */
+  readonly localConfiguration?: boolean;
   /** `<aura-root>/.aura/plugins/<plugin-id>/`, created by the host. */
   readonly dataDir: string;
   /** The plugin's `settings` from plugins.json, uninterpreted. Validate it yourself. */
@@ -86,12 +104,14 @@ export interface BackendHost {
   readonly storage: PluginStorage;
   readonly workflows: PluginWorkflows;
   readonly media: GeneratedArtifacts;
+  /** Process ownership and OS resource leases, granted by aura.process.manage. */
+  readonly processes?: ManagedProcesses;
   /** Read-only view of this plugin's own Flow Runs. Other plugins' Runs are invisible. */
   readonly runs: {
     get(id: string): FlowRun | undefined;
     list(filter?: { flowId?: string; status?: readonly string[] }): FlowRun[];
   };
-  /** Aura's content-addressed artifact store, shared with built-in producers such as Tripo. */
+  /** Aura's content-addressed artifact store. */
   readonly artifacts: {
     /** Stores bytes and returns their sha256 ID. Accepts PNG, JPEG, WebP, GLB, WAV and MP4. */
     put(bytes: Uint8Array, signal: AbortSignal): Promise<BackendArtifact>;
@@ -105,8 +125,12 @@ export interface BackendHost {
   /** Admits a raster into the session attachment store so a Flow Agent can see it. */
   readonly attachments: {
     image(bytes: Uint8Array, name: string): Promise<JsonValue>;
+    readImage?(
+      reference: BackendImageReference,
+      signal: AbortSignal,
+    ): Promise<Uint8Array>;
   };
-  /** Calls a built-in host capability, such as `aura.tripo.game-asset`. */
+  /** Calls a built-in host capability. */
   invoke(
     capability: string,
     operation: string,
@@ -181,6 +205,8 @@ export interface PluginBackend {
   ): Promise<void> | void;
   /** Called once after a root Run of this plugin completes, fails, is cancelled or interrupted. */
   runSettled?(run: FlowRun): Promise<void> | void;
+  /** A settled Run used this plugin's Action. Only the Run ID is shared. */
+  actionRunSettled?(runId: string): Promise<void> | void;
   close?(): Promise<void> | void;
 }
 

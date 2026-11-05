@@ -5,6 +5,7 @@ export {
   type BackendCall,
   type BackendDefinition,
   type BackendHost,
+  type BackendImageReference,
   type PluginBackend,
   type PluginServices,
   type PluginWorkflows,
@@ -13,4 +14,7 @@ export {
   type PluginHttpDefinition,
   type PluginTaskTool,
   type ServiceAdmission,
+  type LaunchSpec,
+  type ManagedProcesses,
+  type OwnedProcess,
 } from "@aura/orchestration/backend";

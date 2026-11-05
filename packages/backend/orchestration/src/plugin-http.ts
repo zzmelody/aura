@@ -1,4 +1,8 @@
 import { isAbsolute, relative, resolve } from "node:path";
+import {
+  isPluginHttpMount,
+  matchesPluginHttpMount,
+} from "@aura/protocol/plugin-http";
 import type { BackendRoot } from "./types.ts";
 import type { PluginHttpDefinition, PluginHttpHost } from "./backend-api.ts";
 import { PluginModules } from "./plugin-modules.ts";
@@ -10,8 +14,10 @@ export class PluginHttpRegistry {
   readonly #routes: Array<{ root: BackendRoot; app: PluginHttpDefinition }> =
     [];
   private readonly host: PluginHttpHost;
-  constructor(host: PluginHttpHost) {
+  private readonly reservedMounts: readonly string[];
+  constructor(host: PluginHttpHost, reservedMounts: readonly string[] = []) {
     this.host = host;
+    this.reservedMounts = reservedMounts;
   }
   async replace(roots: readonly BackendRoot[]) {
     const candidates: Array<{
@@ -27,12 +33,14 @@ export class PluginHttpRegistry {
         if (!path || path.startsWith("..") || isAbsolute(path))
           throw new FlowError("Plugin HTTP entry is outside its root.");
         for (const mount of root.http.mounts) {
+          if (!isPluginHttpMount(mount))
+            throw new FlowError("Invalid plugin HTTP mount.");
           if (
+            this.reservedMounts.includes(mount) ||
             [...mounts].some(
               (existing) =>
-                mount === existing ||
-                mount.startsWith(`${existing}/`) ||
-                existing.startsWith(`${mount}/`),
+                matchesPluginHttpMount(mount, existing) ||
+                matchesPluginHttpMount(existing, mount),
             )
           )
             throw new FlowError("Plugin HTTP mount conflict.", 409);
@@ -78,9 +86,7 @@ export class PluginHttpRegistry {
   async fetch(request: Request): Promise<Response | undefined> {
     const path = new URL(request.url).pathname;
     const route = this.#routes.find(({ root }) =>
-      root.http!.mounts.some(
-        (mount) => path === mount || path.startsWith(`${mount}/`),
-      ),
+      root.http!.mounts.some((mount) => matchesPluginHttpMount(path, mount)),
     );
     return route?.app.fetch(request);
   }

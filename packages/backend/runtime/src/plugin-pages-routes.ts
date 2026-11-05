@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
-import { FlowError, type OrchestrationHost } from "@aura/orchestration";
+import { FlowError, type OrchestrationHost } from "./dsh/host.ts";
 import type { PluginPageRegistry } from "./plugin-pages.ts";
 
 /**

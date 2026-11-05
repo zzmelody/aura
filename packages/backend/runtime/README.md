@@ -1,8 +1,20 @@
 # @aura/runtime
 
-`GET /coding/sessions/:id/history?page=1` 在编排宿主初始化期间可由编排包的 DSH 只读历史路径响应已完成会话，仍按原会话索引验证权限并返回相同的分页 DTO。执行和模型请求保持原有就绪门槛；HTTP 请求的 `AbortSignal` 传递到历史读取，切换会话或超时后不继续排队读取。
+Runtime 的 `src/dsh/` 启动并管理一个长驻 DSH 进程。进程内装配 [Agent 会话](../agent-runtime/README.md)、[工作区与终端](../workspace/README.md) 和 [Flow 服务](../orchestration/README.md)。
 
-`GET /coding/assistant` 只读返回 Aura 固定主会话与已注册工作空间，未创建时为 `null`；`POST /coding/assistant` 表达用户显式打开意图，缺失时创建、已存在时返回同一身份。路由不接受客户端指定目录，不发送模型请求，身份与持久化由编排宿主持有。
+Aura 的编排子进程通过 DSH 的公开 `runProfile()` 启动 `aura-flow`。环境分层、profile 合并、Cordis 服务装配和退出清理由 DSH 处理。父子进程通过 stdio RPC 通信，启动异常通过 Aura 的脱敏诊断输出。
+
+DSH 启动阶段耗时写入终端和 `.aura/dsh/logs/aura-host.log`，`event: "startup"` 的记录按 `startupId` 关联一次启动。`stage` 包括 profile 准备、进程创建、DSH 加载、插件 preset/backend 激活、各 domain 打开、工作空间、Action 恢复、Flow/Action 发现、Loader 等待、Flow 恢复和握手。`status` 为 started/completed/failed；`durationMs` 是本阶段耗时，`elapsedMs` 是从本次启动开始的累计耗时。total、handshake、dsh-load 和 orchestration-setup 包含子阶段，不能相加。启动失败会保留最后开始的阶段和已完成阶段；日志只接受固定阶段、UUID 与数值，不记录配置、凭据、原始错误或上游响应。
+
+HMR 覆盖插件源码和 helper，并合并相同的 Flow/Action 监听根。DSH 的忽略匹配使用 POSIX glob，而 Windows `path.relative()` 返回反斜杠，因此生成的 profile 同时提供两种分隔符的忽略规则，避免为 `node_modules` 和隐藏目录注册大量文件监听。使用 DSH 0.2.1-alpha.2、Windows Electron 44.7.0、Node 24.21.0、相同的五个插件和独立空存储进行对照时，优化前启动 79.5 秒（DSH 加载 70.4 秒），优化后两次新进程启动分别为 13.3 秒与 22.4 秒。耗时受机器负载和文件缓存影响。
+
+`POST /flows/assets/images` 在图片路由上执行 32 MiB 请求体限制，超出时返回图片大小错误。普通 Flow 请求的请求体上限为 256 KiB。
+
+插件 HTTP 可在 `contributes.http.mounts` 中声明空闲的顶级路径（例如 `/example-documents`），也可使用 `/flows/<名称>`。每个挂载接收原路径及其子路径，沿用 Runtime 的 Origin 策略，由插件设定请求体上限。宿主保留内置路由的顶级路径。插件之间的挂载冲突会在注册时拒绝。
+
+`GET /coding/sessions/:id/history?page=1` 在编排宿主初始化期间可由 Agent 会话包的 DSH 只读历史路径响应已完成会话，仍按原会话索引验证权限并返回相同的分页 DTO。执行和模型请求保持原有就绪门槛；HTTP 请求的 `AbortSignal` 传递到历史读取，切换会话或超时后不继续排队读取。
+
+`GET /coding/assistant` 只读返回 Aura 固定主会话与已注册工作空间，未创建时为 `null`；`POST /coding/assistant` 表达用户显式打开意图，缺失时创建、已存在时返回同一身份。路由不接受客户端指定目录，不发送模型请求，身份与持久化由 Agent 会话服务管理。
 
 `GET /coding/projects/:id/conversations` 默认包含历史状态；`?status=metadata` 用于快速恢复会话基础记录和内存中的活动状态，不触发旧会话日志扫描。只接受 `metadata` / `full`，旧调用行为保持不变。
 
@@ -20,11 +32,10 @@ Runtime 使用 TypeScript 源码并按职责拆分：
 - `runtime-config.ts`：解析并校验运行配置与数据目录；
 - `api-server.ts`：Hono HTTP 边界、并发准入和对话路由；
 - `codex-auth-routes.ts`：DSH 授权状态的脱敏 HTTP 投影；
-- `ai-services.ts` / `ai-services-routes.ts`：模型与 Tripo 设置、可选模型目录和本机受控测试入口；
+- `ai-services.ts` / `ai-services-routes.ts`：模型设置、可选模型目录和本机受控测试入口；
 - `model-probe.ts`：经 DSH 的简短真实模型请求，复用已保存的 provider 与凭据，脱敏失败结果；获取模型目录不视为测试成功；
-- `tripo-routes.ts`：Tripo 异步生成任务的校验、提交与状态查询；
 - `plugin-settings-routes.ts`：仅在 loopback runtime 上开放受信任插件目录的读取与替换；
-- 编排适配：通过 `@aura/orchestration` 的宿主端口转交 JSON-RPC、事件流与取消；DSH 子进程实现属于编排包；
+- `dsh/host.ts` 与 `dsh/plugin.ts` 管理 DSH 进程、JSON-RPC 分发、事件流和取消。
 - `demo-model.ts`：仅监听 loopback 的开发演示模型；聊天历史与结构化 Flow
   输入使用各自的内部标记，代码 Flow 传入普通自然语言提示时返回确定性的通用演示结果；
 - `http-server.ts`：Hono Node 适配器生命周期与本地 Origin 策略；
@@ -33,10 +44,6 @@ Runtime 使用 TypeScript 源码并按职责拆分：
 所有 HTTP 路由、body limit、CORS、静态资源和 NDJSON/SSE 流均使用 Hono 及其官方 Node 适配器。Aura 业务代码不直接创建 `node:http` server。
 
 本包通过端口接口依赖 `@aura/dsh-auth`，并只消费发布的 DSH 包和 Aura 自有 profile；不修改 DSH/pi-ai 源码。完整边界、失败策略与演进约束见 [后端 Runtime 技术方案](../../../docs/development/backend-runtime.md)。
-
-Tripo 3D 是独立的后端网络 provider，不属于 LLM/DSH 模型路由。Runtime 通过
-`@aura/tripo` 使用官方 v3 SDK，并把 `/tripo/*` 接口挂在相同的 Origin 策略后；配置、
-接口和凭据规则见 [Tripo 3D 接入](../../../docs/features/tripo.md)。
 
 流程执行委托给 [`@aura/orchestration`](../orchestration/README.md)：本包仅创建/关闭流程宿主、在 Origin 检查后转交 `/flows/*`，并为演示模式提供本地模型端点。代码 Flow 的发现/HMR、执行、不同 preset/session 的关联与汇总均不放在 runtime 或前端。
 

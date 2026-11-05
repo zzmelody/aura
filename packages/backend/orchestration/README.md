@@ -2,53 +2,17 @@
 
 DSH 依赖统一固定为 `0.2.1-rc.5`，Cordis 为 `4.0.5`，loader / include 分别固定为 `1.0.6` / `1.0.10`。本包的 Zod 与 DSH domain 层统一为 `4.4.3`，Schema 持久化校验在 Aura 侧适配。升级使用已发布包，保留现有 profile、会话 ID、domain 与存储格式，不执行用户配置或历史数据迁移。集成测试通过隔离目录和本地合成模型验证授权、执行、取消与恢复，不调用真实付费模型。
 
-Aura 的编排子进程通过 DSH 的公开 `runProfile()` 启动 `aura-flow`。环境分层、profile 合并、Cordis 服务装配和退出清理由 DSH 处理。父子进程通过 stdio RPC 通信，启动异常通过 Aura 的脱敏诊断输出。
-
-DSH 启动阶段耗时写入终端和 `.aura/dsh/logs/aura-host.log`，`event: "startup"` 的记录按 `startupId` 关联一次启动。`stage` 包括 profile 准备、进程创建、DSH 加载、插件 preset/backend 激活、各 domain 打开、工作空间、Action 恢复、Flow/Action 发现、Loader 等待、Flow 恢复和握手。`status` 为 started/completed/failed；`durationMs` 是本阶段耗时，`elapsedMs` 是从本次启动开始的累计耗时。total、handshake、dsh-load 和 orchestration-setup 包含子阶段，不能相加。启动失败会保留最后开始的阶段和已完成阶段；日志只接受固定阶段、UUID 与数值，不记录配置、凭据、原始错误或上游响应。
-
-HMR 覆盖插件源码和 helper，并合并相同的 Flow/Action 监听根。DSH 的忽略匹配使用 POSIX glob，而 Windows `path.relative()` 返回反斜杠，因此生成的 profile 同时提供两种分隔符的忽略规则，避免为 `node_modules` 和隐藏目录注册大量文件监听。使用 DSH 0.2.1-alpha.2、Windows Electron 44.7.0、Node 24.21.0、相同的五个插件和独立空存储进行对照时，优化前启动 79.5 秒（DSH 加载 70.4 秒），优化后两次新进程启动分别为 13.3 秒与 22.4 秒。耗时受机器负载和文件缓存影响。
-
-`personalAssistant(create = false)` 读取 Aura 专属主会话与其工作空间；只有显式传入 `true` 才在缺失时创建。索引对并发打开合并处理，固定身份为协议定义的 `coding-aura-personal-assistant`，沿用现有 domain 与 DSH 日志。再次打开不改写已有记录、不触发模型、不更换目录，重启后继续原上下文和模型配置。普通会话的关闭、归档和删除接口拒绝结束此主会话；普通任务保持独立。所属工作空间不可用时返回冲突，不自动重建或迁移用户数据。
-
-`conversations(projectId, includeStatus = true)` 默认沿用历史状态投影；启动时传入 `false` 仅返回索引元数据和当前进程的运行、等待回答状态，不逐项读取 DSH 日志。`coding/conversation-list.ts` 拥有该投影，历史日志失败不隐藏会话，旧日志中尚未结束的回合仍在完整查询时投影为已停止；不改写任何索引或日志。
-
 目录读取直接投影已加载的最后可用定义，不触发磁盘扫描；HTTP 目录提供 ETag / 304。发现保留 Cordis HMR，新增/移除的兜底扫描为 5 秒，并合并同一发现器上并发的扫描请求。发现只处理目录和入口增删，已挂载模块由 DSH HMR 更新；不扫描源码依赖、不计算源码哈希。
 
 在线对话通过 `aura_flow_catalog` 读取所有可用 Flow 的公开输入 Schema，通过 `aura_run_flow` 调用相同的 durable 引擎，通过 `aura_flow_status` 读取原 Run 的当前输入与结果。明确的重复执行生成新 Run；同一工具 call ID 沿用原算法的稳定 requestId，保留旧执行的幂等身份。未知提交或读取结果阻止本轮自动重新启动，已接收运行的引用仍进入工具结果以便历史恢复。新运行可带可选 `conversationId`，在原 Run 格式中附加归属，列表同步返回，避免工作台重复导入为另一段会话；不迁移或重写旧记录。模型和执行仍经 DSH，停止聊天不会自动取消独立 Run。
 
 启动与查询工具会向外层 Agent 返回有界的步骤诊断：步骤 ID、子 Run、已记录的失败原因、人工输入要求、当前 attempt 耗时和剩余退避时间。运行时已检测到状态存档失败时，即使最后落盘的状态仍显示 running，也会返回存储故障。诊断复用面向用户的错误，不读取原始模型响应或日志。启动工具只短暂等待，后续故障通过原 runId 查询。
 
-`codingHistory(id, { page: true, beforeSeq?, throughSeq? })` 使用 DSH 的 message/turn 窗口和稳定日志截面返回完整回合与向前游标。默认调用仍支持完整历史投影；分页不改写 DSH 日志或用户配置，旁支过滤继承前缀，旧导入历史只在最早一页出现。
-
-执行宿主尚未就绪时，分页历史优先走 `coding/cold-history.ts`：在当前进程组合已发布的 DSH JSONL 只读持久化服务与 domain 校验，直接读取已完成回合，不等待完整插件与 Flow 恢复，也不启动执行进程。索引仅在有界私有临时副本中打开（最多 2 MiB、512 个文件），旧布局的自动引导只作用于副本；原索引和日志不迁移、不写入。每次读取都重新检查当前索引权限，关闭的会话、已解除关联或父会话已归档的旁支仍不可读取；JSONL 只使用 `read` 句柄，保留 DSH 的版本、修订与断尾校验。响应只包含现有历史 DTO，不输出原始日志事件。
-
-只读窗口每页最多十个完整回合，沿用原日志的 `beforeSeq` / `throughSeq`，可以与宿主就绪后的分页互接；继承前缀和最早一页的导入历史规则一致。未完成日志、索引过大、格式暂不可读等情况回退原宿主路径；存在非空的 home 级 `cordis.patch.yml` 时也回退，避免忽略用户对存储根或编码的覆盖。运行状态始终由执行宿主确认；已就绪的宿主继续提供包含内存状态的实时读取。HTTP 请求取消会传递到只读加载；该优化不预热、恢复或重发模型请求。`agent-failure.ts` 独立提供相同的安全错误投影，读取历史无需加载 Agent 执行适配器。
-
-`src/` 根模块拥有执行引擎、恢复、注册和 DSH 集成；业务模块按 `content/`、`video/`、`topics/` 归拢，产物登记、历史绑定和 HTTP 交付在 `artifacts/`，模型进程适配在 `local-ai/`。各领域的 library、production 与 routes 分开，公共 package 子路径名称保持稳定。完整职责见 [模块边界](../../../docs/development/module-boundaries.md)。
+`@aura/orchestration/service` 提供 DSH 宿主装配的 Flow 与 Action 服务。`artifacts/` 负责产物登记、历史绑定和读取，`managed-process/` 提供插件可用的受管进程和系统资源租约。Flow 的 HTTP 路由由 [Runtime](../runtime/README.md) 挂载。
 
 Aura 的 durable workflow script 引擎。脚本负责控制流；Graph 是只读静态投影。恢复从 `run()` 入口重放，完成的关键调用返回存档结果。运行时不保存 JS 栈、闭包、Promise 或任意局部变量。
 
-对话的 `skills(projectId)` RPC 通过 DSH skill registry 读取已注册工作空间的用户可调用技能，只返回名称与描述。文件系统 provider 与技能加载器沿用 DSH 组合，对话工具白名单允许 `skill` 并支持原生 `/name` 显式调用。Flow Agent 的工具白名单保持不变，DSH 按实际工具可见性发布技能目录。HTTP 边界为 `GET /coding/projects/:id/skills`，客户端不能提交任意扫描路径。
-
-工作空间对话按 DSH 会话头中绑定的目录读取根级 `AGENTS.md`，并通过该 Agent 自身的 DSH 提示词作用域加载。旁支及同目录的会话子 Agent 沿用这一边界。读取限于 64 KiB 的 UTF-8 正文，文件缺失、不可访问或指向符号链接时跳过。跨工作空间分叉按目标会话目录重新装配规则。宿主级指令加载器保持禁用，Flow Agent 不参与此加载过程。
-
-执行中的模型控制只保存当前会话的待发送选择；`steerCoding` 可附带 `modelConfig: { mode, selection }`，固定追加消息发送时的模型和思考强度。模型解析、图片校验通过后，引导与新选择一起交给 DSH Agent；DSH 的 `installModelSelection` 在后续步骤装配提示词时固定路由和思考强度，已经发出的请求保持原配置。不写入部署级默认模型。当前轮次内只允许切换同一模型服务的模型，跨服务切换需等本轮结束。无运行轮次返回 `steered: false`，校验失败不投递、不切换、不自动重试。
-
-对话发送或引导中附带图片时，DSH 模型元数据若在接收消息前判定模型不支持图片，返回安全的 422 提示，要求用户更换支持图片的模型或移除附件后自行发送。该拒绝不启动模型回合，不自动丢弃图片、切换模型或重发请求。
-
-追加指令还在校验时若本轮结束或停止，返回 `steered: false`。此时可通过历史接口的 `running` 字段确认服务是否已完成本轮收尾。
-
-追加消息可携带客户端生成的 `requestId`。Agent 读取时，实时流和历史中的 `steer` 事件带回同一 ID，用于更新已显示的消息。
-
-`POST /flows/assets/images` 在图片路由上执行 32 MiB 请求体限制，超出时返回图片大小错误。普通 Flow 请求的请求体上限为 256 KiB。
-
-工作空间对话的 `openCodingSide(parentId)` 每次显式调用都创建独立旁支，`closeCodingSide(id)` 仅关闭指定旁支。多个旁支分别通过 DSH fork/resume 继承主对话并保存自己的上下文和模型设置；首条提问成为旁支列表标题。关闭或归档主对话会释放它的全部旁支。索引在原 `aura_coding_conversations` domain 中添加可选 `sideConversations` 元数据，保留原 ID、domain 版本和旧字段；单旁支历史只在读取时投影，不扫描、迁移或重写用户数据。DSH 日志保持原样。
-
-旁支每轮使用专属系统规则，将主对话历史作为背景，并以旁支用户消息确定当前任务。用户可在旁支明确要求继续主对话的任务。新旁支首次 fork 后通过 DSH 关闭继承的计划模式，已建立的旁支恢复自身的计划状态。
-
 ## 编写 Flow
-
-`coding/terminals/*` RPC 管理用户的工作区终端。`coding/terminals.ts` 仅使用已发布的 `ctx.subprocess.terminalEnvironment/resolveExecutable/spawnTerminal`，不复制 DSH、不创建 Agent，也不持有模型凭据。PTY 以已注册工作区的目录启动；客户端不能传入任意 cwd、可执行文件或环境变量。DSH 提供父环境凭据过滤和完整进程会话的终止。终端有独立身份、1 MiB 有界输出与分页游标，输入、尺寸、活动检查和关闭均指向该身份。重放会过滤已经回答过的终端查询，防止重连时将旧设备响应混入当前输入。关闭工作区终端或 runtime 时等待 DSH 完整清理进程后才移除终端。未指定 `force` 的 POSIX 终端在重新确认空闲并阻止新输入后，先通过公开 `signalForeground("SIGHUP")` 挂断 shell，避免交互式 shell 忽略 TERM 时固定等待 3 秒；挂断失败仍执行 DSH 的完整清理。启动中、忙碌、活动未知及 Windows 终端保留原有 3 秒退出宽限期，不提前升级终止。关闭仍忙碌或活动未知的终端先返回 409，只有用户确认后才强制关闭。终端仅在当前服务进程中存在，重启不恢复命令。
 
 内置 Flow 支持 `flow/<flow-id>/<flow-id>.flow.ts`，兼容原有 `.flow.js`；每个一级目录只允许一个同名入口，本地辅助模块可以嵌套。新增内置入口使用 TypeScript。外部插件仍按公共 SDK 契约加载 ESM JavaScript。使用公开 `@aura/orchestration/flow` 导出获得类型推导。
 
@@ -216,7 +180,7 @@ Action `recovery` 默认为 `manual`。只有显式 `idempotent` 的直接 Actio
 
 外部插件可以通过 `@aura/plugin-sdk/action` 的 `auraCapability(ctx, id)` 使用 manifest `permissions` 已声明且宿主支持的领域能力；本插件后端的私有服务经 `ctx.services` 提供。能力实现由长驻宿主或插件后端持有，Action 只收到固定操作及 JSON 结果，不接触凭据、任意 URL 或进程句柄。
 
-Flow Agent 使用 fail-closed 工具白名单：固定为原生工具呈现并屏蔽 DSH、preset 及 profile 的全部继承工具，只把 `flow.agent({actions:["text-stats"],...})` 显式声明的 Action 注册到当前 Agent scope；未声明时模型工具集合为空。profile 对已知内置工具的禁用继续作为纵深防护，未来新增的 DSH 默认工具也不会自动进入 Flow Agent 上下文。Action 名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。全部内置和仓库插件的 Action 超时统一为 30 分钟，最大也为 30 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
+Flow Agent 使用 fail-closed 工具白名单：固定为原生工具呈现并屏蔽 DSH、preset 及 profile 的全部继承工具，只把 `flow.agent({actions:["your-action"],...})` 显式声明的 Action 注册到当前 Agent scope；未声明时模型工具集合为空。profile 对已知内置工具的禁用继续作为纵深防护，未来新增的 DSH 默认工具也不会自动进入 Flow Agent 上下文。Action 名称冲突会拒绝。直接 Action、Agent 共用 Flow 并发门，Agent 内部工具使用 DSH 的并发安全和超时策略。全部内置和仓库插件的 Action 超时统一为 30 分钟，最大也为 30 分钟；取消、暂停和关闭需要代码遵守 `signal`，无法强制打断阻塞 JS。
 
 ## 队列、恢复与人工处理
 
@@ -237,10 +201,6 @@ unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算�
 
 ### 本地模型 Actions
 
-`comfy-workflow` 支持由 Aura 调用 ComfyUI 自定义 API workflow：传 JSON 对象或本地文件、按节点覆盖入参、收集保存/预览产物和非文件输出。`local-image` / `local-video` 复用同一执行器作为默认模板；每次执行独立目录，取消和结束后回收受管服务及中间文件。完整参数和可运行示例见 [本地模型 Actions](docs/local-ai-actions.md#自定义-comfyui-workflow)。
-
-`local-image`、`local-video`、`local-tts` 分别访问已部署的 Qwen-Image-2512、MiniMax H3 和 Qwen3-TTS，另有 `local-ai-service` 管理启停和状态。它们是可供未来 Flow / Agent 复用的独立 Action，不新增 Workflow。后端统一串行使用 GPU，生成结束、取消或失败后回收受管进程，单独启动有 60 秒空闲期限。配置、参数、调用示例及 Windows 异常退出资源所有权见 [本地模型 Actions](docs/local-ai-actions.md)。
-
 ### macOS 保持唤醒 Action
 
 `macos-keep-awake` 在 macOS 后台管理 Aura 自己启动的 `/usr/bin/caffeinate -i`。输入 `operation: "start" | "stop" | "status"`；重复 start 复用已记录的进程，stop 只终止 PID 与可执行文件均核验为 `caffeinate` 的进程。状态写在工作区 `.aura/macos-keep-awake.json`，因此 Aura 重启后仍可查看和停止；进程不会阻止合盖、手动睡眠或低电量关机。其他平台调用会明确失败。
@@ -255,7 +215,7 @@ unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算�
 
 `FlowDiscovery` 在首次启动、运行开始前和后台短周期扫描时检查内置及已启用外部根的直接子目录。非法 ID、入口名不一致、缺少入口或多个 `*.flow.js` 都会作为不可用项进入 catalog。外部贡献使用 `<plugin-id>/<local-id>` 规范 ID，内置贡献保持原有 ID；DSH 工具名由后端映射为安全名称，持久化和公开接口始终保留规范 ID。
 
-外部插件的 manifest、信任、能力声明和根目录由 `@aura/extensions` 在进入编排宿主前校验，插件代码只通过 `@aura/plugin-sdk/action` 与 `@aura/plugin-sdk/flow` 接入。宿主不支持 manifest 请求的任一 capability 时插件整体保持不可用，不带着缺失能力部分加载。运行时可通过内部 `plugins/configure` RPC 动态替换多根发现器并扩展 HMR 监听；加载失败会恢复上一组根。源码直接交给模块加载器，不计算贡献目录或静态依赖闭包的哈希，动态 import 按 Node/DSH 的原生规则加载。旧记录里的可选 `sourceHash` 继续读取并保留，新记录不再生成该字段；恢复或续接使用当前已加载的代码，不比较源码哈希。插件身份、模型配置、调用请求指纹、输入和步骤幂等检查仍生效；未知结果和已完成副作用不因代码更新而重发。显式 compatibility 仍决定旧 ID 和 pre-plugin 身份能否保留；旧配置中的 from/to 哈希只作为兼容字段读取。运行中已开始的执行片段持有其模块引用；后续恢复可使用更新后的代码。Aura 不替插件执行安装、构建或生命周期脚本。
+外部插件的 manifest、信任、能力声明和根目录由 `@aura/plugin-manager` 在进入编排宿主前校验，插件代码只通过 `@aura/plugin-sdk/action` 与 `@aura/plugin-sdk/flow` 接入。宿主不支持 manifest 请求的任一 capability 时插件整体保持不可用，不带着缺失能力部分加载。运行时可通过内部 `plugins/configure` RPC 动态替换多根发现器并扩展 HMR 监听；加载失败会恢复上一组根。源码直接交给模块加载器，不计算贡献目录或静态依赖闭包的哈希，动态 import 按 Node/DSH 的原生规则加载。旧记录里的可选 `sourceHash` 继续读取并保留，新记录不再生成该字段；恢复或续接使用当前已加载的代码，不比较源码哈希。插件身份、模型配置、调用请求指纹、输入和步骤幂等检查仍生效；未知结果和已完成副作用不因代码更新而重发。显式 compatibility 仍决定旧 ID 和 pre-plugin 身份能否保留；旧配置中的 from/to 哈希只作为兼容字段读取。运行中已开始的执行片段持有其模块引用；后续恢复可使用更新后的代码。Aura 不替插件执行安装、构建或生命周期脚本。
 
 `contributes.backend` 通过原生递归文件事件观察插件源码；目录、入口和 backend 不做源码哈希或依赖树解析。通知变更后在后台扫描或显式替换时加载新模块，未变化的设置和源码不会反复打开后端。
 宿主等待进行中的调用和该插件的活跃 Flow 结束后，准备新后端并切换版本；
@@ -350,9 +310,9 @@ Discovery 对旧根 `ctx.agent/action` 和原生 Promise 并发给出行号诊�
 
 ## 工作流产物预览
 
-图片（PNG/JPEG/WebP）、MP4 视频和自包含 GLB 通过 `GeneratedArtifacts` 按 SHA-256 归档，图片限制 32 MiB / 4000 万像素，视频和模型限制 200 MiB。图片缩略图为最长 640×480 的 WebP；Tripo 模型使用已有海报，不为预览再次调用生成服务。含外部资源 URI 或无法解析的 GLB 仅允许下载。
+图片（PNG/JPEG/WebP）、MP4 视频和自包含 GLB 通过 `GeneratedArtifacts` 按 SHA-256 归档，图片限制 32 MiB / 4000 万像素，视频和模型限制 200 MiB。图片缩略图为最长 640×480 的 WebP；插件模型可提供已有海报，不为预览再次调用生成服务。含外部资源 URI 或无法解析的 GLB 仅允许下载。
 
-`WorkflowArtifactIndex` 在同一受管目录的 `runs/` 保存版本化 sidecar，记录 run、step、attempt 和工具 call 的关联、补登记状态与后端恢复信息。文件路径仅留在后端索引；公开 DTO 不包含路径或上游 URL。原 Action 输出、JSON Schema、运行记录与重放指纹均保持原样。`localAI.image`、`localAI.comfyWorkflow` 和 Tripo game-asset capability 在调用上下文内自动登记，因此直接 Action 和 Agent 工具都可在生成后立即展示文件。受信任 Action 也可调用 `await ctx.artifacts?.register(path, { name, poster })`，该端口没有模型可调用的任意文件读取接口。
+`WorkflowArtifactIndex` 在同一受管目录的 `runs/` 保存版本化 sidecar，记录 run、step、attempt 和工具 call 的关联、补登记状态与后端恢复信息。文件路径仅留在后端索引；公开 DTO 不包含路径或上游 URL。原 Action 输出、JSON Schema、运行记录与重放指纹均保持原样。直接 Action 和 Agent 工具可在调用上下文内登记产物并立即展示。受信任 Action 可调用 `await ctx.artifacts?.register(path, { name, poster })`，该端口没有模型可调用的任意文件读取接口。
 
 Runtime 挂载以下 Hono 路由；JSON-RPC 只解析关联与元数据，HTTP 进程从受管目录按文件描述符校验内容 hash 并流式发送：
 
@@ -360,7 +320,7 @@ Runtime 挂载以下 Hono 路由；JSON-RPC 只解析关联与元数据，HTTP �
 - `GET|HEAD /flows/runs/:runId/artifacts/:artifactId/content`：原始文件，支持单段 Range、ETag、If-None-Match、If-Range；`?download=1` 强制下载。
 - `GET|HEAD /flows/runs/:runId/artifacts/:artifactId/thumbnail`：图片缩略图或模型海报。
 
-每次读取检查运行与产物归属；路径穿越、符号链接及内容变化均不能通过。历史迁移按运行持久化版本/指纹，可重启续跑；查看历史运行时优先处理。仅接受已知 Comfy 输出目录、匹配 Tripo manifest/task 的产物以及已登记 GLB。Agent 历史只解析结构化工具结果，不从自然语言提取路径。已删除或无结构化结果的历史日志不能恢复，缺失文件或未经来源验证的候选保留不可用状态。成功归档的文件默认保留，隐藏客户端会话不删除归档。
+每次读取检查运行与产物归属；路径穿越、符号链接及内容变化均不能通过。历史迁移按运行持久化版本/指纹，可重启续跑；查看历史运行时优先处理。历史产物来自插件的候选投影和已登记 GLB。Agent 历史只解析结构化工具结果，不从自然语言提取路径。已删除或无结构化结果的历史日志不能恢复，缺失文件或未经来源验证的候选保留不可用状态。成功归档的文件默认保留，隐藏客户端会话不删除归档。
 
 ## 产品插件后端
 

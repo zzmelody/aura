@@ -9,7 +9,6 @@ test("Action .d.ts provides checkJs input/output inference and a leaf execution 
   ).replaceAll("\\", "/");
   const source = `
 import { ActionFailure, defineAction } from "@aura/orchestration/action";
-import { localAI } from "@aura/orchestration/local-ai";
 defineAction({
   title: "Types", description: "Type fixture",
   parameters: { text: { type: "string", required: true } },
@@ -18,12 +17,7 @@ defineAction({
     ctx.signal.throwIfAborted();
     ctx.cwd.toUpperCase();
     ctx.idempotencyKey?.toUpperCase();
-    localAI(ctx).image({ prompt: input.text }, ctx.signal);
-    localAI(ctx).comfyWorkflow({ service: "qwen-image", workflowFile: "test.json", overrides: { "6": { text: input.text } } }, ctx.signal);
-    // @ts-expect-error ComfyUI workflows cannot target the standalone TTS service.
-    localAI(ctx).comfyWorkflow({ service: "qwen3-tts", workflow: {} }, ctx.signal);
-    // @ts-expect-error Media Actions require a string prompt.
-    localAI(ctx).image({ prompt: 42 }, ctx.signal);
+    await ctx.artifacts?.register("output.png");
     // @ts-expect-error Actions have no Flow invocation API.
     ctx.flow("nested");
     // @ts-expect-error Input is inferred from DSH parameters.

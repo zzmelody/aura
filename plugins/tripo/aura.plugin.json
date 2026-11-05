@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 2,
+  "id": "aura.tripo",
+  "name": "Tripo 3D",
+  "version": "0.1.0",
+  "engines": {
+    "aura": "^0.1.0",
+    "pluginSdk": "^2.4.0"
+  },
+  "contributes": {
+    "backend": "./backend/dist/index.js",
+    "actions": "./actions",
+    "pages": "./client/dist/client.js",
+    "http": {
+      "entry": "./backend/dist/http.js",
+      "mounts": ["/tripo"]
+    }
+  }
+}

@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowLeft,
   BookOpen,
@@ -12,23 +19,34 @@ import {
 } from "lucide-react";
 import type { CodingSkillInfo, FlowCatalogEntry } from "@aura/protocol/types";
 import { FlowIcon } from "../../FlowIcon";
-import { slashQuery } from "../../flowPicker";
 import { useAnchoredPopover } from "../../useAnchoredPopover";
 import { listSkills } from "./api";
 import {
   composerEntries,
   composerGroups,
   composerIndex,
-  skillDraft,
+  collaborationPrefix,
+  insertCollaborationCommand,
+  insertSkill,
+  replaceDraftRange,
+  skillReferences,
+  slashAtCaret,
   type ComposerCommand,
   type ComposerEntry,
   type ComposerGroup,
+  type DraftRange,
 } from "./composer-commands";
 import "./composer-commands.css";
+
+interface DraftSelection extends DraftRange {
+  draftKey: string;
+  draft: string;
+}
 
 export function useComposerCommands({
   endpoint,
   projectId,
+  draftKey,
   draft,
   setDraft,
   flows,
@@ -40,17 +58,25 @@ export function useComposerCommands({
 }: {
   endpoint: string;
   projectId?: string;
+  draftKey: string;
   draft: string;
   setDraft(value: string): void;
   flows: FlowCatalogEntry[];
   running: boolean;
   enabled: boolean;
   onFlow?: (flow: FlowCatalogEntry) => void;
-  onCommand(command: ComposerCommand): void;
+  onCommand(command: Exclude<ComposerCommand, "plan" | "goal">): void;
   editor: React.RefObject<HTMLTextAreaElement | null>;
 }) {
-  const [launched, setLaunched] = useState(false);
-  const [dismissed, setDismissed] = useState<string>();
+  const [launcherKey, setLauncherKey] = useState<string>();
+  const [dismissed, setDismissed] = useState<DraftSelection>();
+  const [position, setPosition] = useState<DraftSelection>();
+  const [composing, setComposing] = useState(false);
+  const pendingCaret = useRef<{
+    draftKey: string;
+    draft: string;
+    caret: number;
+  }>(null);
   const [search, setSearch] = useState("");
   const [group, setGroup] = useState<ComposerGroup>();
   const [index, setIndex] = useState(0);
@@ -61,15 +87,29 @@ export function useComposerCommands({
     error?: string;
   }>();
   const id = useId();
-  const slash = slashQuery(draft);
-  const visible =
-    enabled && (launched || (slash !== undefined && dismissed !== draft));
   const key = `${endpoint}/${projectId}`;
   const skills = catalog?.key === key ? (catalog.skills ?? []) : [];
+  const references = skillReferences(draft, skills);
+  const command = collaborationPrefix(draft);
+  const selection =
+    position?.draftKey === draftKey && position.draft === draft
+      ? position
+      : undefined;
+  const slash = selection && slashAtCaret(draft, selection);
+  const slashDismissed =
+    dismissed?.draftKey === draftKey &&
+    dismissed.draft === draft &&
+    dismissed.start === slash?.start;
+  const inCommand =
+    command && slash?.start === command.start && command.end < draft.length;
+  const liveSlash = slashDismissed || inCommand ? undefined : slash;
+  const launched = launcherKey === draftKey;
+  const visible =
+    enabled && !composing && (launched || liveSlash !== undefined);
   const skillsError = catalog?.key === key ? catalog.error : undefined;
   const skillsLoading =
     catalog?.key !== key || (!catalog.skills && !catalog.error);
-  const query = slash ?? search;
+  const query = liveSlash?.query ?? search;
   const entries = composerEntries({
     flows,
     skills,
@@ -77,13 +117,16 @@ export function useComposerCommands({
     group,
     running,
     canRunFlow: Boolean(onFlow),
+    leading: !liveSlash || !draft.slice(0, liveSlash.start).trim(),
   });
   const active = Math.min(index, Math.max(0, entries.length - 1));
 
   useEffect(() => {
     if (!visible || !projectId) return;
     const abort = new AbortController();
-    setCatalog({ key });
+    setCatalog((current) =>
+      current?.key === key && current.skills ? current : { key },
+    );
     listSkills(endpoint, projectId, abort.signal)
       .then((skills) => {
         if (!abort.signal.aborted) setCatalog({ key, skills });
@@ -95,14 +138,60 @@ export function useComposerCommands({
     return () => abort.abort();
   }, [visible, endpoint, projectId, key, revision]);
 
+  useLayoutEffect(() => {
+    const pending = pendingCaret.current;
+    if (!pending) return;
+    pendingCaret.current = null;
+    if (pending.draftKey === draftKey && pending.draft === draft)
+      editor.current?.setSelectionRange(pending.caret, pending.caret);
+  }, [draft, draftKey, editor]);
+
   const close = useCallback(() => {
-    setLaunched(false);
-    setDismissed(draft);
+    setLauncherKey(undefined);
+    const token = selection && slashAtCaret(draft, selection);
+    if (token) setDismissed({ ...token, draft, draftKey });
     setSearch("");
     setGroup(undefined);
     setIndex(0);
     editor.current?.focus();
-  }, [draft, editor]);
+  }, [draft, draftKey, editor, selection]);
+
+  function trackSelection(input: HTMLTextAreaElement) {
+    const next = {
+      draftKey,
+      draft: input.value,
+      start: input.selectionStart,
+      end: input.selectionEnd,
+    };
+    setPosition((current) =>
+      current?.draftKey === draftKey &&
+      current.draft === next.draft &&
+      current.start === next.start &&
+      current.end === next.end
+        ? current
+        : next,
+    );
+    if (!launched && slashAtCaret(input.value, next)?.start !== slash?.start) {
+      setGroup(undefined);
+      setIndex(0);
+    }
+  }
+
+  function applyEdit(edit: { draft: string; caret: number }) {
+    const next = { ...edit, draftKey };
+    setPosition({
+      draftKey,
+      draft: next.draft,
+      start: next.caret,
+      end: next.caret,
+    });
+    if (next.draft === draft) {
+      editor.current?.setSelectionRange(next.caret, next.caret);
+    } else {
+      pendingCaret.current = next;
+      setDraft(next.draft);
+    }
+  }
 
   function choose(entry: ComposerEntry) {
     if (entry.disabled) return;
@@ -110,29 +199,39 @@ export function useComposerCommands({
       setGroup(entry.group);
       setIndex(0);
       setSearch("");
-      if (slash) setDraft("/");
+      if (liveSlash?.query) applyEdit(replaceDraftRange(draft, liveSlash, "/"));
       return;
     }
     close();
     if (entry.kind === "skill") {
-      setDraft(skillDraft(entry.skill.name, draft));
-      editor.current?.focus();
+      const range = liveSlash ?? { start: 0, end: 0 };
+      const edit = insertSkill(draft, range, entry.skill.name);
+      applyEdit(edit);
+      const token = slashAtCaret(edit.draft, {
+        start: edit.caret,
+        end: edit.caret,
+      });
+      if (token) setDismissed({ ...token, draftKey, draft: edit.draft });
     } else if (entry.kind === "flow") {
-      if (slash !== undefined) setDraft("");
+      if (liveSlash) applyEdit(replaceDraftRange(draft, liveSlash, ""));
       onFlow?.(entry.flow);
+    } else if (entry.command === "plan" || entry.command === "goal") {
+      const end =
+        liveSlash?.end ??
+        command?.end ??
+        (draft.trim() === `/${entry.command}` ? draft.length : 0);
+      applyEdit(insertCollaborationCommand(draft, end, entry.command));
     } else {
-      if (
-        slash !== undefined ||
-        entry.command === "clear" ||
-        draft.trim() === `/${entry.command}`
-      )
+      if (entry.command === "clear" || draft.trim() === `/${entry.command}`)
         setDraft("");
+      else if (liveSlash) applyEdit(replaceDraftRange(draft, liveSlash, ""));
       onCommand(entry.command);
     }
   }
 
   function handleKey(event: React.KeyboardEvent): boolean {
-    if (!visible || event.nativeEvent.isComposing) return false;
+    if (!visible || event.nativeEvent.isComposing || event.keyCode === 229)
+      return false;
     if (event.key === "Escape" || (event.key === "Tab" && event.shiftKey)) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -141,7 +240,7 @@ export function useComposerCommands({
       close();
       return true;
     }
-    if (event.key === "ArrowLeft" && group && !query) {
+    if (event.key === "ArrowLeft" && launched && group && !query) {
       event.preventDefault();
       setGroup(undefined);
       setIndex(0);
@@ -159,14 +258,17 @@ export function useComposerCommands({
       return true;
     }
     if (
-      event.key === "Enter" ||
+      (event.key === "Enter" && !event.shiftKey) ||
       (event.key === "Tab" && entries[active]) ||
-      (event.key === "ArrowRight" && entries[active]?.kind === "group")
+      (event.key === "ArrowRight" &&
+        launched &&
+        entries[active]?.kind === "group")
     ) {
       event.preventDefault();
       if (entries[active]) choose(entries[active]);
       return true;
     }
+    if (event.key === "Tab") close();
     return false;
   }
 
@@ -174,19 +276,23 @@ export function useComposerCommands({
     visible,
     id,
     activeId: entries[active] ? `${id}-${active}` : undefined,
-    slash,
+    references,
+    command,
     query,
     group,
     entries,
     active,
     skillsLoading,
     skillsError,
-    searchable: slash === undefined,
+    searchable: liveSlash === undefined,
     close,
     choose,
     handleKey,
     submitCommand: () => {
-      const name = /^\/(model|stop|clear|plan|goal)\s*$/u.exec(draft)?.[1];
+      if (!enabled) return false;
+      const name = /^\/(model|stop|clear|compact|plan|goal)\s*$/u.exec(
+        draft.trimStart(),
+      )?.[1];
       if (!name) return false;
       const entry = composerEntries({
         flows,
@@ -209,17 +315,19 @@ export function useComposerCommands({
       setSearch(value);
       setIndex(0);
     },
-    changeDraft: (value: string) => {
-      setDraft(value);
+    trackSelection,
+    setComposing,
+    changeDraft: (input: HTMLTextAreaElement) => {
+      trackSelection(input);
+      setDraft(input.value);
       setDismissed(undefined);
       setIndex(0);
-      if (slash === undefined || slashQuery(value) === undefined)
-        setGroup(undefined);
     },
     toggle: () => {
       if (visible) close();
       else {
-        setLaunched(true);
+        setLauncherKey(draftKey);
+        setDismissed(undefined);
         setGroup(undefined);
         setIndex(0);
         editor.current?.focus();

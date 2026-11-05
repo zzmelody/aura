@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { FlowError, type OrchestrationHost } from "@aura/orchestration";
+import { FlowError, type OrchestrationHost } from "../src/dsh/host.ts";
 import { createCodingApp } from "../src/coding-routes.ts";
 
 test("assistant restoration is read-only and explicit opening forwards creation intent", async () => {

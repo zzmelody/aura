@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { CodexSubscriptionAuth, readAiServices } from "@aura/dsh-auth";
-import { createTripoService } from "@aura/tripo";
+import { CodexSubscriptionAuth } from "@aura/dsh-auth";
 import { AiServices } from "../src/ai-services.ts";
 import { createAiServicesApp } from "../src/ai-services-routes.ts";
 import { resolveRuntimeConfig } from "../src/runtime-config.ts";
@@ -16,15 +15,7 @@ test("AI routes require the native loopback capability and never return submitte
     credentialPath: config.credentialPath,
   });
   let busy = false;
-  const tripo = await createTripoService({
-    credentialPath: config.tripoCredentialPath,
-    region: "global",
-    resolveOptions: async () => ({
-      credentialPath: config.tripoCredentialPath,
-      region: (await readAiServices(root)).tripoRegion,
-    }),
-  });
-  const services = new AiServices(config, auth, tripo, async () => busy);
+  const services = new AiServices(config, auth, async () => busy);
   const app = createAiServicesApp(services, true, "fixture-bootstrap");
   t.after(async () => {
     await auth.close();
@@ -73,21 +64,7 @@ test("AI routes require the native loopback capability and never return submitte
   assert.ok(!body.includes("private-fixture-key"));
   assert.equal(JSON.parse(body).model.configured, true);
   assert.equal(response.headers.get("cache-control"), "no-store");
-  const tripoResponse = await post("/tripo", {
-    region: "china",
-    key: "private-tripo-key",
-  });
-  assert.equal(tripoResponse.status, 200);
-  assert.equal(JSON.parse(await tripoResponse.text()).tripo.region, "china");
-  assert.equal(
-    await readFile(config.tripoCredentialPath, "utf8"),
-    "private-tripo-key",
-  );
   busy = true;
-  assert.equal(
-    (await post("/tripo", { region: "global", clearKey: true })).status,
-    400,
-  );
   assert.equal((await post("/codex/logout", {})).status, 400);
   assert.equal(
     (
@@ -107,18 +84,7 @@ test("AI routes require the native loopback capability and never return submitte
     ).status,
     400,
   );
-  assert.equal(
-    await readFile(config.tripoCredentialPath, "utf8"),
-    "private-tripo-key",
-  );
   busy = false;
-  assert.equal(
-    (await post("/tripo", { region: "china", clearKey: true })).status,
-    200,
-  );
-  await assert.rejects(readFile(config.tripoCredentialPath), {
-    code: "ENOENT",
-  });
   assert.equal(
     (
       await post("/model", {

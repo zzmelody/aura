@@ -12,7 +12,9 @@
     "./types": "./src/types.ts",
     "./models": "./src/models.ts",
     "./conversations": "./src/conversations.ts",
-    "./browser": "./src/browser.ts"
+    "./browser": "./src/browser.ts",
+    "./plugin-http": "./src/plugin-http.ts",
+    "./errors": "./src/errors.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

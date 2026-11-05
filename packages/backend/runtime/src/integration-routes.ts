@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { FlowError, type OrchestrationHost } from "@aura/orchestration";
+import { FlowError, type OrchestrationHost } from "./dsh/host.ts";
 import type {
   AgentTeamView,
   ConversationSearchHit,

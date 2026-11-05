@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
-import { TTS_VOICES } from "./local-ai/api.ts";
 import type { PluginTaskTool } from "./backend-api.ts";
 import type {
   ChatWorkflowStart,
@@ -276,92 +275,6 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
     ],
   };
 
-  const tts = compileTool({
-    name: "aura_tts",
-    description:
-      "运行 Aura「语音合成」工作流：把一段文字合成为 WAV 配音。用户明确要求朗读、配音或生成语音时调用。",
-    parameters: {
-      text: {
-        type: "string",
-        required: true,
-        description: "要朗读的文字，1–2000 字。",
-      },
-      speaker: {
-        type: "string",
-        enum: [...TTS_VOICES],
-        default: "Vivian",
-        description: "预设音色。",
-      },
-      language: {
-        type: "string",
-        enum: ["Auto", "Chinese", "English", "Japanese", "Korean"],
-        default: "Auto",
-      },
-    },
-    output,
-    timeoutMs: waitMs + 15_000,
-    execute: (
-      args: { text: string; speaker?: string; language?: string },
-      exec: { callId: string; signal: AbortSignal },
-    ) =>
-      once(exec.callId, exec.signal, async (requestId) => {
-        const input = {
-          text: args.text,
-          speaker: args.speaker ?? "Vivian",
-          language: args.language ?? "Auto",
-        };
-        const run = await host.start({
-          requestId,
-          flowId: "tts",
-          input,
-          mode: scope.mode,
-          ...(scope.sessionId ? { conversationId: scope.sessionId } : {}),
-        });
-        return { runId: run.id, flowId: "tts", title: run.flow.title, input };
-      }),
-  });
-
-  const image = compileTool({
-    name: "aura_image",
-    description:
-      "运行 Aura「图片生成」工作流：用本机图片模型按提示词生成一张图片。用户明确要求画图、生成图片、出一张图时调用。提示词写清主体、场景、风格与构图。",
-    parameters: {
-      prompt: {
-        type: "string",
-        required: true,
-        description: "画面描述，1–2000 字。",
-      },
-      aspect: {
-        type: "string",
-        enum: ["square", "portrait", "landscape"],
-        default: "square",
-        description: "画幅：方图、竖图或横图。",
-      },
-      negative: { type: "string", description: "不希望出现的内容。" },
-    },
-    output,
-    timeoutMs: waitMs + 15_000,
-    execute: (
-      args: { prompt: string; aspect?: string; negative?: string },
-      exec: { callId: string; signal: AbortSignal },
-    ) =>
-      once(exec.callId, exec.signal, async (requestId) => {
-        const input = {
-          prompt: args.prompt,
-          aspect: args.aspect ?? "square",
-          ...(args.negative ? { negative: args.negative } : {}),
-        };
-        const run = await host.start({
-          requestId,
-          flowId: "image",
-          input,
-          mode: scope.mode,
-          ...(scope.sessionId ? { conversationId: scope.sessionId } : {}),
-        });
-        return { runId: run.id, flowId: "image", title: run.flow.title, input };
-      }),
-  });
-
   const catalog = compileTool({
     name: "aura_flow_catalog",
     description:
@@ -426,8 +339,6 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
   });
 
   const names = new Set([
-    "aura_tts",
-    "aura_image",
     "aura_flow_catalog",
     "aura_run_flow",
     "aura_flow_status",
@@ -455,5 +366,5 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
         ),
     });
   });
-  return [tts, image, catalog, run, status, ...plugins];
+  return [catalog, run, status, ...plugins];
 }

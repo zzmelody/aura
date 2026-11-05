@@ -1,3 +1,8 @@
+import {
+  agentConfigSchema,
+  agentOptionsSchema,
+} from "@aura/dsh-auth/model-config";
+import { FlowError } from "@aura/protocol/errors";
 import type { JsonValue } from "@aura/protocol/types";
 import { z } from "zod";
 import { snapshotJsonValue } from "@deepseek-ai/dsh-util-values";
@@ -39,32 +44,10 @@ export const startSchema = z
   })
   .strict();
 
-const agentOptionFields = {
-  model: z.string().trim().min(1).max(200).optional(),
-  reasoningEffort: z
-    .string()
-    .trim()
-    .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)
-    .optional(),
-  maxTokens: z.number().int().min(1).max(1_000_000).optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  timeoutMs: z
-    .number()
-    .int()
-    .min(1_000)
-    .max(30 * 60_000)
-    .optional(),
-};
-export const agentOptionsSchema = z.object(agentOptionFields).strict();
-export const agentConfigSchema = z
-  .object({
-    ...agentOptionFields,
-    provider: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/u),
-    model: agentOptionFields.model.unwrap(),
-    reasoningEffort: agentOptionFields.reasoningEffort.unwrap(),
-    timeoutMs: agentOptionFields.timeoutMs.unwrap(),
-  })
-  .strict();
+export {
+  agentConfigSchema,
+  agentOptionsSchema,
+} from "@aura/dsh-auth/model-config";
 
 export const flowImageSchema = z
   .object({
@@ -88,9 +71,8 @@ export const flowImageSchema = z
   })
   .strict();
 
-export const agentRequestSchema = z
-  .object({
-    ...agentOptionFields,
+export const agentRequestSchema = agentOptionsSchema
+  .extend({
     id: flowIdSchema,
     label: z.string().trim().min(1).max(100),
     preset: contributionIdSchema,
@@ -311,13 +293,7 @@ export const runSchema = z.object({
 export const active = (status: string) =>
   status === "queued" || status === "running";
 
-export class FlowError extends Error {
-  status: number;
-  constructor(message: string, status = 400) {
-    super(message);
-    this.status = status;
-  }
-}
+export { FlowError };
 
 export function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);

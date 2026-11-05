@@ -93,7 +93,7 @@ The file `aura.plugin.json` uses UTF-8 JSON without executable values:
     "flows": "./flows"
   },
   "permissions": [
-    "aura.tripo.game-asset"
+    "aura.codex.image"
   ]
 }
 ```
@@ -112,7 +112,7 @@ The file `aura.plugin.json` uses UTF-8 JSON without executable values:
 
 ### 5.2 Optional fields
 
-- `permissions` lists built-in host capabilities (IDs such as `aura.tripo.game-asset`, `aura.flow.invoke`) and defaults to an empty array; omit it when empty. A plugin's own backend is never listed here.
+- `permissions` lists built-in host capabilities (IDs such as `aura.codex.image`, `aura.flow.invoke`) and defaults to an empty array; omit it when empty. A plugin's own backend is never listed here.
 - `description`, `homepage`, and `license` MAY provide display metadata and MUST NOT affect execution.
 - Unknown top-level fields MUST be rejected so misspelled security- or execution-related fields cannot be silently ignored.
 
@@ -360,7 +360,7 @@ When implementing this contract in Aura:
 
 - Put manifest types that are truly runtime-neutral in a shared package only if both frontend and backend need them; otherwise keep them in backend code.
 - Put public Action/Flow author contracts in a backend library such as `packages/backend/plugin-sdk`.
-- Put configuration, manifest discovery, trust decisions, multi-root aggregation, and lifecycle management in a backend library such as `packages/backend/extensions`.
+- Put configuration, manifest discovery, trust decisions, multi-root aggregation, and lifecycle management in a backend library such as `packages/backend/plugin-manager`.
 - Keep Action/Flow execution and DSH/Cordis integration in `packages/backend/orchestration`.
 - Keep final construction and configuration wiring in `packages/backend/runtime`.
 - Do not make frontend libraries depend on plugin-host or orchestration packages.

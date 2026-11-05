@@ -12,13 +12,6 @@ function resolvePort(value: number): number {
   return value;
 }
 
-function resolveTripoRegion(value: string | undefined): "global" | "china" {
-  const region = value?.trim().toLowerCase() || "global";
-  if (region !== "global" && region !== "china")
-    throw new Error(`Aura Tripo region is invalid: ${region}`);
-  return region;
-}
-
 /** Trusted plugin code may be configured only when the runtime is not LAN-bound. */
 export function isLoopbackRuntimeHost(host: string): boolean {
   return new Set(["localhost", "127.0.0.1", "::1"]).has(
@@ -47,8 +40,6 @@ export function resolveRuntimeConfig(
     dshHome: join(root, ".aura", "dsh"),
     credentialPath: join(root, ".aura", "dsh", ".credentials.yaml"),
     codexModel: process.env.AURA_CODEX_MODEL ?? "gpt-6.1-sol",
-    tripoCredentialPath: join(root, ".aura", "tripo", "api-key"),
-    tripoRegion: resolveTripoRegion(process.env.AURA_TRIPO_REGION),
     pluginConfigPath: resolve(
       options.pluginConfigPath ?? join(root, ".aura", "plugins.json"),
     ),

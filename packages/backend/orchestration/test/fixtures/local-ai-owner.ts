@@ -3,18 +3,18 @@ import { createHash } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { Context } from "@deepseek-ai/cordis";
 import LocalSubprocessRuntime from "@deepseek-ai/dsh-subprocess-local";
-import { acquireGpuLease } from "../../src/local-ai/ownership.ts";
-import { launchOwned } from "../../src/local-ai/process.ts";
+import { acquireProcessLease } from "../../src/managed-process/ownership.ts";
+import { launchOwned } from "../../src/managed-process/process.ts";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 
 const [role, path] = process.argv.slice(2);
 const leaseName =
-  "Local\\Aura.LocalAI.Test." + createHash("sha256").update(path).digest("hex");
+  "LocalAI.Test." + createHash("sha256").update(path).digest("hex");
 if (role === "owner") {
   const ctx = new Context();
   const sub = new LocalSubprocessRuntime(ctx);
-  acquireGpuLease(leaseName); // Intentionally no graceful cleanup: the test kills this owner.
+  acquireProcessLease(leaseName); // Intentionally no graceful cleanup: the test kills this owner.
   await launchOwned(sub, {
     argv: [process.execPath, import.meta.filename, "child", path],
     cwd: process.cwd(),
@@ -45,7 +45,7 @@ if (role === "owner") {
     }),
   );
 } else if (role === "lease") {
-  const release = acquireGpuLease(leaseName);
+  const release = acquireProcessLease(leaseName);
   release();
   process.exit(0);
 } else throw new Error("Unknown fixture role");

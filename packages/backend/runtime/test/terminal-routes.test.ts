@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { OrchestrationHost } from "@aura/orchestration";
+import type { OrchestrationHost } from "../src/dsh/host.ts";
 import { FlowError } from "@aura/orchestration";
 import { createTerminalApp } from "../src/terminal-routes.ts";
 import { Hono } from "hono";

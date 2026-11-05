@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "types": ["node"],
+    "typeRoots": ["../../node_modules/@types"],
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "backend/**/*.ts",
+    "actions/**/*.js",
+    "client/src/**/*.ts",
+    "client/src/**/*.tsx"
+  ],
+  "exclude": ["**/dist/**"]
+}

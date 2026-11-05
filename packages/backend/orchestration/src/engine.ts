@@ -31,7 +31,7 @@ import {
 import { FlowExecution } from "./execution.ts";
 import { FlowScheduler } from "./scheduler.ts";
 import { recoverRun } from "./recovery.ts";
-import { agentDefaults, agentConfig } from "./agent-config.ts";
+import { agentDefaults, agentConfig } from "@aura/dsh-auth/model-config";
 import { FLOW_TIMEOUT_MS } from "./timeouts.ts";
 
 const MAX_NESTED_FLOW_DEPTH = 8;

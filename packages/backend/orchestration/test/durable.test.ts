@@ -19,7 +19,7 @@ import {
   StorageFailure,
   fingerprint,
 } from "../src/durable.ts";
-import { agentConfig, agentDefaults } from "../src/agent-config.ts";
+import { agentConfig, agentDefaults } from "@aura/dsh-auth/model-config";
 import {
   agentOptionsSchema,
   agentRequestSchema,

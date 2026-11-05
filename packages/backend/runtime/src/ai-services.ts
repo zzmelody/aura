@@ -1,6 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import { credentialRef } from "@deepseek-ai/dsh-credentials";
 import {
   AiConfigurationError,
@@ -10,7 +7,6 @@ import {
   saveDiscoveredCatalog,
   parseModelSettings,
   luminaSettings,
-  secret,
   LUMINA_BASE_URL,
   LUMINA_CREDENTIAL,
   type AiServiceDocument,
@@ -18,41 +14,35 @@ import {
 } from "@aura/dsh-auth";
 import { probeModelConnection, modelProbeFailure } from "./model-probe.ts";
 import { isChatModelId } from "@aura/protocol/models";
-import type { TripoService } from "@aura/tripo";
 import type { RuntimeConfig } from "./types.ts";
 
 export interface AiServicesPort {
   settings(): Promise<unknown>;
   saveModel(source: unknown): Promise<unknown>;
-  saveTripo(source: unknown): Promise<unknown>;
   saveLumina(source: unknown): Promise<unknown>;
   checkLumina(signal: AbortSignal): Promise<unknown>;
   checkModel(signal: AbortSignal): Promise<unknown>;
   refreshModels(signal: AbortSignal): Promise<unknown>;
-  checkTripo(signal: AbortSignal): Promise<unknown>;
   logout(): Promise<unknown>;
 }
 const object = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
-/** Runtime-owned configuration boundary. Secrets go to DSH or Tripo's backend file only. */
+/** Runtime-owned configuration boundary. Secrets go to DSH. */
 export class AiServices implements AiServicesPort {
   private writes: Promise<unknown> = Promise.resolve();
-  private checks = { model: "未检查", tripo: "未检查", lumina: "未检查" };
-  private checkRuns = { model: 0, tripo: 0 };
+  private checks = { model: "未检查", lumina: "未检查" };
+  private checkRuns = { model: 0 };
   // Explicit fields: Node's strip-only TypeScript rejects parameter properties.
   private config: RuntimeConfig;
   private auth: CodexSubscriptionAuth;
-  private tripo: TripoService;
   private busy: () => Promise<boolean>;
   constructor(
     config: RuntimeConfig,
     auth: CodexSubscriptionAuth,
-    tripo: TripoService,
     busy: () => Promise<boolean> = async () => false,
   ) {
     this.config = config;
     this.auth = auth;
-    this.tripo = tripo;
     this.busy = busy;
   }
   private serialize<T>(work: () => Promise<T>): Promise<T> {
@@ -64,7 +54,6 @@ export class AiServices implements AiServicesPort {
     const document = await readAiServices(
       this.config.root,
       this.config.codexModel,
-      this.config.tripoRegion,
     );
     const auth = await this.auth.status();
     const route = document.selectedRoute
@@ -77,7 +66,6 @@ export class AiServices implements AiServicesPort {
           )
         ).configured
       : false;
-    await this.tripo.refresh();
     const lumina = luminaSettings(document);
     const luminaKey = await this.auth.ctx.credentials.describe(
       credentialRef(LUMINA_CREDENTIAL),
@@ -113,10 +101,6 @@ export class AiServices implements AiServicesPort {
               model: this.config.codexModel,
               reasoningEffort: "xhigh",
             }),
-      tripo: {
-        ...this.tripo.status(),
-        readOnly: Boolean(process.env.TRIPO_API_KEY?.trim()),
-      },
       codex: {
         state: auth.state,
         ...("message" in auth ? { message: auth.message } : {}),
@@ -160,7 +144,6 @@ export class AiServices implements AiServicesPort {
         this.auth.ctx.credentials,
         source,
         this.config.codexModel,
-        this.config.tripoRegion,
       );
       this.checks.model = "未检查";
       return this.settings();
@@ -195,14 +178,12 @@ export class AiServices implements AiServicesPort {
       const previous = await readAiServices(
         this.config.root,
         this.config.codexModel,
-        this.config.tripoRegion,
       );
       const saved = await saveModelSettings(
         this.config.root,
         this.auth.ctx.credentials,
         { mode: "lumina", ...rest },
         this.config.codexModel,
-        this.config.tripoRegion,
       );
       // saveModelSettings selects Lumina; restore the prior selection unless asked.
       if (!select && previous.model.mode !== "lumina")
@@ -247,79 +228,11 @@ export class AiServices implements AiServicesPort {
         "lumina",
         chat,
         this.config.codexModel,
-        this.config.tripoRegion,
       );
       this.checks.lumina = `连接成功，已同步 ${chat.length} 个对话模型`;
     } catch {
       this.checks.lumina = "连接失败，请检查 Key 和网络";
     }
-  }
-  async saveTripo(source: unknown) {
-    return this.serialize(async () => {
-      if (
-        !object(source) ||
-        Object.keys(source).some(
-          (key) => !["region", "key", "clearKey"].includes(key),
-        ) ||
-        !["global", "china"].includes(String(source.region)) ||
-        (source.clearKey !== undefined &&
-          typeof source.clearKey !== "boolean") ||
-        (source.clearKey === true && source.key !== undefined)
-      )
-        throw new AiConfigurationError("Tripo 设置无效。");
-      if (process.env.TRIPO_API_KEY?.trim())
-        throw new AiConfigurationError(
-          "Tripo Key 由启动环境提供，请先移除环境变量再修改。",
-        );
-      if (await this.busy())
-        throw new AiConfigurationError(
-          "仍有制作任务，请结束任务后再修改 Tripo 配置。",
-        );
-      const value = source.key === undefined ? undefined : secret(source.key);
-      if (value && value.length > 256)
-        throw new AiConfigurationError("Tripo 密钥过长。");
-      const document = await readAiServices(
-        this.config.root,
-        this.config.codexModel,
-        this.config.tripoRegion,
-      );
-      const previous = await readFile(this.config.tripoCredentialPath).catch(
-        (error) => {
-          if (error.code === "ENOENT") return undefined;
-          throw error;
-        },
-      );
-      const storeKey = async (bytes?: Uint8Array) => {
-        if (!bytes) {
-          await unlink(this.config.tripoCredentialPath).catch((error) => {
-            if (error.code !== "ENOENT") throw error;
-          });
-          return;
-        }
-        const temporary = `${this.config.tripoCredentialPath}.${randomUUID()}.tmp`;
-        await mkdir(dirname(temporary), { recursive: true, mode: 0o700 });
-        try {
-          await writeFile(temporary, bytes, { flag: "wx", mode: 0o600 });
-          await rename(temporary, this.config.tripoCredentialPath);
-        } catch (error) {
-          await unlink(temporary).catch(() => undefined);
-          throw error;
-        }
-      };
-      if (source.clearKey || value)
-        await storeKey(source.clearKey ? undefined : Buffer.from(value!));
-      try {
-        await writeAiServices(this.config.root, {
-          ...document,
-          tripoRegion: source.region as "global" | "china",
-        });
-      } catch (error) {
-        if (source.clearKey || value) await storeKey(previous);
-        throw error;
-      }
-      this.checks.tripo = "未检查";
-      return this.settings();
-    });
   }
   async refreshModels(signal: AbortSignal) {
     return this.serialize(async () => {
@@ -359,7 +272,6 @@ export class AiServices implements AiServicesPort {
               .filter(isChatModelId)
               .slice(0, 500),
             this.config.codexModel,
-            this.config.tripoRegion,
           );
           this.checks.model = `已获取 ${models.filter(({ id }) => isChatModelId(id)).length} 个模型；尚未测试模型请求。`;
         } catch {
@@ -392,19 +304,6 @@ export class AiServices implements AiServicesPort {
         this.checks.model = `测试失败 · ${document.model.model} · ${modelProbeFailure(error, signal)}`;
       }
       this.checkRuns.model++;
-      return this.settings();
-    });
-  }
-  async checkTripo(signal: AbortSignal) {
-    return this.serialize(async () => {
-      signal.throwIfAborted();
-      try {
-        await this.tripo.checkConnection(signal);
-        this.checks.tripo = "连接成功";
-      } catch {
-        this.checks.tripo = "连接失败，请检查地区、密钥和网络";
-      }
-      this.checkRuns.tripo++;
       return this.settings();
     });
   }

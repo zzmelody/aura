@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { FlowError, type OrchestrationHost } from "@aura/orchestration";
+import { FlowError, type OrchestrationHost } from "../src/dsh/host.ts";
 import { CODING_PERMISSIONS } from "@aura/protocol";
 import type { CodingPermission } from "@aura/protocol/types";
 import { createCodingApp } from "../src/coding-routes.ts";

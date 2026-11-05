@@ -31,16 +31,17 @@ description: Aura 仓库的目录规范、应用与包放置、三层依赖方�
 
 ## 各包边界
 
-现有包：frontend 为 `workbench`、`ui`、`plugin-ui`；backend 为 `runtime`、`orchestration`、`extensions`、`plugin-sdk`、`dsh-auth`、`tripo`；shared 为 `protocol`、`core`、`demo`。
+现有包：frontend 为 `workbench`、`ui`、`plugin-ui`；backend 为 `runtime`、`agent-runtime`、`workspace`、`orchestration`、`plugin-manager`、`plugin-sdk`、`dsh-auth`；shared 为 `protocol`、`core`、`demo`。
 
 容易越界的几处：
 
 - `runtime` 是后端组合根。配置、HTTP 路由、DSH 进程执行、本地模型适配和生命周期各自独立成 TypeScript 模块。它不执行业务 Flow，也不拥有业务持久化。
-- `orchestration` 保留通用执行、恢复、插件生命周期、存储、HTTP、preset 与兼容映射，不绑定业务库或业务 ID。
-- `extensions` 的插件发现是只读的，不执行也不安装插件。
+- `agent-runtime` 拥有 Agent 会话执行、索引、历史、权限、协作和自动化。
+- `workspace` 拥有目录注册、工作区绑定校验和终端生命周期。
+- `orchestration` 拥有 Action 与 Flow 执行、恢复、运行记录、产物和插件后端能力。
+- `plugin-manager` 的插件发现是只读的，不执行也不安装插件。
 - `plugin-sdk` 只导出公开的 Action/Flow/provider、backend、storage、media、browser、errors 契约，不暴露运行时组合、凭据或 DSH 内部。
 - `dsh-auth` 只组合 DSH 授权与凭据适配，不放 HTTP 路由和模型执行。
-- `tripo` 拥有 Tripo 网络与凭据适配和固定的付费资产链路，不公开密钥。
 - `workbench` 只保留通用对话、工作流与设置；业务页面由插件通过页面贡献注入，不在宿主硬编码导航。
 
 名称描述职责或领域含义，避免含糊的 `data`、`manager`、`utils` 模块。函数和模块保持一个明确的变化原因。
@@ -66,7 +67,7 @@ description: Aura 仓库的目录规范、应用与包放置、三层依赖方�
 
 ## 插件放置
 
-产品插件在根 `plugins/`，每个插件一个独立目录，允许 `plugins/<category>/<plugin>/` 分类。目前只有 `plugins/site-launcher`。基础宿主、运行时、公共 SDK 和共享协议留在 `packages/*`。
+产品插件在根 `plugins/`，每个插件一个独立目录，允许 `plugins/<category>/<plugin>/` 分类。当前包括 `plugins/site-launcher` 和 `plugins/tripo`。基础宿主、运行时、公共 SDK 和共享协议留在 `packages/*`。
 
 `plugins/*` 不在 pnpm workspace 内，各插件自带 ESLint、Prettier 与 TypeScript 配置：
 

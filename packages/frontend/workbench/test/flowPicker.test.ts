@@ -12,13 +12,13 @@ const flow = (id: string, title: string, available = true) =>
 
 test("picker matches title, description or ID and lists runnable flows first", () => {
   const flows = [
-    flow("action-example", "Action 示例", false),
+    flow("fixture-action-flow", "Action 示例", false),
     flow("self-media/video", "短视频旁白合成"),
     flow("content-plan", "内容计划"),
   ];
   assert.deepEqual(
     filterFlows(flows, "").map((item) => item.id),
-    ["self-media/video", "content-plan", "action-example"],
+    ["self-media/video", "content-plan", "fixture-action-flow"],
   );
   assert.deepEqual(
     filterFlows(flows, "VIDEO").map((item) => item.id),

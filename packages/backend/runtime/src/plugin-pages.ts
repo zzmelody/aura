@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { readFile, stat } from "node:fs/promises";
-import type { PluginPageRoot } from "@aura/extensions";
+import type { PluginPageRoot } from "@aura/plugin-manager";
 import type {
   AuraPluginIdentity,
   AuraPluginPageBundle,

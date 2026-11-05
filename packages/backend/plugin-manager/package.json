@@ -1,0 +1,28 @@
+{
+  "name": "@aura/plugin-manager",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "aura": {
+    "kind": "library",
+    "layer": "backend"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@aura/protocol": "workspace:*",
+    "semver": "7.8.5",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/semver": "7.7.1",
+    "tsx": "4.23.13",
+    "typescript": "~5.9.2"
+  }
+}

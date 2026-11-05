@@ -34,7 +34,15 @@ function pluginTags(entry: AuraPluginSettingsEntry): string[] {
  * plugin configuration at once. It sits in the Settings plugins section, above
  * the directory editor, rather than on a navigation page of its own.
  */
-export function PluginList({ endpoint }: { endpoint: string }) {
+export function PluginList({
+  endpoint,
+  settingsPages,
+  onOpenSettings,
+}: {
+  endpoint: string;
+  settingsPages: ReadonlyMap<string, `plugin:${string}`>;
+  onOpenSettings(tab: `plugin:${string}`): void;
+}) {
   const [state, setState] = useState<AuraPluginSettingsState>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string>();
@@ -137,6 +145,10 @@ export function PluginList({ endpoint }: { endpoint: string }) {
             {group.items.map((entry) => {
               const title = pluginTitle(entry);
               const failed = entry.enabled && !entry.status.available;
+              const settingsPage =
+                entry.enabled && entry.status.available && entry.status.id
+                  ? settingsPages.get(entry.status.id)
+                  : undefined;
               return (
                 <li key={entry.path} className="plugins-card">
                   <span className="plugins-artwork" aria-hidden="true">
@@ -163,6 +175,16 @@ export function PluginList({ endpoint }: { endpoint: string }) {
                         : (entry.status.description ?? entry.path)}
                     </span>
                   </span>
+                  {settingsPage ? (
+                    <button
+                      type="button"
+                      className="tool-button"
+                      aria-label={`打开 ${title} 设置`}
+                      onClick={() => onOpenSettings(settingsPage)}
+                    >
+                      设置
+                    </button>
+                  ) : null}
                   <label className="dsh-switch">
                     <input
                       type="checkbox"

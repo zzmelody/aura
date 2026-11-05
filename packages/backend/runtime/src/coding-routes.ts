@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { OrchestrationHost } from "@aura/orchestration";
+import type { OrchestrationHost } from "./dsh/host.ts";
 import { FlowError } from "@aura/orchestration";
 import { isRecord, validCodingImages } from "./validation.ts";
 import type { CodingSteerModelConfig } from "@aura/protocol/types";

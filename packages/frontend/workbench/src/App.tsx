@@ -233,6 +233,15 @@ export default function App({ onReady }: AppProps) {
     ? pluginPages.studios.find((studio) => studio.id === tab)
     : undefined;
   const pagePluginId = pluginStudio?.pluginId;
+  const pluginSettingsPages = useMemo(
+    () =>
+      new Map(
+        pluginPages.studios
+          .filter((studio) => studio.page.definition.id === "settings")
+          .map((studio) => [studio.pluginId, studio.id] as const),
+      ),
+    [pluginPages.studios],
+  );
   const createPageInvoke = pluginPages.invoke;
   const invokePluginPage = useMemo(
     () =>
@@ -960,6 +969,8 @@ export default function App({ onReady }: AppProps) {
                             codexAuth={codexAuth}
                             systemReduced={systemReduced}
                             section={settingsSection}
+                            pluginSettingsPages={pluginSettingsPages}
+                            onOpenPluginSettings={navigate}
                             onHistory={() => navigate("history")}
                             onArchived={openArchived}
                           />

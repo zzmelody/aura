@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { setTimeout as delay } from "node:timers/promises";
-import { FlowError, type OrchestrationHost } from "@aura/orchestration";
+import { FlowError, type OrchestrationHost } from "./dsh/host.ts";
 import type {
   WorkspaceTerminalInfo,
   WorkspaceTerminalOutput,

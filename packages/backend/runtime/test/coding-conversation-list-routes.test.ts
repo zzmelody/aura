@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { OrchestrationHost } from "@aura/orchestration";
+import type { OrchestrationHost } from "../src/dsh/host.ts";
 import { createCodingApp } from "../src/coding-routes.ts";
 
 test("conversation lists keep full status by default and allow a metadata-only boot read", async () => {
