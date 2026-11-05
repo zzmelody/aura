@@ -33,3 +33,5 @@
 ## 验证
 
 从仓库根运行 `pnpm --filter @aura/agent-runtime run typecheck` 和 `pnpm --filter @aura/agent-runtime run test`。跨包 DSH 和 HTTP 集成测试位于 `@aura/runtime`。
+
+会话执行由 `conversations/conversation-executions.ts` 持有，HTTP/RPC 观察取消不停止执行。命令回执在独立 `aura_conversation_commands` domain 持久化，运行时事件有界缓存；启动、追加、停止和回答通过同一执行身份处理。重启后未完成记录投影为中断或不确定，不自动重发。参见[会话连接协议](../../../docs/development/conversation-channel.md)。

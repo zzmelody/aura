@@ -17,3 +17,5 @@ Aura 客户端与后端的公共协议。`@aura/protocol/types` 导出 ChatMessa
 `CodingConversationInfo.sideConversations` 列出同一主会话的多个独立旁支，`CodingSideConversationInfo` 只包含 ID、标题、创建时间和模型选择。`@aura/protocol/conversations` 的 `conversationSides()` 兼容旧 `sideSessionId` / `sideModelConfig` 元数据，只投影、不迁移或改写记录；显式空列表优先于旧字段。
 
 `pnpm --filter @aura/protocol typecheck` 检查类型与 JS/JSDoc；`pnpm --filter @aura/protocol test` 验证拒绝非法请求。
+
+`@aura/protocol/conversation-channel` 导出版本 1 的会话命令、回执、执行、快照、事件及游标类型。`CodingHistoryTurn.turnId` 可选字段由 DSH 原生回合日志位置派生，前端以它合并实时状态和历史。传输游标与历史分页游标独立，所有 DTO 不携带 provider/OAuth 凭据。

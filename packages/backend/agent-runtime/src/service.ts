@@ -18,7 +18,15 @@ import {
   CODING_RUN_INTENTS,
   isCodingSteerRequestId,
 } from "@aura/protocol";
-import { chatService } from "./chat.ts";
+import { randomUUID } from "node:crypto";
+import { ConversationExecutions } from "./conversations/conversation-executions.ts";
+import {
+  conversationCommandsDomain,
+  parseConversationCommand,
+  type ConversationCommandRecord,
+} from "./conversations/conversation-commands.ts";
+import type { CodingHistoryPage } from "@aura/protocol/types";
+import { isConversationCursor } from "@aura/protocol/conversation-channel";
 import { codingService } from "./conversations/session.ts";
 import { isGoalIntent } from "./conversations/collaboration.ts";
 import { conversationService } from "./conversations/conversations.ts";
@@ -124,10 +132,76 @@ export async function createAgentService(
     codingConversations,
     coding,
   );
-  const chat = chatService(conversations);
+  const commandDomain = await ctx.storageDomain.open(
+    conversationCommandsDomain,
+  );
+  const executions = new ConversationExecutions(
+    commandDomain.table(
+      "commands",
+    ) as unknown as Table<ConversationCommandRecord>,
+    {
+      assertSession(id) {
+        if (!codingConversations.get(id) && !codingConversations.sideParent(id))
+          throw new FlowError("对话不存在或已移除。", 404);
+      },
+      async start(sessionId, command, emit, signal) {
+        const { modelConfig, ...input } = command.input;
+        signal.throwIfAborted();
+        const defaults = await resolveModeDefaults(input.mode);
+        signal.throwIfAborted();
+        return conversations.stream(
+          {
+            ...input,
+            ...modelConfig,
+            sessionId,
+            requestId: command.commandId,
+            defaults,
+          },
+          emit,
+          signal,
+        );
+      },
+      async control(sessionId, command) {
+        if (command.type === "turn.steer") {
+          const defaults = command.modelConfig
+            ? await resolveModeDefaults(command.modelConfig.mode)
+            : undefined;
+          if (executions.execution(sessionId)?.id !== command.executionId)
+            throw new FlowError("目标执行已经结束。", 409);
+          const steered = await coding.steer(
+            sessionId,
+            command.prompt,
+            command.images ?? [],
+            command.modelConfig
+              ? { ...command.modelConfig, defaults }
+              : undefined,
+            command.commandId,
+          );
+          if (!steered)
+            throw new FlowError("目标执行已经停止接收追加消息。", 409);
+          if (command.modelConfig)
+            await conversations.selectModel(
+              sessionId,
+              command.modelConfig.mode,
+              command.modelConfig.selection,
+            );
+        } else if (command.type === "question.answer") {
+          await request("coding/answer", {
+            sessionId,
+            questionId: command.questionId,
+            answers: command.answers,
+          });
+        }
+      },
+      async history(sessionId) {
+        return (await request("coding/history", { sessionId, page: true }))!
+          .data as CodingHistoryPage;
+      },
+    },
+  );
   const automation = automationService(ctx, codingConversations);
 
-  return { request, notification };
+  return { request, notification, close: () => executions.close() };
 
   function notification(method: string, params: Record<string, unknown>) {
     if (method === "chat/cancel" && typeof params.chatId === "string")
@@ -140,6 +214,47 @@ export async function createAgentService(
     const id = typeof params.id === "string" ? params.id : "";
     let data: unknown;
     switch (method) {
+      case "coding/commands": {
+        if (
+          typeof params.sessionId !== "string" ||
+          !params.sessionId ||
+          params.sessionId.length > 200
+        )
+          throw new FlowError("无效的对话。", 400);
+        data = await executions.submit(
+          params.sessionId,
+          parseConversationCommand(params.command),
+        );
+        break;
+      }
+      case "coding/commands/read": {
+        if (
+          typeof params.sessionId !== "string" ||
+          typeof params.commandId !== "string"
+        )
+          throw new FlowError("无效的命令查询。", 400);
+        data = executions.receipt(params.sessionId, params.commandId);
+        break;
+      }
+      case "coding/snapshot": {
+        if (typeof params.sessionId !== "string")
+          throw new FlowError("无效的对话。", 400);
+        data = await executions.snapshot(params.sessionId);
+        break;
+      }
+      case "coding/events": {
+        if (
+          typeof params.sessionId !== "string" ||
+          (params.cursor !== undefined && !isConversationCursor(params.cursor))
+        )
+          throw new FlowError("无效的事件游标。", 400);
+        executions.assertReadable(params.sessionId);
+        data = executions.events.read(
+          params.sessionId,
+          params.cursor as string | undefined,
+        );
+        break;
+      }
       case "integrations/settings":
         data = integrations.snapshot();
         break;
@@ -230,12 +345,31 @@ export async function createAgentService(
         const abort = new AbortController();
         chats.set(chatId, abort);
         try {
-          data = await chat(
+          const last = turn.data.messages.at(-1)!;
+          if (last.role !== "user")
+            throw new FlowError("对话需要以用户消息结束。", 400);
+          data = await executions.stream(
+            turn.data.sessionId ?? `chat-${randomUUID()}`,
             {
-              ...turn.data,
-              defaults: await resolveModeDefaults(turn.data.mode),
+              commandId: randomUUID(),
+              type: "turn.start",
+              input: {
+                prompt: last.text,
+                images: last.images,
+                history: turn.data.messages.slice(0, -1),
+                mode: turn.data.mode,
+                modelConfig: {
+                  ...(turn.data.model ? { model: turn.data.model } : {}),
+                  ...(turn.data.reasoningEffort
+                    ? { reasoningEffort: turn.data.reasoningEffort }
+                    : {}),
+                },
+              },
             },
-            (event) => notify("chat/event", { chatId, event }),
+            (event) => {
+              if (event.type === "delta" || event.type === "workflow")
+                notify("chat/event", { chatId, event });
+            },
             abort.signal,
           );
         } catch (error) {
@@ -287,10 +421,19 @@ export async function createAgentService(
         const abort = new AbortController();
         chats.set(chatId, abort);
         try {
-          data = await conversations.stream(
+          const { sessionId, model, reasoningEffort, ...input } = turn.data;
+          data = await executions.stream(
+            sessionId,
             {
-              ...turn.data,
-              defaults: await resolveModeDefaults(turn.data.mode),
+              commandId: randomUUID(),
+              type: "turn.start",
+              input: {
+                ...input,
+                modelConfig: {
+                  ...(model ? { model } : {}),
+                  ...(reasoningEffort ? { reasoningEffort } : {}),
+                },
+              },
             },
             (event) => notify("chat/event", { chatId, event }),
             abort.signal,
@@ -365,7 +508,11 @@ export async function createAgentService(
           throw new FlowError("无效的对话。", 400);
         // Only coding turns are registered here, so another DSH session
         // (for example a Flow agent) cannot be stopped by its id.
-        data = { stopped: await coding.stop(params.sessionId) };
+        data = {
+          stopped:
+            (await executions.stop(params.sessionId)) ||
+            (await coding.stop(params.sessionId)),
+        };
         break;
       }
       case "coding/steer": {
@@ -432,7 +579,10 @@ export async function createAgentService(
         if (codingConversations.get(params.sessionId))
           throw new FlowError("只能关闭旁支对话。", 400);
         const closed = await codingConversations.closeSide(params.sessionId);
-        if (closed) await coding.closeSide(params.sessionId);
+        if (closed) {
+          await executions.stop(params.sessionId);
+          await coding.closeSide(params.sessionId);
+        }
         data = { closed };
         break;
       }
@@ -455,9 +605,15 @@ export async function createAgentService(
           );
         if (closing || params.archived === true)
           await Promise.all(
-            conversationSides(parent).map((side) => coding.closeSide(side.id)),
+            conversationSides(parent).map(async (side) => {
+              await executions.stop(side.id);
+              await coding.closeSide(side.id);
+            }),
           );
-        if (closing) await coding.close(parent.id);
+        if (closing) {
+          await executions.stop(parent.id);
+          await coding.close(parent.id);
+        }
         data = { updated: true };
         break;
       }
@@ -584,10 +740,23 @@ export async function createAgentService(
           typeof params.questionId !== "string"
         )
           throw new FlowError("无效的回答。", 400);
-        codingAnswers.answer(
+        const answers = codingAnswers.answer(
           params.sessionId,
           params.questionId,
           params.answers,
+        );
+        const execution = executions.execution(params.sessionId);
+        executions.events.publish(
+          params.sessionId,
+          {
+            type: "activity",
+            activity: {
+              type: "answered",
+              questionId: params.questionId,
+              answers,
+            },
+          },
+          execution?.id,
         );
         data = { accepted: true };
         break;

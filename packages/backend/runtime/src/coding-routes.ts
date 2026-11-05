@@ -10,6 +10,7 @@ import {
   isCodingSteerRequestId,
   validateChatModelSelection,
 } from "@aura/protocol";
+import { createConversationChannelApp } from "./conversation-channel-routes.ts";
 import { createTerminalApp } from "./terminal-routes.ts";
 
 /**
@@ -26,11 +27,12 @@ export function createCodingApp(host: OrchestrationHost) {
   app.use(
     "*",
     bodyLimit({
-      maxSize: 64 * 1_024,
+      maxSize: 256 * 1_024,
       onError: (context) => context.text("请求内容过大。", 413),
     }),
   );
   app.route("/terminals", createTerminalApp(host));
+  app.route("/sessions", createConversationChannelApp(host));
 
   app.get("/sessions/:id/agents", async (context) => {
     try {

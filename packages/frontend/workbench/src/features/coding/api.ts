@@ -703,6 +703,10 @@ export async function conversationHistory(
       throw new Error("会话历史读取超时，请重试。", { cause: error });
     throw error;
   }
+  return parseConversationHistory(value);
+}
+
+export function parseConversationHistory(value: unknown) {
   const body = value as {
     turns?: unknown;
     running?: unknown;
@@ -736,6 +740,7 @@ export async function conversationHistory(
         : "stopped";
       return [
         {
+          ...(typeof turn.turnId === "string" ? { turnId: turn.turnId } : {}),
           prompt: turn.prompt,
           startedAt: turn.startedAt,
           status,

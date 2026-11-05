@@ -56,11 +56,17 @@ export class CodingQuestions {
   }
 
   /** Delivers the user's answer; validates it against what was asked. */
-  answer(sessionId: string, questionId: string, value: unknown): void {
+  answer(
+    sessionId: string,
+    questionId: string,
+    value: unknown,
+  ): CodingQuestionAnswer[] {
     const pending = this.pending.get(questionId);
     if (!pending || pending.sessionId !== sessionId)
       throw new FlowError("这个问题已经结束或不存在。", 404);
-    pending.resolve(validAnswers(pending.questions, value));
+    const answers = validAnswers(pending.questions, value);
+    pending.resolve(answers);
+    return answers;
   }
 
   /** Questions still open in a session, for a client that reconnects. */

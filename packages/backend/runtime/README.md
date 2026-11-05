@@ -77,3 +77,5 @@ Coding HTTP 适配增加能力配置、压缩与子 Agent 查询/停止路由；
 原生 DSH secret-mask bundle，由工作台适配公开注册接口。参见[对话能力](../../../docs/dsh-conversation-capabilities.md)。
 
 `/integrations` 提供功能开关、MCP 服务器配置、市场浏览、语音和会话搜索及团队视图。设置写入限制在仅绑定本机的服务，由编排宿主检查配置 revision。语音上传接收至多 30 秒的 PCM WAV。
+
+`conversation-channel-routes.ts` 提供 `/coding/sessions/:id/commands`、命令查询、`snapshot` 和可恢复 SSE `events`。命令使用短 RPC 接收，事件按游标读取；HTTP 取消只释放观察者。旧 `/coding/turn` 与 `/chat/*` 继续投影同一个后端执行服务。参见[会话连接协议](../../../docs/development/conversation-channel.md)。

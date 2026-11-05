@@ -35,6 +35,7 @@ export type ChatStreamEvent =
 
 /** One turn of a persistent coding conversation bound to a project directory. */
 export interface CodingTurn {
+  requestId?: string;
   /** Aura-owned id of the coding conversation, stable across turns. */
   sessionId: string;
   /** Project the conversation belongs to; the backend resolves its directory. */
@@ -74,7 +75,9 @@ export interface CodingTurn {
  * the agent declared, rather than only its final answer.
  */
 export type CodingStreamEvent =
-  CodingTimelineEvent | { type: "collaboration"; state: CodingCollaboration };
+  | CodingTimelineEvent
+  | { type: "collaboration"; state: CodingCollaboration }
+  | { type: "turn-start"; turnId: string; at: number };
 
 export type CodingTimelineEvent =
   | CodingCapabilityActivity
@@ -135,6 +138,8 @@ export interface CodingQuestion {
 
 /** One request in a replayed coding conversation and everything it produced. */
 export interface CodingHistoryTurn {
+  /** Stable identity derived from the native turn/start log position. */
+  turnId?: string;
   prompt: string;
   startedAt: number;
   endedAt?: number;

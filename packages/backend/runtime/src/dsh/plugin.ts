@@ -69,6 +69,7 @@ export async function apply(ctx: Context) {
     if (exiting) return;
     exiting = true;
     try {
+      await agent.close();
       await transport.flush();
     } finally {
       await ctx.root.fiber.dispose();
@@ -101,6 +102,7 @@ export async function apply(ctx: Context) {
         return { ok: true, data: { name: "aura-orchestration", version: 4 } };
       }
       if (method === "shutdown") {
+        await agent.close();
         await workspace.close();
         await flows.closeExecution();
         setImmediate(() => void disposeAndExit());

@@ -261,6 +261,7 @@ export function historyTurns(
     const data = (event.data ?? {}) as Record<string, unknown>;
     if (event.type === "turn/start") {
       current = {
+        turnId: `turn-${event.seq}`,
         prompt: "",
         startedAt: event.time,
         status: "running",

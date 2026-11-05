@@ -1,3 +1,6 @@
+import { conversations } from "./conversation-store.ts";
+import { useConversation } from "./useConversation.ts";
+import { isExecutionActive } from "@aura/protocol/conversation-channel";
 import { SubagentPanel } from "./SubagentPanel.tsx";
 import { MaskedUserText } from "./MaskedUserText.tsx";
 import {
@@ -105,10 +108,7 @@ import { ImageLightbox, ImageThumbnails } from "../../ImageLightbox";
 import { pastedImages, useImageAttachments } from "../../useImageAttachments";
 import { WorkflowApiError } from "../../workflowSessions";
 import {
-  codingTurn,
   conversationHistory,
-  answerQuestion,
-  steerCodingTurn,
   stopCodingTurn,
   prepareCodingTurn,
   waitForCodingTurnEnd,
@@ -126,10 +126,7 @@ import {
 } from "./fileKinds";
 import {
   addPendingSteer,
-  answerTurn,
-  applyTurnEvent,
-  confirmConversationSteer,
-  confirmRecordedSteers,
+  mergeConversationWindow,
   finishTurn,
   newTurn,
   pendingQuestion,
@@ -1572,6 +1569,10 @@ export function ConversationPane({
   onTurns?(turns: readonly Turn[]): void;
 }) {
   const [turns, setTurns] = useState<Record<string, Turn[]>>({});
+  const remote = useConversation(
+    endpoint,
+    provider === "offline" ? undefined : sessionId,
+  );
   const draftKey =
     sessionId ??
     (branchFrom ? `fork:${branchFrom}:${branchAt ?? "latest"}` : "draft");
@@ -1678,7 +1679,9 @@ export function ConversationPane({
       : shown.length;
   const windowStart = Math.max(0, windowEnd - 40);
   const visibleTurns = shown.slice(windowStart, windowEnd);
-  const running = shown.some((turn) => turn.status === "running");
+  const running =
+    isExecutionActive(remote.snapshot?.execution) ||
+    shown.some((turn) => turn.status === "running");
   const offline = provider === "offline";
   const mode = providerMode(provider);
   const flowFormId = useId();
@@ -1864,6 +1867,71 @@ export function ConversationPane({
     );
   }, [turns, sessionId]);
 
+  useEffect(() => {
+    const snapshot = remote.snapshot;
+    if (!sessionId || !snapshot) return;
+    loaded.current.add(sessionId);
+    const restored = turnsFromHistory(sessionId, snapshot.turns);
+    const execution = snapshot.execution;
+    if (execution && !restored.some((turn) => turn.status === "running")) {
+      const pending = newTurn(
+        `${sessionId}:execution-${execution.id}`,
+        execution.prompt,
+        execution.startedAt,
+      );
+      pending.waitingForService = execution.status === "preparing";
+      // Completed native turns can still have execution cleanup in progress.
+      if (
+        !restored.length ||
+        restored.at(-1)!.startedAt < execution.startedAt
+      ) {
+        if (isExecutionActive(execution)) restored.push(pending);
+        else if (execution.status !== "complete")
+          restored.push(
+            finishTurn(
+              pending,
+              execution.status === "error" ? "error" : "stopped",
+              execution.endedAt,
+              execution.error,
+            ),
+          );
+      }
+    }
+    setTurns((current) => ({
+      ...current,
+      [sessionId]: mergeConversationWindow(
+        current[sessionId] ?? [],
+        restored,
+        snapshot.hasMore,
+      ),
+    }));
+    if (snapshot.collaboration)
+      setCollaborations((current) => ({
+        ...current,
+        [sessionId]: snapshot.collaboration!,
+      }));
+    setHistoryRequest(undefined);
+    setHistoryPages((current) => {
+      const previous = current[sessionId];
+      // A refresh of the newest window must not move an older paging cursor forward.
+      if (
+        snapshot.hasMore &&
+        previous?.beforeSeq !== undefined &&
+        snapshot.beforeSeq !== undefined &&
+        previous.beforeSeq < snapshot.beforeSeq
+      )
+        return current;
+      return {
+        ...current,
+        [sessionId]: {
+          hasMore: snapshot.hasMore,
+          beforeSeq: snapshot.beforeSeq,
+          throughSeq: snapshot.throughSeq,
+        },
+      };
+    });
+  }, [endpoint, sessionId, remote.snapshot]);
+
   // Opening a stored conversation reads its transcript back from the log, so
   // a reload or another device shows the same steps, diffs and answers.
   // Conversations started in this pane already hold their live turns.
@@ -1938,7 +2006,7 @@ export function ConversationPane({
     return () => abort.abort();
   }, [endpoint, sessionId, forkFrom, imported, historyRetry]);
 
-  // Stop in-flight turns when the pane unmounts.
+  // Detach local observers when the pane unmounts; execution is backend-owned.
   useEffect(() => {
     const live = streams.current;
     const requests = guidanceRequests.current;
@@ -1958,26 +2026,33 @@ export function ConversationPane({
     const id = sessionId;
     setStopping(true);
     setError("");
-    streams.current.get(id)?.controller.abort();
     try {
-      if (awaitingService.current.has(id)) return;
-      await stopCodingTurn(endpoint, id);
-      if (goal) {
-        const state = await readCodingCollaboration(endpoint, id).catch(
-          () => undefined,
-        );
-        if (state)
-          setCollaborations((current) => ({ ...current, [id]: state }));
+      if (awaitingService.current.has(id)) {
+        streams.current.get(id)?.controller.abort();
+        return;
       }
-      // A turn restored from history has no stream to settle it.
-      setTurns((current) => ({
-        ...current,
-        [id]: (current[id] ?? []).map((turn) =>
-          turn.status === "running"
-            ? finishTurn(turn, "stopped", Date.now())
-            : turn,
-        ),
-      }));
+      const execution = conversations.view(endpoint, id).snapshot?.execution;
+      if (execution && isExecutionActive(execution)) {
+        const commandId = crypto.randomUUID();
+        await conversations.submit(endpoint, id, {
+          commandId,
+          type: "turn.stop",
+          executionId: execution.id,
+        });
+        const receipt = await conversations.wait(
+          endpoint,
+          id,
+          commandId,
+          new AbortController().signal,
+        );
+        if (receipt.status !== "applied")
+          throw new Error(receipt.error ?? "停止结果尚未确认。");
+      } else if (compacting) {
+        await stopCodingTurn(endpoint, id);
+      } else {
+        throw new Error("当前执行尚未确认，请等待会话状态恢复。");
+      }
+      await conversations.refresh(endpoint, id);
     } catch (reason) {
       setError(
         `停止失败：${reason instanceof Error ? reason.message : String(reason)}`,
@@ -2014,10 +2089,7 @@ export function ConversationPane({
         page,
       );
       if (abort.signal.aborted) return;
-      const previous = turnsFromHistory(
-        `${id}:${history.beforeSeq}`,
-        history.turns,
-      );
+      const previous = turnsFromHistory(id, history.turns);
       setHistoryPages((current) => ({
         ...current,
         [id]: {
@@ -2028,7 +2100,14 @@ export function ConversationPane({
       }));
       setTurns((current) => ({
         ...current,
-        [id]: [...previous, ...(current[id] ?? [])],
+        [id]: [
+          ...new Map(
+            [...previous, ...(current[id] ?? [])].map((turn) => [
+              turn.id,
+              turn,
+            ]),
+          ).values(),
+        ],
       }));
       setHistoryWindow({ id, end: previous.length });
       transcript.current?.scrollTo({ top: 0 });
@@ -2061,55 +2140,34 @@ export function ConversationPane({
   );
   const runningTurnId = shown.find((turn) => turn.status === "running")?.id;
 
-  useEffect(() => {
-    if (
-      !visible ||
-      !sessionId ||
-      !runningTurnId ||
-      streams.current.has(sessionId)
-    )
-      return;
-    const abort = new AbortController();
-    void waitForCodingTurnEnd(
-      endpoint,
-      sessionId,
-      abort.signal,
-      (recorded) =>
-        updateTurn(sessionId, runningTurnId, (turn) =>
-          confirmRecordedSteers(turn, recorded),
-        ),
-      (state) =>
-        setCollaborations((current) => ({ ...current, [sessionId]: state })),
-    ).then(
-      (recorded) => {
-        if (abort.signal.aborted) return;
-        const checkedAt = Date.now();
-        updateTurn(sessionId, runningTurnId, (turn) =>
-          reconcileFinishedTurn(turn, recorded, checkedAt),
-        );
-      },
-      () => {
-        if (!abort.signal.aborted) setError("暂时无法读取本轮进度。");
-      },
-    );
-    return () => abort.abort();
-  }, [endpoint, sessionId, runningTurnId, updateTurn, visible]);
-
   /** Sends an answer; the card shows it once the backend accepted it. */
   const answer = useCallback(
     async (
-      turnId: string,
+      _turnId: string,
       questionId: string,
       answers: CodingQuestionAnswer[],
     ) => {
       if (!sessionId) return;
-      await answerQuestion(endpoint, sessionId, questionId, answers);
-      setTurns((current) => ({
-        ...current,
-        [sessionId]: (current[sessionId] ?? []).map((turn) =>
-          turn.id === turnId ? answerTurn(turn, questionId, answers) : turn,
-        ),
-      }));
+      const execution = conversations.view(endpoint, sessionId).snapshot
+        ?.execution;
+      if (!execution || !isExecutionActive(execution))
+        throw new Error("这项执行已结束，请刷新会话。");
+      const commandId = crypto.randomUUID();
+      await conversations.submit(endpoint, sessionId, {
+        commandId,
+        type: "question.answer",
+        executionId: execution.id,
+        questionId,
+        answers,
+      });
+      const receipt = await conversations.wait(
+        endpoint,
+        sessionId,
+        commandId,
+        new AbortController().signal,
+      );
+      if (receipt.status !== "applied")
+        throw new Error(receipt.error ?? "回答结果尚未确认。");
     },
     [endpoint, sessionId],
   );
@@ -2169,15 +2227,26 @@ export function ConversationPane({
         updateTurn(id, turnId, (turn) =>
           addPendingSteer(turn, requestId, text.trim(), attached),
         );
-        const { steered } = await steerCodingTurn(
+        const execution = conversations.view(endpoint, id).snapshot?.execution;
+        if (!execution || !isExecutionActive(execution))
+          throw new Error("这项执行已结束，请刷新会话。");
+        await conversations.submit(endpoint, id, {
+          commandId: requestId,
+          type: "turn.steer",
+          executionId: execution.id,
+          prompt: text,
+          images: attached.map((image) => image.assetId),
+          modelConfig: { mode, selection: submittedModelConfig() },
+        });
+        const receipt = await conversations.wait(
           endpoint,
           id,
-          text,
-          attached.map((image) => image.assetId),
-          { mode, selection: submittedModelConfig() },
-          abort.signal,
           requestId,
+          abort.signal,
         );
+        const steered = receipt.status === "applied";
+        if (receipt.status === "uncertain")
+          throw new Error(receipt.error ?? "追加消息结果尚未确认。");
         abort.signal.throwIfAborted();
         if (steered) {
           setDraft((current) => (current === text ? "" : current));
@@ -2247,6 +2316,7 @@ export function ConversationPane({
     }
     if (
       (!prompt && !attached.length) ||
+      remote.pending !== undefined ||
       running ||
       images.uploading ||
       historyBlocked ||
@@ -2326,15 +2396,14 @@ export function ConversationPane({
         change((turn) => ({ ...turn, waitingForService: false }));
       }
       abort.signal.throwIfAborted();
-      for await (const chunk of codingTurn(
-        endpoint,
-        {
-          sessionId: id,
+      const commandId = crypto.randomUUID();
+      await conversations.submit(endpoint, id, {
+        commandId,
+        type: "turn.start",
+        input: {
           projectId,
           prompt,
-          ...(attached.length
-            ? { images: attached.map((image) => image.assetId) }
-            : {}),
+          images: attached.map((image) => image.assetId),
           ...(forkFrom ? { forkFrom } : {}),
           ...(branchFrom ? { branchFrom } : {}),
           ...(branchAt !== undefined ? { branchAt } : {}),
@@ -2345,41 +2414,38 @@ export function ConversationPane({
           ...(draftPermission ? { permission: draftPermission } : {}),
           ...(intent ? { intent } : {}),
         },
+      });
+      const receipt = await conversations.wait(
+        endpoint,
+        id,
+        commandId,
         abort.signal,
-      )) {
-        if (chunk.type === "collaboration") {
-          setCollaborations((current) => ({ ...current, [id]: chunk.state }));
-        } else if (chunk.type === "steer" && chunk.requestId && !reconciled) {
-          latest = applyTurnEvent(latest, chunk);
+      );
+      const snapshot = conversations.view(endpoint, id).snapshot;
+      const restored = snapshot && turnsFromHistory(id, snapshot.turns);
+      if (restored?.length) latest = restored.at(-1)!;
+      if (receipt.status === "rejected" || receipt.status === "uncertain")
+        setError(receipt.error ?? "执行状态尚未确认，请查看会话。");
+    } catch (reason) {
+      if (!abort.signal.aborted) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "无法确认执行状态，请重新连接。",
+        );
+        if (
+          reason instanceof WorkflowApiError &&
+          reason.status >= 400 &&
+          reason.status < 500
+        ) {
           setTurns((current) => ({
             ...current,
-            [id]: confirmConversationSteer(current[id] ?? [], turnId, chunk),
+            [id]: (current[id] ?? []).filter((turn) => turn.id !== turnId),
           }));
-        } else {
-          change((turn) => applyTurnEvent(turn, chunk));
+          setDraft((current) => current || prompt);
         }
+        void conversations.refresh(endpoint, id).catch(() => undefined);
       }
-      change((turn) =>
-        finishTurn(
-          turn,
-          abort.signal.aborted ? "stopped" : "complete",
-          Date.now(),
-        ),
-      );
-    } catch (reason) {
-      const stopped = abort.signal.aborted;
-      change((turn) =>
-        finishTurn(
-          turn,
-          stopped ? "stopped" : "error",
-          Date.now(),
-          stopped
-            ? undefined
-            : reason instanceof Error
-              ? reason.message
-              : String(reason),
-        ),
-      );
     } finally {
       if (sending.current.get(draftKey) === abort)
         sending.current.delete(draftKey);
@@ -2498,6 +2564,37 @@ export function ConversationPane({
         </p>
       ) : null}
 
+      {sessionId && !offline && remote.connection !== "online" ? (
+        <p className="coding-notice" role="status">
+          {remote.connection === "connecting"
+            ? "正在连接会话…"
+            : "连接已中断，正在恢复会话状态。"}
+        </p>
+      ) : null}
+      {remote.snapshot?.execution?.status === "interrupted" ? (
+        <p className="coding-notice" role="status">
+          执行宿主已重启。请检查已完成的工作后决定是否继续。
+        </p>
+      ) : null}
+      {remote.pending && sessionId ? (
+        <p className="coding-notice" role="status">
+          正在确认命令接收状态。
+          <button
+            type="button"
+            onClick={() =>
+              void conversations
+                .retryPending(endpoint, sessionId)
+                .catch((reason: unknown) =>
+                  setError(
+                    reason instanceof Error ? reason.message : "查询未完成。",
+                  ),
+                )
+            }
+          >
+            查询并重试原命令
+          </button>
+        </p>
+      ) : null}
       {error ? (
         <p className="coding-notice" role="alert">
           {error}

@@ -113,3 +113,5 @@ Flow 代码草稿以 `aura.flow-draft.v1` 自动保存在本机，支持代码�
 参见[DSH 对话能力](../../../docs/dsh-conversation-capabilities.md)。
 
 「设置 → 功能开关」管理 MCP 连接、DSH 插件市场、SenseVoice、Agent 团队和全文搜索。启用后可在「插件」浏览 DSH 市场，在工作空间对话标题栏搜索或查看团队，并通过输入框麦克风将识别结果填入草稿。
+
+`features/coding/conversation-store.ts` 与 `useConversation.ts` 为同一 Runtime/会话共享订阅、恢复快照、查询命令回执并独立展示连接状态。组件卸载只取消观察；发送、追加、回答和停止使用绑定执行身份的命令。未确认命令保留原 ID，用户显式重试时先查询接收状态。参见[会话连接协议](../../../docs/development/conversation-channel.md)。

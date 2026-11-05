@@ -14,7 +14,8 @@
     "./conversations": "./src/conversations.ts",
     "./browser": "./src/browser.ts",
     "./plugin-http": "./src/plugin-http.ts",
-    "./errors": "./src/errors.ts"
+    "./errors": "./src/errors.ts",
+    "./conversation-channel": "./src/conversation-channel.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -8,6 +8,7 @@
 - [模块职责](development/module-boundaries.md)：各 package 的目录、模块与依赖责任。
 - [代码规范](code-style.md)：Google TypeScript 的 Aura 适配及实际检查命令。
 - [后端 Runtime](development/backend-runtime.md)：组合根、服务路由、生命周期与失败策略。
+- [会话执行与可恢复连接](development/conversation-channel.md)：独立执行生命周期、命令回执、快照与 SSE 续传。
 - [界面设计系统](development/design-system.md)：共享 React DOM 组件与主题。
 - [外部插件 JavaScript](plugin-javascript-code-style.md)：Airbnb 适配与公共 SDK 例外。
 - [产品插件](../plugins/README.md)：随 Aura 发布的插件目录、默认加载与分发命令。

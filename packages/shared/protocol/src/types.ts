@@ -656,6 +656,8 @@ export interface CodingQuestionItem {
 
 /** One request in a replayed coding conversation and everything it produced. */
 export interface CodingHistoryTurn {
+  /** Stable identity derived from the native turn/start log position. */
+  turnId?: string;
   prompt: string;
   startedAt: number;
   endedAt?: number;

@@ -500,13 +500,52 @@ export function turnsFromHistory(
   history: readonly CodingHistoryTurn[],
 ): Turn[] {
   return history.map((item, index) => {
-    let turn = newTurn(`${sessionId}-${index}`, item.prompt, item.startedAt);
+    let turn = newTurn(
+      item.turnId ? `${sessionId}:${item.turnId}` : `${sessionId}-${index}`,
+      item.prompt,
+      item.startedAt,
+    );
     if (item.endSeq !== undefined) turn.endSeq = item.endSeq;
     for (const event of item.events) turn = applyTurnEvent(turn, event);
     return item.status === "running"
       ? turn
       : finishTurn(turn, item.status, item.endedAt, item.error);
   });
+}
+
+/** Replace the current window, retaining earlier pages by stable turn identity. */
+export function mergeConversationWindow(
+  prior: readonly Turn[],
+  recent: readonly Turn[],
+  hasMore: boolean,
+): Turn[] {
+  const first = recent[0];
+  const anchor = first ? prior.findIndex((turn) => turn.id === first.id) : -1;
+  const older =
+    hasMore && first
+      ? anchor >= 0
+        ? prior.slice(0, anchor)
+        : prior.filter((turn) => turn.startedAt < first.startedAt)
+      : [];
+  const ids = new Set(recent.map((turn) => turn.id));
+  return [
+    ...older.filter((turn) => !ids.has(turn.id)),
+    ...recent.map((turn) => {
+      const previous =
+        prior.find((item) => item.id === turn.id) ??
+        prior.find(
+          (item) =>
+            // Only bridge a local optimistic row to its first native history row.
+            !item.id.includes(":turn-") &&
+            item.status === "running" &&
+            item.prompt === turn.prompt &&
+            item.images?.length,
+        );
+      return previous?.images?.length
+        ? { ...turn, images: previous.images }
+        : turn;
+    }),
+  ];
 }
 
 /** A restored running turn has history snapshots in place of a live stream. */

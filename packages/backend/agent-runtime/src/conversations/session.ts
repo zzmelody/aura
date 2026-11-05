@@ -1052,7 +1052,7 @@ export function codingService(
           return approvalOutcome(answers);
         }),
       );
-      const requestId = randomUUID() as SessionRequestId;
+      const requestId = (turn.requestId ?? randomUUID()) as SessionRequestId;
       let turnNumber: number | undefined;
       let matched: number | undefined;
       let endSeq: number | undefined;
@@ -1098,7 +1098,14 @@ export function codingService(
           if (session.id !== sessionId) return;
           if (["plan/mode", "goal/change"].includes(event.type))
             reportCollaboration();
-          if (event.type === "turn/start") nativeTurn = [];
+          if (event.type === "turn/start") {
+            nativeTurn = [];
+            emit({
+              type: "turn-start",
+              turnId: `turn-${event.seq}`,
+              at: event.time,
+            });
+          }
           nativeTurn?.push(event);
           const ended = event.type === "turn/end" ? nativeTurn : undefined;
           if (event.type === "turn/end") nativeTurn = undefined;
