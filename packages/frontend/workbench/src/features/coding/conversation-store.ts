@@ -11,9 +11,18 @@ import type {
 import { parseConversationHistory } from "./api.ts";
 import { WorkflowApiError } from "../../workflowSessions.ts";
 
+export const CONVERSATION_UPDATE_REQUIRED =
+  "运行中的后台尚未更新，请完全退出并重新打开 Aura。";
+
 export interface ConversationView {
   snapshot?: ConversationSnapshot;
-  connection: "connecting" | "online" | "reconnecting" | "offline";
+  connection:
+    | "connecting"
+    | "online"
+    | "reconnecting"
+    | "offline"
+    | "waiting"
+    | "unsupported";
   pending?: ConversationCommand;
   error?: string;
 }
@@ -27,6 +36,7 @@ interface Entry {
   timer?: ReturnType<typeof setTimeout>;
   cursor?: string;
   generation: number;
+  readerOnline: boolean;
 }
 
 function storageKey(endpoint: string, id: string) {
@@ -142,6 +152,7 @@ export class ConversationStore {
         view: { connection: "connecting", pending: savedCommand(endpoint, id) },
         listeners: new Set(),
         generation: 0,
+        readerOnline: false,
       };
       this.entries.set(key, entry);
       for (const [oldKey, old] of this.entries) {
@@ -171,23 +182,54 @@ export class ConversationStore {
   subscribe(endpoint: string, id: string, listener: () => void): () => void {
     const entry = this.entry(endpoint, id);
     entry.listeners.add(listener);
-    if (!entry.abort) {
-      const abort = new AbortController();
-      entry.abort = abort;
-      void this.connect(entry, abort.signal).finally(() => {
-        if (entry.abort === abort) entry.abort = undefined;
-      });
-    }
+    if (!entry.abort) this.startReader(entry);
     return () => {
       entry.listeners.delete(listener);
       if (!entry.listeners.size) {
         entry.abort?.abort();
         entry.abort = undefined;
+        entry.readerOnline = false;
         entry.generation++;
         clearTimeout(entry.timer);
         entry.timer = undefined;
       }
     };
+  }
+
+  private startReader(entry: Entry): void {
+    const abort = new AbortController();
+    entry.abort = abort;
+    void this.connect(entry, abort.signal).finally(() => {
+      if (entry.abort === abort) entry.abort = undefined;
+    });
+  }
+
+  reconnect(endpoint: string, id: string): void {
+    const entry = this.entry(endpoint, id);
+    entry.abort?.abort();
+    entry.readerOnline = false;
+    entry.generation++;
+    if (entry.listeners.size) this.startReader(entry);
+  }
+
+  private async checkChannel(
+    entry: Entry,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const response = await this.fetcher(`${entry.endpoint}/coding/channel`, {
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+        : AbortSignal.timeout(15_000),
+    });
+    const value: unknown = await response.json().catch(() => undefined);
+    if (
+      response.status === 404 ||
+      (response.ok && (value as { version?: unknown } | null)?.version !== 1)
+    ) {
+      this.publish(entry, { connection: "unsupported" });
+      throw new WorkflowApiError(CONVERSATION_UPDATE_REQUIRED, 426);
+    }
+    if (!response.ok) throw new Error("无法确认会话服务是否就绪。");
   }
 
   private url(entry: Entry, path: string) {
@@ -232,17 +274,24 @@ export class ConversationStore {
         Number(snapshot.cursor.split(":")[1])
     )
       return;
-    this.publish(entry, { snapshot, error: undefined });
+    this.publish(entry, {
+      snapshot,
+      error: undefined,
+      ...(entry.readerOnline ? { connection: "online" } : {}),
+    });
   }
 
   async refresh(endpoint: string, id: string): Promise<void> {
     const entry = this.entry(endpoint, id);
     if (entry.refresh) return entry.refresh;
     const generation = entry.generation;
+    let captured = false;
     const work = this.json(entry, "/snapshot", entry.abort?.signal).then(
       (value) => {
-        if (generation === entry.generation)
+        if (generation === entry.generation) {
           this.apply(entry, parseConversationSnapshot(value, id));
+          captured = true;
+        }
       },
     );
     entry.refresh = work;
@@ -252,6 +301,7 @@ export class ConversationStore {
       if (entry.refresh === work) entry.refresh = undefined;
       const current = entry.view.snapshot?.cursor;
       if (
+        captured &&
         entry.listeners.size &&
         current &&
         entry.cursor &&
@@ -262,15 +312,21 @@ export class ConversationStore {
     }
   }
 
-  private invalidate(entry: Entry) {
+  private invalidate(entry: Entry, wait = 80) {
     if (entry.timer) return;
     entry.timer = setTimeout(() => {
       entry.timer = undefined;
       void this.refresh(entry.endpoint, entry.id).catch(() => {
-        if (entry.listeners.size)
+        if (
+          entry.listeners.size &&
+          entry.abort &&
+          !entry.abort.signal.aborted
+        ) {
           this.publish(entry, { connection: "reconnecting" });
+          this.invalidate(entry, 1000);
+        }
       });
-    }, 80);
+    }, wait);
   }
 
   private async connect(entry: Entry, signal: AbortSignal): Promise<void> {
@@ -281,7 +337,12 @@ export class ConversationStore {
       let idle: ReturnType<typeof setTimeout> | undefined;
       try {
         this.publish(entry, {
-          connection: entry.view.snapshot ? "reconnecting" : "connecting",
+          connection:
+            entry.view.connection === "waiting"
+              ? "waiting"
+              : entry.view.snapshot
+                ? "reconnecting"
+                : "connecting",
         });
         if (entry.view.pending)
           await this.checkPending(entry, signal).catch(() => undefined);
@@ -293,8 +354,19 @@ export class ConversationStore {
           ),
           { signal: readSignal },
         );
+        signal.throwIfAborted();
+        if (response.status === 404) {
+          await response.body?.cancel();
+          await this.checkChannel(entry, readSignal);
+          throw new WorkflowApiError("会话尚未保存。", 404);
+        }
         if (!response.ok || !response.body)
           throw new Error("会话事件连接不可用。");
+        if (
+          !response.headers.get("Content-Type")?.startsWith("text/event-stream")
+        )
+          throw new Error("会话事件响应无效。");
+        entry.readerOnline = true;
         this.publish(entry, { connection: "online" });
         this.invalidate(entry);
         attempts = 0;
@@ -359,15 +431,23 @@ export class ConversationStore {
           await reader.cancel().catch(() => undefined);
           reader.releaseLock();
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof WorkflowApiError && error.status === 426) return;
         if (!signal.aborted)
-          this.publish(entry, { connection: "reconnecting" });
+          this.publish(entry, {
+            connection:
+              error instanceof WorkflowApiError && error.status === 404
+                ? "waiting"
+                : "reconnecting",
+          });
       } finally {
         clearTimeout(idle);
         connection.abort();
+        if (entry.abort?.signal === signal) entry.readerOnline = false;
       }
       if (!signal.aborted) {
-        this.publish(entry, { connection: "reconnecting" });
+        if (entry.view.connection !== "waiting")
+          this.publish(entry, { connection: "reconnecting" });
         await pause(Math.min(500 * 2 ** attempts++, 5_000), signal).catch(
           () => undefined,
         );
@@ -417,6 +497,8 @@ export class ConversationStore {
     command: ConversationCommand,
   ): Promise<ConversationReceipt> {
     const entry = this.entry(endpoint, id);
+    if (entry.view.connection === "unsupported")
+      throw new WorkflowApiError(CONVERSATION_UPDATE_REQUIRED, 426);
     if (
       entry.view.pending &&
       entry.view.pending.commandId !== command.commandId
@@ -440,6 +522,18 @@ export class ConversationStore {
       ) {
         persist(entry);
         this.publish(entry, { pending: undefined });
+        if (error.status === 404) {
+          try {
+            await this.checkChannel(entry);
+          } catch (versionError) {
+            if (
+              versionError instanceof WorkflowApiError &&
+              versionError.status === 426
+            )
+              throw versionError;
+            // The command's definite rejection remains valid if the probe fails.
+          }
+        }
         throw error;
       }
       const found = await this.checkPending(entry).catch(() => undefined);
@@ -525,6 +619,7 @@ export class ConversationStore {
       entry.listeners.clear();
       entry.abort?.abort();
       entry.abort = undefined;
+      entry.readerOnline = false;
       clearTimeout(entry.timer);
       entry.generation++;
     }

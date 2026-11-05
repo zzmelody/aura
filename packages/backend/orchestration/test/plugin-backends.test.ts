@@ -9,6 +9,8 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { isDeepStrictEqual } from "node:util";
 import test from "node:test";
 import type { FlowRun } from "@aura/protocol/types";
 import { actionCapabilities } from "../src/actions.ts";
@@ -18,6 +20,17 @@ import { installHostPluginSdkResolution } from "../src/plugin-sdk-resolution.ts"
 import type { BackendRoot } from "../src/types.ts";
 
 const backendApi = "@aura/plugin-sdk/backend";
+
+/** File notifications may arrive after writeFile resolves, especially on macOS. */
+async function waitFor<T>(read: () => Promise<T>, expected: T): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  let actual = await read();
+  while (!isDeepStrictEqual(actual, expected) && Date.now() < deadline) {
+    await delay(10);
+    actual = await read();
+  }
+  assert.deepEqual(actual, expected);
+}
 
 // Plugins carry no SDK; the host resolves it, as the runtime does.
 installHostPluginSdkResolution(
@@ -322,6 +335,7 @@ test("a granted Action backend stays available for cleanup of another plugin's R
       steps: [
         {
           id: "submit",
+          label: "Submit",
           kind: "action",
           actionId: "media/submit",
           plugin: media.plugin,
@@ -558,6 +572,10 @@ export default defineBackend({ open(host) { return {
       await host.replace(roots);
       const version = () =>
         host.invokeFromPage("hot", "version", null, signal());
+      const refreshedVersion = async () => {
+        await host.refresh();
+        return version();
+      };
       const waiting = host.invokeFromPage("hot", "wait", null, signal());
       await entered.promise;
       await writeFile(helper, 'export const version = "two";\n');
@@ -573,10 +591,12 @@ export default defineBackend({ open(host) { return {
       await host.refresh();
       assert.deepEqual(await version(), { version: "one" });
       active.status = "completed";
-      await host.refresh();
-      assert.deepEqual(await version(), { version: "two" });
+      await waitFor(refreshedVersion, { version: "two" });
       await writeFile(entry, "export default { invalid syntax\n");
-      await host.refresh();
+      await waitFor(async () => {
+        await host.refresh();
+        return warnings.length;
+      }, 1);
       await host.refresh();
       assert.deepEqual(await version(), { version: "two" });
       assert.equal(warnings.length, 1, "a broken edit does not spam warnings");
@@ -584,8 +604,7 @@ export default defineBackend({ open(host) { return {
       assert.deepEqual(await version(), { version: "two" });
       await writeFile(entry, source);
       await writeFile(helper, 'export const version = "three";\n');
-      await host.refresh();
-      assert.deepEqual(await version(), { version: "three" });
+      await waitFor(refreshedVersion, { version: "three" });
     } finally {
       await host.close();
     }

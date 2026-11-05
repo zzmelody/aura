@@ -204,3 +204,132 @@ test("a definite plain-text rejection clears the pending command instead of aski
   );
   assert.equal(store.view(endpoint, id).pending, undefined);
 });
+
+test("an older runtime asks for an update instead of reconnecting forever or submitting commands", async (t) => {
+  let requests = 0;
+  const store = new ConversationStore(async () => {
+    requests++;
+    return new Response(null, { status: 404 });
+  });
+  t.after(() => store.close());
+  store.subscribe(endpoint, id, () => undefined);
+  await until(() => store.view(endpoint, id).connection === "unsupported");
+  const before = requests;
+  await delay(600);
+  assert.equal(requests, before);
+  await assert.rejects(
+    store.submit(endpoint, id, {
+      commandId,
+      type: "turn.start",
+      input: { prompt: "check", mode: "demo" },
+    }),
+    { status: 426 },
+  );
+  assert.equal(
+    requests,
+    before,
+    "an incompatible runtime must not receive commands",
+  );
+  assert.equal(store.view(endpoint, id).pending, undefined);
+});
+
+test("a supported runtime waits quietly for an unsaved conversation and connects after it is created", async (t) => {
+  let created = false;
+  const store = new ConversationStore(async (input, init) => {
+    if (String(input).endsWith("/coding/channel"))
+      return Response.json({ version: 1 });
+    if (!created)
+      return Response.json({ message: "not saved" }, { status: 404 });
+    if (String(input).endsWith("/snapshot")) return Response.json(snapshot());
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(frame("snapshot", snapshot()));
+          init?.signal?.addEventListener("abort", () => controller.close(), {
+            once: true,
+          });
+        },
+      }),
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
+  });
+  t.after(() => store.close());
+  store.subscribe(endpoint, id, () => undefined);
+  await until(() => store.view(endpoint, id).connection === "waiting");
+  created = true;
+  await until(() => store.view(endpoint, id).snapshot !== undefined);
+  assert.equal(store.view(endpoint, id).connection, "online");
+});
+
+test("a transient snapshot failure recovers its connection status while the event reader stays connected", async (t) => {
+  let reads = 0;
+  let connections = 0;
+  const store = new ConversationStore(async (input, init) => {
+    if (String(input).endsWith("/snapshot")) {
+      if (++reads === 1)
+        return Response.json({ message: "busy" }, { status: 503 });
+      return Response.json(snapshot(2));
+    }
+    connections++;
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(frame("snapshot", snapshot()));
+          init?.signal?.addEventListener("abort", () => controller.close(), {
+            once: true,
+          });
+        },
+      }),
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
+  });
+  t.after(() => store.close());
+  store.subscribe(endpoint, id, () => undefined);
+  await until(() => store.view(endpoint, id).connection === "reconnecting");
+  await until(() => store.view(endpoint, id).snapshot?.cursor === `${epoch}:2`);
+  assert.equal(store.view(endpoint, id).connection, "online");
+  assert.equal(connections, 1);
+});
+
+test("explicit reconnection recovers after replacing an older runtime", async (t) => {
+  let upgraded = false;
+  const store = new ConversationStore(async (input, init) => {
+    if (!upgraded) return new Response(null, { status: 404 });
+    if (String(input).endsWith("/snapshot")) return Response.json(snapshot());
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(frame("snapshot", snapshot()));
+          init?.signal?.addEventListener("abort", () => controller.close(), {
+            once: true,
+          });
+        },
+      }),
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
+  });
+  t.after(() => store.close());
+  store.subscribe(endpoint, id, () => undefined);
+  await until(() => store.view(endpoint, id).connection === "unsupported");
+  upgraded = true;
+  store.reconnect(endpoint, id);
+  await until(() => store.view(endpoint, id).snapshot !== undefined);
+  assert.equal(store.view(endpoint, id).connection, "online");
+});
+
+test("a missing command route reports the older runtime and clears its definite rejection", async (t) => {
+  const store = new ConversationStore(
+    async () => new Response(null, { status: 404 }),
+  );
+  t.after(() => store.close());
+  await assert.rejects(
+    store.submit(endpoint, id, {
+      commandId,
+      type: "turn.start",
+      input: { prompt: "check", mode: "demo" },
+    }),
+    { status: 426 },
+  );
+  assert.equal(store.view(endpoint, id).connection, "unsupported");
+  assert.equal(store.view(endpoint, id).pending, undefined);
+});

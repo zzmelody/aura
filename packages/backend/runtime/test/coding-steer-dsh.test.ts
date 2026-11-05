@@ -230,7 +230,7 @@ test(
         "the in-flight call keeps its original model",
       );
       assert.equal(
-        events.some((event) => event.type === "steer"),
+        events.some((event) => event.type === "steer" && !event.delivery),
         false,
         "admission succeeds before the agent records guidance on the stream",
       );
@@ -257,7 +257,9 @@ test(
       assert.equal(history.turns[0]!.status, "complete");
       // The guidance shows in the transcript, live and replayed alike.
       // Both carry the same session event time, so the trajectory agrees.
-      const live = events.filter((event) => event.type === "steer");
+      const live = events
+        .filter((event) => event.type === "steer")
+        .filter((event) => !event.delivery);
       assert.equal(live.length, 1);
       assert.equal(live[0]!.text, GUIDANCE);
       assert.equal(live[0]!.requestId, requestId);

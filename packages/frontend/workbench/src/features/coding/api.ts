@@ -423,6 +423,9 @@ function parseCodingEvent(
       ...(isCodingSteerRequestId(event.requestId)
         ? { requestId: event.requestId }
         : {}),
+      ...(event.delivery === "queued" || event.delivery === "canceled"
+        ? { delivery: event.delivery }
+        : {}),
     };
   if (
     event.type === "question" &&

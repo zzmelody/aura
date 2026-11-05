@@ -6,6 +6,8 @@
 
 `CodingHistoryPage` 描述完整回合组成的历史窗口，携带 `hasMore`、`beforeSeq` 与 `throughSeq`，游标用于固定日志截面的向前读取；不改变持久化记录格式。
 
+`CodingActivity` 的 `steer` 事件以 `requestId` 关联同一条追加消息。可选 `delivery: "queued"` 表示已进入 DSH inbox，`"canceled"` 表示被 DSH 明确取消；省略该字段才表示已进入模型上下文。实时流和历史使用同一形状，兼容旧版没有 delivery 字段的已读取事件。
+
 Aura 客户端与后端的公共协议。`@aura/protocol/types` 导出 ChatMessage、ChatRequest、ChatEvent、CodexLoginRequest 与 CodexAuthStatus；`@aura/protocol` 导出 HTTP 历史校验。没有运行依赖。授权状态只包含登录阶段、模型名、验证地址和设备码，不允许携带 access token、refresh token 或 API Key。
 
 服务端接收 1–200 条 user/assistant 文本消息，历史单条最多 12,000 字符；最后一条必须是非空 user 文本且最多 4,000 字符。响应为逐行 JSON，包含 delta、error 或 done。Node HTTP 请求体大小限制归 server，不属于跨平台协议包。

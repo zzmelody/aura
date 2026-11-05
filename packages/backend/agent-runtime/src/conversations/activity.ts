@@ -22,6 +22,35 @@ export function projectCodingEvent(
   const fields = data as Record<string, unknown>;
   const at = event.time;
   if (
+    event.type === "agent/inbox/spliced" &&
+    fields.target === "next-step" &&
+    Array.isArray(fields.inserted) &&
+    ownPrompt
+  ) {
+    for (const inserted of fields.inserted) {
+      if (!inserted || typeof inserted !== "object") continue;
+      const message = inserted as Record<string, unknown>;
+      const source = message.source as
+        { kind?: unknown; rpcId?: unknown } | undefined;
+      if (
+        source?.kind !== "user" ||
+        !isCodingSteerRequestId(source.rpcId) ||
+        ownPrompt(message)
+      )
+        continue;
+      const text = messageText(message.content);
+      if (text)
+        emit({
+          type: "steer",
+          text,
+          requestId: source.rpcId,
+          delivery: "queued",
+          at,
+        });
+    }
+    return;
+  }
+  if (
     event.type.startsWith("compaction/") &&
     typeof fields.compactionId === "string"
   ) {

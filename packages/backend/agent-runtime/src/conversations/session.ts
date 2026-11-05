@@ -1087,12 +1087,12 @@ export function codingService(
       const created = new Map<string, CodingFileDiff>();
       // This request's own prompt, told apart from the steering the user sends
       // while the turn runs: both are user messages inside the same turn, and
-      // only the latter belongs in the transcript as its own entry. A message
-      // seen before ours has no turn of this request to belong to either.
+      // only the latter belongs in the transcript as its own entry. Parked
+      // steering is consumed before our opening prompt when a stopped turn
+      // continues; it must still confirm the original submission by rpcId.
       const ownPrompt = (message: Record<string, unknown>) =>
-        matched === undefined ||
         (message.source as { rpcId?: unknown } | undefined)?.rpcId ===
-          requestId;
+        requestId;
       disposers.push(
         ctx.on("session/event", (session, event) => {
           if (session.id !== sessionId) return;

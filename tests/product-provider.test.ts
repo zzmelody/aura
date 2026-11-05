@@ -11,22 +11,6 @@ type JsonValue = Parameters<PluginBackends["invokeFromPage"]>[2];
 
 test("default product providers honor page ownership and close independently", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "aura-product-plugins-"));
-  const resolution = await loadAuraPlugins({
-    configPath: join(directory, "plugins.json"),
-    defaultPluginsDirectory: resolve("plugins"),
-    auraVersion: "0.1.0",
-    pluginSdkVersion: "2.0.0",
-  });
-  // Only site-launcher ships with Aura; other plugins load from explicit paths.
-  assert.deepEqual(
-    resolution.plugins.map((plugin) => plugin.id),
-    ["site-launcher"],
-  );
-  const products = resolution.plugins;
-  assert.ok(
-    products.every((plugin) => plugin.available),
-    JSON.stringify(products),
-  );
   const providers = new PluginBackends({
     dataRoot: directory,
     host: memoryBackend(directory),
@@ -40,6 +24,25 @@ test("default product providers honor page ownership and close independently", a
       retryDelay: 100,
     });
   });
+  const sdk = JSON.parse(
+    await readFile(resolve("packages/backend/plugin-sdk/package.json"), "utf8"),
+  ) as { version: string };
+  const resolution = await loadAuraPlugins({
+    configPath: join(directory, "plugins.json"),
+    defaultPluginsDirectory: resolve("plugins"),
+    auraVersion: "0.1.0",
+    pluginSdkVersion: sdk.version,
+  });
+  // Both bundled plugins must load under the SDK the product actually ships.
+  assert.deepEqual(resolution.plugins.map((plugin) => plugin.id).sort(), [
+    "aura.tripo",
+    "site-launcher",
+  ]);
+  const products = resolution.plugins;
+  assert.ok(
+    products.every((plugin) => plugin.available),
+    JSON.stringify(products),
+  );
   await providers.replace(
     resolution.backendRoots.map((entry) => ({
       root: entry.path,

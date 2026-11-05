@@ -3,18 +3,23 @@ import type {
   CodingPermission,
   FlowMode,
 } from "@aura/protocol/types";
-import { conversationSides } from "@aura/protocol/conversations";
+import {
+  conversationSides,
+  PERSONAL_ASSISTANT_SESSION_ID,
+} from "@aura/protocol/conversations";
 import type { CodingStreamEvent, CodingTurn } from "../types.ts";
 import { FlowError } from "@aura/protocol/errors";
 import type { CodingConversationIndex } from "./index-record.ts";
 import type { ConversationWorkspaces } from "../ports.ts";
 import type { codingService } from "./session.ts";
+import type { ConversationTitleGenerator } from "./conversation-title.ts";
 
 /** Admission and durable metadata; model execution stays in the DSH driver. */
 export function conversationService(
   projects: ConversationWorkspaces,
   index: CodingConversationIndex,
-  driver: ReturnType<typeof codingService>,
+  driver: Pick<ReturnType<typeof codingService>, "stream" | "applyPermission">,
+  generateTitle?: ConversationTitleGenerator,
 ) {
   const admitted = new Set<string>();
   return { stream, selectModel, selectPermission };
@@ -115,7 +120,13 @@ export function conversationService(
           : (saved ?? {});
       // Explicit empty selection is saved by the model control endpoint.
       await index.selectModel(id, request.mode, selection);
-      if (request.forkFrom) await index.nameSide(id, request.prompt);
+      const firstTurn = request.forkFrom
+        ? await index.nameSide(id, request.prompt)
+        : !existing;
+      const sideParent = request.forkFrom ? index.sideParent(id) : undefined;
+      const provisionalTitle = sideParent
+        ? conversationSides(sideParent).find((side) => side.id === id)?.title
+        : index.get(id)?.title;
       const result = await driver.stream(
         {
           ...request,
@@ -133,6 +144,33 @@ export function conversationService(
         () => index.permission(id),
       );
       if (!request.forkFrom) await projects.attach(projectId, id);
+      if (
+        firstTurn &&
+        generateTitle &&
+        provisionalTitle &&
+        request.prompt.trim() &&
+        id !== PERSONAL_ASSISTANT_SESSION_ID &&
+        !signal.aborted
+      ) {
+        try {
+          const title = await generateTitle(
+            { ...request, ...selection },
+            signal,
+          );
+          if (!signal.aborted)
+            await index.setGeneratedTitle(id, provisionalTitle, title);
+        } catch {
+          // The main reply is already complete; a title failure must not fail it
+          // or retry an auxiliary request with an unknown paid outcome.
+          if (!signal.aborted)
+            emit({
+              type: "notice",
+              id: `title-${id}`,
+              text: "标题未能自动提炼，已保留临时标题。可在模型服务的对话能力中检查请求额度。",
+              at: Date.now(),
+            });
+        }
+      }
       return result;
     } finally {
       admitted.delete(id);

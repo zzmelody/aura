@@ -33,6 +33,38 @@ test("lint config checks Hook placement and stale dependencies in the shared Rea
   assert.ok(rules.has("react-hooks/exhaustive-deps"));
 });
 
+test("host and product plugin lint configs coexist without losing TypeScript or React checks", async () => {
+  const eslint = new ESLint();
+  for (const filePath of [
+    "packages/shared/protocol/src/style-probe.ts",
+    "plugins/site-launcher/backend/style-probe.ts",
+    "plugins/tripo/backend/style-probe.ts",
+  ]) {
+    const [result] = await eslint.lintText("export type Value = any;", {
+      filePath,
+    });
+    assert.equal(result.fatalErrorCount, 0, JSON.stringify(result.messages));
+    assert.ok(
+      result.messages.some(
+        (message) => message.ruleId === "@typescript-eslint/no-explicit-any",
+      ),
+    );
+  }
+  const [browser] = await eslint.lintText(
+    `import { useEffect } from 'react';
+     export function Example({ value }: { value: string }) {
+       if (value) useEffect(() => { document.title = value; }, []);
+       return null;
+     }`,
+    { filePath: "plugins/tripo/client/src/StyleProbe.tsx" },
+  );
+  assert.equal(browser.fatalErrorCount, 0, JSON.stringify(browser.messages));
+  const rules = new Set(browser.messages.map((message) => message.ruleId));
+  assert.ok(rules.has("react-hooks/rules-of-hooks"));
+  assert.ok(rules.has("react-hooks/exhaustive-deps"));
+  assert.ok(!rules.has("no-undef"), "plugin UI keeps its browser globals");
+});
+
 test("format gate allows unchanged legacy code but rejects edited and new violations", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "aura-format-"));
   t.after(() => rm(root, { recursive: true, force: true }));

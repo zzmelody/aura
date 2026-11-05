@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import test from "node:test";
@@ -118,12 +125,15 @@ export async function apply(ctx) {
 `,
     );
     await host.open();
+    // DSH resolves watched roots; macOS's /var temp path aliases /private/var.
+    const canonicalPluginRoot = await realpath(pluginRoot);
     const { base, watched } = JSON.parse(await readFile(snapshot, "utf8")) as {
       base: string;
       watched: Record<string, string[]>;
     };
     const source = Object.entries(watched).find(
-      ([path]) => relative(pluginRoot, resolve(base, path)) === "helpers",
+      ([path]) =>
+        relative(canonicalPluginRoot, resolve(base, path)) === "helpers",
     );
     assert.ok(
       source?.[1].includes("helper.js"),
@@ -131,10 +141,10 @@ export async function apply(ctx) {
     );
     for (const [path, files] of Object.entries(watched)) {
       assert.doesNotMatch(
-        relative(pluginRoot, resolve(base, path)),
+        relative(canonicalPluginRoot, resolve(base, path)),
         /(?:^|[/\\])(?:node_modules|\.git)(?:[/\\]|$)/u,
       );
-      if (relative(pluginRoot, resolve(base, path)) === "") {
+      if (relative(canonicalPluginRoot, resolve(base, path)) === "") {
         assert.ok(!files.includes("node_modules"));
         assert.ok(!files.includes(".git"));
       }

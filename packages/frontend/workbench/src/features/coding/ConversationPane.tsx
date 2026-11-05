@@ -1,4 +1,7 @@
-import { conversations } from "./conversation-store.ts";
+import {
+  conversations,
+  CONVERSATION_UPDATE_REQUIRED,
+} from "./conversation-store.ts";
 import { useConversation } from "./useConversation.ts";
 import { isExecutionActive } from "@aura/protocol/conversation-channel";
 import { SubagentPanel } from "./SubagentPanel.tsx";
@@ -101,6 +104,7 @@ import { TurnActions } from "./TurnActions.tsx";
 import "./composer.css";
 import { VoiceInput } from "./VoiceInput.tsx";
 import { useIntegrations } from "../../integrations.tsx";
+import { useConversationDraft } from "./useConversationDraft.ts";
 import { writeClipboard } from "../../clipboard";
 import type { ChatImage } from "@aura/core/types";
 import { chatImageUrl } from "../../chatImages";
@@ -126,6 +130,7 @@ import {
 } from "./fileKinds";
 import {
   addPendingSteer,
+  mergeConversationSteers,
   mergeConversationWindow,
   finishTurn,
   newTurn,
@@ -1156,9 +1161,13 @@ const TurnView = memo(function TurnView({
               <div className="coding-steer-status" role="status">
                 {item.delivery === "unconfirmed"
                   ? "送达状态未确认"
-                  : running
-                    ? "等待 Agent 读取"
-                    : "本轮结束前未确认读取"}
+                  : item.delivery === "canceled"
+                    ? "已取消，未读取"
+                    : item.delivery === "queued"
+                      ? running
+                        ? "等待 Agent 读取"
+                        : "已保留，继续对话时读取"
+                      : "正在确认送达"}
               </div>
             ) : null}
           </div>
@@ -1576,20 +1585,11 @@ export function ConversationPane({
   const draftKey =
     sessionId ??
     (branchFrom ? `fork:${branchFrom}:${branchAt ?? "latest"}` : "draft");
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const draft = drafts[draftKey] ?? initialDraft ?? "";
-  const { flags } = useIntegrations();
-  const setDraft = useCallback(
-    (value: React.SetStateAction<string>) =>
-      setDrafts((current) => ({
-        ...current,
-        [draftKey]:
-          typeof value === "function"
-            ? value(current[draftKey] ?? initialDraft ?? "")
-            : value,
-      })),
-    [draftKey, initialDraft],
+  const { draft, setDraft, moveDraft } = useConversationDraft(
+    draftKey,
+    initialDraft,
   );
+  const { flags } = useIntegrations();
   const [modelOpenRequest, setModelOpenRequest] = useState(0);
   const [error, setError] = useState("");
   const [collaborations, setCollaborations] = useState<
@@ -1811,9 +1811,6 @@ export function ConversationPane({
       else editor.current?.focus();
     },
   });
-  useEffect(() => {
-    if (initialDraft !== undefined) setDraft(initialDraft);
-  }, [initialDraft, setDraft]);
   useEffect(() => onDraftChange?.(draft), [draft, onDraftChange]);
   useEffect(
     () => onAttachmentsChange?.(images.attachments.length > 0),
@@ -2100,14 +2097,14 @@ export function ConversationPane({
       }));
       setTurns((current) => ({
         ...current,
-        [id]: [
+        [id]: mergeConversationSteers([
           ...new Map(
             [...previous, ...(current[id] ?? [])].map((turn) => [
               turn.id,
               turn,
             ]),
           ).values(),
-        ],
+        ]),
       }));
       setHistoryWindow({ id, end: previous.length });
       transcript.current?.scrollTo({ top: 0 });
@@ -2249,6 +2246,9 @@ export function ConversationPane({
           throw new Error(receipt.error ?? "追加消息结果尚未确认。");
         abort.signal.throwIfAborted();
         if (steered) {
+          updateTurn(id, turnId, (turn) =>
+            settlePendingSteer(turn, requestId, "queued"),
+          );
           setDraft((current) => (current === text ? "" : current));
           for (const item of images.attachments)
             if (item.image) images.detach(item.key);
@@ -2340,10 +2340,7 @@ export function ConversationPane({
     if (!sessionId) loaded.current.add(id);
     const turnId = newId();
     if (options?.preserveDraft && !sessionId) {
-      setDrafts((current) => {
-        const { [draftKey]: previous, ...rest } = current;
-        return { ...rest, [id]: previous ?? draft };
-      });
+      moveDraft(id);
       images.moveTo(id);
     }
     const submittedConfig = submittedModelConfig();
@@ -2564,11 +2561,24 @@ export function ConversationPane({
         </p>
       ) : null}
 
-      {sessionId && !offline && remote.connection !== "online" ? (
+      {sessionId &&
+      !offline &&
+      remote.connection !== "online" &&
+      remote.connection !== "waiting" ? (
         <p className="coding-notice" role="status">
-          {remote.connection === "connecting"
-            ? "正在连接会话…"
-            : "连接已中断，正在恢复会话状态。"}
+          {remote.connection === "unsupported"
+            ? CONVERSATION_UPDATE_REQUIRED
+            : remote.connection === "connecting"
+              ? "正在连接会话…"
+              : "连接已中断，正在恢复会话状态。"}
+          {remote.connection === "unsupported" ? (
+            <button
+              type="button"
+              onClick={() => conversations.reconnect(endpoint, sessionId)}
+            >
+              重新连接
+            </button>
+          ) : null}
         </p>
       ) : null}
       {remote.snapshot?.execution?.status === "interrupted" ? (

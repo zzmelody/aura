@@ -100,3 +100,22 @@ test("failed paid operations retain reservations and require an explicit acknowl
   await store.save({ ...settings, revision: 1, acknowledgeUnknown: true });
   assert.ok(await store.reserve("web", "a"));
 });
+
+test("a title reservation cannot be repeated after restart or acknowledgement of an unknown outcome", async () => {
+  const { store, restart } = fixture();
+  await store.save({ ...settings, maxRequests: 3 });
+  await store.settle(await store.reserve("title", "side-chat"), false);
+  const recovered = restart();
+  await recovered.save({
+    ...settings,
+    revision: 1,
+    maxRequests: 3,
+    acknowledgeUnknown: true,
+  });
+  await assert.rejects(recovered.reserve("title", "side-chat"), /已请求过/u);
+  assert.equal((await recovered.snapshot()).usedRequests, 1);
+  const next = await recovered.reserve("title", "another-chat");
+  await recovered.settle(next, true);
+  await assert.rejects(recovered.reserve("title", "another-chat"), /已请求过/u);
+  assert.equal((await recovered.snapshot()).usedRequests, 2);
+});

@@ -133,3 +133,146 @@ test("without the prompt test no user message is projected", () => {
   );
   assert.deepEqual(emitted, []);
 });
+
+test("parked steering before a new turn's ordinary prompt is not mistaken for that prompt", () => {
+  const pending = "00000000-0000-4000-8000-000000000001";
+  const continuation = "00000000-0000-4000-8000-000000000002";
+  const events: StoredEvent[] = [
+    { type: "turn/start", time: 0, data: { turn: 1 } },
+    userMessage("检查项目"),
+    {
+      type: "agent/inbox/spliced",
+      time: 1,
+      data: {
+        target: "next-step",
+        start: 0,
+        inserted: [
+          {
+            id: "message",
+            source: { kind: "user", rpcId: pending },
+            content: [{ type: "text", text: "改用 Angel" }],
+          },
+        ],
+      },
+    },
+    {
+      type: "turn/end",
+      time: 2,
+      data: { turn: 1, reason: { kind: "aborted", reason: { kind: "user" } } },
+    },
+    { type: "turn/start", time: 3, data: { turn: 2 } },
+    { type: "step/start", time: 3, data: { turn: 2, step: 1 } },
+    userMessage("改用 Angel", pending),
+    userMessage("继续", continuation),
+    { type: "request/header", time: 4, data: {} },
+    assistantMessage("继续处理", 2),
+    {
+      type: "turn/end",
+      time: 5,
+      data: { turn: 2, reason: { kind: "completed" } },
+    },
+  ];
+  const before = historyTurns(events.slice(0, 4), false);
+  assert.deepEqual(before[0]?.events, [
+    {
+      type: "steer",
+      text: "改用 Angel",
+      requestId: pending,
+      delivery: "queued",
+      at: 1,
+    },
+  ]);
+  const after = historyTurns(events, false);
+  assert.deepEqual(
+    after.map((turn) => turn.prompt),
+    ["检查项目", "继续"],
+  );
+  assert.deepEqual(after[0]?.events, [
+    { type: "steer", text: "改用 Angel", requestId: pending, at: 0 },
+  ]);
+  assert.equal(
+    after[1]?.events.some((event) => event.type === "steer"),
+    false,
+  );
+  // A bounded history page may begin after the original enqueue event.
+  const page = historyTurns(events.slice(4), false);
+  assert.equal(page[0]?.prompt, "继续");
+  assert.deepEqual(
+    page[0]?.events.filter((event) => event.type === "steer"),
+    [{ type: "steer", text: "改用 Angel", requestId: pending, at: 0 }],
+  );
+});
+
+test("history distinguishes retained steering from input DSH explicitly canceled", () => {
+  const first = "00000000-0000-4000-8000-000000000001";
+  const second = "00000000-0000-4000-8000-000000000002";
+  const queued = [first, second].map((rpcId) => ({
+    id: rpcId,
+    source: { kind: "user", rpcId },
+    content: [{ type: "text", text: "追加指令" }],
+  }));
+  const [turn] = historyTurns(
+    [
+      { type: "turn/start", time: 0, data: { turn: 1 } },
+      userMessage("检查"),
+      {
+        type: "agent/inbox/spliced",
+        time: 1,
+        data: { target: "next-step", start: 0, inserted: queued },
+      },
+      {
+        type: "turn/end",
+        time: 2,
+        data: { turn: 1, reason: { kind: "aborted" } },
+      },
+      {
+        type: "agent/inbox/spliced",
+        time: 3,
+        data: {
+          target: "next-step",
+          start: 0,
+          removedCount: 1,
+          inserted: [],
+          outcome: "canceled",
+        },
+      },
+    ],
+    false,
+  );
+  assert.deepEqual(
+    turn?.events.map(
+      (event) => event.type === "steer" && [event.requestId, event.delivery],
+    ),
+    [
+      [first, "canceled"],
+      [second, "queued"],
+    ],
+  );
+});
+
+test("parked steering does not replace a goal continuation prompt", () => {
+  const [turn] = historyTurns(
+    [
+      { type: "turn/start", time: 0, data: { turn: 2 } },
+      { type: "step/start", time: 0, data: { turn: 2, step: 1 } },
+      userMessage("先检查测试", "00000000-0000-4000-8000-000000000001"),
+      {
+        type: "user/message",
+        time: 0,
+        data: {
+          source: { kind: "goal", round: 2 },
+          content: [{ type: "text", text: "继续目标" }],
+        },
+      },
+      { type: "request/header", time: 0, data: {} },
+      {
+        type: "turn/end",
+        time: 1,
+        data: { turn: 2, reason: { kind: "completed" } },
+      },
+    ],
+    false,
+  );
+  assert.equal(turn?.prompt, "目标续跑 · 第 2 轮");
+  assert.equal(turn?.events[1]?.type, "steer");
+});

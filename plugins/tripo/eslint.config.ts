@@ -10,7 +10,10 @@ export default defineConfig(
   {
     files: ['**/*.{ts,tsx,js}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
-    languageOptions: { globals: globals.node },
+    languageOptions: {
+      globals: globals.node,
+      parserOptions: { tsconfigRootDir: import.meta.dirname },
+    },
     rules: {
       eqeqeq: ['error', 'always'],
       'no-var': 'error',

@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
-import { watch, type FSWatcher } from "node:fs";
+import { statSync, watch, type FSWatcher } from "node:fs";
 import { registerHooks } from "node:module";
-import { extname, isAbsolute, relative, sep } from "node:path";
+import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REVISION = "auraPluginRevision";
@@ -24,9 +24,15 @@ const SOURCE_EXTENSIONS = new Set([
 export class PluginModules {
   readonly #owner = randomUUID();
   readonly #roots = new Map<string, string>();
+  readonly #sources = new Map<string, string>();
   readonly #watched = new Map<
     string,
-    { watcher: FSWatcher; revision: number; failed: boolean }
+    {
+      watcher: FSWatcher;
+      revision: number;
+      failed: boolean;
+      initialized: boolean;
+    }
   >();
   #generation = 0;
   readonly #hooks = registerHooks({
@@ -48,6 +54,17 @@ export class PluginModules {
       url.searchParams.set(REVISION, revision!);
       return { ...result, url: url.href };
     },
+    load: (url, context, next) => {
+      if (url.startsWith("file:")) {
+        const source = new URL(url);
+        const revision = source.searchParams.get(REVISION);
+        if (revision && this.#roots.has(revision)) {
+          const path = fileURLToPath(source);
+          this.#sources.set(path, sourceStamp(path));
+        }
+      }
+      return next(url, context);
+    },
   });
 
   /** Native recursive notifications avoid reading/parsing a plugin's source tree. */
@@ -56,7 +73,7 @@ export class PluginModules {
     let current = this.#watched.get(canonical);
     if (!current) {
       const watcher = watch(canonical, { recursive: true, persistent: false });
-      current = { watcher, revision: 0, failed: false };
+      current = { watcher, revision: 0, failed: false, initialized: false };
       this.#watched.set(canonical, current);
       const state = current;
       watcher.on("change", (_event, filename) => {
@@ -69,6 +86,20 @@ export class PluginModules {
             .some((part) => part === "node_modules" || part.startsWith("."))
         )
           return;
+        const path = resolve(canonical, changed);
+        const previous = this.#sources.get(path);
+        // Changes before the first source load belong to its initial version.
+        if (previous === undefined && !state.initialized) return;
+        if (previous !== undefined) {
+          try {
+            const stamp = sourceStamp(path);
+            if (stamp === previous) return;
+            this.#sources.set(path, stamp);
+          } catch {
+            // Deleted or unavailable source must still invalidate its backend.
+            this.#sources.delete(path);
+          }
+        }
         state.revision++;
       });
       watcher.on("error", () => {
@@ -85,10 +116,16 @@ export class PluginModules {
     generation = String(++this.#generation),
   ): Promise<unknown> {
     const revision = `${this.#owner}:${generation}`;
-    this.#roots.set(revision, await realpath(root));
+    const canonical = await realpath(root);
+    this.#roots.set(revision, canonical);
     const url = pathToFileURL(entry);
     url.searchParams.set(REVISION, revision);
-    return import(url.href);
+    try {
+      return await import(url.href);
+    } finally {
+      const watched = this.#watched.get(canonical);
+      if (watched) watched.initialized = true;
+    }
   }
 
   close() {
@@ -96,5 +133,12 @@ export class PluginModules {
     this.#watched.clear();
     this.#hooks.deregister();
     this.#roots.clear();
+    this.#sources.clear();
   }
+}
+
+/** Metadata for a loaded source, without reading or parsing its contents. */
+function sourceStamp(path: string): string {
+  const stat = statSync(path, { bigint: true });
+  return `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
 }

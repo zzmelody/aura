@@ -33,6 +33,8 @@ export function createCodingApp(host: OrchestrationHost) {
   );
   app.route("/terminals", createTerminalApp(host));
   app.route("/sessions", createConversationChannelApp(host));
+  // Available before DSH is ready and before a conversation has been saved.
+  app.get("/channel", (context) => context.json({ version: 1 }));
 
   app.get("/sessions/:id/agents", async (context) => {
     try {

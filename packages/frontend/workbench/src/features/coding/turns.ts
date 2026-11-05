@@ -141,7 +141,7 @@ type SteerEntry = {
   text: string;
   requestId?: string;
   images?: ChatImage[];
-  delivery?: "waiting" | "unconfirmed";
+  delivery?: "waiting" | "queued" | "canceled" | "unconfirmed";
 };
 
 /** One request and everything the agent did to answer it. */
@@ -315,17 +315,24 @@ export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
       : -1;
     const existing = turn.timeline[index];
     if (existing?.kind === "steer" && !existing.delivery) return turn;
+    if (
+      existing?.kind === "steer" &&
+      existing.delivery === "canceled" &&
+      event.delivery
+    )
+      return turn;
     const item: SteerEntry =
       existing?.kind === "steer"
-        ? { ...existing, delivery: undefined }
+        ? { ...existing, delivery: event.delivery }
         : {
             kind: "steer",
             text: event.text,
             ...(event.requestId ? { requestId: event.requestId } : {}),
+            ...(event.delivery ? { delivery: event.delivery } : {}),
           };
     return {
       ...turn,
-      steers: [...turn.steers, event.at],
+      steers: event.delivery ? turn.steers : [...turn.steers, event.at],
       timeline:
         index < 0
           ? [...turn.timeline, item]
@@ -386,11 +393,11 @@ export function addPendingSteer(
   };
 }
 
-/** A failed admission can only change an entry the agent has yet to read. */
+/** Admission receipts can only change an entry the agent has yet to read. */
 export function settlePendingSteer(
   turn: Turn,
   requestId: string,
-  delivery?: "unconfirmed",
+  delivery?: "queued" | "unconfirmed",
 ): Turn {
   return {
     ...turn,
@@ -398,7 +405,8 @@ export function settlePendingSteer(
       if (
         item.kind !== "steer" ||
         item.requestId !== requestId ||
-        !item.delivery
+        !item.delivery ||
+        item.delivery === "canceled"
       )
         return [item];
       return delivery ? [{ ...item, delivery }] : [];
@@ -499,18 +507,20 @@ export function turnsFromHistory(
   sessionId: string,
   history: readonly CodingHistoryTurn[],
 ): Turn[] {
-  return history.map((item, index) => {
-    let turn = newTurn(
-      item.turnId ? `${sessionId}:${item.turnId}` : `${sessionId}-${index}`,
-      item.prompt,
-      item.startedAt,
-    );
-    if (item.endSeq !== undefined) turn.endSeq = item.endSeq;
-    for (const event of item.events) turn = applyTurnEvent(turn, event);
-    return item.status === "running"
-      ? turn
-      : finishTurn(turn, item.status, item.endedAt, item.error);
-  });
+  return mergeConversationSteers(
+    history.map((item, index) => {
+      let turn = newTurn(
+        item.turnId ? `${sessionId}:${item.turnId}` : `${sessionId}-${index}`,
+        item.prompt,
+        item.startedAt,
+      );
+      if (item.endSeq !== undefined) turn.endSeq = item.endSeq;
+      for (const event of item.events) turn = applyTurnEvent(turn, event);
+      return item.status === "running"
+        ? turn
+        : finishTurn(turn, item.status, item.endedAt, item.error);
+    }),
+  );
 }
 
 /** Replace the current window, retaining earlier pages by stable turn identity. */
@@ -528,7 +538,7 @@ export function mergeConversationWindow(
         : prior.filter((turn) => turn.startedAt < first.startedAt)
       : [];
   const ids = new Set(recent.map((turn) => turn.id));
-  return [
+  return mergeConversationSteers([
     ...older.filter((turn) => !ids.has(turn.id)),
     ...recent.map((turn) => {
       const previous =
@@ -545,7 +555,41 @@ export function mergeConversationWindow(
         ? { ...turn, images: previous.images }
         : turn;
     }),
-  ];
+  ]);
+}
+
+/** History pages may split an enqueue and the later read of the same message. */
+export function mergeConversationSteers(turns: readonly Turn[]): Turn[] {
+  const owners = new Map<string, { timeline: TimelineItem[]; index: number }>();
+  return turns.map((turn) => {
+    const timeline: TimelineItem[] = [];
+    for (const item of turn.timeline) {
+      if (item.kind === "steer" && item.requestId) {
+        const owner = owners.get(item.requestId);
+        if (owner) {
+          const original = owner.timeline[owner.index];
+          if (original?.kind === "steer")
+            owner.timeline[owner.index] = {
+              ...original,
+              delivery:
+                !original.delivery || !item.delivery
+                  ? undefined
+                  : original.delivery === "canceled" ||
+                      item.delivery === "canceled"
+                    ? "canceled"
+                    : original.delivery === "queued" ||
+                        item.delivery === "queued"
+                      ? "queued"
+                      : item.delivery,
+            };
+          continue;
+        }
+        owners.set(item.requestId, { timeline, index: timeline.length });
+      }
+      timeline.push(item);
+    }
+    return { ...turn, timeline };
+  });
 }
 
 /** A restored running turn has history snapshots in place of a live stream. */
@@ -594,7 +638,7 @@ export function reconcileFinishedTurn(
       const local = sent.get(item.requestId);
       if (!local) return item;
       sent.delete(item.requestId);
-      return { ...local, delivery: undefined };
+      return { ...local, delivery: item.delivery };
     });
     timeline.push(...Array.from(sent.values()).filter((item) => item.delivery));
     return {

@@ -16,7 +16,7 @@ const settings = z.object({
   maxRequests: z.number().int().min(0).max(100_000),
 });
 const entry = z.object({
-  kind: z.enum(["compaction", "subagent", "web", "goal", "mcp"]),
+  kind: z.enum(["compaction", "subagent", "web", "goal", "mcp", "title"]),
   sessionId: z.string(),
   state: z.enum(["reserved", "complete", "unknown", "acknowledged"]),
   at: z.number(),
@@ -132,6 +132,13 @@ export class CodingCapabilityStore {
   ): Promise<string> {
     return this.serialize(async () => {
       const prior = this.config();
+      if (
+        kind === "title" &&
+        Object.values(prior.entries).some(
+          (item) => item.kind === "title" && item.sessionId === sessionId,
+        )
+      )
+        throw new FlowError("这段对话已请求过标题提炼。", 409);
       this.assertBudgetAvailable(prior);
       const id = randomUUID();
       await this.table.put("settings", {

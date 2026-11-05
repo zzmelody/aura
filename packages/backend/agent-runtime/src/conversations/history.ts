@@ -1,5 +1,6 @@
 import type { SessionEvent, SessionId } from "@deepseek-ai/dsh-session";
 import { conversationPromptText } from "@aura/protocol/conversations";
+import { isCodingSteerRequestId } from "@aura/protocol";
 import type {
   SessionController,
   SessionHistoryRecord,
@@ -251,15 +252,38 @@ export function historyTurns(
 ): CodingHistoryTurn[] {
   const turns: CodingHistoryTurn[] = [];
   let current: CodingHistoryTurn | undefined;
+  let openingPrompt: StoredEvent | undefined;
   let wroteText = false;
   const created = new Map<string, CodingFileDiff>();
   // Calls and approvals asked but not yet resolved, keyed by their log id.
   const asked = new Map<string, CodingTimelineEvent>();
-  const emit = (event: CodingTimelineEvent) => current?.events.push(event);
+  const steerOwners = new Map<
+    string,
+    { turn: CodingHistoryTurn; index: number }
+  >();
+  const pendingSteers: Array<string | undefined> = [];
+  const emitTo = (
+    turn: CodingHistoryTurn | undefined,
+    event: CodingTimelineEvent,
+  ) => {
+    if (!turn) return;
+    if (event.type === "steer" && event.requestId) {
+      const owner = steerOwners.get(event.requestId);
+      if (owner) {
+        if (!event.delivery) owner.turn.events[owner.index] = event;
+        return;
+      }
+      steerOwners.set(event.requestId, { turn, index: turn.events.length });
+    }
+    turn.events.push(event);
+  };
+  const emit = (event: CodingTimelineEvent) => emitTo(current, event);
+  const prompts = openingPrompts(events);
 
   for (const event of events) {
     const data = (event.data ?? {}) as Record<string, unknown>;
     if (event.type === "turn/start") {
+      openingPrompt = prompts.get(event);
       current = {
         turnId: `turn-${event.seq}`,
         prompt: "",
@@ -269,6 +293,43 @@ export function historyTurns(
       };
       turns.push(current);
       wroteText = false;
+      continue;
+    }
+    if (event.type === "agent/inbox/spliced") {
+      if (
+        data.target === "next-step" &&
+        typeof data.start === "number" &&
+        Array.isArray(data.inserted)
+      ) {
+        const inserted = data.inserted.map((message: unknown) => {
+          const source = (message as { source?: { rpcId?: unknown } } | null)
+            ?.source;
+          return isCodingSteerRequestId(source?.rpcId)
+            ? source.rpcId
+            : undefined;
+        });
+        const removed = pendingSteers.splice(
+          data.start,
+          typeof data.removedCount === "number" ? data.removedCount : 0,
+          ...inserted,
+        );
+        if (data.outcome === "canceled")
+          for (const id of removed) {
+            const owner = id ? steerOwners.get(id) : undefined;
+            const activity = owner?.turn.events[owner.index];
+            if (owner && activity?.type === "steer" && activity.delivery)
+              owner.turn.events[owner.index] = {
+                ...activity,
+                delivery: "canceled",
+              };
+          }
+      }
+      projectCodingEvent(
+        event,
+        (activity) => emitTo(current ?? turns.at(-1), activity),
+        created,
+        () => false,
+      );
       continue;
     }
     if (!current) {
@@ -283,10 +344,14 @@ export function historyTurns(
     if (event.type === "user/message") {
       const source = (data as { source?: { kind?: unknown; round?: unknown } })
         .source;
-      // The turn's opening request, then any steering the user sent into it
-      // while it ran. On replay the opening request is identified by its
-      // position. Later messages retain their ID in the shared projector.
-      if (source?.kind === "user" && !current.prompt) {
+      // DSH claims parked next-step messages before the next-turn prompt.
+      // Use the first step's opening batch, with a positional fallback for
+      // older logs that do not contain step boundaries.
+      if (
+        source?.kind === "user" &&
+        !current.prompt &&
+        (!openingPrompt || openingPrompt === event)
+      ) {
         current.prompt = conversationPromptText(
           text((data as { content?: unknown }).content),
         );
@@ -390,6 +455,41 @@ export function historyTurns(
     current.endedAt ??= events.at(-1)?.time ?? current.startedAt;
   }
   return turns.filter((turn) => turn.prompt || turn.events.length);
+}
+
+/** The ordinary prompt follows parked steering in DSH's first claimed batch. */
+function openingPrompts(
+  events: readonly StoredEvent[],
+): Map<StoredEvent, StoredEvent> {
+  const prompts = new Map<StoredEvent, StoredEvent>();
+  let turn: StoredEvent | undefined;
+  let firstStep = false;
+  let seenStep = false;
+  for (const event of events) {
+    if (event.type === "turn/start") {
+      turn = event;
+      firstStep = false;
+      seenStep = false;
+    } else if (event.type === "step/start") {
+      firstStep = !seenStep;
+      seenStep = true;
+    } else if (
+      event.type === "request/header" ||
+      event.type === "step/end" ||
+      event.type === "turn/end"
+    ) {
+      firstStep = false;
+    } else if (firstStep && turn && event.type === "user/message") {
+      const data = event.data as
+        { source?: { kind?: unknown; round?: unknown } } | undefined;
+      if (
+        data?.source?.kind === "user" ||
+        (data?.source?.kind === "goal" && typeof data.source.round === "number")
+      )
+        prompts.set(turn, event);
+    }
+  }
+  return prompts;
 }
 
 /**

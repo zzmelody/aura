@@ -285,7 +285,8 @@ test(
       requests.some(({ text }) => text.includes("Untrusted MCP instructions")),
       false,
     );
-    assert.equal((await host.codingCapabilities()).usedRequests, 1);
+    // The MCP call and this new conversation's title each reserve one request.
+    assert.equal((await host.codingCapabilities()).usedRequests, 2);
 
     await run("integration-team", "Create a synthetic teammate");
     assert.ok(

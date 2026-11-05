@@ -65,6 +65,18 @@ const chat: ChatPort = {
   },
 };
 
+test("conversation protocol discovery works before the host is ready or any session exists", async () => {
+  const host = {
+    request() {
+      throw new Error("host has not started");
+    },
+  };
+  const app = createCodingApp(host as unknown as OrchestrationHost);
+  const response = await app.request("http://localhost/channel");
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { version: 1 });
+});
+
 test("plugin HTTP serves top-level and Flow mounts with origin and route ownership checks", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "aura-plugin-http-"));
   t.after(() => rm(root, { recursive: true, force: true }));

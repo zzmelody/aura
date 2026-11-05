@@ -109,7 +109,13 @@ export type CodingTimelineEvent =
   | { type: "progress"; done: number; total: number }
   | { type: "deliverable"; path: string }
   /** Guidance the user sent into this turn while it was already running. */
-  | { type: "steer"; text: string; at: number; requestId?: string }
+  | {
+      type: "steer";
+      text: string;
+      at: number;
+      requestId?: string;
+      delivery?: "queued" | "canceled";
+    }
   | {
       type: "question";
       questionId: string;

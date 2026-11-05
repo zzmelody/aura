@@ -289,6 +289,9 @@ test(
       13,
       "Starting the execution host and reading history do not replay requests",
     );
+    // Finish this concurrent fixture before fingerprinting the next isolated
+    // read: its startup logger can still flush after the ready acknowledgement.
+    await background.close();
     await writeFile(
       join(options.dshHome, "cordis.patch.yml"),
       "# User-owned profile overlay\n",

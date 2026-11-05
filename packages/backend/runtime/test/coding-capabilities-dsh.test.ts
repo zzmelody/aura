@@ -34,6 +34,7 @@ test(
     const calls: string[][] = [];
     const childPrompts: string[] = [];
     const toolResults: unknown[] = [];
+    let titleRequests = 0;
     let holdChild = false;
     let escapeChild = false;
     let childStarted!: () => void;
@@ -47,11 +48,15 @@ test(
         tools?: Array<{ function: { name: string } }>;
       };
       const names = request.tools?.map((tool) => tool.function.name) ?? [];
-      calls.push(names);
+      const title =
+        !names.length &&
+        JSON.stringify(request.messages).includes("为对话提炼");
+      if (title) titleRequests++;
+      else calls.push(names);
       toolResults.push(
         ...request.messages.filter((message) => message.role === "tool"),
       );
-      const child = !names.includes("write");
+      const child = !title && !names.includes("write");
       if (child) childPrompts.push(JSON.stringify(request.messages));
       const ask =
         child &&
@@ -117,9 +122,11 @@ test(
                         ],
                       }
                     : {
-                        content: child
-                          ? "Synthetic child review complete."
-                          : "Synthetic parent complete.",
+                        content: title
+                          ? "调研项目方案"
+                          : child
+                            ? "Synthetic child review complete."
+                            : "Synthetic parent complete.",
                       },
                 finish_reason: null,
               },
@@ -213,14 +220,14 @@ test(
     );
     assert.equal(
       (await host.codingCapabilities()).usedRequests,
-      childCalls.length,
+      childCalls.length + titleRequests,
     );
     const compacted = await host.compactCoding("coding-native-child");
     assert.equal(compacted.compacted, true);
     assert.ok(compacted.replacedMessages > 0);
     assert.equal(
       (await host.codingCapabilities()).usedRequests,
-      childCalls.length + 1,
+      childCalls.length + titleRequests + 1,
     );
     const history = await host.codingHistory("coding-native-child");
     assert.ok(JSON.stringify(history).includes("Delegate a review."));

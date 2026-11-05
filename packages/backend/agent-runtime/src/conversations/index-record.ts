@@ -116,9 +116,9 @@ export class CodingConversationIndex {
   }
 
   /**
-   * Records a conversation on its first turn; later turns only bump activity,
-   * so the first request stays the title. A session is bound to one project
-   * directory for life, so reusing its id under another project is refused.
+   * Records a conversation with a provisional title; later turns bump activity.
+   * A session is bound to one project directory for life, so reusing its id
+   * under another project is refused.
    */
   async open(
     id: string,
@@ -164,6 +164,32 @@ export class CodingConversationIndex {
       ...(patch.title ? { title: patch.title.slice(0, 80) } : {}),
       updatedAt: Date.now(),
     }));
+  }
+
+  /** Applies a generated title only while its provisional title still owns it. */
+  async setGeneratedTitle(
+    id: string,
+    expected: string,
+    title: string,
+  ): Promise<void> {
+    const parent = id.startsWith("side-") ? this.sideParent(id) : this.get(id);
+    if (!parent || parent.archivedAt !== undefined || !title.trim()) return;
+    await this.table.update(parent.id, (current) => {
+      if (current.closedAt !== undefined || current.archivedAt !== undefined)
+        return current;
+      if (parent.id === id)
+        return current.title === expected
+          ? { ...current, title: title.trim().slice(0, 80) }
+          : current;
+      return withSides(
+        current,
+        conversationSides(current).map((side) =>
+          side.id === id && side.title === expected
+            ? { ...side, title: title.trim().slice(0, 80) }
+            : side,
+        ),
+      );
+    });
   }
 
   get(id: string): CodingConversationRecord | undefined {
@@ -258,10 +284,11 @@ export class CodingConversationIndex {
     return id;
   }
 
-  /** The first submitted question names the branch in the sidebar. */
-  async nameSide(sessionId: string, prompt: string): Promise<void> {
+  /** The first submitted question supplies a provisional branch title. */
+  async nameSide(sessionId: string, prompt: string): Promise<boolean> {
     const parent = this.sideParent(sessionId);
     if (!parent) throw new FlowError("旁支已关闭。", 404);
+    let named = false;
     await this.table.update(parent.id, (current) => {
       if (
         current.closedAt !== undefined ||
@@ -271,19 +298,22 @@ export class CodingConversationIndex {
         throw new FlowError("旁支已关闭。", 404);
       return withSides(
         current,
-        conversationSides(current).map((item) =>
-          item.id === sessionId &&
-          ["新旁支对话", "新侧边对话"].includes(item.title)
-            ? {
-                ...item,
-                title:
-                  prompt.replace(/\s+/gu, " ").trim().slice(0, 80) ||
-                  "图片对话",
-              }
-            : item,
-        ),
+        conversationSides(current).map((item) => {
+          if (
+            item.id !== sessionId ||
+            !["新旁支对话", "新侧边对话"].includes(item.title)
+          )
+            return item;
+          named = true;
+          return {
+            ...item,
+            title:
+              prompt.replace(/\s+/gu, " ").trim().slice(0, 80) || "图片对话",
+          };
+        }),
       );
     });
+    return named;
   }
 
   /** Only a still-open parent grants access to a side chat's stored log. */

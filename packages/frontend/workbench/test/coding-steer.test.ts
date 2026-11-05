@@ -1,9 +1,37 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  codingTurn,
   steerCodingTurn,
   waitForCodingTurnEnd,
 } from "../src/features/coding/api.ts";
+
+test("steering receipts preserve inbox status until an actual read arrives", async (t) => {
+  const requestId = "00000000-0000-4000-8000-000000000001";
+  const sent = [
+    { type: "steer", text: "改用 Angel", at: 1, requestId, delivery: "queued" },
+    { type: "steer", text: "改用 Angel", at: 2, requestId },
+    { type: "steer", text: "未读取", at: 3, requestId, delivery: "canceled" },
+  ];
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () =>
+      new Response(
+        [...sent, { type: "done" }]
+          .map((event) => JSON.stringify(event))
+          .join("\n") + "\n",
+      ),
+  );
+  const received = [];
+  for await (const event of codingTurn(
+    "http://fixture",
+    { sessionId: "test", prompt: "检查", mode: "demo" },
+    new AbortController().signal,
+  ))
+    received.push(event);
+  assert.deepEqual(received, sent);
+});
 
 test("guidance sends the captured model and effort together with its content", async (t) => {
   const requests: Array<{ url: string; body: unknown }> = [];

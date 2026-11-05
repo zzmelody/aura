@@ -7,6 +7,7 @@ import {
   answerTurn,
   applyTurnEvent,
   confirmConversationSteer,
+  mergeConversationSteers,
   confirmRecordedSteers,
   finishTurn,
   handoffResult,
@@ -343,6 +344,127 @@ test("a later turn can confirm a message that was parked when execution stopped"
     { kind: "steer", requestId: "one", text: "继续", delivery: undefined },
   ]);
   assert.equal(second, next);
+});
+
+test("a queued receipt stays unread after stopping and a late receipt cannot revert a read", () => {
+  const queuedEvent = {
+    type: "steer",
+    requestId: "queued",
+    text: "改用 Angel",
+    delivery: "queued",
+    at: 2,
+  } as const;
+  const waiting = addPendingSteer(
+    newTurn("turn", "检查", 1),
+    "queued",
+    "改用 Angel",
+    [],
+  );
+  const queued = applyTurnEvent(waiting, queuedEvent);
+  assert.deepEqual(queued.steers, []);
+  assert.equal(
+    queued.timeline[0]?.kind === "steer" && queued.timeline[0].delivery,
+    "queued",
+  );
+  const stopped = finishTurn(queued, "stopped", 3);
+  assert.equal(
+    stopped.timeline[0]?.kind === "steer" && stopped.timeline[0].delivery,
+    "queued",
+  );
+  const [read] = confirmConversationSteer(
+    [stopped, newTurn("next", "继续", 4)],
+    "next",
+    { ...queuedEvent, delivery: undefined, at: 5 },
+  );
+  assert.deepEqual(read?.timeline, [
+    {
+      kind: "steer",
+      requestId: "queued",
+      text: "改用 Angel",
+      delivery: undefined,
+    },
+  ]);
+  assert.equal(applyTurnEvent(read!, queuedEvent), read);
+  assert.deepEqual(settlePendingSteer(read!, "queued", "queued"), read);
+  const canceled = applyTurnEvent(queued, {
+    ...queuedEvent,
+    delivery: "canceled",
+  });
+  assert.equal(applyTurnEvent(canceled, queuedEvent), canceled);
+  assert.deepEqual(settlePendingSteer(canceled, "queued", "queued"), canceled);
+});
+
+test("a queued history receipt is not mistaken for a read during reconciliation", () => {
+  const local = addPendingSteer(
+    newTurn("local", "检查", 1),
+    "queued",
+    "改用 Angel",
+    [],
+  );
+  const restored = reconcileFinishedTurn(
+    local,
+    {
+      prompt: "检查",
+      startedAt: 2,
+      endedAt: 3,
+      status: "stopped",
+      events: [
+        {
+          type: "steer",
+          requestId: "queued",
+          text: "改用 Angel",
+          delivery: "queued",
+          at: 2,
+        },
+      ],
+    },
+    4,
+  );
+  assert.equal(
+    restored.timeline[0]?.kind === "steer" && restored.timeline[0].delivery,
+    "queued",
+  );
+});
+
+test("history pages merge a parked submission with its later read without duplicating the message", () => {
+  const earlier = turnsFromHistory("old", [
+    {
+      prompt: "检查",
+      startedAt: 1,
+      endedAt: 2,
+      status: "stopped",
+      events: [
+        {
+          type: "steer",
+          requestId: "queued",
+          text: "改用 Angel",
+          delivery: "queued",
+          at: 1,
+        },
+      ],
+    },
+  ]);
+  const later = turnsFromHistory("new", [
+    {
+      prompt: "继续",
+      startedAt: 3,
+      endedAt: 4,
+      status: "complete",
+      events: [
+        { type: "steer", requestId: "queued", text: "改用 Angel", at: 3 },
+      ],
+    },
+  ]);
+  const merged = mergeConversationSteers([...earlier, ...later]);
+  assert.deepEqual(merged[0]?.timeline, [
+    {
+      kind: "steer",
+      requestId: "queued",
+      text: "改用 Angel",
+      delivery: undefined,
+    },
+  ]);
+  assert.deepEqual(merged[1]?.timeline, []);
 });
 
 test("a restored turn confirms an image-only submission from its history without replacing the preview", () => {

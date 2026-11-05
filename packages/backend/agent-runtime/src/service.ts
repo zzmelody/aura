@@ -30,6 +30,7 @@ import { isConversationCursor } from "@aura/protocol/conversation-channel";
 import { codingService } from "./conversations/session.ts";
 import { isGoalIntent } from "./conversations/collaboration.ts";
 import { conversationService } from "./conversations/conversations.ts";
+import { conversationTitleGenerator } from "./conversations/conversation-title.ts";
 import { automationService } from "./conversations/automation.ts";
 import {
   conversationSides,
@@ -131,6 +132,7 @@ export async function createAgentService(
     codingProjects,
     codingConversations,
     coding,
+    conversationTitleGenerator(ctx.llm, capabilities),
   );
   const commandDomain = await ctx.storageDomain.open(
     conversationCommandsDomain,

@@ -24,9 +24,13 @@
 
 追加指令还在校验时若本轮结束或停止，返回 `steered: false`。此时可通过历史接口的 `running` 字段确认服务是否已完成本轮收尾。
 
-追加消息可携带客户端生成的 `requestId`。Agent 读取时，实时流和历史中的 `steer` 事件带回同一 ID，用于更新已显示的消息。
+追加消息可携带客户端生成的 `requestId`。DSH 的 inbox 插入投影为带 `delivery: "queued"` 的 `steer` 回执，只有 `user/message` 进入模型上下文时才移除该状态。普通停止沿用 DSH `SessionController.cancel()` 的 `keepInbox: true`，不启动新模型请求；下次用户发送消息时，DSH 先读取保留的 next-step 消息，再读取新轮次的普通请求。实时流用 `rpcId` 区分两者，即使旧消息先到，也会确认原条目。
 
-工作空间对话的 `openCodingSide(parentId)` 每次显式调用都创建独立旁支，`closeCodingSide(id)` 仅关闭指定旁支。多个旁支分别通过 DSH fork/resume 继承主对话并保存自己的上下文和模型设置；首条提问成为旁支列表标题。关闭或归档主对话会释放它的全部旁支。索引在原 `aura_coding_conversations` domain 中添加可选 `sideConversations` 元数据，保留原 ID、domain 版本和旧字段；单旁支历史只在读取时投影，不扫描、迁移或重写用户数据。DSH 日志保持原样。
+历史从原 DSH inbox 日志恢复未读条目，跨轮次读取确认归回最早的提交；首步消息批次的最后一条普通消息识别为新轮次的提问，避免把保留的追加消息误认为「继续」请求。旧日志没有 step 边界时沿用首条消息规则。显式关闭或 Agent 生命周期释放产生的取消记录投影为 `delivery: "canceled"`，不自动重投；所有处理只投影既有日志，不迁移用户存储。
+
+工作空间对话的 `openCodingSide(parentId)` 每次显式调用都创建独立旁支，`closeCodingSide(id)` 仅关闭指定旁支。多个旁支分别通过 DSH fork/resume 继承主对话并保存自己的上下文和模型设置。关闭或归档主对话会释放它的全部旁支。索引在原 `aura_coding_conversations` domain 中添加可选 `sideConversations` 元数据，保留原 ID、domain 版本和旧字段；单旁支历史只在读取时投影，不扫描、迁移或重写用户数据。DSH 日志保持原样。
+
+新主对话和旁支先用首条消息作为临时标题，首轮成功后由 `conversations/conversation-title.ts` 通过 DSH 提炼短标题，使用该轮选择的服务和模型、最低可用思考强度，输入最多 4000 字符、输出最多 128 tokens、超时 15 秒。请求发出前在用户额外请求账本中预留一笔 `title` 额度；无额度、失败或取消保留临时标题，不自动重试。标题只在临时值仍匹配且会话开放时写入索引，不改变最近活动时间，不进入正文或历史上下文。后续轮次、重启恢复和固定 Aura 主会话不触发标题调用，也不扫描或补写已有对话。
 
 旁支每轮使用专属系统规则，将主对话历史作为背景，并以旁支用户消息确定当前任务。用户可在旁支明确要求继续主对话的任务。新旁支首次 fork 后通过 DSH 关闭继承的计划模式，已建立的旁支恢复自身的计划状态。
 

@@ -202,7 +202,7 @@ export function ConversationCapabilitySettings({
                 ) : null}
               </div>
               <p className="settings-feedback info">
-                每次压缩摘要、子 Agent 模型调用、Search 或 Fetch
+                每次标题提炼、压缩摘要、子 Agent 模型调用、Search 或 Fetch
                 预留一次；这是次数上限，不是金额上限，失败或取消不退回。密钥只保存在后端。
               </p>
               <div className="settings-actions">
