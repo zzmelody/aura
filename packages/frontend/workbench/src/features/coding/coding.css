@@ -39,6 +39,14 @@
 .coding-pane {
   container-type: inline-size;
   --coding-content-width: clamp(680px, 64cqi, 920px);
+  --coding-composer-clearance: 16px;
+  --coding-composer-padding: 12px;
+  --coding-editor-padding: 3px;
+  /* Minimum inset to the editor text, including the card's 1px border. */
+  --coding-content-inset: calc(
+    var(--coding-composer-clearance) + var(--coding-composer-padding) +
+      var(--coding-editor-padding) + 1px
+  );
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
@@ -265,10 +273,9 @@
   gap: 28px;
   min-width: 0;
   overflow-x: hidden;
-  /* Reserve the shared 10px scrollbars symmetrically so scrolling does not
-     shift the content axis away from the composer. */
+  /* Keep the content centered whether the scrollbars take up space or overlay. */
   scrollbar-gutter: stable both-edges;
-  padding: 24px 22px;
+  padding-block: 24px;
 }
 .workbench .coding-transcript::-webkit-scrollbar-thumb:vertical {
   /* Keep the same thumb width and shift it toward the pane edge. */
@@ -278,7 +285,10 @@
 .coding-transcript > * {
   flex-shrink: 0;
   width: 100%;
-  max-width: var(--coding-content-width);
+  max-width: min(
+    var(--coding-content-width),
+    calc(100cqi - 2 * var(--coding-content-inset))
+  );
   margin-inline: auto;
 }
 .coding-side .coding-pane {

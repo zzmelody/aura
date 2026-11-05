@@ -1,15 +1,18 @@
 /* Main and side chats own these styles independently of the lazy demo page. */
 .coding-studio .coding-pane .chat-composer-area {
   width: 100%;
-  max-width: calc(var(--coding-content-width) + 64px);
+  max-width: calc(
+    var(--coding-content-width) + 2 * var(--coding-content-inset)
+  );
   margin-inline: auto;
   margin-top: auto;
-  padding: 0 16px 12px;
+  padding: 0 var(--coding-composer-clearance) 12px;
 }
 .coding-studio .coding-pane .chat-composer {
   container: message-composer / inline-size;
-  padding: 8px 12px 6px;
-  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  padding: 8px var(--coding-composer-padding) 6px;
+  border: 1px solid
+    color-mix(in srgb, var(--border, transparent) 65%, transparent);
   border-radius: 24px;
   background: var(--elevated);
   box-shadow: none;
@@ -31,7 +34,7 @@
 .coding-composer-highlights {
   min-height: 52px;
   max-height: 220px;
-  padding: 4px 2px 0;
+  padding: 4px var(--coding-editor-padding) 0;
   font: inherit;
   font-size: 14px;
   line-height: 24px;
