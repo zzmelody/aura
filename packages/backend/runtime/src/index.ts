@@ -1,17 +1,17 @@
+import {
+  GPT_IMAGE_CAPABILITY,
+  LEGACY_TRIPO_PERMISSION,
+  MANAGED_PROCESS_PERMISSION,
+} from "@aura/orchestration/host";
 /** Composition root shared by Aura's server and desktop application outputs. */
-import { CodexSubscriptionAuth, readAiServices } from "@aura/dsh-auth";
+import { CodexSubscriptionAuth } from "@aura/dsh-auth";
 import { AiServices } from "./ai-services.ts";
 import {
   AuraPluginManager,
   type AuraPluginResolution,
   type PluginContributionRoot,
 } from "@aura/plugin-manager";
-import {
-  GPT_IMAGE_CAPABILITY,
-  MANAGED_PROCESS_PERMISSION,
-  OrchestrationHost,
-} from "@aura/orchestration";
-import { createTripoService } from "@aura/tripo";
+import { OrchestrationHost } from "./dsh/host.ts";
 import { startApiServer } from "./api-server.ts";
 import { startDemoModel } from "./demo-model.ts";
 import { configureRuntimeNetwork } from "./network-proxy.ts";
@@ -86,9 +86,9 @@ export async function startAuraRuntime(
     auraVersion: "0.1.0",
     pluginSdkVersion,
     supportedPermissions: [
-      "aura.tripo.game-asset",
       "aura.flow.invoke",
       GPT_IMAGE_CAPABILITY,
+      LEGACY_TRIPO_PERMISSION,
       MANAGED_PROCESS_PERMISSION,
     ],
   });
@@ -105,18 +105,6 @@ export async function startAuraRuntime(
     credentialPath: config.credentialPath,
     model: config.codexModel,
   });
-  const tripo = await createTripoService({
-    credentialPath: config.tripoCredentialPath,
-    region: config.tripoRegion,
-    apiKey: process.env.TRIPO_API_KEY,
-    resolveOptions: async () => ({
-      credentialPath: config.tripoCredentialPath,
-      region: (
-        await readAiServices(config.root, config.codexModel, config.tripoRegion)
-      ).tripoRegion,
-      apiKey: process.env.TRIPO_API_KEY,
-    }),
-  });
   let demoModel: DemoModelHandle | undefined;
   let api: ApiServerHandle | undefined;
   let flows: OrchestrationHost | undefined;
@@ -129,8 +117,6 @@ export async function startAuraRuntime(
       modelURL: demoModel.url,
       codexModel: config.codexModel,
       ...contributions(plugins),
-      tripoCredentialPath: config.tripoCredentialPath,
-      tripoRegion: config.tripoRegion,
       tempDir: config.tempDir,
       defaultWorkspace: config.defaultWorkspace,
       localIntegrations: isLoopbackRuntimeHost(config.host),
@@ -156,12 +142,11 @@ export async function startAuraRuntime(
     api = await startApiServer({
       config,
       codexAuth,
-      tripo,
       flows,
       pluginSettings: pluginManager,
       pluginSettingsAccessible: isLoopbackRuntimeHost(config.host),
       pluginPages,
-      aiServices: new AiServices(config, codexAuth, tripo, async () =>
+      aiServices: new AiServices(config, codexAuth, async () =>
         flows?.opening ? flows.request<boolean>("ai-services/busy", {}) : false,
       ),
     });

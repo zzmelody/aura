@@ -156,7 +156,6 @@ export interface AiServiceDocument {
   codex?: AiModelSettings;
   /** Lumina keeps one stable route; `models` is the discovered chat catalog. */
   lumina?: AiModelSettings & { models: string[] };
-  tripoRegion: "global" | "china";
 }
 function modelList(value: unknown): string[] {
   if (
@@ -172,7 +171,6 @@ export const aiServicesPath = (root: string) =>
 export async function readAiServices(
   root: string,
   codexModel = "gpt-6.1-sol",
-  tripoRegion: "global" | "china" = "global",
 ): Promise<AiServiceDocument> {
   let raw: unknown;
   try {
@@ -183,16 +181,10 @@ export async function readAiServices(
         version: 1,
         model: { mode: "codex", model: codexModel, reasoningEffort: "xhigh" },
         routes: {},
-        tripoRegion,
       };
     throw new AiConfigurationError("AI 服务配置无法读取，请重新保存设置。");
   }
-  if (
-    !record(raw) ||
-    raw.version !== 1 ||
-    !record(raw.routes) ||
-    !["global", "china"].includes(String(raw.tripoRegion))
-  )
+  if (!record(raw) || raw.version !== 1 || !record(raw.routes))
     throw new AiConfigurationError("AI 服务配置无效。");
   const model = parseModelSettings(raw.model);
   const routes: AiServiceDocument["routes"] = {};
@@ -248,7 +240,6 @@ export async function readAiServices(
     ...(typeof raw.selectedRoute === "string"
       ? { selectedRoute: raw.selectedRoute }
       : {}),
-    tripoRegion: raw.tripoRegion as "global" | "china",
   };
 }
 export async function writeAiServices(
@@ -405,7 +396,6 @@ export async function validateCustomSettings(
         routes: {
           [id]: { settings, credential: "AURA_CUSTOM_" + "0".repeat(32) },
         },
-        tripoRegion: "global",
       }),
     });
     await ctx.llm.resolveCallConfig({
@@ -430,10 +420,9 @@ export async function saveModelSettings(
   credentials: CredentialProvider,
   source: unknown,
   codexModel?: string,
-  tripoRegion: "global" | "china" = "global",
 ): Promise<AiServiceDocument> {
   const { key, clearKey, ...settings } = parseModelSettings(source);
-  const previous = await readAiServices(root, codexModel, tripoRegion);
+  const previous = await readAiServices(root, codexModel);
   if (settings.mode === "codex") {
     const next = { ...previous, model: settings, codex: settings };
     await writeAiServices(root, next);
@@ -507,9 +496,8 @@ export async function saveDiscoveredCatalog(
   target: string,
   models: readonly string[],
   codexModel?: string,
-  tripoRegion: "global" | "china" = "global",
 ): Promise<AiServiceDocument> {
-  const previous = await readAiServices(root, codexModel, tripoRegion);
+  const previous = await readAiServices(root, codexModel);
   const list = modelList(models);
   if (target === "lumina") {
     const next = {

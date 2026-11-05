@@ -43,11 +43,12 @@
     "test:runtime": "tsx scripts/smoke-runtime.ts",
     "build:plugins": "node scripts/build-plugins.ts server && node scripts/build-plugins.ts desktop",
     "setup:product-plugins": "node scripts/setup-product-plugins.ts",
-    "build:product-plugins": "node scripts/build-product-plugin.ts site-launcher",
-    "check:product-plugins": "pnpm run setup:product-plugins && pnpm run build:product-plugins && tsc --noEmit -p plugins/site-launcher/tsconfig.json && eslint --config plugins/site-launcher/eslint.config.ts plugins/site-launcher --max-warnings 0 && prettier plugins/site-launcher --check && tsx --test plugins/site-launcher/test/*.test.ts"
+    "build:product-plugins": "node scripts/build-product-plugin.ts site-launcher && node scripts/build-product-plugin.ts tripo",
+    "check:product-plugins": "pnpm run setup:product-plugins && pnpm run build:product-plugins && tsc --noEmit -p plugins/tripo/tsconfig.json && eslint --config plugins/tripo/eslint.config.ts plugins/tripo --max-warnings 0 && prettier plugins/tripo --check && tsx --test plugins/tripo/test/*.test.ts && tsc --noEmit -p plugins/site-launcher/tsconfig.json && eslint --config plugins/site-launcher/eslint.config.ts plugins/site-launcher --max-warnings 0 && prettier plugins/site-launcher --check && tsx --test plugins/site-launcher/test/*.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@vastai/tripo-sdk": "0.3.0",
     "@hono/node-server": "2.1.1",
     "@types/node": "24.10.1",
     "eslint": "10.12.0",

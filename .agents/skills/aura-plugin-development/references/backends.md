@@ -53,7 +53,7 @@ refused until retained work settles; state is never force-closed underneath it.
     "backend": "./backend/dist/index.js",
     "http": {
       "entry": "./backend/dist/http.js",
-      "mounts": ["/flows/example-documents"]
+      "mounts": ["/example-documents"]
     },
     "presets": "./presets"
   }
@@ -64,7 +64,11 @@ The HTTP entry is a prebuilt native ESM default factory receiving `PluginHttpHos
 from `@aura/plugin-sdk/backend`. Return `{fetch(request), close?()}` and implement
 HTTP with Hono. It runs in the API process so uploads and Range streams do not
 enter bounded JSON RPC. Only declared mounts and owned RPC prefixes are
-reachable; overlapping mounts are rejected. Include body limits and error
+reachable. A mount owns a single top-level namespace such as
+`/example-documents` or a Flow namespace such as `/flows/example-documents`.
+The original request path is passed to the adapter. The runtime rejects
+overlapping plugin mounts and reserves its built-in top-level namespaces. Both mount forms
+use the runtime's Origin policy and the adapter's own body limits. Include error
 projections in the plugin. Backend storage/credentials remain in the backend
 child process; the HTTP adapter receives only generic artifacts and scoped RPC.
 

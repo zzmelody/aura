@@ -98,11 +98,12 @@ packages/
     orchestration/ @aura/orchestration：Flow、Action、领域业务与产物
     plugin-manager/ @aura/plugin-manager：插件配置、发现与激活回滚
     plugin-sdk/ @aura/plugin-sdk：外部插件公共契约
-    tripo/     @aura/tripo：3D 服务、任务与后端凭据
   shared/
     protocol/  @aura/protocol：请求、流事件与脱敏授权状态
     core/      @aura/core：会话、存储恢复与地址校验
     demo/      @aura/demo：无密钥规则回复
+plugins/
+  tripo/       Tripo 3D 插件，提供 /tripo HTTP 和付费生成 Actions
 scripts/       根级运行、构建与依赖检查
 tests/         仓库级工作区规则测试
 ```

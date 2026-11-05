@@ -18,11 +18,10 @@
 
 - [模型与登录](features/model-providers.md)
 - [Tripo 3D](features/tripo.md)
-- [本地媒体 Actions](../packages/backend/orchestration/docs/local-ai-actions.md)
 
 ## 设计与验证
 
-- [Agent 会话、工作区与 Flow 编排拆分方案](proposals/backend-package-boundaries.md)（待实施）
+- [Agent 会话、工作区与 Flow 编排拆分方案](proposals/backend-package-boundaries.md)
 - [剧情决策器部署调研](proposals/local-story-director.md)：尚未实现的选型方案，不是当前能力。
 - [外部系统接入方案](proposals/external-integrations.md)：邮件、飞书、GitHub 的接入路径、凭据边界与分期，尚未实现。
 - [本轮验证](verification.md)

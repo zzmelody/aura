@@ -88,14 +88,10 @@ export async function buildPlugins(
       typeof manifest.scripts === "object" &&
       "build" in manifest.scripts
     ) {
-      const pnpm = process.env.npm_execpath;
-      if (!pnpm) throw new Error("Run plugin builds through pnpm.");
-      const nativePnpm = /(?:\.exe|[/\\]pnpm)$/iu.test(pnpm);
-      await execute(
-        nativePnpm ? pnpm : process.execPath,
-        [...(nativePnpm ? [] : [pnpm]), "--dir", plugin, "run", "build"],
-        { windowsHide: true },
-      );
+      await execute(process.execPath, ["--run", "build"], {
+        cwd: plugin,
+        windowsHide: true,
+      });
     }
     const destination = resolve(output, relative(source, plugin));
     const files: unknown[] = [

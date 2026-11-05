@@ -308,55 +308,6 @@ test("nested runs aggregate with original provenance; an Agent Action can regist
     assert.ok(await index.resolve("run", list.artifacts[0].artifactId, false));
   }));
 
-test("Tripo history validates manifest and admits views, poster and existing GLB without contacting provider", () =>
-  fixture(async (root, index) => {
-    const directory = join(root, "generated");
-    await mkdir(directory);
-    const modelPath = join(directory, "model.glb");
-    const previewPath = join(directory, "preview.png");
-    const front = join(directory, "view-front.png");
-    const manifestPath = join(directory, "manifest.json");
-    await writeFile(modelPath, glb());
-    await png(previewPath);
-    await png(front);
-    await writeFile(
-      manifestPath,
-      JSON.stringify({
-        schemaVersion: 1,
-        generator: "aura-tripo-game-asset",
-        tasks: { model: "task-1" },
-        files: { model: "model.glb" },
-      }),
-    );
-    const output = {
-      outputDirectory: directory,
-      modelPath,
-      previewPath,
-      manifestPath,
-      imagePaths: { front },
-      taskIds: { model: "task-1" },
-    };
-    await index.capture(owner, output, "plugin/model", true);
-    const list = await index.list("run");
-    await index.settle();
-    assert.equal(list.artifacts.length, 3);
-    assert.ok(list.artifacts.every((artifact) => artifact.status === "ready"));
-    assert.ok(
-      list.artifacts.find((artifact) => artifact.kind === "model")?.thumbnailId,
-    );
-    await index.capture(
-      { ...owner, runId: "other" },
-      { ...output, taskIds: { model: "wrong" } },
-      "plugin/model",
-      true,
-    );
-    const invalid = await index.list("other");
-    await index.settle();
-    assert.ok(
-      invalid.artifacts.every((artifact) => artifact.status === "unavailable"),
-    );
-  }));
-
 test("history reader pairs structured tool results to call and attempt, ignores prose and failed results", async () => {
   const captured: unknown[] = [];
   const reader = historicalArtifactReader({

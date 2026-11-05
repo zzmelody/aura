@@ -49,7 +49,7 @@ IDs, schemas, durable steps or embedded source strings.
 
 An Action binds a built-in host capability with
 `auraCapability(ctx, capabilityId)` and invokes only its named operations.
-Built-in IDs, such as `aura.tripo.game-asset`, are listed in the manifest's
+Built-in IDs, such as `aura.codex.image`, are listed in the manifest's
 `permissions` array. Aura owns their credentials, network access and
 cancellation.
 
@@ -113,7 +113,13 @@ No raw Cordis context, model client or credential service is exposed.
 Optional backend `requests` dispatch only owned RPC prefixes; `chatTools` use
 host-owned deduplication, quotas and run cards. Binary HTTP uses a prebuilt
 `contributes.http` Hono adapter with declared mounts, scoped RPC and generic
-artifacts. `contributes.presets` registers plugin-owned presets through DSH.
+artifacts. Declare a free top-level namespace such as `/example-documents` or
+a Flow namespace such as `/flows/example-documents`. Both receive the original
+request URL under the runtime's Origin policy. SDK 2.3 adds the optional
+`localConfiguration` HTTP flag for loopback settings routes and the optional
+`attachments.readImage` backend port for validated session attachments.
+SDK 2.4 exposes `BackendHost.localConfiguration` to gate local settings page
+operations. `contributes.presets` registers plugin-owned presets through DSH.
 
 Historical names and IDs require explicit `compatibility` grants. A reviewed
 old-to-new dependency hash mapping permits in-memory recovery of relocated

@@ -94,11 +94,7 @@ export class ActionRuntime {
               ...binding,
               services: action.services,
               aura: actionCapabilities(action, this.aura, binding),
-              bindCall: artifactCallBinding(
-                this.artifacts,
-                binding,
-                actionCapabilities(action, this.aura, binding),
-              ),
+              bindCall: artifactCallBinding(this.artifacts, binding),
             }),
           ),
         );
@@ -130,11 +126,7 @@ export class ActionRuntime {
           ...binding,
           services: action.services,
           aura: actionCapabilities(action, this.aura, binding),
-          bindCall: artifactCallBinding(
-            this.artifacts,
-            binding,
-            actionCapabilities(action, this.aura, binding),
-          ),
+          bindCall: artifactCallBinding(this.artifacts, binding),
         }),
       );
     } catch (error) {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AuraPluginIdentity } from "@aura/protocol/types";
+import { isPluginHttpMount } from "@aura/protocol/plugin-http";
 
 const revision = z
   .object({
@@ -20,7 +21,7 @@ export const compatibilitySchema = z
 export const httpContributionSchema = z
   .object({
     entry: z.string().min(1),
-    mounts: z.array(z.string().regex(/^\/flows\/[a-z][a-z0-9-]*$/u)).min(1),
+    mounts: z.array(z.string().refine(isPluginHttpMount)).min(1),
   })
   .strict();
 

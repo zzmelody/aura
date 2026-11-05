@@ -56,7 +56,7 @@ export default defineBackend({
     return {
       pageOperations: ["echo", "builtin"],
       async invoke(operation, input, call) {
-        if (operation === "builtin") return host.invoke("aura.tripo.game-asset", "generate", {}, call.signal);
+        if (operation === "builtin") return host.invoke("aura.codex.image", "generate", {}, call.signal);
         return { operation, input, plugin: host.pluginId, visible: host.runs.list().map((r) => r.id) };
       },
       runSettled(run) { log({ hook: "settled", run: run.id, status: run.status }); },
@@ -144,7 +144,7 @@ test("a backend opens once with settings, reaches built-ins and sees only its ow
       await host.invokeFromPage("veya", "builtin", null, signal()),
       { builtin: true },
     );
-    assert.deepEqual(builtins, ["aura.tripo.game-asset:generate"]);
+    assert.deepEqual(builtins, ["aura.codex.image:generate"]);
     assert.deepEqual((await log(dataRoot, "veya"))[0], {
       hook: "open",
       id: "veya",
@@ -496,7 +496,7 @@ export default defineBackend({ open() { return {
 test("Action permissions narrow the host port and forward step identity", async () => {
   const seen: unknown[] = [];
   const granted = actionCapabilities(
-    { id: "veya/world-list", permissions: ["aura.tripo.game-asset"] },
+    { id: "veya/world-list", permissions: ["aura.codex.image"] },
     {
       async invoke(_c, _o, _i, _s, context) {
         seen.push(context);
@@ -505,7 +505,7 @@ test("Action permissions narrow the host port and forward step identity", async 
     },
     { runId: "r", stepId: "plugin/main/list", idempotencyKey: "k" },
   );
-  await granted!.invoke("aura.tripo.game-asset", "op", {}, signal());
+  await granted!.invoke("aura.codex.image", "op", {}, signal());
   assert.deepEqual(seen, [
     { runId: "r", stepId: "plugin/main/list", idempotencyKey: "k" },
   ]);

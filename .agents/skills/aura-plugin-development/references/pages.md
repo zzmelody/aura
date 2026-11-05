@@ -9,6 +9,9 @@ contract for complete workbench pages. Verify the checked-out host and `@aura/pl
 - Export `apply(ctx)` and register `ctx.auraWorkbench.page(definePage(...))`.
   Browser code uses the public UI SDK; backend code uses the backend SDK.
   Own styles and subscriptions through fibers. Do not import private Aura paths.
+- A page with local ID `settings` also appears as a settings link on that
+  plugin's row. Use `BackendHost.localConfiguration` to gate local settings
+  operations. Write-only credential input uses the plugin's local HTTP route.
 - The host wraps pages in a full-size viewport that follows the available
   workbench area on window/sidebar resize. Return a single page root, let it
   fill that viewport, and keep scrolling inside the page; do not measure and

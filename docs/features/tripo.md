@@ -1,35 +1,46 @@
 # Tripo 3D 接入
 
-Aura Runtime 通过独立后端包 `@aura/tripo` 接入 Tripo 官方 v3 API。客户端只访问
-Aura 的 Hono 路由，API Key 只由后端读取，不进入响应、日志或浏览器存储。
+Aura 默认发现随产品发布的 `aura.tripo` 插件。插件声明并接管 `/tripo`，其后端负责调用 Tripo v3 SDK、持有凭据和记录付费阶段。
 
-## 配置
+## 配置与连接检查
 
-本地开发推荐把 Tripo API Key 作为单行文本保存到：
+在 Aura 的「设置 → 插件 → Tripo 3D」打开设置页，也可从「工作台」进入。连接设置和预算分别保存。测试连接使用已经保存的配置，仅查询账户余额。
 
-```text
-.aura/tripo/api-key
+- `GET /tripo/status` 返回地区、能力、配置状态及设置 revision。
+- `POST /tripo/settings` 只接受本机请求。提交当前 `revision` 和 `region`，可用 `key` 保存密钥或用 `clearKey: true` 清除密钥。提交后返回新 revision。仍有已提交且待结算的 HTTP 任务时，先查询任务状态。
+- `POST /tripo/check` 只接受本机请求，通过查询账户余额检查连接。
+- 部署可用后端环境变量 `TRIPO_API_KEY` 提供密钥。环境变量优先并使设置只读。尚未保存地区时，`AURA_TRIPO_REGION=china` 使用国内站，默认 `global` 使用海外站。
+
+配置写入忽略目录 `.aura/plugins/aura.tripo/settings.json`。HTTP 响应、日志和模型上下文中都没有 API Key。迁移后需要重新配置插件的 Key、地区和预算。
+
+## 预算与恢复
+
+在插件设置页可调整总额度、单组上限和各阶段额度，也可选择不限额度、继续记账。修改预算会保留已有的预留和付费记录。
+
+付费任务先在插件目录读取用户配置的 `budget.json`，再向 `paid.json` 写入预留。HTTP 提交和插件 Actions 共用账本。可以按以下格式在 `.aura/plugins/aura.tripo/budget.json` 配置额度，示例数字是用户设定的上限。
+
+```json
+{
+  "schemaVersion": 1,
+  "accountingUnit": "tripo_credits",
+  "maxCredits": 200,
+  "maxScopeCredits": 80,
+  "imageStageCredits": 10,
+  "modelStageCredits": 40,
+  "cloudStageCredits": 10
+}
 ```
 
-`.aura/` 已被 Git 忽略。部署时也可以使用后端环境变量 `TRIPO_API_KEY`；环境变量优先于
-本地文件。不要使用 `VITE_*` 变量，也不要把 Key 放入前端 `.env`。
-
-Tripo 的国内站与海外站账号、Key 不互通。Runtime 默认连接海外站：
-
-```text
-AURA_TRIPO_REGION=global  -> https://openapi.tripo3d.ai/v3
-AURA_TRIPO_REGION=china   -> https://openapi.tripo3d.com/v3
-```
-
-本机客户端通过授权的 `/ai/services/tripo` 保存 Key 与地区，后续请求动态读取，无需重启 Runtime；仍有制作任务时拒绝修改。`TRIPO_API_KEY` 存在时界面只读。`POST /ai/services/check/tripo` 使用官方 SDK 查询账户余额，不提交付费任务；失败提示不透传供应商响应。`GET /tripo/status` 只返回 `configured`、区域、API 版本和能力列表，不会返回凭据。
+任务提交结果未知时，账本阻止后续付费请求，直到用户核对上游并结算。已知任务 ID 可以继续查询。同一个 HTTP 幂等键和相同输入返回原任务 ID，输入变化需要新键。
 
 ## HTTP API
 
-提交文生 3D 任务：
+文生 3D 任务提交示例。
 
 ```http
 POST /tripo/tasks/text-to-model
 Content-Type: application/json
+Idempotency-Key: compass-001
 
 {
   "prompt": "a low-poly brass compass",
@@ -40,53 +51,24 @@ Content-Type: application/json
 }
 ```
 
-提交成功返回 `202` 和 `{ "taskId": "..." }`。可选字段包括 `negativePrompt`、
-`textureQuality`、`geometryQuality`、`quad` 与 `generateParts`。
+提交成功返回 `202` 和 `{ "taskId": "..." }`。图生 3D 使用 `POST /tripo/tasks/image-to-model`，在同样的请求头下提供 Tripo 可访问的 HTTPS 图片 URL 或已有的 file token。
 
-图生 3D 当前接受 Tripo 可访问的 HTTPS 图片 URL，或调用方已经持有的 file token：
-
-```http
-POST /tripo/tasks/image-to-model
-Content-Type: application/json
-
+```json
 { "image": { "url": "https://example.com/reference.png" }, "texture": true }
 ```
 
-```json
-{ "image": { "fileToken": "existing-tripo-file-token" } }
-```
+使用 `GET /tripo/tasks/:taskId` 轮询并结算终态任务。返回值包含任务状态、进度和已知模型或预览 URL。上游下载 URL 有效期较短，成功后应及时读取或持久化文件。
 
-轮询任务：
+## Flow Actions
 
-```http
-GET /tripo/tasks/:taskId
-```
+| Action ID               | 用途                                                                        |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `aura.tripo/game-asset` | 生成四张一致的 GPT Image 2.5 视图，经 P1 生成 GLB，登记模型、视图和预览产物 |
+| `aura.tripo/image`      | 生成单张图片，返回受管产物，可同时登记为会话附件                            |
+| `aura.tripo/ledger`     | 只读查看一个 `scope` 的付费记录及待结算状态                                 |
 
-返回值是稳定、脱敏的 Aura DTO，只保留状态、进度、错误和已知模型/预览 URL，不透传
-Tripo 未文档化字段。Tripo 的模型下载 URL 有效期很短，状态变为 `success` 后调用方应
-立即消费或持久化文件。
+调用方可用不透明的 `scope` 分组，`noNewPaidWork` 仅允许复用已付费结果。两个生成 Action 都使用手动恢复语义。
 
-当前接口不代理任意 Tripo task payload，也不支持浏览器把本地文件直接上传给 Aura；
-这避免把一个带付费额度的通用上游代理暴露出来。后续需要模型转换、贴图、减面、绑骨
-或上传时，应在 `@aura/tripo` 增加明确的类型化能力和独立的 body/文件大小限制。
+已声明 `aura.tripo.game-asset` 权限的插件可以继续调用 `generate`、`image` 和 `ledger`。这些调用转交已启用的 Tripo 插件，并使用插件的设置和账本。
 
-## 插件 capability
-
-受信任插件可在 manifest 声明 `aura.tripo.game-asset`，再通过 Plugin SDK 调用唯一的
-`generate`（模型）、`image`（单张图片）和 `ledger`（只读付费账本）操作。`generate` 不是通用代理，而是一条固定的付费链路：
-
-1. 无参考图时用 GPT Image 2.5 文生前视图；有参考图时先上传受限的本地
-   PNG/JPEG/WebP，再用图生图得到前视图。
-2. 以该前视图为身份参考，串行生成左、后、右三个正交视图。
-3. 把四张一致视图交给 `P1-20260311`，生成有面数上限、PBR、UV 和米制缩放的 GLB。
-4. 立即下载四张图片、GLB 和可选预览，写入临时目录；全部验证成功后才原子改名发布，
-   同目录保存不含签名 URL 和本地参考路径的 `manifest.json`。
-
-默认图像模型由插件选择 `chat_image_2.5_sunburst`，也可显式选择速度档
-`chat_image_2.5_flare`。付费任务使用 Action 的手工恢复语义；未知提交结果不会自动重试，
-避免重复扣费。
-
-每个付费阶段先在 `<root>/.aura/tripo/`（`budget.json`、`paid.json`）中预留再提交。调用方可传入不透明的 `scope` 给付费工作分组并设置单组上限；`noNewPaidWork` 只复用已付费结果，拒绝新的付费请求。被拒绝的预留不写入账本。
-
-实现依据：[Tripo 官方 JavaScript SDK](https://github.com/VAST-AI-Research/tripo-js-sdk)、
-[Tripo v3 API 文档](https://developers.tripo3d.ai/en/docs/introduction)。
+[Tripo 官方 JavaScript SDK](https://github.com/VAST-AI-Research/tripo-js-sdk) · [Tripo v3 API 文档](https://developers.tripo3d.ai/en/docs/introduction)

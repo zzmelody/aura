@@ -1,9 +1,10 @@
+import { createFlowApp } from "./flow-routes.ts";
+import { isTopLevelPluginHttpRequest } from "./plugin-http-mounts.ts";
 import {
-  createFlowApp,
   FlowError,
   type OrchestrationHost,
   type OrchestrationHealth,
-} from "@aura/orchestration";
+} from "./dsh/host.ts";
 import {
   validateMessages,
   validateConversationHistory,
@@ -12,7 +13,6 @@ import {
   isCodingRunIntent,
 } from "@aura/protocol";
 import type { ChatEvent } from "@aura/protocol/types";
-import type { TripoPort } from "@aura/tripo";
 import { Hono } from "hono";
 import type { ChatMessage } from "@aura/protocol/types";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -44,7 +44,6 @@ import {
   pluginBundleFallback,
 } from "./plugin-pages-routes.ts";
 import type { PluginPageRegistry } from "./plugin-pages.ts";
-import { createTripoApp } from "./tripo-routes.ts";
 import { isRecord, validCodingImages } from "./validation.ts";
 import { isLoopbackRuntimeHost } from "./runtime-config.ts";
 import { createAiServicesApp } from "./ai-services-routes.ts";
@@ -56,7 +55,6 @@ interface ApiServerOptions {
   config: RuntimeConfig;
   codexAuth: CodexAuthPort;
   chat?: ChatPort;
-  tripo: TripoPort;
   flows?: OrchestrationHost;
   pluginSettings?: AuraPluginSettingsPort;
   pluginSettingsAccessible?: boolean;
@@ -196,7 +194,6 @@ export function createApiApp({
   aiServices,
   codexAuth,
   chat,
-  tripo,
   flows,
   pluginSettings,
   pluginSettingsAccessible = true,
@@ -204,14 +201,26 @@ export function createApiApp({
   services,
   readiness = flows,
   lifecycle = { shuttingDown: false, admittedRequests: 0 },
-}: Omit<ApiServerOptions, "config" | "tripo"> & {
-  tripo?: TripoPort;
+}: Omit<ApiServerOptions, "config"> & {
   lifecycle?: ApiLifecycle;
   services?: ServiceRuns;
   readiness?: Pick<OrchestrationHost, "health">;
 }) {
   const app = new Hono();
   app.use("*", localOriginPolicy);
+  if (flows) {
+    app.use("*", async (context, next) => {
+      const request = context.req.raw;
+      if (isTopLevelPluginHttpRequest(new URL(request.url).pathname)) {
+        const response = await flows.pluginHttp?.(request);
+        if (response) {
+          context.header("Cache-Control", "no-store");
+          return response;
+        }
+      }
+      await next();
+    });
+  }
   if (pluginPages) {
     // DSH combo URLs (`/plugins/??id/client.js&rev=`) put the resource list in
     // the query, so they are matched on the raw URL before routing.
@@ -239,13 +248,11 @@ export function createApiApp({
         dsh,
         modes: ["dsh-demo", "codex-subscription", "lumina", "custom"],
         keyRequired: false,
-        integrations: { tripo: tripo?.configured ?? false },
       },
       dsh.status === "ready" ? 200 : 503,
     );
   });
   app.route("/auth/codex", createCodexAuthApp(codexAuth));
-  if (tripo) app.route("/tripo", createTripoApp(tripo));
   if (flows) app.route("/flows", createFlowApp(flows));
   // Coding projects ride on the same host; a runtime without it omits the set.
   if (flows) app.route("/coding", createCodingApp(flows));
@@ -477,7 +484,6 @@ export async function startApiServer({
   aiServices,
   config,
   codexAuth,
-  tripo,
   flows,
   pluginSettings,
   pluginSettingsAccessible,
@@ -495,7 +501,6 @@ export async function startApiServer({
   const app = createApiApp({
     aiServices,
     codexAuth,
-    tripo,
     flows,
     services,
     pluginSettings,

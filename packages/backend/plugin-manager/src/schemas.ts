@@ -1,5 +1,6 @@
 import { valid, validRange } from "semver";
 import { z } from "zod";
+import { isPluginHttpMount } from "@aura/protocol/plugin-http";
 const pluginIdPattern = /^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$/u;
 export const localIdPattern = /^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/u;
 
@@ -81,9 +82,7 @@ export const manifestSchema = z
         http: z
           .object({
             entry: z.string().min(1),
-            mounts: z
-              .array(z.string().regex(/^\/flows\/[a-z][a-z0-9-]*$/u))
-              .min(1),
+            mounts: z.array(z.string().refine(isPluginHttpMount)).min(1),
           })
           .strict()
           .optional(),

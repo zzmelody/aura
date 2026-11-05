@@ -12,6 +12,4 @@ Aura 的独立服务端应用输出。入口只负责启动 `@aura/runtime`；�
 
 `/auth/codex/*` 只投影 DSH authorization 的脱敏状态；凭据由 DSH 保存在忽略目录 `.aura/dsh/`。`/chat/codex` 使用同一个 DSH 启动函数，不能静默回退到模拟模型。服务没有生产鉴权，只能用于本机或可信局域网；正式部署还需要用户认证、稳定会话映射和限流。详见 [模型接入说明](../../docs/features/model-providers.md)。
 
-Tripo 3D 通过 `/tripo/*` 提交异步任务并查询状态。Key 放在
-`.aura/tripo/api-key` 或后端环境变量 `TRIPO_API_KEY`；国内站账号需设置
-`AURA_TRIPO_REGION=china`。详见 [Tripo 3D 接入](../../docs/features/tripo.md)。
+随产品发布的 Tripo 插件通过 `/tripo/*` 提交异步任务并查询状态。插件管理 API Key、地区和付费账本。 [Tripo 3D 接入](../../docs/features/tripo.md)

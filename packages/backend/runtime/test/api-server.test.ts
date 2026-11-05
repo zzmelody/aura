@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import { loadAuraPlugins } from "@aura/plugin-manager";
+import {
+  GeneratedArtifacts,
+  PluginHttpRegistry,
+} from "@aura/orchestration/host";
 import { createApiApp } from "../src/api-server.ts";
 import { createCodingApp } from "../src/coding-routes.ts";
-import { TripoService, type TripoPort } from "@aura/tripo";
+import type { OrchestrationHost } from "../src/dsh/host.ts";
+import { reservedPluginHttpMounts } from "../src/plugin-http-mounts.ts";
 import { FlowError } from "@aura/orchestration";
 import type { CodingSteerModelConfig } from "@aura/protocol/types";
 import type {
@@ -55,6 +64,100 @@ const chat: ChatPort = {
     return { model: turn.model ?? "deepseek-v4-flash" };
   },
 };
+
+test("plugin HTTP serves top-level and Flow mounts with origin and route ownership checks", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "aura-plugin-http-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({ type: "module" }),
+  );
+  await writeFile(
+    join(root, "aura.plugin.json"),
+    JSON.stringify({
+      schemaVersion: 2,
+      id: "example.http",
+      name: "HTTP fixture",
+      version: "0.1.0",
+      engines: { aura: "*", pluginSdk: "*" },
+      contributes: {
+        backend: "./backend.js",
+        http: { entry: "./http.js", mounts: ["/tripo", "/flows/example"] },
+      },
+    }),
+  );
+  await writeFile(join(root, "backend.js"), "export default {};\n");
+  await writeFile(
+    join(root, "http.js"),
+    `export default () => ({
+      async fetch(request) {
+        return Response.json({ path: new URL(request.url).pathname,
+          bytes: (await request.arrayBuffer()).byteLength }, { status: 201 });
+      },
+    });`,
+  );
+  const plugins = await loadAuraPlugins({
+    configPath: join(root, "plugins.json"),
+    defaultPluginsDirectory: root,
+    auraVersion: "0.1.0",
+    pluginSdkVersion: "2.0.0",
+  });
+  const backend = plugins.backendRoots[0];
+  assert.ok(backend?.http, plugins.plugins[0]?.error);
+  const contribution = { ...backend, root: backend.path, http: backend.http };
+  const registry = new PluginHttpRegistry(
+    {
+      request: async () => {
+        throw new Error("unexpected RPC");
+      },
+      artifacts: new GeneratedArtifacts(join(root, "assets")),
+      artifactContent: async () => {
+        throw new Error("unexpected asset request");
+      },
+    },
+    reservedPluginHttpMounts,
+  );
+  t.after(() => registry.close());
+  await registry.replace([contribution]);
+  const flows = {
+    pluginHttp: (request: Request) => registry.fetch(request),
+  } as OrchestrationHost;
+  const app = createApiApp({ codexAuth, flows });
+  for (const path of ["/tripo", "/tripo/assets", "/flows/example/assets"]) {
+    const response = await app.request(path, {
+      method: "POST",
+      body: new Uint8Array(300 * 1024),
+    });
+    assert.equal(response.status, 201);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await response.json(), { path, bytes: 300 * 1024 });
+  }
+  assert.equal((await app.request("/tripo-extra")).status, 404);
+  assert.equal(
+    (
+      await app.request("/tripo/assets", {
+        headers: { Host: "localhost", Origin: "https://foreign.example" },
+      })
+    ).status,
+    403,
+  );
+
+  await assert.rejects(
+    registry.replace([
+      {
+        ...contribution,
+        http: { ...contribution.http, mounts: ["/health"] },
+      },
+    ]),
+    { status: 409 },
+  );
+  await assert.rejects(registry.replace([contribution, contribution]), {
+    status: 409,
+  });
+  assert.equal((await app.request("/tripo")).status, 201);
+  await registry.replace([]);
+  assert.equal((await app.request("/tripo")).status, 404);
+});
 
 test("chat model catalog and request overrides are scoped to chat and bounded", async () => {
   const turns: Array<Parameters<ChatPort["chat"]>[0]> = [];
@@ -120,33 +223,6 @@ test("chat model catalog and request overrides are scoped to chat and bounded", 
   const noHost = createApiApp({ codexAuth });
   assert.equal((await noHost.request("/chat/models")).status, 503);
 });
-
-const tripo: TripoPort = {
-  configured: true,
-  status() {
-    return {
-      configured: true,
-      region: "global",
-      apiVersion: "v3",
-      features: ["text-to-model", "image-to-model", "task-status"],
-    };
-  },
-  async textToModel(input) {
-    assert.equal(input.prompt, "a low-poly fox");
-    return "tripo-task-1";
-  },
-  async imageToModel() {
-    return "tripo-task-2";
-  },
-  async getTask(taskId) {
-    return {
-      taskId,
-      type: "text_to_model",
-      status: "running",
-      progress: 42,
-    };
-  },
-};
 
 const pluginState = {
   configPath: "F:\\aura\\.aura\\plugins.json",
@@ -329,57 +405,6 @@ test("health reports DSH startup, failure, recovery and shutdown without leaking
   assert.equal((await app.request("/health")).status, 503);
   const noHost = createApiApp({ codexAuth });
   assert.equal((await noHost.request("/health")).status, 503);
-});
-
-test("Hono API exposes validated asynchronous Tripo tasks", async () => {
-  const app = createApiApp({ codexAuth, chat, tripo });
-
-  const status = await app.request("/tripo/status");
-  assert.equal(status.status, 200);
-  assert.deepEqual(await status.json(), tripo.status());
-
-  const created = await app.request("/tripo/tasks/text-to-model", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: "a low-poly fox", faceLimit: 3_000 }),
-  });
-  assert.equal(created.status, 202);
-  assert.deepEqual(await created.json(), { taskId: "tripo-task-1" });
-
-  const task = await app.request("/tripo/tasks/tripo-task-1");
-  assert.equal(task.status, 200);
-  assert.deepEqual(await task.json(), {
-    taskId: "tripo-task-1",
-    type: "text_to_model",
-    status: "running",
-    progress: 42,
-  });
-
-  const invalid = await app.request("/tripo/tasks/image-to-model", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image: { url: "http://127.0.0.1/private.png" } }),
-  });
-  assert.equal(invalid.status, 400);
-
-  const unavailable = createApiApp({
-    codexAuth,
-    chat,
-    tripo: new TripoService("global"),
-  });
-  const notConfigured = await unavailable.request(
-    "/tripo/tasks/text-to-model",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: "a low-poly fox" }),
-    },
-  );
-  assert.equal(notConfigured.status, 503);
-  assert.deepEqual(await notConfigured.json(), {
-    code: "tripo_not_configured",
-    message: "Tripo 尚未配置，请先在后端设置 API Key。",
-  });
 });
 
 test("the stop route forwards the conversation id and reports the result", async () => {

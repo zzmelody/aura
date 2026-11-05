@@ -8,7 +8,9 @@
     "kind": "library"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./model-config": "./src/model-config.ts",
+    "./agent-failure": "./src/agent-failure.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -21,7 +23,9 @@
     "@deepseek-ai/dsh-credentials": "0.2.1-rc.5",
     "@deepseek-ai/dsh-credentials-local": "0.2.1-rc.5",
     "@deepseek-ai/dsh-llm": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-rc.5"
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-settings": "0.2.1-rc.5",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

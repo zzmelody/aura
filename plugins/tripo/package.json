@@ -1,0 +1,46 @@
+{
+  "name": "@aura-plugins/tripo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "files": [
+    "aura.plugin.json",
+    "backend/dist",
+    "actions",
+    "client/dist/client.js",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node ../../scripts/build-product-plugin.ts tripo",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test test/*.test.ts",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix --max-warnings 0",
+    "check:style": "pnpm run format:check && pnpm run lint"
+  },
+  "peerDependencies": {
+    "@aura/plugin-sdk": "^2.4.0",
+    "@aura/plugin-ui": "^0.1.0",
+    "react": "19.2.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.10.1",
+    "@types/react": "~19.2.2",
+    "@vastai/tripo-sdk": "0.3.0",
+    "eslint": "10.12.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "hono": "4.13.7",
+    "prettier": "3.9.6",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.1",
+    "vite": "8.2.2"
+  }
+}

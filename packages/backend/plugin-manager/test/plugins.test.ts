@@ -269,7 +269,7 @@ test("loads an explicitly enabled relative plugin directory", async () =>
 test("loads only plugins whose declared permissions are supported", async () =>
   fixture(async (root) => {
     const plugin = await writePlugin(root, "example.capability", [
-      "aura.tripo.game-asset",
+      "aura.codex.image",
     ]);
     const config = join(root, "plugins.json");
     await writeFile(
@@ -286,11 +286,11 @@ test("loads only plugins whose declared permissions are supported", async () =>
 
     const supported = await loadAuraPlugins({
       ...options(config),
-      supportedPermissions: ["aura.tripo.game-asset"],
+      supportedPermissions: ["aura.codex.image"],
     });
     assert.equal(supported.plugins[0]?.available, true);
     assert.deepEqual(supported.actionRoots[0]?.permissions, [
-      "aura.tripo.game-asset",
+      "aura.codex.image",
     ]);
   }));
 

@@ -40,7 +40,7 @@ import {
   Suspension,
 } from "./durable.ts";
 import { runScoped } from "./scopes.ts";
-import { agentConfig } from "./agent-config.ts";
+import { agentConfig } from "@aura/dsh-auth/model-config";
 import { FLOW_TIMEOUT_MS } from "./timeouts.ts";
 
 interface ExecutionOptions {

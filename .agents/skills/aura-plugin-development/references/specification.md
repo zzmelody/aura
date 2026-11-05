@@ -93,7 +93,7 @@ The file `aura.plugin.json` uses UTF-8 JSON without executable values:
     "flows": "./flows"
   },
   "permissions": [
-    "aura.tripo.game-asset"
+    "aura.codex.image"
   ]
 }
 ```
@@ -112,7 +112,7 @@ The file `aura.plugin.json` uses UTF-8 JSON without executable values:
 
 ### 5.2 Optional fields
 
-- `permissions` lists built-in host capabilities (IDs such as `aura.tripo.game-asset`, `aura.flow.invoke`) and defaults to an empty array; omit it when empty. A plugin's own backend is never listed here.
+- `permissions` lists built-in host capabilities (IDs such as `aura.codex.image`, `aura.flow.invoke`) and defaults to an empty array; omit it when empty. A plugin's own backend is never listed here.
 - `description`, `homepage`, and `license` MAY provide display metadata and MUST NOT affect execution.
 - Unknown top-level fields MUST be rejected so misspelled security- or execution-related fields cannot be silently ignored.
 

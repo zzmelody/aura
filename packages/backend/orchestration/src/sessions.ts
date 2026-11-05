@@ -11,8 +11,8 @@ import type { SessionPort } from "./types.ts";
 import { FlowError } from "./schema.ts";
 import type { ActionRuntime } from "./actions.ts";
 import type { FlowImageReference } from "./flow-api.ts";
-import { agentFailure } from "./agent-failure.ts";
-export { agentFailure } from "./agent-failure.ts";
+import { agentFailure } from "@aura/dsh-auth/agent-failure";
+export { agentFailure } from "@aura/dsh-auth/agent-failure";
 
 /** Resolve only admitted immutable images; the durable Flow keeps references. */
 export async function imagePromptParts(

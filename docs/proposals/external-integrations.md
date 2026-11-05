@@ -113,7 +113,7 @@ MCP 常驻连接本身不重，真正的成本是它暴露的每个工具都会�
 
 ## 凭据与写操作边界
 
-- 凭据只由 backend 持有，落在 `.aura/plugins/<plugin-id>/`（`host.dataDir`）下 0600 文件，或 `.aura/` 内同类目录，沿用 `.aura/tripo/api-key` 的做法；不进前端、不进 HTTP 响应、不进日志、不进模型上下文。
+- 凭据只由 backend 持有，落在 `.aura/plugins/<plugin-id>/`（`host.dataDir`）下 0600 文件，Tripo 插件的凭据也使用这一目录规则；不进前端、不进 HTTP 响应、不进日志、不进模型上下文。
 - 插件设置（`.aura/plugins.json` 的 `settings`）只放非敏感项（开关、默认邮箱、轮询间隔）。`host.settings` 是明文，不适合放 token。
 - 写操作的确认走两条现成缝隙：对话里的 `ask_user_question`（`coding/session.ts` 已接入 `user-questions/request`），以及 DSH 的 `approval/request`（`coding/questions.ts` 已把 approval 投影成 yes/no 问题卡）。不要自己发明确认协议。
 - 每个写工具的 schema 必须让"影响范围"成为显式参数（邮箱地址、仓库、分支、收件人列表），而不是让模型从自然语言里推断后直接执行。

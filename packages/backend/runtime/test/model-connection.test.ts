@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { CodexSubscriptionAuth } from "@aura/dsh-auth";
-import { createTripoService } from "@aura/tripo";
 import { AiServices } from "../src/ai-services.ts";
 import { createAiServicesApp } from "../src/ai-services-routes.ts";
 import { resolveRuntimeConfig } from "../src/runtime-config.ts";
@@ -17,11 +16,7 @@ test("model discovery and a real inference have separate results; denied/empty r
   const auth = await CodexSubscriptionAuth.create({
     credentialPath: config.credentialPath,
   });
-  const tripo = await createTripoService({
-    credentialPath: config.tripoCredentialPath,
-    region: "global",
-  });
-  const services = new AiServices(config, auth, tripo);
+  const services = new AiServices(config, auth);
   const api = createAiServicesApp(services, true, "fixture-bootstrap");
   const call = async (path: string) => {
     const response = await api.request(path, {

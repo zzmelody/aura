@@ -120,6 +120,8 @@ export function SettingsScreen({
   codexAuth,
   systemReduced,
   section,
+  pluginSettingsPages,
+  onOpenPluginSettings,
   onHistory,
   onArchived,
 }: {
@@ -128,6 +130,8 @@ export function SettingsScreen({
   systemReduced: boolean;
   /** Section to scroll to on open, e.g. from the workbench home. */
   section?: SectionId;
+  pluginSettingsPages: ReadonlyMap<string, `plugin:${string}`>;
+  onOpenPluginSettings(tab: `plugin:${string}`): void;
   /** Opens the full conversation log. */
   onHistory(): void;
   /** Opens the sidebar filtered to archived conversations. */
@@ -562,6 +566,8 @@ export function SettingsScreen({
             </header>
             <PluginList
               endpoint={workspace.state.endpoint || "http://127.0.0.1:4311"}
+              settingsPages={pluginSettingsPages}
+              onOpenSettings={onOpenPluginSettings}
             />
             <h3 className="settings-subhead">插件目录</h3>
             <PluginDirectorySettings

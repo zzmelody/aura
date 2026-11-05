@@ -11,13 +11,13 @@ Aura 使用自己的代码、命名空间和发布流程，以固定版本的官
 演示：客户端 → Aura runtime → DSH SDK profile → 本地模拟模型
 Codex：客户端 → Aura runtime → DSH SDK profile → dsh-llm-pi-ai → openai-codex
 登录：客户端 → Aura runtime → DSH authorization → dsh-llm-pi-ai OAuth flow
-3D：客户端 → Aura runtime → @aura/tripo → Tripo v3 API
+3D：客户端 → Aura runtime → aura.tripo 插件 → Tripo v3 API
 图片：客户端 → Aura runtime → local-media 插件 → Codex 图片能力或本机 Qwen-Image
 ```
 
 `@aura/dsh-auth` 是 Aura 对 DSH authorization/credentials seam 的后端适配层。包名描述稳定职责，不绑定当前供应商；其中 `CodexSubscriptionAuth` 组合 DSH 的 `dsh-credentials-local`、`dsh-authorization`、`dsh-llm` 和 `dsh-llm-pi-ai` 服务。它只把 notice、设备码、手动回调提示和最终状态投影到客户端；浏览器回调监听使用与 OpenAI redirect URI 一致的 `localhost`。OAuth grant 由 DSH 写入 `.aura/dsh/.credentials.yaml`，不会进入 HTTP 响应、前端存储或日志。
 
-对话与流程共用长驻的 `aura-flow` DSH profile：所有在线对话共用持久化的 `coder-v1` DSH session，具备文件、搜索、命令、规划、提问及工作流工具。未选项目时使用后端配置的默认工作目录；讨论、调研与执行由同一 Agent 根据当前请求和上下文衔接，没有额外分类模型或聊天/工作模式开关。工具启动的工作流继续显示运行卡片。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、Tripo 路由、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 不是 LLM provider，由 `@aura/tripo` 使用官方 v3 SDK 提交异步 3D 任务；Key 只从后端环境或已忽略的 `.aura/tripo/` 读取。本机媒体插件 `local-media` 提供图片生成 Flow 和对话工具，并通过 `aura.codex.image` capability 复用 DSH 管理的 Codex 授权。插件可以贡献自己的后端（`contributes.backend`，见 `@aura/plugin-sdk/backend`），领域专用的外部工具由插件后端调用，不进 Aura。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](development/backend-runtime.md)。
+对话与流程共用长驻的 `aura-flow` DSH profile：所有在线对话共用持久化的 `coder-v1` DSH session，具备文件、搜索、命令、规划、提问及工作流工具。未选项目时使用后端配置的默认工作目录；讨论、调研与执行由同一 Agent 根据当前请求和上下文衔接，没有额外分类模型或聊天/工作模式开关。工具启动的工作流继续显示运行卡片。`@aura/runtime` 是 TypeScript 编写的后端组合根，只负责解析配置、创建服务并按顺序关闭资源；HTTP API、Codex 授权路由、开发演示模型和 HTTP 基础设施分别位于独立模块。Tripo 插件使用官方 v3 SDK 提交异步 3D 任务，在插件后端读取 Key 和管理付费账本。本机媒体插件 `local-media` 提供图片生成 Flow 和对话工具，并通过 `aura.codex.image` capability 复用 DSH 管理的 Codex 授权。插件可以贡献自己的后端（`contributes.backend`，见 `@aura/plugin-sdk/backend`），领域专用的外部工具由插件后端调用，不进 Aura。所有 Aura HTTP 边界统一使用 Hono 与官方 Node 适配器，业务代码不直接创建 `node:http` server。`apps/server` 只是独立服务入口，`apps/desktop` 通过正式 workspace 依赖嵌入同一实现。运行时把 profile 复制到已忽略的 DSH home，DSH 依赖本身保持只读。详细设计见 [后端 Runtime 技术方案](development/backend-runtime.md)。
 
 在线 Flow 的运行入口与主、侧边对话共用输入和结果界面。选择 Flow 后在当前对话填写参数，明确请求由同一 Agent 调用通用 Flow 工具；结果、产物与后续追问保留在该对话。运行卡片可以回填参数再次执行，查询结果使用原 Run ID。新 Run 在原格式中附加可选 `conversationId`，工作台据此避免创建重复的绑定 Flow 会话；旧执行记录通过显式「继续对话」接入，不迁移用户存储。
 
@@ -34,7 +34,7 @@ pnpm workspace 收录应用输出和三层可复用库：
 
 应用声明 `aura.kind: app` 与 `aura.platform`；packages 只允许 library，并声明 `aura.layer`。Web 与移动应用只能依赖 frontend/shared，服务应用只能依赖 backend/shared，桌面应用可以组合 frontend/backend/shared。`check:workspaces` 校验目录元数据、依赖方向、`workspace:*`、显式导出、未声明依赖、私有子路径、跨 workspace 相对导入、应用被依赖和依赖环。完整的放置与依赖约束见 [项目结构 skill](../.agents/skills/aura-project-structure/SKILL.md)。
 
-浏览器、移动、桌面和服务入口分别位于 `apps/web`、`apps/mobile`、`apps/desktop` 与 `apps/server`。客户端导航和 React 状态属于 `packages/frontend/workbench`，DOM 原语与设计系统属于 `packages/frontend/ui`，DSH 授权适配属于 `packages/backend/dsh-auth`，Tripo 3D 网络与凭据适配属于 `packages/backend/tripo`，协议、存储与规则演示属于 shared。新增小程序时创建独立的 `apps/miniprogram`，复用适合小程序运行时的 shared 逻辑，不在 packages 中伪装成应用。
+浏览器、移动、桌面和服务入口分别位于 `apps/web`、`apps/mobile`、`apps/desktop` 与 `apps/server`。客户端导航和 React 状态属于 `packages/frontend/workbench`，DOM 原语与设计系统属于 `packages/frontend/ui`，DSH 授权适配属于 `packages/backend/dsh-auth`，Tripo 3D 接入归 `plugins/tripo`，协议、存储与规则演示属于 shared。新增小程序时创建独立的 `apps/miniprogram`，复用适合小程序运行时的 shared 逻辑，不在 packages 中伪装成应用。
 
 各包职责、领域目录和公共入口见 [模块边界](development/module-boundaries.md)，文档导航见 [文档目录](README.md)。
 
@@ -52,7 +52,7 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 ## 后端 Agent 流程编排
 
-`packages/backend/orchestration`（`@aura/orchestration`）统一拥有代码 Flow 的发现、Cordis Loader/HMR 注册、执行、动态步骤/session 映射、运行持久化和 `/flows/*` API。Flow 位于该包的 `flow/<flow-id>/<flow-id>.flow.ts` 或兼容的 `.flow.js` 单一入口，用 JavaScript 条件、循环和 `sequence/parallel` 回调作用域表达控制流，并通过 `@aura/orchestration/flow` 获得 `defineFlow`、Zod 与声明文件补全。作用域内的 `flow.flow()` 以规范 ID 创建持久化 child Run，固定子版本并保存父子关系；嵌套运行内联调度，不占顶层 FIFO 槽。定义设置 `service: true` 时，运行时才把它列入 `/flows/services` 并允许外部应用通过 `/flows/:flowId/invoke` 创建 durable Run；调用返回状态链接，客户端断开不取消执行。shared/protocol 仅包含通信类型，不执行 Flow 或装配 prompt。
+`packages/backend/orchestration`（`@aura/orchestration`）统一拥有代码 Flow 的发现、Cordis Loader/HMR 注册、执行、动态步骤/session 映射、运行持久化。Runtime 在 `/flows/*` 提供 HTTP 接口。Flow 位于该包的 `flow/<flow-id>/<flow-id>.flow.ts` 或兼容的 `.flow.js` 单一入口，用 JavaScript 条件、循环和 `sequence/parallel` 回调作用域表达控制流，并通过 `@aura/orchestration/flow` 获得 `defineFlow`、Zod 与声明文件补全。作用域内的 `flow.flow()` 以规范 ID 创建持久化 child Run，固定子版本并保存父子关系；嵌套运行内联调度，不占顶层 FIFO 槽。定义设置 `service: true` 时，运行时才把它列入 `/flows/services` 并允许外部应用通过 `/flows/:flowId/invoke` 创建 durable Run；调用返回状态链接，客户端断开不取消执行。shared/protocol 仅包含通信类型，不执行 Flow 或装配 prompt。
 
 流程使用独立、常驻的 `aura-flow` DSH profile：runtime 启动时即拉起，随 runtime 关闭而退出，异常退出后自动重启，不做空闲回收。DSH 因注入服务被替换而卸载 Aura 插件时，宿主进程主动退出，避免留下不再读取 RPC 的进程；runtime 每 30 秒 ping 一次，连续 3 次无响应即结束并重启宿主。每个 `scope.agent()` attempt 都产生独立 preset/session，复用 DSH Session Controller、领域存储、JSONL、模型路由和取消；Cordis HMR 复用 DSH 已有模块依赖图与事务回滚。运行开始时固定代码定义和贡献内容 hash（外部插件包含插件根内静态 ESM 依赖闭包），后续热更新只影响新运行。客户端断开不取消流程。Run 先持久化排队，默认最多同时执行 32 个顶层 Run；暂停、人工 checkpoint 和未知结果等待不占并发槽。重启先加载定义并校验同一 source hash，再从脚本入口重放；完成步骤按作用域路径及请求指纹返回存档输出，DSH 完成回合可认领输出，未知副作用等待人工处理。旧 active 记录缺少 durable identity 时标记 `legacy_unrecoverable`，已完成历史保持可读。Flow JS 是拥有完整 Node.js 权限的受信任后端代码。`/chat` 在同一宿主内运行，对话工具只启动显式开放的工作流；流程本身不依赖客户端对话历史。实现、恢复约束与扩展配置见 [编排包说明](../packages/backend/orchestration/README.md)。
 
@@ -64,7 +64,7 @@ Web 开发与静态预览命令通过 `scripts/run-with-runtime.ts` 同时启动
 
 插件 manifest 在 `permissions` 中请求的宿主能力必须全部受当前 Runtime 支持，否则插件不会加载。Action 通过 Plugin SDK 的 `auraCapability()` 取得按调用取消域绑定的领域端口，不接触凭据、任意 URL 或底层进程。插件还可以用 `contributes.backend` 指向一个已构建的 ESM 入口，默认导出 `defineBackend({ open(host) })`；每个插件至多一个后端，按插件 ID 寻址。宿主在激活插件时打开它，交给它插件数据目录、`plugins.json` 中的 `settings`、只读的本插件 Run 视图和内置能力；领域专用的服务连接与策略都在插件后端内实现。
 
-插件还可以通过 `contributes.pages` 贡献完整的工作台页面。该字段指向插件根内预构建的 DSH lazy-CJS 浏览器入口（`window.__ModuleLoader__.load({ id, factory })`）。runtime 的 `PluginPageRegistry` 只读取并校验该文件，不构建、不转译插件代码；它按 DSH `WebBootGraph` 格式组合启动图，以 `/plugins/??<id>/client.js&rev=<rev>` 提供不可变的 combo 脚本，并通过 `/plugins/pages`、`/plugins/graph` 与 SSE `/plugins/events` 发布变化。工作台复用 DSH `@deepseek-ai/dsh-client-modules` 的浏览器 `ClientModuleSystem` 负责模块加载与依赖解析，以 React 19、`@aura/plugin-ui` 和 Cordis 作为静态种子模块；插件的 `apply(ctx)` 挂在 Aura 自己的 Cordis 树下，通过 `ctx.auraWorkbench.page(definePage(...))` 注册页面。DSH 的 `ClientEntries` 依赖未发布的浏览器 Cordis Loader，因此由 Aura 自行协调挂载、销毁与样式清理；启用、停用或重建插件时，页面无需刷新即可增减。页面只能调用 `/plugins/pages/<plugin-id>/invoke`，编排子进程只转发到该插件自己的后端，并且仅限后端在 `pageOperations` 中声明的操作，其他请求以 `page_*_forbidden` 拒绝。同页插件与工作台共享浏览器环境，这不是安全沙箱；页面渲染错误由边界组件隔离。`aura.tripo.game-asset` 只允许固定的 GPT Image 2.5 四视图到 Tripo P1 GLB 链路和单张付费图片，所有付费阶段先在用户拥有的账本中预留；调用方可用不透明的 `scope` 给付费工作分组。token、API Key 和上游 URL 不进入插件输入、Flow/Agent 上下文、前端 DTO 或日志。
+插件还可以通过 `contributes.pages` 贡献完整的工作台页面。该字段指向插件根内预构建的 DSH lazy-CJS 浏览器入口（`window.__ModuleLoader__.load({ id, factory })`）。runtime 的 `PluginPageRegistry` 只读取并校验该文件，不构建、不转译插件代码；它按 DSH `WebBootGraph` 格式组合启动图，以 `/plugins/??<id>/client.js&rev=<rev>` 提供不可变的 combo 脚本，并通过 `/plugins/pages`、`/plugins/graph` 与 SSE `/plugins/events` 发布变化。工作台复用 DSH `@deepseek-ai/dsh-client-modules` 的浏览器 `ClientModuleSystem` 负责模块加载与依赖解析，以 React 19、`@aura/plugin-ui` 和 Cordis 作为静态种子模块；插件的 `apply(ctx)` 挂在 Aura 自己的 Cordis 树下，通过 `ctx.auraWorkbench.page(definePage(...))` 注册页面。DSH 的 `ClientEntries` 依赖未发布的浏览器 Cordis Loader，因此由 Aura 自行协调挂载、销毁与样式清理；启用、停用或重建插件时，页面无需刷新即可增减。页面只能调用 `/plugins/pages/<plugin-id>/invoke`，编排子进程只转发到该插件自己的后端，并且仅限后端在 `pageOperations` 中声明的操作，其他请求以 `page_*_forbidden` 拒绝。同页插件与工作台共享浏览器环境，这不是安全沙箱；页面渲染错误由边界组件隔离。Tripo 插件提供四视图到 P1 GLB、单张图片和付费账本查询 Actions。每个付费阶段先在用户账本中预留预算。token、API Key 和上游 URL 不进入插件输入、Flow/Agent 上下文、前端 DTO 或日志。
 
 Flow 的模型参数由 `flow.agent({model,reasoningEffort,temperature,maxTokens,timeoutMs,...})` 按步骤声明，或通过 `defineFlow.agentDefaults` 提供公共默认值；步骤覆盖 Flow 默认，Flow 默认覆盖运行时配置。provider 仍绑定 Run.mode，脚本不接触凭据或任意 endpoint。入队时固定 Run 默认参数，Agent dispatch 前保存完整 `config` 并纳入请求指纹；重试与重放不读取新的环境默认值。`sessionController.selectModel` 选择模型，DSH Agent 的官方 `agent/request` scoped waterfall 将同一配置应用到每轮模型请求并写入 DSH request header。模型与思考强度先经过 DSH 能力校验，无效配置不会启动 Agent attempt。升级前未保存参数的未结束记录安全中断为 `agent_config_unrecoverable`；已完成历史继续可读。
 
@@ -93,7 +93,7 @@ Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Sessi
 
 每个主会话支持多个 DSH fork 旁支。右侧旁支栏负责新建、切换和单独关闭；收起只改变本机界面状态，网络失败不阻塞收起，隐藏面板保持挂载。索引在原 domain 与版本内增加可选旁支列表，旧单旁支字段兼容读取，不在启动或刷新时迁移用户数据。各旁支的模型设置和历史独立，关闭或归档主会话释放其全部旁支；底层 DSH 日志不删除。
 
-工作空间通过对齐的单行顶栏和通用工具标签容纳侧边对话与真实终端。终端属于工作区，侧边对话属于主会话，两者的生命周期独立。`orchestration/coding/terminals.ts` 在 DSH 编排进程中组合公开 subprocess PTY 接口，拥有终端身份、有界输出游标和关闭流程；runtime 的 Hono 路由转发 RPC，并通过 SSE 发布输出，前端按需加载 xterm.js。网络断开或页面刷新重新附着同一 PTY，重启服务则释放进程且不重放命令。工作区目录由已注册记录解析，不接收任意客户端 cwd / env；DSH 原生过滤父环境凭据。关闭可能仍有任务的终端需要显式确认；收起面板立即生效且保留任务。「带回主对话」只填入草稿，不自动调用模型或关闭来源对话。
+工作空间通过对齐的单行顶栏和通用工具标签容纳侧边对话与真实终端。终端属于工作区，侧边对话属于主会话，两者的生命周期独立。`workspace/src/terminals.ts` 在 DSH 编排进程中组合公开 subprocess PTY 接口，拥有终端身份、有界输出游标和关闭流程；runtime 的 Hono 路由转发 RPC，并通过 SSE 发布输出，前端按需加载 xterm.js。网络断开或页面刷新重新附着同一 PTY，重启服务则释放进程且不重放命令。工作区目录由已注册记录解析，不接收任意客户端 cwd / env；DSH 原生过滤父环境凭据。关闭可能仍有任务的终端需要显式确认；收起面板立即生效且保留任务。「带回主对话」只填入草稿，不自动调用模型或关闭来源对话。
 
 Codex 默认模型是 `gpt-6.1-sol`，推理档位为 `xhigh`（Extra high），传输为 SSE。`@aura/dsh-auth` 用公开 DSH 模型配置补充当前目录缺少的型号，并保留原有目录；授权组合与编排 profile 共享这份 provider 配置。部署可以通过 `AURA_CODEX_MODEL` 选择目录中存在的其他模型，Flow 还可按 Agent 覆盖；未知模型或不支持的思考档位报错，不回退到演示。当前锁定 Codex 适配器不向上游转发 `maxTokens`，不能把配置值当成实际输出硬上限，因此 Flow 在 Codex 模式拒绝此选项。Demo 链路支持 token 参数透传，默认 4096。温度由具体模型决定是否接受，未设置时沿用供应商默认；Agent 的 `timeoutMs` 独立限制每次 attempt 时长。
 

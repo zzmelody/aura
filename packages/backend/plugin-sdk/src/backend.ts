@@ -5,6 +5,7 @@ export {
   type BackendCall,
   type BackendDefinition,
   type BackendHost,
+  type BackendImageReference,
   type PluginBackend,
   type PluginServices,
   type PluginWorkflows,

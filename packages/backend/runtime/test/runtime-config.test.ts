@@ -33,11 +33,6 @@ test("runtime configuration resolves paths and validates network settings", () =
     config.credentialPath,
     resolve(root, ".aura", "dsh", ".credentials.yaml"),
   );
-  assert.equal(
-    config.tripoCredentialPath,
-    resolve(root, ".aura", "tripo", "api-key"),
-  );
-  assert.equal(config.tripoRegion, "global");
   assert.equal(config.pluginConfigPath, resolve(root, ".aura", "plugins.json"));
   assert.equal(config.defaultPluginsDirectory, resolve(root, "plugins"));
   assert.equal(

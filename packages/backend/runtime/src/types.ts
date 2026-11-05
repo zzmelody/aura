@@ -8,7 +8,6 @@ import type {
   CodexLoginRequest,
   AuraPluginSettingsState,
 } from "@aura/protocol/types";
-import type { TripoRegion } from "@aura/tripo";
 
 /** Public options accepted by the embeddable Aura backend runtime. */
 export interface AuraRuntimeOptions {
@@ -42,8 +41,6 @@ export interface RuntimeConfig {
   dshHome: string;
   credentialPath: string;
   codexModel: string;
-  tripoCredentialPath: string;
-  tripoRegion: TripoRegion;
   pluginConfigPath: string;
   defaultPluginsDirectory: string;
   tempDir: string;

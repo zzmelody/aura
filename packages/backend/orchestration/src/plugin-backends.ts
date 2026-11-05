@@ -1,6 +1,7 @@
 import {
   isBackendDefinition,
   type BackendHost,
+  type BackendImageReference,
   type PluginBackend,
   type PluginServices,
   type PluginTaskTool,
@@ -55,6 +56,10 @@ export interface BackendMedia {
     mediaType: "image/png" | "image/jpeg" | "image/webp";
     name: string;
   }): Promise<unknown>;
+  readImage?(
+    reference: BackendImageReference,
+    signal: AbortSignal,
+  ): Promise<Uint8Array>;
 }
 
 /**
@@ -81,6 +86,7 @@ export class PluginBackends {
         storage: PluginDomainStorage;
         artifacts: GeneratedArtifacts;
         cwd: string;
+        localConfiguration?: boolean;
         workflows: PluginWorkflows;
       }
     | undefined;
@@ -99,6 +105,7 @@ export class PluginBackends {
       storage: PluginDomainStorage;
       artifacts: GeneratedArtifacts;
       cwd: string;
+      localConfiguration?: boolean;
       workflows: PluginWorkflows;
     };
   }) {
@@ -293,6 +300,7 @@ export class PluginBackends {
       run && owns(run) ? structuredClone(run) : undefined;
     return Object.freeze({
       pluginId,
+      localConfiguration: host?.localConfiguration === true,
       dataDir,
       tempDir,
       workspace: Object.freeze({ cwd: this.#host?.cwd ?? dataDir }),
@@ -367,6 +375,7 @@ export class PluginBackends {
           this.#requireMedia().artifacts.read(artifactId, signal, limitBytes),
       }),
       attachments: Object.freeze({
+        readImage: this.#media?.readImage,
         image: async (bytes: Uint8Array, name: string) => {
           const media = await inspectArtifact(Buffer.from(bytes));
           if (media.kind !== "image")

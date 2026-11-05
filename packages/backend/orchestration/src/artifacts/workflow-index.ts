@@ -6,7 +6,7 @@ import type {
   WorkflowArtifacts,
 } from "@aura/protocol/types";
 import type { GeneratedArtifacts } from "./generated.ts";
-import { publishBytes, readBoundedFile } from "./generated.ts";
+import { publishBytes } from "./generated.ts";
 import { artifactHash, validArtifactId } from "./media.ts";
 import { FlowError } from "../schema.ts";
 
@@ -215,7 +215,6 @@ export class WorkflowArtifactIndex {
     owner: ArtifactOwner,
     output: unknown,
     producer: string,
-    historical = false,
   ): Promise<void> {
     for (const candidate of this.candidates?.(output, producer) ?? [])
       await this.register(
@@ -232,74 +231,6 @@ export class WorkflowArtifactIndex {
       }
       const result = object(value);
       if (!result) return;
-      if (typeof result.modelPath === "string" && object(result.taskIds)) {
-        const directory =
-          typeof result.outputDirectory === "string"
-            ? resolve(result.outputDirectory)
-            : dirname(resolve(result.modelPath));
-        let admitted = !historical;
-        if (historical && typeof result.manifestPath === "string") {
-          try {
-            if (
-              resolve(result.manifestPath) !== join(directory, "manifest.json")
-            )
-              throw new Error("Manifest location");
-            const manifest = JSON.parse(
-              (
-                await readBoundedFile(
-                  result.manifestPath,
-                  128 * 1024,
-                  AbortSignal.timeout(10_000),
-                  directory,
-                )
-              ).toString(),
-            );
-            admitted =
-              manifest.schemaVersion === 1 &&
-              manifest.generator === "aura-tripo-game-asset" &&
-              manifest.tasks?.model === object(result.taskIds)?.model &&
-              manifest.files?.model === basename(result.modelPath) &&
-              basename(result.modelPath) === "model.glb";
-          } catch {
-            admitted = false;
-          }
-        }
-        const paths = [
-          result.modelPath,
-          ...Object.values(object(result.imagePaths) ?? {}),
-          result.previewPath,
-        ].filter((path): path is string => typeof path === "string");
-        for (const path of paths) {
-          const allowedName =
-            /^(?:model\.glb|view-(?:front|left|back|right)\.png|preview\.(?:png|jpg|jpeg|webp))$/.test(
-              basename(path),
-            );
-          await this.register(
-            owner,
-            path,
-            {
-              ...(path === result.modelPath &&
-              typeof result.previewPath === "string"
-                ? { poster: result.previewPath }
-                : {}),
-            },
-            admitted &&
-              dirname(resolve(path)) === directory &&
-              (!historical || allowedName),
-          );
-        }
-        // Existing immutable registrations remain recoverable even after original outputs were moved.
-        const model = object(result.modelArtifact);
-        if (
-          typeof model?.artifactId === "string" &&
-          validArtifactId(model.artifactId)
-        )
-          await this.register(
-            owner,
-            join(this.store.root, `${model.artifactId}.glb`),
-          );
-        return;
-      }
       if (
         typeof result.artifactId === "string" &&
         validArtifactId(result.artifactId) &&
@@ -332,18 +263,12 @@ export class WorkflowArtifactIndex {
         attempt: step.attempts?.at(-1)?.number,
       };
       if (step.kind === "action")
-        await this.capture(owner, step.output, step.actionId, true);
+        await this.capture(owner, step.output, step.actionId);
     }
-    // Final outputs can contain historical Tripo references even if intermediate results were not kept.
-    await this.capture(
-      { runId: id, stepKey: "$output" },
-      run.output,
-      "flow",
-      true,
-    );
+    await this.capture({ runId: id, stepKey: "$output" }, run.output, "flow");
     const complete = this.history
       ? await this.history(run, (owner, output, producer) =>
-          this.capture(owner, output, producer, true),
+          this.capture(owner, output, producer),
         )
       : true;
     if (retry)
