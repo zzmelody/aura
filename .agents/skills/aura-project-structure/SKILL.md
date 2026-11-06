@@ -31,7 +31,7 @@ description: Aura 仓库的目录规范、应用与包放置、三层依赖方�
 
 ## 各包边界
 
-现有包：frontend 为 `workbench`、`ui`、`plugin-ui`；backend 为 `runtime`、`agent-runtime`、`workspace`、`orchestration`、`plugin-manager`、`plugin-sdk`、`dsh-auth`；shared 为 `protocol`、`core`、`demo`。
+现有包：frontend 为 `i18n`、`workbench`、`ui`、`plugin-ui`；backend 为 `runtime`、`agent-runtime`、`workspace`、`orchestration`、`plugin-manager`、`plugin-sdk`、`dsh-auth`；shared 为 `protocol`、`core`、`demo`。
 
 容易越界的几处：
 
@@ -43,6 +43,7 @@ description: Aura 仓库的目录规范、应用与包放置、三层依赖方�
 - `plugin-sdk` 只导出公开的 Action/Flow/provider、backend、storage、media、browser、errors 契约，不暴露运行时组合、凭据或 DSH 内部。
 - `dsh-auth` 只组合 DSH 授权与凭据适配，不放 HTTP 路由和模型执行。
 - `workbench` 只保留通用对话、工作流与设置；业务页面由插件通过页面贡献注入，不在宿主硬编码导航。
+- `i18n` 拥有共享界面语言运行时、消息引用、资源生命周期、格式化和目录审计，不拥有业务文案、模型调用或用户业务存储。宿主领域词库归所属前端模块；原生应用词库归对应应用；插件词库和业务错误译文随插件发布。
 
 名称描述职责或领域含义，避免含糊的 `data`、`manager`、`utils` 模块。函数和模块保持一个明确的变化原因。
 
@@ -55,6 +56,7 @@ description: Aura 仓库的目录规范、应用与包放置、三层依赖方�
 - **TypeScript。** Aura 的 JavaScript 运行时代码用 TypeScript 写：应用、包、脚本和测试源码用 `.ts`（JSX 用 `.tsx`），不新增也不直接使用 `.mjs`，不写手写实现加 `.d.ts` 的成对文件。保持 Node.js 24 可直接擦除执行的语法，除非明确需要构建产物。
 - **HTTP 用 Hono** 及其官方运行时适配器。不要直接用 `node:http` 搭应用的 HTTP server、路由、body parser、静态文件服务或流式协议；裸 Node HTTP 只保留给框架适配器或有文档记录的互操作需求。
 - **Web-first。** 可复用 UI 用 React DOM，Web renderer 用 Vite，桌面宿主用 Electron，移动宿主用 Capacitor。不添加 Expo、React Native、React Native Web 或 Metro 依赖。浏览器、Electron renderer 与 Capacitor 共用同一套 DOM 实现。
+- **界面多语言。** 固定使用 i18next + react-i18next 与 `@aura/i18n`，支持 `zh-CN`、`en`、`ja`、`ko`、`ru`、`fr`。资源随产品本地发布，默认跟随系统、缺项回退英文；业务页面和插件不另建语言实例，运行时不依赖在线翻译服务。共享协议只定义与运行环境无关的显示契约及校验，翻译资源按实际所有者放置。
 - **DSH 作为已发布依赖使用**，Aura 行为通过它的插件和服务缝隙接入，不复制也不修改 DSH、pi-ai 的源码或 `node_modules` 下的文件。模型 provider 与交互式授权必须经过 DSH。
 - **pnpm。** 从仓库根使用，保持唯一的 `pnpm-lock.yaml`，workspace 依赖用 `workspace:*`，不添加 npm 或 Yarn 的 lockfile。根开发工具依赖放根 `devDependencies`，应用和库依赖放实际使用它的 workspace。
 - **单份 React 运行时。** React、React DOM 及 renderer 级 UI 运行时在可复用 frontend UI 库中声明为 peer dependency，由应用提供唯一一份。

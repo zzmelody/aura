@@ -7,6 +7,7 @@
 | `@aura/protocol`      | `types.ts` 为 DTO；`models.ts` 为模型选择规则                                                                                                                       | shared，无 React、Node 服务或凭据                                     |
 | `@aura/core`          | `workspace.ts` 创建默认状态和选择模式；`storage.ts` 恢复持久化数据；`endpoint.ts` 校验服务 origin；`state.ts` 仅汇集公共导出                                        | 继续使用存储 v1，不依赖 DOM 或 React                                  |
 | `@aura/demo`          | 确定性的离线回复                                                                                                                                                    | 不执行网络或模型请求                                                  |
+| `@aura/i18n`          | `runtime.ts` 为语言控制、消息引用、资源注册与格式化；`react.ts` 为 Provider/Hooks；`catalogs.ts` 为词库校验与审计 | frontend；宿主与插件共用运行时，业务词库归各自所有者 |
 | `@aura/ui`            | `web.tsx` 为 DOM 原语；`components.tsx` 为共享组件；`theme.ts` 为主题                                                                                               | UI 无业务存储，应用提供 React 运行时                                  |
 | `@aura/workbench`     | 通用对话、Flow、设置、工作区与宿主适配；通过公开 plugin/transport 入口提供共享控件和传输                                                                            | 业务界面由外部插件提供；Site 页面与运行后端在 `plugins/site-launcher` |
 | `@aura/dsh-auth`      | `codex-auth.ts` 为授权生命周期；`codex-token.ts` 为令牌读取/刷新；`codex-profile.ts` 为 provider 配置；`ai-services.ts` 为模型设置；`index.ts` 为公共导出           | 组合 DSH 服务，不包含 HTTP 路由                                       |
