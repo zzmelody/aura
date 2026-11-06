@@ -84,7 +84,7 @@ export function ModelServiceBadge({
 const styles = StyleSheet.create({
   trigger: {
     minHeight: 32,
-    borderRadius: 6,
+    borderRadius: "calc(6px * var(--radius-scale, 1))",
     paddingHorizontal: 8,
     flexDirection: "row",
     alignItems: "center",

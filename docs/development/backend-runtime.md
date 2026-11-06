@@ -63,6 +63,8 @@ Codex 登录由用户交互触发。HTTP 路由只转发 DSH notice、manual pro
 
 ## 5. 生命周期与失败策略
 
+插件开关通过动态配置应用到编排宿主；插件状态保留 manifest 的可选简介（`description`，最多 500 字符），停用时只移除新运行可用的贡献，已有运行保留其锁定版本。合法简介不影响启用或停用，未知配置字段仍会被拒绝。
+
 启动顺序为：解析配置与网络设置 → 校验插件配置 → 创建授权服务 → 启动 loopback 演示模型 → 创建编排宿主并绑定插件激活器 → 启动 API。编排宿主在独立子进程中调用 DSH 公开的 `runProfile()` 预热常驻的 `aura-flow`，通过 stdio RPC 等待握手。
 
 `GET /health` 是就绪检查：只有 DSH 完成 Aura `initialize` 握手，并且当前 JSON-RPC `ping` 在 500ms 内成功，才返回 HTTP 200 和 `status: "ready"`。启动中返回 `starting`，启动失败、进程退出或 RPC 无响应返回 `unavailable`，关闭中返回 `stopped`，这些状态均为 HTTP 503；响应包含 `dsh.status`，使用 `Cache-Control: no-store`，不包含本机路径、错误栈或凭据。健康探测不触发 DSH 启动，也不等待最长 120 秒的冷启动。

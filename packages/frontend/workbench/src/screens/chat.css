@@ -49,7 +49,9 @@
   max-width: min(600px, 82%);
   padding: 10px 14px;
   border: 0;
-  border-radius: 18px 18px 6px 18px;
+  border-radius: calc(18px * var(--radius-scale, 1))
+    calc(18px * var(--radius-scale, 1)) calc(6px * var(--radius-scale, 1))
+    calc(18px * var(--radius-scale, 1));
   background: var(--user);
   color: var(--text);
   font-size: 14px;
@@ -63,11 +65,11 @@
 .chat-screen .from-user .message-images img {
   height: 140px;
   max-width: 220px;
-  border-radius: 14px;
+  border-radius: calc(14px * var(--radius-scale, 1));
 }
 .chat-screen .from-user .message-images a,
 .chat-screen .from-user .message-images .image-thumbnail {
-  border-radius: 14px;
+  border-radius: calc(14px * var(--radius-scale, 1));
 }
 
 /* Assistant turns: no bubble, document-like text on the page. */
@@ -97,7 +99,7 @@
 .chat-screen .from-assistant .message-body.error {
   padding: 10px 14px;
   margin-left: 28px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
   white-space: pre-wrap;
@@ -118,14 +120,14 @@
 }
 .chat-screen .message-body .workflow-rich-text code {
   padding: 1px 6px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   background: var(--elevated);
   font-size: 12.5px;
 }
 .chat-screen .message-body .workflow-rich-text pre {
   padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--surface);
   overflow: auto;
 }
@@ -163,12 +165,14 @@
 }
 .chat-screen .chat-transcript .workflow-user-bubble {
   border: 0;
-  border-radius: 18px 18px 6px 18px;
+  border-radius: calc(18px * var(--radius-scale, 1))
+    calc(18px * var(--radius-scale, 1)) calc(6px * var(--radius-scale, 1))
+    calc(18px * var(--radius-scale, 1));
   background: var(--user);
   font-size: 13px;
 }
 .chat-screen .chat-transcript .workflow-message-assistant {
-  border-radius: 16px;
+  border-radius: calc(16px * var(--radius-scale, 1));
   padding: 14px 16px 12px;
 }
 
@@ -186,7 +190,7 @@
 .chat-screen .chat-composer {
   padding: 12px 10px 8px 16px;
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 24px;
+  border-radius: calc(24px * var(--radius-scale, 1));
   background: var(--elevated);
   box-shadow: none;
   transition: border-color 110ms ease;
@@ -218,7 +222,7 @@
 .chat-screen .provider-select select {
   height: 32px;
   padding: 0 8px;
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale, 1));
   background: transparent;
   color: var(--secondary);
   font-size: 13px;
@@ -250,7 +254,7 @@
 .chat-screen .composer-attachment {
   width: 56px;
   height: 56px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
 }
 .chat-screen .composer-attach-error {
   margin: 8px 8px 0;

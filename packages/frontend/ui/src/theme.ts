@@ -63,11 +63,17 @@ export const palettes = {
 export type Palette = { [K in keyof typeof palettes.dark]: string };
 const systemStack =
   "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif";
-export const fonts = {
-  display: systemStack,
-  body: systemStack,
-  medium: systemStack,
+export const fontStacks = {
+  system: systemStack,
+  serif:
+    "'Noto Serif CJK SC', 'Source Han Serif SC', 'Songti SC', SimSun, Georgia, serif",
   mono: "'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo, Courier, 'PingFang SC', 'Microsoft YaHei', monospace",
+};
+export const fonts = {
+  display: `var(--font-text, ${systemStack})`,
+  body: `var(--font-text, ${systemStack})`,
+  medium: `var(--font-text, ${systemStack})`,
+  mono: fontStacks.mono,
 };
 export const type = {
   hero: {

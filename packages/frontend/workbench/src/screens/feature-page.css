@@ -45,7 +45,7 @@
   min-height: 32px;
   padding: 0 12px;
   border: 0.5px solid var(--border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--surface);
   color: var(--text);
   font-size: 13px;
@@ -80,7 +80,7 @@
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: transparent;
   color: var(--secondary);
 }
@@ -90,7 +90,7 @@
 }
 .dsh-page-notice {
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--soft);
   color: var(--secondary);
   font-size: 13px;

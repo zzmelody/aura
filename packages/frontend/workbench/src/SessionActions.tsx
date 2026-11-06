@@ -32,13 +32,13 @@ export function sessionMenuItems(
   return [
     {
       id: "rename",
-      label: "重命名",
+      label: t("rename"),
       icon: <Pencil size={15} />,
       action: () => onDialog({ sessionId: session.id, mode: "rename" }),
     },
     {
       id: "archive",
-      label: session.archivedAt ? "取消归档" : "归档会话",
+      label: session.archivedAt ? t("restore") : t("archiveChat"),
       icon: session.archivedAt ? (
         <ArchiveRestore size={15} />
       ) : (
@@ -52,7 +52,7 @@ export function sessionMenuItems(
       ? [
           {
             id: "stop",
-            label: "停止执行",
+            label: t("stop"),
             icon: <Square size={15} />,
             action: () => workspace.stopSession(session.id),
           },
@@ -61,7 +61,7 @@ export function sessionMenuItems(
     { id: "divider", separator: true },
     {
       id: "delete",
-      label: blocked ? "执行结束后可删除" : "删除会话",
+      label: blocked ? t("deleteWhenDone") : t("deleteChat"),
       icon: <Trash2 size={15} />,
       danger: true,
       disabled: blocked,

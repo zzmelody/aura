@@ -13,6 +13,7 @@ import { FlowIcon } from "../FlowIcon";
 import type { FlowCatalogEntry } from "@aura/protocol/types";
 import type { FlowCatalogController } from "../flowCatalog";
 import type { FlowDraftController } from "../flowDraft";
+import type { FlowAnalysisController } from "../useFlowAnalysis";
 import { useFlowSource } from "../flowSource";
 const FlowGraphView = React.lazy(() =>
   import("./FlowGraphView").then((module) => ({
@@ -27,16 +28,21 @@ function WorkflowPreview({
   flow,
   endpoint,
   onEdit,
+  analysis,
 }: {
   flow: FlowCatalogEntry;
   endpoint: string;
-  onEdit(line?: number): void;
+  onEdit(): void;
+  analysis: FlowAnalysisController;
 }) {
   const { source, error, refresh } = useFlowSource(
     endpoint,
     flow.available ? flow.id : "",
     flow.revision ?? flow.sourceHash,
   );
+  const diagram = analysis.entries.find(
+    (entry) => entry.code === source?.code,
+  )?.diagram;
   return (
     <div
       className="workflow-card-preview"
@@ -52,7 +58,16 @@ function WorkflowPreview({
         <React.Suspense
           fallback={<div className="flow-preview-empty">正在加载节点图…</div>}
         >
-          <FlowGraphView code={source.code} onOpenCode={onEdit} embedded />
+          {diagram ? (
+            <FlowGraphView diagram={diagram} embedded />
+          ) : (
+            <div className="flow-preview-empty">
+              <p>打开编辑器，让 Agent 分析并绘制 SVG 流程图。</p>
+              <button className="tool-button" onClick={onEdit}>
+                打开工作流
+              </button>
+            </div>
+          )}
         </React.Suspense>
       ) : (
         <div
@@ -80,8 +95,8 @@ export function Workflows({
   endpoint,
   catalogState,
   draft,
+  analysis,
   editorRevision,
-  onAsk,
   onRun,
   onDetailChange,
 }: {
@@ -89,13 +104,12 @@ export function Workflows({
   endpoint: string;
   catalogState: FlowCatalogController;
   draft: FlowDraftController;
+  analysis: FlowAnalysisController;
   editorRevision: number;
-  onAsk(): void;
   onRun(flow: FlowCatalogEntry): void;
   onDetailChange(open: boolean): void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
-  const [initialLine, setInitialLine] = useState<number>();
   const [expanded, setExpanded] = useState<string>();
   const [query, setQuery] = useState("");
   useEffect(() => {
@@ -110,13 +124,11 @@ export function Workflows({
   useEffect(() => {
     if (editorRevision) {
       setEditing("");
-      setInitialLine(undefined);
       onDetailChange(true);
     }
   }, [editorRevision, onDetailChange]);
-  const edit = (id: string, line?: number) => {
+  const edit = (id: string) => {
     setEditing(id);
-    setInitialLine(line);
     onDetailChange(true);
   };
   const flows = catalogState.catalog?.flows ?? [];
@@ -133,12 +145,10 @@ export function Workflows({
         <FlowStudio
           key={editing}
           flowId={editing}
-          initialLine={initialLine}
           endpoint={endpoint}
           catalogState={catalogState}
           draft={draft}
-          editorRevision={0}
-          onAsk={onAsk}
+          analysis={analysis}
           onRun={onRun}
           onBack={() => {
             setEditing(null);
@@ -258,7 +268,8 @@ export function Workflows({
               <WorkflowPreview
                 flow={flow}
                 endpoint={endpoint}
-                onEdit={(line) => edit(flow.id, line)}
+                onEdit={() => edit(flow.id)}
+                analysis={analysis}
               />
             ) : null}
           </article>

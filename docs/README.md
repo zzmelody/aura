@@ -18,6 +18,7 @@
 ## 功能
 
 - [模型与登录](features/model-providers.md)
+- [工作流编辑](features/workflow-editor.md)
 - [Tripo 3D](features/tripo.md)
 
 ## 设计与验证

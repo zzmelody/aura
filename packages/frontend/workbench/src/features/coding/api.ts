@@ -926,10 +926,17 @@ export const compactCoding = (endpoint: string, sessionId: string) =>
     "POST",
   );
 
-export const readCodingSubagents = (endpoint: string, sessionId: string) =>
+export const readCodingSubagents = (
+  endpoint: string,
+  sessionId: string,
+  signal?: AbortSignal,
+) =>
   codingApi<CodingSubagent[]>(
     endpoint,
     `/sessions/${encodeURIComponent(sessionId)}/agents`,
+    "GET",
+    undefined,
+    signal,
   );
 export const stopCodingSubagent = (
   endpoint: string,

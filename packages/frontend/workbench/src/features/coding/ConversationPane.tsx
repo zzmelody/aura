@@ -4,7 +4,6 @@ import {
 } from "./conversation-store.ts";
 import { useConversation } from "./useConversation.ts";
 import { isExecutionActive } from "@aura/protocol/conversation-channel";
-import { SubagentPanel } from "./SubagentPanel.tsx";
 import { MaskedUserText } from "./MaskedUserText.tsx";
 import {
   changeCodingCollaboration,
@@ -870,6 +869,7 @@ const TurnView = memo(function TurnView({
   onAnswer,
   onApplyFlow,
   onRepeatFlow,
+  hideFlowSvg = false,
   onForkTurn,
 }: {
   turn: Turn;
@@ -888,6 +888,7 @@ const TurnView = memo(function TurnView({
   ): Promise<void>;
   onApplyFlow?(code: string): void;
   onRepeatFlow?(run: FlowRun): void;
+  hideFlowSvg?: boolean;
   onForkTurn?(endSeq: number): void;
 }) {
   const running = turn.status === "running";
@@ -1086,7 +1087,16 @@ const TurnView = memo(function TurnView({
               className="coding-reply"
               data-coding-process-record={isProcess || running || undefined}
             >
-              <WorkflowRichText text={item.text} />
+              <WorkflowRichText
+                text={
+                  hideFlowSvg
+                    ? item.text.replace(
+                        /```svg[^\n]*\n[\s\S]*?(?:```|$)/g,
+                        "\nSVG 流程图见画布。\n",
+                      )
+                    : item.text
+                }
+              />
             </div>
           ) : null;
         if (item.kind === "tools") {
@@ -1494,6 +1504,7 @@ export function ConversationPane({
   onAttachmentsChange,
   draftInsert,
   onApplyFlow,
+  onFlowReply,
   flows,
   flowsLoading = false,
   flowRequest,
@@ -1544,6 +1555,8 @@ export function ConversationPane({
   onAttachmentsChange?(attached: boolean): void;
   draftInsert?: { id: string; text: string };
   onApplyFlow?(code: string): void;
+  /** Completed replies can supply the current Flow editor's SVG artifact. */
+  onFlowReply?(reply: string): void;
   flows?: FlowCatalogEntry[];
   flowsLoading?: boolean;
   flowRequest?: FlowConversationRequest;
@@ -1667,6 +1680,15 @@ export function ConversationPane({
     [history, historyTime, sessionId],
   );
   const shown = sessionId ? (turns[sessionId] ?? imported) : noTurns;
+  const reportedFlowReply = useRef("");
+  useEffect(() => {
+    const turn = shown.at(-1);
+    if (!visible || !onFlowReply || turn?.status !== "complete") return;
+    const key = `${sessionId}:${turn.id}:${turn.reply}`;
+    if (reportedFlowReply.current === key) return;
+    reportedFlowReply.current = key;
+    onFlowReply(turn.reply);
+  }, [shown, sessionId, visible, onFlowReply]);
   // Only the oldest open batch in this conversation owns the dock.
   const pending = useMemo(
     () => (readOnly ? undefined : pendingQuestion(shown)),
@@ -2623,14 +2645,6 @@ export function ConversationPane({
           本轮已结束。草稿已保留，点击发送开始新一轮。
         </p>
       ) : null}
-      {sessionId && !offline && visible ? (
-        <SubagentPanel
-          key={sessionId}
-          endpoint={endpoint}
-          sessionId={sessionId}
-          running={running}
-        />
-      ) : null}
       {historyError ? (
         <div className="coding-notice" role="alert">
           <span>{historyError}</span>{" "}
@@ -2684,6 +2698,7 @@ export function ConversationPane({
               }
               onAnswer={readOnly ? undefined : answer}
               onApplyFlow={onApplyFlow}
+              hideFlowSvg={onFlowReply !== undefined}
               onRepeatFlow={readOnly ? undefined : repeatFlow}
               onForkTurn={readOnly ? undefined : onForkTurn}
             />

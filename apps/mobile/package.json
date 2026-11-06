@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "react-i18next": "17.1.13",
     "@aura/workbench": "workspace:*",
     "@capacitor/browser": "8.0.0",
     "@capacitor/core": "8.5.1",

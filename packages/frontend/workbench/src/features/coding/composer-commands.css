@@ -11,7 +11,7 @@
   padding: 6px;
   overflow: hidden;
   border: 0.5px solid var(--hairline);
-  border-radius: 16px;
+  border-radius: calc(16px * var(--radius-scale, 1));
   background: var(--elevated);
   color: var(--text);
   box-shadow:
@@ -41,7 +41,7 @@
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: transparent;
   color: var(--muted);
 }
@@ -61,7 +61,7 @@
   margin: 0 4px 6px;
   padding: 0 10px;
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--input);
   color: var(--muted);
 }
@@ -103,7 +103,7 @@
   min-height: 52px;
   padding: 8px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: transparent;
   color: var(--text);
   text-align: left;
@@ -220,7 +220,7 @@
   height: 16px;
   padding: 0 3px;
   border: 0.5px solid var(--hairline);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale, 1));
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1;

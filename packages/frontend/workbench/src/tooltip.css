@@ -5,7 +5,7 @@
   z-index: 1100;
   max-width: min(50vw, calc(100vw - 24px));
   padding: 3px 7px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--tooltip);
   color: var(--tooltipText);
   font-size: 13px;

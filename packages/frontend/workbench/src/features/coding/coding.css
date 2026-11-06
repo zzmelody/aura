@@ -5,7 +5,7 @@
   gap: 6px;
   padding: 7px 14px;
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--primary);
   color: var(--primaryText);
   font-size: 13px;
@@ -138,7 +138,7 @@
   gap: 5px;
   padding: 5px 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: transparent;
   color: var(--text);
   font-size: 12px;
@@ -182,7 +182,7 @@
   height: 28px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   background: transparent;
   color: inherit;
   font: inherit;
@@ -211,7 +211,7 @@
   padding: 16px;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--elevated);
   color: var(--text);
   box-shadow: 0 10px 32px rgb(0 0 0 / 22%);
@@ -326,7 +326,7 @@
   justify-self: end;
   max-width: 85%;
   padding: 10px 14px;
-  border-radius: 14px;
+  border-radius: calc(14px * var(--radius-scale, 1));
   background: var(--user);
   color: var(--text);
   white-space: pre-wrap;
@@ -486,7 +486,7 @@
   min-height: 28px;
   padding: 2px 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale, 1));
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -557,7 +557,7 @@
   padding: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale, 1));
   background: none;
   color: var(--muted);
   font: inherit;
@@ -688,7 +688,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
 .coding-report {
   padding: 10px 14px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
 }
 .coding-report h3 {
   margin: 0 0 6px;
@@ -711,7 +711,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   gap: 6px;
   min-width: 0;
   font-size: 13px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
 }
 .coding-report code {
   overflow-wrap: anywhere;
@@ -745,7 +745,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   gap: 12px;
   padding: 12px 14px;
   border: 0.5px solid var(--accent);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--soft);
 }
 .coding-question.bare {
@@ -793,7 +793,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   max-height: 280px;
   overflow: auto;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--background);
   font-size: 13px;
 }
@@ -808,7 +808,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   align-items: flex-start;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   font-size: 13px;
   cursor: pointer;
 }
@@ -829,7 +829,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
 .coding-question-custom {
   padding: 7px 10px;
   border: 0.5px solid var(--border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--input);
   color: var(--text);
   font-size: 13px;
@@ -840,7 +840,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   gap: 6px;
   padding: 7px 14px;
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--primary);
   color: var(--primaryText);
   font-size: 13px;
@@ -909,7 +909,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   margin-top: 4px;
   overflow: hidden;
   border: 0.5px solid var(--border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--surface);
   color: var(--text);
 }
@@ -962,7 +962,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   place-items: center;
   width: 26px;
   height: 26px;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
   background: color-mix(in srgb, var(--kind) 14%, transparent);
   color: var(--kind);
 }
@@ -1097,7 +1097,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   margin-bottom: 12px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--decision-color) 45%, transparent);
-  border-radius: 20px;
+  border-radius: calc(20px * var(--radius-scale, 1));
   background: var(--elevated);
 }
 .coding-decision.question {
@@ -1168,7 +1168,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   height: 32px;
   padding: 0 14px;
   border: 0.5px solid var(--border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: transparent;
   color: var(--text);
   font: inherit;
@@ -1248,12 +1248,11 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   overflow: auto;
 }
 
-.coding-web-sources,
-.coding-subagent {
+.coding-web-sources {
   margin: 8px 0;
   padding: 10px 12px;
   border: 1px solid var(--border-subtle, #ddd);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   font-size: 13px;
   overflow-wrap: anywhere;
   max-height: 300px;
@@ -1262,6 +1261,187 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
 .coding-web-sources a {
   display: block;
   margin-top: 4px;
+}
+
+/* The header's existing More menu opens this child catalog. */
+.coding-agents-popup {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 336px;
+  max-width: calc(100vw - 16px);
+  margin: 0;
+  padding: 4px;
+  overflow: hidden;
+  border: 0.5px solid var(--hairline);
+  border-radius: calc(12px * var(--radius-scale, 1));
+  background: var(--elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+}
+.coding-agents-detail {
+  width: 560px;
+}
+.coding-agents-heading {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 4px 4px 8px;
+}
+.coding-agents-heading > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.coding-agents-heading .icon-control {
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+.coding-agents-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.coding-agents-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.coding-agent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: calc(8px * var(--radius-scale, 1));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  line-height: 17px;
+  text-align: left;
+  cursor: pointer;
+}
+.coding-agent-row:hover,
+.coding-agent-row:focus-visible {
+  background: var(--soft);
+}
+.coding-agent-row > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.coding-agent-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.coding-agent-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coding-agent-summary {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.coding-agent-duration {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.coding-agent-state {
+  flex: none;
+  color: var(--muted);
+}
+.coding-agent-state.running {
+  color: var(--accent);
+}
+.coding-agent-state.complete {
+  color: var(--success);
+}
+.coding-agent-state.error,
+.coding-agent-execution-error {
+  color: var(--danger);
+}
+.coding-agent-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.coding-agents-detail .coding-agents-body {
+  padding: 8px 10px 12px;
+}
+.coding-agent-read-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 6px 4px;
+  padding: 8px;
+  border-radius: calc(6px * var(--radius-scale, 1));
+  background: var(--soft);
+  color: var(--secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.coding-agent-read-error > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.coding-agent-read-error > span {
+  flex: 1;
+  min-width: 0;
+}
+.coding-agent-read-error button,
+.coding-agent-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: calc(5px * var(--radius-scale, 1));
+  background: var(--soft);
+  color: var(--secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.coding-agent-read-error button {
+  flex: none;
+}
+.coding-agent-empty {
+  margin: 8px;
+  color: var(--muted);
+}
+.coding-agents-detail .workflow-rich-text {
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+@media (pointer: coarse) {
+  .coding-agents-heading .icon-control,
+  .coding-agent-read-error button,
+  .coding-agent-stop {
+    min-height: 36px;
+    min-width: 36px;
+  }
 }
 /* Floating actions over selected transcript text. */
 .selection-actions {
@@ -1273,7 +1453,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   gap: 2px;
   padding: 3px;
   border: 0.5px solid var(--hairline);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale, 1));
   background: var(--elevated);
   color: var(--text);
   box-shadow:
@@ -1286,7 +1466,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   gap: 5px;
   padding: 5px 9px;
   border: 0;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
   background: transparent;
   color: inherit;
   font-size: 12px;

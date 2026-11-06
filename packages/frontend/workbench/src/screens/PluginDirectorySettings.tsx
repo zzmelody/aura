@@ -399,7 +399,12 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
 }
 
 const styles = StyleSheet.create({
-  bay: { padding: 16, borderRadius: 12, borderWidth: 1, gap: 14 },
+  bay: {
+    padding: 16,
+    borderRadius: "calc(12px * var(--radius-scale, 1))",
+    borderWidth: 1,
+    gap: 14,
+  },
   heading: { flexDirection: "row", alignItems: "center", gap: 12 },
   counter: {
     borderRadius: 999,
@@ -417,13 +422,13 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 10,
     padding: 14,
-    borderRadius: 8,
+    borderRadius: "calc(8px * var(--radius-scale, 1))",
   },
   iconButton: {
     width: 32,
     height: 32,
     borderWidth: 1,
-    borderRadius: 7,
+    borderRadius: "calc(7px * var(--radius-scale, 1))",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -431,7 +436,7 @@ const styles = StyleSheet.create({
   entry: {
     flexDirection: "row",
     borderWidth: 1,
-    borderRadius: 9,
+    borderRadius: "calc(9px * var(--radius-scale, 1))",
     overflow: "hidden",
   },
   entryRail: { width: 38, alignItems: "center", paddingTop: 15, gap: 10 },
@@ -449,7 +454,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     minHeight: 43,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: "calc(8px * var(--radius-scale, 1))",
     paddingHorizontal: 12,
   },
   entryFooter: { flexDirection: "row", alignItems: "center", gap: 12 },
@@ -462,14 +467,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     borderWidth: 1,
     borderStyle: "dashed",
-    borderRadius: 8,
+    borderRadius: "calc(8px * var(--radius-scale, 1))",
   },
   restart: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 9,
     padding: 11,
-    borderRadius: 7,
+    borderRadius: "calc(7px * var(--radius-scale, 1))",
   },
   notice: { flexDirection: "row", alignItems: "center", gap: 7 },
   actions: {

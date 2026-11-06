@@ -23,7 +23,7 @@
   /* --hairline nearly vanishes on the light palette's white surface, so the
    * card's own edge gets the stronger border token. */
   border: 0.5px solid var(--border);
-  border-radius: 16px;
+  border-radius: calc(16px * var(--radius-scale, 1));
   background: var(--surface);
   color: var(--text);
   text-align: left;

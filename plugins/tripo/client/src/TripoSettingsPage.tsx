@@ -7,13 +7,14 @@ import type {
   TripoSettings,
 } from '../../shared/settings.ts';
 import { errorMessage, saveConnection } from './settings-api.ts';
+import { useTripoMessages } from './messages.ts';
 
 const budgetFields = [
-  { id: 'maxCredits', label: '总额度', required: true },
-  { id: 'maxScopeCredits', label: '单组上限', required: false },
-  { id: 'modelStageCredits', label: '每个模型阶段', required: true },
-  { id: 'imageStageCredits', label: '每个视图阶段', required: true },
-  { id: 'cloudStageCredits', label: '每个云图片阶段', required: false },
+  { id: 'maxCredits', required: true },
+  { id: 'maxScopeCredits', required: false },
+  { id: 'modelStageCredits', required: true },
+  { id: 'imageStageCredits', required: true },
+  { id: 'cloudStageCredits', required: false },
 ] as const;
 type BudgetDraft = {
   mode: 'limited' | 'unlimited';
@@ -53,13 +54,14 @@ function toBudget({ mode, values }: BudgetDraft): TripoBudget {
 }
 
 function Feedback({ notice }: { notice?: Notice }) {
+  const { t } = useTripoMessages();
   return notice ? (
     <p
       className="tripo-settings-feedback"
       data-tone={notice.kind}
       role={notice.kind === 'error' ? 'alert' : 'status'}
     >
-      {notice.text}
+      {t(notice.text, { defaultValue: notice.text })}
     </p>
   ) : null;
 }
@@ -69,6 +71,7 @@ export function TripoSettingsPage({
   invoke,
   onDirtyChange,
 }: AuraPluginPageProps) {
+  const { t } = useTripoMessages();
   const [snapshot, setSnapshot] = useState<TripoSettings>();
   const [regionDraft, setRegionDraft] =
     useState<ConnectionSettings['region']>();
@@ -190,7 +193,7 @@ export function TripoSettingsPage({
         setHasKeyDraft(false);
         setClearKey(false);
         if (keyInput.current) keyInput.current.value = '';
-        setConnectionNotice({ kind: 'success', text: '连接设置已保存。' });
+        setConnectionNotice({ kind: 'success', text: 'connectionSaved' });
       },
       setConnectionNotice,
     );
@@ -210,7 +213,7 @@ export function TripoSettingsPage({
         if (!signal.aborted)
           setConnectionNotice({
             kind: 'success',
-            text: '连接成功，已验证账户访问。',
+            text: 'connectionVerified',
           });
       },
       setConnectionNotice,
@@ -234,7 +237,7 @@ export function TripoSettingsPage({
         if (signal.aborted) return;
         setSnapshot({ ...snapshot, budget: saved });
         setBudgetDraft(undefined);
-        setBudgetNotice({ kind: 'success', text: '预算已保存。' });
+        setBudgetNotice({ kind: 'success', text: 'budgetSaved' });
       },
       setBudgetNotice,
     );
@@ -249,8 +252,8 @@ export function TripoSettingsPage({
       <div className="tripo-settings-content">
         <header className="tripo-settings-header">
           <div>
-            <h1>Tripo 设置</h1>
-            <p>管理 3D 生成服务的连接和付费额度。</p>
+            <h1>{t('title')}</h1>
+            <p>{t('subtitle')}</p>
           </div>
           <button
             className="tripo-settings-button"
@@ -258,25 +261,23 @@ export function TripoSettingsPage({
             disabled={busy}
             onClick={reloadSettings}
           >
-            重新读取
+            {t('reload')}
           </button>
         </header>
         <Feedback notice={loadError} />
-        {!snapshot && busy && <p role="status">正在读取 Tripo 设置…</p>}
+        {!snapshot && busy && <p role="status">{t('loading')}</p>}
         {snapshot && (
           <>
             {!snapshot.localConfiguration && (
-              <p className="tripo-settings-note">
-                请从本机 Aura 打开此页以修改设置和测试连接。
-              </p>
+              <p className="tripo-settings-note">{t('localOnly')}</p>
             )}
             <section
               className="tripo-settings-section"
               aria-labelledby="tripo-connection"
             >
               <div className="tripo-settings-section-title">
-                <h2 id="tripo-connection">服务连接</h2>
-                <p>地区应与 Tripo 账户和 Key 所属站点一致。</p>
+                <h2 id="tripo-connection">{t('connection')}</h2>
+                <p>{t('regionHint')}</p>
               </div>
               <form
                 className="tripo-settings-form"
@@ -285,7 +286,7 @@ export function TripoSettingsPage({
               >
                 <fieldset disabled={!editableConnection || busy}>
                   <label className="tripo-settings-field">
-                    <span>地区</span>
+                    <span>{t('region')}</span>
                     <select
                       value={region}
                       onChange={(event) => {
@@ -295,15 +296,17 @@ export function TripoSettingsPage({
                         setConnectionNotice(undefined);
                       }}
                     >
-                      <option value="global">海外站</option>
-                      <option value="china">国内站</option>
+                      <option value="global">{t('global')}</option>
+                      <option value="china">{t('china')}</option>
                     </select>
                   </label>
                   <label className="tripo-settings-field">
                     <span>
                       API Key{' '}
                       <small data-ready={snapshot.connection.configured}>
-                        {snapshot.connection.configured ? '已配置' : '未配置'}
+                        {snapshot.connection.configured
+                          ? t('configured')
+                          : t('notConfigured')}
                       </small>
                     </span>
                     <input
@@ -315,8 +318,8 @@ export function TripoSettingsPage({
                       disabled={clearKey}
                       placeholder={
                         snapshot.connection.configured
-                          ? '输入新 Key 以替换'
-                          : '输入 Tripo API Key'
+                          ? t('replaceKey')
+                          : t('enterKey')
                       }
                       onChange={(event) => {
                         setHasKeyDraft(Boolean(event.target.value.trim()));
@@ -337,14 +340,12 @@ export function TripoSettingsPage({
                             setConnectionNotice(undefined);
                           }}
                         />
-                        保存时移除已存的 Key
+                        {t('removeKey')}
                       </label>
                     )}
                 </fieldset>
                 {snapshot.connection.readOnly && (
-                  <p className="tripo-settings-note">
-                    Key 由运行环境提供，连接设置为只读。
-                  </p>
+                  <p className="tripo-settings-note">{t('environmentKey')}</p>
                 )}
                 <div className="tripo-settings-actions">
                   <button
@@ -352,7 +353,7 @@ export function TripoSettingsPage({
                     type="submit"
                     disabled={!editableConnection || busy || !connectionDirty}
                   >
-                    {working('connection') ? '正在保存…' : '保存连接'}
+                    {working('connection') ? t('saving') : t('saveConnection')}
                   </button>
                   <button
                     className="tripo-settings-button"
@@ -365,13 +366,11 @@ export function TripoSettingsPage({
                       busy
                     }
                   >
-                    {working('check') ? '正在测试…' : '测试连接'}
+                    {working('check') ? t('testing') : t('testConnection')}
                   </button>
                 </div>
                 {connectionDirty && (
-                  <p className="tripo-settings-note">
-                    保存连接设置后即可测试。
-                  </p>
+                  <p className="tripo-settings-note">{t('saveFirst')}</p>
                 )}
                 <Feedback notice={connectionNotice} />
               </form>
@@ -381,8 +380,8 @@ export function TripoSettingsPage({
               aria-labelledby="tripo-budget"
             >
               <div className="tripo-settings-section-title">
-                <h2 id="tripo-budget">付费预算</h2>
-                <p>以 Tripo 积分计量。每个付费阶段先预留额度，再提交任务。</p>
+                <h2 id="tripo-budget">{t('budget')}</h2>
+                <p>{t('budgetHint')}</p>
               </div>
               <form
                 className="tripo-settings-form"
@@ -393,12 +392,12 @@ export function TripoSettingsPage({
                   <>
                     {snapshot.budget.invalid && (
                       <p className="tripo-settings-note">
-                        当前预算配置无效。填写并保存新的额度即可修复。
+                        {t('invalidBudget')}
                       </p>
                     )}
                     <fieldset disabled={busy}>
                       <label className="tripo-settings-field">
-                        <span>预算模式</span>
+                        <span>{t('budgetMode')}</span>
                         <select
                           value={draft.mode}
                           onChange={(event) => {
@@ -409,17 +408,17 @@ export function TripoSettingsPage({
                             setBudgetNotice(undefined);
                           }}
                         >
-                          <option value="limited">设置额度上限</option>
-                          <option value="unlimited">不限额度，继续记账</option>
+                          <option value="limited">{t('limited')}</option>
+                          <option value="unlimited">{t('unlimited')}</option>
                         </select>
                       </label>
                       {draft.mode === 'limited' && (
                         <>
-                          {budgetFields.map(({ id, label, required }) => (
+                          {budgetFields.map(({ id, required }) => (
                             <label key={id} className="tripo-settings-field">
                               <span>
-                                {label}
-                                {!required && <small>选填</small>}
+                                {t(id)}
+                                {!required && <small>{t('optional')}</small>}
                               </span>
                               <input
                                 type="number"
@@ -428,7 +427,7 @@ export function TripoSettingsPage({
                                 max="1000000"
                                 step="any"
                                 required={required}
-                                placeholder="积分"
+                                placeholder={t('credits')}
                                 value={draft.values[id]}
                                 onChange={(event) => {
                                   setBudgetDraft({
@@ -448,8 +447,8 @@ export function TripoSettingsPage({
                     </fieldset>
                     <p className="tripo-settings-note">
                       {draft.mode === 'limited'
-                        ? '单组或云图片上限留空时，对应的付费请求会被拒绝。'
-                        : '不限额模式仍记录每个阶段，费用按 Tripo 实际用量结算。'}
+                        ? t('limitedHint')
+                        : t('unlimitedHint')}
                     </p>
                     <div className="tripo-settings-actions">
                       <button
@@ -457,13 +456,13 @@ export function TripoSettingsPage({
                         type="submit"
                         disabled={busy || !budgetDirty}
                       >
-                        {working('budget') ? '正在保存…' : '保存预算'}
+                        {working('budget') ? t('saving') : t('saveBudget')}
                       </button>
                     </div>
                     <Feedback notice={budgetNotice} />
                   </>
                 ) : (
-                  <p className="tripo-settings-note">预算管理仅供本机使用。</p>
+                  <p className="tripo-settings-note">{t('budgetLocalOnly')}</p>
                 )}
               </form>
             </section>

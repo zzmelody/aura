@@ -43,7 +43,8 @@
   gap: 2px;
   max-width: 185px;
   border-bottom: 2px solid transparent;
-  border-radius: 6px 6px 0 0;
+  border-radius: calc(6px * var(--radius-scale, 1))
+    calc(6px * var(--radius-scale, 1)) 0 0;
   color: var(--muted);
 }
 .coding-tool-tab.active {
@@ -134,7 +135,7 @@
   min-width: 0;
   padding: 5px 8px;
   border: 1px solid var(--workspace-divider);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   background: var(--background);
   color: var(--text);
   font-size: 12px;

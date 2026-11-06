@@ -3,6 +3,11 @@ import {
   SECRET_MASK_MODULE,
 } from "./features/coding/secret-mask.ts";
 import { Context, Service } from "@deepseek-ai/cordis";
+import {
+  pluginNamespace,
+  registerCatalogs,
+  type TranslationCatalogs,
+} from "@aura/i18n/runtime";
 import * as pluginUi from "@aura/plugin-ui";
 import {
   pluginOwnerContext,
@@ -153,6 +158,14 @@ function workbenchPages(
   return class WorkbenchPages extends Service implements AuraWorkbench {
     constructor(ctx: Context) {
       super(ctx, "auraWorkbench");
+    }
+
+    translations(catalogs: TranslationCatalogs) {
+      const namespace = pluginNamespace(pluginOwnerOf(this.ctx));
+      this.ctx.effect(
+        () => registerCatalogs(namespace, catalogs),
+        `plugin-translations:${namespace}`,
+      );
     }
 
     /** `this.ctx` is the calling plugin's context, so cleanup follows its fiber. */

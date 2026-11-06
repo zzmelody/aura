@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { Search, X } from "lucide-react";
 import type {
   AgentTeamView,
   ConversationSearchHit,
@@ -10,11 +11,15 @@ export function ConversationSearch({
   endpoint,
   projectId,
   open,
+  onClose,
 }: {
   endpoint: string;
   projectId: string;
   open: (id: string) => void;
+  onClose?(): void;
 }) {
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => input.current?.focus(), []);
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState<{ query: string }>();
   const [result, setResult] = useState<{
@@ -46,23 +51,68 @@ export function ConversationSearch({
   const current = result?.request === submitted ? result : undefined;
 
   return (
-    <section className="conversation-integrations" aria-label="会话全文搜索">
+    <section
+      className="conversation-integrations conversation-search"
+      aria-label="会话全文搜索"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && onClose) {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+    >
       <form
+        role="search"
+        className="conversation-search-form"
         onSubmit={(event) => {
           event.preventDefault();
           if (query.trim()) setSubmitted({ query: query.trim() });
         }}
       >
-        <input
-          aria-label="会话正文关键词"
-          placeholder="搜索当前工作空间的会话正文"
-          maxLength={256}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <button type="submit" className="dsh-button" disabled={!query.trim()}>
+        <div className="conversation-search-field">
+          <Search size={15} aria-hidden="true" />
+          <input
+            ref={input}
+            type="search"
+            aria-label="会话正文关键词"
+            placeholder="搜索当前工作空间的会话正文"
+            maxLength={256}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {query ? (
+            <button
+              type="button"
+              className="conversation-search-clear"
+              aria-label="清空搜索"
+              onClick={() => {
+                setQuery("");
+                setSubmitted(undefined);
+                input.current?.focus();
+              }}
+            >
+              <X size={13} />
+            </button>
+          ) : null}
+        </div>
+        <button
+          type="submit"
+          className="conversation-search-submit"
+          disabled={!query.trim()}
+        >
           搜索
         </button>
+        {onClose ? (
+          <button
+            type="button"
+            className="icon-control conversation-search-close"
+            aria-label="关闭会话搜索"
+            onClick={onClose}
+          >
+            <X size={15} />
+          </button>
+        ) : null}
       </form>
       {submitted && !current ? <p role="status">正在搜索…</p> : null}
       {current?.error ? <p role="alert">{current.error}</p> : null}

@@ -1,0 +1,7 @@
+{
+  "title": "Interface language",
+  "hint": "Saved on this device. Changes apply immediately.",
+  "system": "Follow system",
+  "saveError": "Language changed, but could not be saved. It may reset when you reopen Aura.",
+  "changeError": "Could not change language. Try again."
+}

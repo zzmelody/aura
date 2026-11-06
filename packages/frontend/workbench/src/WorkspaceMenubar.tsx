@@ -1,5 +1,6 @@
 import React from "react";
 import { ArrowLeft, ArrowRight, PanelLeft } from "lucide-react";
+import { useWorkbenchMessages } from "./i18n.ts";
 
 export function WorkspaceMenubar({
   sidebarVisible,
@@ -16,13 +17,14 @@ export function WorkspaceMenubar({
   forward(): void;
   toggleSidebar(): void;
 }) {
+  const { t } = useWorkbenchMessages("navigation");
   return (
-    <header className="workspace-menubar" aria-label="应用导航栏">
+    <header className="workspace-menubar" aria-label={t("navigationBar")}>
       <div className="window-navigation">
         <button
           className="icon-control"
-          aria-label="后退"
-          title="后退"
+          aria-label={t("back")}
+          title={t("back")}
           disabled={!canBack}
           onClick={back}
         >
@@ -30,8 +32,8 @@ export function WorkspaceMenubar({
         </button>
         <button
           className="icon-control"
-          aria-label="前进"
-          title="前进"
+          aria-label={t("forward")}
+          title={t("forward")}
           disabled={!canForward}
           onClick={forward}
         >
@@ -39,8 +41,9 @@ export function WorkspaceMenubar({
         </button>
         <button
           className="icon-control"
-          aria-label={sidebarVisible ? "收起侧栏" : "展开会话列表"}
-          title="切换侧栏"
+          data-sidebar-toggle=""
+          aria-label={t(sidebarVisible ? "hideSidebar" : "showSidebar")}
+          title={t("toggleSidebar")}
           aria-expanded={sidebarVisible}
           onClick={(event) => {
             if (sidebarVisible)

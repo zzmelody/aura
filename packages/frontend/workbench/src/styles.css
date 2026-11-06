@@ -425,7 +425,8 @@ body {
     .workflow-path-input,
     .automation-search,
     .session-search,
-    .composer-menu-search
+    .composer-menu-search,
+    .conversation-search-field
   )
   :is(input, textarea):focus:enabled {
   border-color: transparent;
@@ -441,7 +442,8 @@ body {
     .workflow-path-input,
     .automation-search,
     .session-search,
-    .composer-menu-search
+    .composer-menu-search,
+    .conversation-search-field
   ):has([aria-invalid="true"]):focus-within {
   border-color: var(--danger);
   outline: 1px solid var(--danger);
@@ -541,13 +543,13 @@ body {
 }
 /* Quiet, rounded scrollbars with no visible track. Keep a faint thumb at
  * rest so overflow is discoverable, then increase contrast on interaction. */
-.workbench :is(.session-list, .chat-transcript, .studio-scroll, .flow-code) {
+.workbench :is(.session-list, .chat-transcript, .studio-scroll) {
   --scrollbar-thumb: color-mix(in srgb, var(--text) 18%, transparent);
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 .workbench
-  :is(.session-list, .chat-transcript, .studio-scroll, .flow-code):is(
+  :is(.session-list, .chat-transcript, .studio-scroll):is(
     :hover,
     :focus-within
   ) {
@@ -556,17 +558,12 @@ body {
 /* Chromium/Electron and Safari support rounded, inset thumbs. Reset the
  * standard properties here: non-auto values override these pseudo-elements. */
 @supports selector(::-webkit-scrollbar) {
-  .workbench :is(.session-list, .chat-transcript, .studio-scroll, .flow-code) {
+  .workbench :is(.session-list, .chat-transcript, .studio-scroll) {
     scrollbar-width: auto;
     scrollbar-color: auto;
   }
   .workbench
-    :is(
-      .session-list,
-      .chat-transcript,
-      .studio-scroll,
-      .flow-code
-    )::-webkit-scrollbar {
+    :is(.session-list, .chat-transcript, .studio-scroll)::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
@@ -574,8 +571,7 @@ body {
     :is(
       .session-list,
       .chat-transcript,
-      .studio-scroll,
-      .flow-code
+      .studio-scroll
     )::-webkit-scrollbar-track {
     background: transparent;
   }
@@ -583,8 +579,7 @@ body {
     :is(
       .session-list,
       .chat-transcript,
-      .studio-scroll,
-      .flow-code
+      .studio-scroll
     )::-webkit-scrollbar-thumb {
     min-height: 32px;
     border: 3px solid transparent;
@@ -596,8 +591,7 @@ body {
     :is(
       .session-list,
       .chat-transcript,
-      .studio-scroll,
-      .flow-code
+      .studio-scroll
     )::-webkit-scrollbar-thumb:active {
     background-color: color-mix(in srgb, var(--text) 46%, transparent);
   }
@@ -605,8 +599,7 @@ body {
     :is(
       .session-list,
       .chat-transcript,
-      .studio-scroll,
-      .flow-code
+      .studio-scroll
     )::-webkit-scrollbar-corner {
     background: transparent;
   }
@@ -637,7 +630,7 @@ body {
   justify-content: center;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   color: var(--secondary);
   background: transparent;
 }
@@ -666,7 +659,7 @@ body {
   gap: 12px;
   min-height: 38px;
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   color: var(--text);
   background: transparent;
   text-align: left;
@@ -702,7 +695,7 @@ body {
   border: 0;
   background: transparent;
   color: var(--muted);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale, 1));
   font-size: 11px !important;
   padding: 3px 5px;
 }
@@ -727,7 +720,7 @@ body {
   padding: 7px 12px 7px 31px;
   text-align: left;
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: transparent;
   color: var(--secondary);
   margin: 1px 0;
@@ -802,7 +795,7 @@ body {
   min-height: 29px;
   padding: 4px 8px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   background: transparent;
   color: var(--secondary);
   white-space: nowrap;
@@ -825,29 +818,6 @@ body {
   flex: 1;
   min-width: 0;
   display: flex;
-}
-.studio-tabs {
-  display: flex;
-  flex-shrink: 0;
-  align-items: stretch;
-  min-height: 39px;
-  border-bottom: 1px solid var(--border);
-  padding: 0 12px;
-}
-.studio-tabs > button {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  background: transparent;
-  color: var(--muted);
-  padding: 0 12px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  font-size: 11px;
-}
-.studio-tabs > button[aria-selected="true"] {
-  color: var(--text);
-  border-bottom-color: var(--accent);
 }
 
 .flow-content {
@@ -914,7 +884,7 @@ body {
   list-style: none;
   cursor: pointer;
   color: var(--muted);
-  border-radius: 5px;
+  border-radius: calc(5px * var(--radius-scale, 1));
 }
 .flow-more > summary::-webkit-details-marker {
   display: none;
@@ -936,7 +906,7 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
 }
 .flow-more-menu button {
   display: flex;
@@ -945,7 +915,7 @@ body {
   padding: 8px;
   text-align: left;
   border: 0;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale, 1));
   background: transparent;
   color: var(--secondary);
   font-size: 11px;
@@ -974,12 +944,6 @@ body {
   color: var(--muted);
   font-size: 10px;
 }
-.editor-panel {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
 .badge {
   display: inline-flex;
   align-items: center;
@@ -988,7 +952,7 @@ body {
   font-size: 9px;
   padding: 2px 6px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale, 1));
   white-space: nowrap;
 }
 .eyebrow {
@@ -1005,60 +969,6 @@ body {
   background: var(--soft);
   font-size: 11px;
 }
-.code-editor {
-  display: flex;
-  flex: 1;
-  min-height: 130px;
-  overflow: hidden;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-}
-.code-gutter {
-  flex: 0 0 48px;
-  padding: 17px 12px 17px 0;
-  overflow: hidden;
-  text-align: right;
-  color: var(--muted);
-  user-select: none;
-  opacity: 0.6;
-  font:
-    12px/23px var(--font-mono),
-    monospace;
-}
-.flow-code {
-  display: block;
-  flex: 1;
-  min-width: 0;
-  width: 100%;
-  resize: none;
-  border: 0;
-  border-radius: 0;
-  outline: none;
-  color: var(--text);
-  background: transparent;
-  padding: 17px 18px 32px 4px;
-  white-space: pre;
-  tab-size: 2;
-  font:
-    12px/23px var(--font-mono),
-    "Noto Sans SC",
-    monospace;
-  overflow: auto;
-}
-.editor-status {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 16px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 9px;
-}
-.editor-status > span {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
 .graph-panel {
   display: flex;
   flex: 1;
@@ -1067,13 +977,6 @@ body {
   min-height: 0;
   container-name: flow-graph;
   container-type: inline-size;
-}
-.graph-workspace {
-  display: flex;
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
 }
 .graph-canvas-shell {
   flex: 1;
@@ -1119,328 +1022,6 @@ body {
     monospace !important;
   pointer-events: none;
 }
-.graph-scroll {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-.graph-scale {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-}
-.graph-canvas {
-  position: relative;
-  overflow: visible;
-  transform-origin: 0 0;
-}
-.graph-edges {
-  position: absolute;
-  inset: 0;
-  overflow: visible;
-  pointer-events: none;
-}
-.graph-edges g > path {
-  fill: none;
-  stroke: color-mix(in srgb, var(--muted) 62%, transparent);
-  stroke-width: 1.35;
-  transition:
-    stroke 140ms ease,
-    stroke-width 140ms ease;
-}
-.graph-edges g.active > path {
-  stroke: var(--accent);
-  stroke-width: 1.8;
-}
-.graph-edges g.back > path {
-  stroke-dasharray: 4 4;
-}
-.graph-edges marker path {
-  fill: var(--muted);
-}
-.graph-edges marker:last-child path {
-  fill: var(--accent);
-}
-.graph-edges text {
-  fill: var(--muted);
-  paint-order: stroke;
-  stroke: var(--background);
-  stroke-width: 5px;
-  stroke-linejoin: round;
-  font:
-    9px var(--font-text),
-    "Noto Sans SC",
-    sans-serif;
-}
-.graph-edges g.active text {
-  fill: var(--accent);
-}
-.parallel-label {
-  position: absolute;
-  top: 19px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--muted);
-  font-size: 9px;
-}
-.flow-node {
-  --node-color: var(--muted);
-  position: absolute;
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 14px;
-  align-items: center;
-  gap: 8px;
-  width: 184px;
-  height: 86px;
-  padding: 11px 10px;
-  color: var(--secondary);
-  text-align: left;
-  background: color-mix(in srgb, var(--surface) 96%, var(--node-color));
-  border: 1px solid var(--border);
-  border-left: 2px solid var(--node-color);
-  border-radius: 9px;
-  box-shadow: 0 7px 18px rgb(0 0 0 / 7%);
-  transition:
-    border-color 140ms ease,
-    box-shadow 140ms ease,
-    transform 140ms ease;
-}
-.flow-node:hover {
-  border-color: color-mix(in srgb, var(--node-color) 68%, var(--border));
-  transform: translateY(-1px);
-}
-.flow-node.selected {
-  border-color: var(--node-color);
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--node-color) 18%, transparent),
-    0 8px 22px rgb(0 0 0 / 10%);
-}
-.node-input {
-  --node-color: var(--success);
-}
-.node-agent {
-  --node-color: var(--accent);
-}
-.node-tool {
-  --node-color: #5598b5;
-}
-.node-flow {
-  --node-color: #8b72d8;
-}
-.node-condition {
-  --node-color: #c88642;
-}
-.node-loop {
-  --node-color: #5ca77d;
-}
-.node-output {
-  --node-color: var(--secondary);
-}
-.node-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
-  color: var(--node-color);
-  background: color-mix(in srgb, var(--node-color) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--node-color) 25%, transparent);
-  border-radius: 7px;
-}
-.node-copy {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}
-.node-copy strong {
-  overflow: hidden;
-  font-size: 11px;
-  font-weight: 550;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.node-copy small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.node-control {
-  position: absolute;
-  right: 8px;
-  bottom: 5px;
-  max-width: 158px;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 8px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.node-port {
-  position: absolute;
-  top: calc(50% - 4px);
-  width: 8px;
-  height: 8px;
-  background: var(--surface);
-  border: 1px solid var(--node-color);
-  border-radius: 50%;
-}
-.node-port.input {
-  left: -5px;
-}
-.node-port.output {
-  right: -5px;
-}
-.flow-node.node-input .node-port.input,
-.flow-node.node-output .node-port.output {
-  display: none;
-}
-.node-inspector {
-  position: absolute;
-  z-index: 5;
-  top: 48px;
-  right: 10px;
-  width: 230px;
-  max-height: calc(100% - 70px);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
-  min-width: 0;
-  overflow: auto;
-  padding: 14px;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-}
-.inspector-heading {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding-bottom: 13px;
-  border-bottom: 1px solid var(--border);
-}
-.inspector-heading > div {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-.inspector-heading > .icon-control {
-  margin-left: auto;
-  align-self: flex-start;
-}
-.inspector-heading small {
-  color: var(--muted);
-  font:
-    8px var(--font-mono),
-    monospace;
-  letter-spacing: 0.8px;
-}
-.inspector-heading strong {
-  overflow-wrap: anywhere;
-  font-size: 11px;
-  font-weight: 550;
-}
-.inspector-fields {
-  display: grid;
-  gap: 11px;
-  margin: 13px 0;
-}
-.inspector-fields > div {
-  display: grid;
-  gap: 3px;
-}
-.inspector-fields dt {
-  color: var(--muted);
-  font-size: 8px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-}
-.inspector-fields dd {
-  margin: 0;
-  color: var(--secondary);
-  font-size: 10px;
-  line-height: 1.65;
-  overflow-wrap: anywhere;
-}
-.inspector-prompt dd {
-  max-height: 150px;
-  overflow: auto;
-  padding: 8px;
-  background: var(--background);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font:
-    9px/1.65 var(--font-mono),
-    "Noto Sans SC",
-    monospace;
-}
-.inspector-code-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--accent);
-  font-size: 10px !important;
-}
-.graph-warnings {
-  display: grid;
-  gap: 7px;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-.graph-warnings strong {
-  color: var(--secondary);
-  font-size: 9px;
-}
-.graph-warnings p {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 9px;
-  line-height: 1.55;
-}
-.graph-error {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: 560px;
-  margin: auto;
-  padding: 14px;
-  color: var(--secondary);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 9px;
-}
-.graph-error > svg {
-  color: var(--danger);
-  flex-shrink: 0;
-}
-.graph-error > div {
-  min-width: 0;
-}
-.graph-error strong {
-  font-size: 11px;
-}
-.graph-error p {
-  margin-top: 3px;
-  color: var(--muted);
-  font:
-    9px/1.55 var(--font-mono),
-    monospace;
-  overflow-wrap: anywhere;
-}
-.graph-error > button {
-  flex-shrink: 0;
-  margin-left: auto;
-}
 .assistant-area {
   display: flex;
   flex-direction: column;
@@ -1471,11 +1052,68 @@ body {
   border-left: 1px solid var(--border);
 }
 .workspace-deck[data-workflow-layout="stacked"] > .assistant-area {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: calc((1 - var(--workspace-sidebar-progress)) * 100%);
+  position: relative;
+  flex: 1 1 52%;
   width: 100%;
+  border-top: 1px solid var(--border);
   background: var(--background);
+}
+.workspace-deck[data-workflow-layout="stacked"] {
+  flex-direction: column;
+}
+.workspace-deck[data-workflow-layout="stacked"] > .flow-area {
+  flex: 1 1 48%;
+  min-height: 0;
+}
+.flow-content-heading {
+  border-bottom: 1px solid var(--border);
+}
+.flow-svg-shell {
+  touch-action: none;
+  cursor: grab;
+}
+.flow-svg-shell:active {
+  cursor: grabbing;
+}
+.flow-svg-position {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center;
+  pointer-events: none;
+  user-select: none;
+}
+.flow-svg-position > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.flow-analysis-empty {
+  gap: 14px;
+}
+.flow-analysis-empty strong {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+}
+.flow-analysis-empty p {
+  line-height: 1.8;
+}
+.flow-analysis-symbol {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border: 1px solid var(--border);
+  border-radius: calc(16px * var(--radius-scale, 1));
+  color: var(--accent);
+  background: var(--surface);
+}
+@media (pointer: coarse) {
+  .flow-svg-shell .graph-tools .icon-control {
+    width: 40px;
+    height: 40px;
+  }
 }
 .workspace-deck[data-assistant-closed] > .assistant-area,
 .workspace-deck[data-workflow-layout="stacked"] > .flow-area[inert] {
@@ -1577,7 +1215,9 @@ body {
   padding: 9px 12px;
   border: 1px solid var(--border);
   background: var(--elevated);
-  border-radius: 10px 10px 3px 10px;
+  border-radius: calc(10px * var(--radius-scale, 1))
+    calc(10px * var(--radius-scale, 1)) calc(3px * var(--radius-scale, 1))
+    calc(10px * var(--radius-scale, 1));
 }
 .message-stopped {
   display: block;
@@ -1608,7 +1248,7 @@ body {
 .chat-composer {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale, 1));
   padding: 8px;
 }
 .chat-composer:focus-within {
@@ -1641,7 +1281,7 @@ body {
   max-width: 145px;
   background: var(--elevated);
   border: 0;
-  border-radius: 5px;
+  border-radius: calc(5px * var(--radius-scale, 1));
   padding: 4px 7px;
   color: var(--secondary);
   font-size: 10px;
@@ -1653,7 +1293,7 @@ body {
   width: 29px;
   height: 29px;
   border: 0;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
   background: var(--accent);
   color: var(--background) !important;
 }
@@ -1661,7 +1301,7 @@ body {
 .composer-stop {
   width: 29px;
   height: 29px;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
   background: var(--elevated);
 }
 .composer-footnote {
@@ -1701,7 +1341,7 @@ body {
 .workspace-notice {
   margin: 8px 12px;
   border: 1px solid var(--danger);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   color: var(--danger);
   padding: 8px 11px;
   font-size: 11px;
@@ -1715,7 +1355,7 @@ body {
   border: 0;
   background: var(--primary);
   color: var(--primaryText) !important;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   font-size: 12px !important;
 }
 .error {
@@ -1755,9 +1395,6 @@ body {
   .graph-caption > span:last-child {
     display: none;
   }
-  .node-inspector {
-    width: min(230px, calc(100% - 20px));
-  }
 }
 @container flow-studio (max-width: 700px) {
   .flow-content-heading {
@@ -1781,13 +1418,6 @@ body {
   .header-actions {
     gap: 4px;
   }
-  .studio-tabs {
-    padding: 0 6px;
-  }
-  .code-gutter {
-    flex-basis: 35px;
-    padding-right: 8px;
-  }
   .standalone .chat-transcript {
     padding: 12px 16px;
   }
@@ -1802,10 +1432,6 @@ body {
   .header-actions .tool-button > span {
     display: none;
   }
-  .editor-status {
-    font-size: 8px;
-    padding: 5px 8px;
-  }
   .composer-footnote {
     font-size: 8px;
   }
@@ -1818,9 +1444,6 @@ body {
   .tool-button,
   .primary-button,
   .send-button,
-  .studio-tabs > button {
-    min-height: 40px;
-  }
   .icon-control,
   .send-button {
     min-width: 40px;
@@ -1898,7 +1521,7 @@ body {
   max-width: 100%;
   background: var(--input);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   padding: 0 12px;
   height: 37px;
 }
@@ -1928,7 +1551,7 @@ body {
 .workflow-card {
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--surface);
   overflow: hidden;
   transition: border-color 160ms ease;
@@ -1965,7 +1588,7 @@ body {
   height: 44px;
   border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
   background: var(--soft);
-  border-radius: 11px;
+  border-radius: calc(11px * var(--radius-scale, 1));
 }
 .workflow-card-copy {
   flex: 1;
@@ -2002,7 +1625,7 @@ body {
 .workflow-card-actions .icon-control {
   width: 34px;
   height: 34px;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
 }
 .workflow-card-actions .workflow-run-icon {
   background: var(--soft);
@@ -2047,10 +1670,6 @@ body {
 .workflow-card-preview .graph-caption {
   display: none;
 }
-.workflow-card-preview .node-inspector {
-  width: 240px;
-  padding: 12px;
-}
 .workflow-draft-link {
   display: flex;
   align-items: center;
@@ -2085,17 +1704,8 @@ body {
   touch-action: none;
   cursor: grab;
 }
-.graph-canvas-shell:active,
-.flow-node:active {
+.graph-canvas-shell:active {
   cursor: grabbing;
-}
-.flow-node {
-  touch-action: none;
-  cursor: grab;
-  user-select: none;
-}
-.graph-scroll {
-  overflow: hidden;
 }
 .session-workflow-icon {
   color: var(--muted);
@@ -2245,7 +1855,7 @@ body {
   background: var(--input);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   padding: 0 11px;
   line-height: 1.5;
   font-size: 12px;
@@ -2283,7 +1893,7 @@ body {
   overflow: hidden;
   background: var(--input);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   transition:
     border-color 120ms ease,
     box-shadow 120ms ease;
@@ -2312,7 +1922,7 @@ body {
   color: var(--secondary);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   font-size: 11px;
   cursor: pointer;
 }
@@ -2345,7 +1955,7 @@ body {
   min-height: 34px;
   padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--input);
   color: var(--secondary);
   font-size: 11px;
@@ -2549,7 +2159,7 @@ body {
   padding: 12px;
   background: var(--input);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   max-height: 360px;
   overflow: auto;
   font-size: 11px;
@@ -2600,7 +2210,7 @@ body {
   justify-content: center;
   gap: 6px;
   padding: 5px 8px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   background: color-mix(in srgb, currentColor 9%, transparent);
   white-space: nowrap;
 }
@@ -2611,7 +2221,7 @@ body {
   padding: 16px;
   margin: 12px 0;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale, 1));
   background: var(--surface);
 }
 .workflow-human-step h4 {
@@ -2687,7 +2297,7 @@ body {
   display: flex;
   gap: 9px;
   padding: 12px;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 7%, transparent);
   margin-bottom: 12px;
@@ -2742,7 +2352,7 @@ body {
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   padding: 12px;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
   border: 1px solid var(--border);
   background: var(--surface);
 }
@@ -2757,7 +2367,7 @@ body {
 .workflow-value-boolean {
   display: inline-flex;
   padding: 1px 7px;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale, 1));
   background: var(--surface);
   font-size: 12px;
   color: var(--secondary);
@@ -2853,7 +2463,7 @@ body {
   background: var(--input);
   padding: 14px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
   overflow: auto;
   white-space: pre;
   font-size: 11px;
@@ -2864,7 +2474,7 @@ body {
   font-family: var(--mono);
   font-size: 0.9em;
   background: var(--surface);
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale, 1));
   padding: 2px 4px;
 }
 .workflow-rich-text pre code {
@@ -2879,7 +2489,7 @@ body {
 .workflow-rich-text img {
   max-width: 100%;
   height: auto;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
 }
 .workflow-rich-text .contains-task-list {
   list-style: none;
@@ -2894,7 +2504,7 @@ body {
   max-width: 100%;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
   margin: 12px 0;
 }
 .workflow-table-scroll table {
@@ -2941,7 +2551,7 @@ body {
 .workflow-turn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 8px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
 }
 .workflow-message {
   min-width: 0;
@@ -2956,7 +2566,9 @@ body {
   max-width: min(76%, 620px);
   padding: 11px 14px;
   border: 1px solid var(--border);
-  border-radius: 12px 12px 3px 12px;
+  border-radius: calc(12px * var(--radius-scale, 1))
+    calc(12px * var(--radius-scale, 1)) calc(3px * var(--radius-scale, 1))
+    calc(12px * var(--radius-scale, 1));
   background: var(--elevated);
   font-size: 13px;
   line-height: 1.75;
@@ -3079,7 +2691,7 @@ body {
   width: 100%;
   padding: 5px 4px 5px 0;
   border: 0;
-  border-radius: 5px;
+  border-radius: calc(5px * var(--radius-scale, 1));
   background: transparent;
   color: var(--secondary);
   text-align: left;
@@ -3132,14 +2744,14 @@ body {
   margin: 5px 0 12px 26px;
   padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: color-mix(in srgb, var(--surface) 72%, transparent);
 }
 .workflow-child-run {
   margin-top: 12px;
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
-  border-radius: 9px;
+  border-radius: calc(9px * var(--radius-scale, 1));
   background: color-mix(in srgb, var(--accent) 4%, var(--background));
 }
 .workflow-child-run > header {
@@ -3170,7 +2782,7 @@ body {
   height: 28px;
   color: var(--accent);
   background: var(--soft);
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
 }
 .workflow-child-run .workflow-run-controls {
   margin: 0 0 8px 37px;
@@ -3251,7 +2863,9 @@ body {
   color: var(--text);
   background: color-mix(in srgb, var(--surface) 92%, var(--background));
   border: 1px solid var(--border);
-  border-radius: 12px 12px 4px 12px;
+  border-radius: calc(12px * var(--radius-scale, 1))
+    calc(12px * var(--radius-scale, 1)) calc(4px * var(--radius-scale, 1))
+    calc(12px * var(--radius-scale, 1));
   box-shadow: 0 10px 28px rgb(0 0 0 / 6%);
   scroll-margin-block: 20px;
 }
@@ -3374,7 +2988,7 @@ body {
   width: 100%;
   padding: 8px 12px;
   border: 0;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale, 1));
   background: none;
   color: var(--secondary);
   text-align: left;
@@ -3445,7 +3059,7 @@ body {
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--surface);
   color: var(--text);
   text-align: left;
@@ -3477,7 +3091,7 @@ body {
   bottom: 9px;
   left: 9px;
   padding: 3px 6px;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale, 1));
   background: var(--surface);
   color: var(--secondary);
   font:
@@ -3532,7 +3146,7 @@ body {
   max-height: none;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: calc(16px * var(--radius-scale, 1));
   overflow: hidden;
   color: var(--text);
   background: var(--surface);
@@ -3672,7 +3286,7 @@ body {
   gap: 8px;
   padding: 5px 8px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale, 1));
   background: var(--surface);
   cursor: default;
   box-shadow: 0 4px 20px #0001;

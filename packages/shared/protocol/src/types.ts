@@ -791,8 +791,13 @@ export interface CodingSubagent {
   id: string;
   label: string;
   role: string;
-  status: "running" | "complete" | "stopped" | "error";
+  status: "running" | "complete" | "stopped" | "error" | "unknown";
   result: string;
+  durationMs?: number;
+  /** Safe execution failure, independent of whether the record was readable. */
+  executionError?: string;
+  /** A read failure does not establish the execution outcome. */
+  recordError?: string;
 }
 
 export type CodingCapabilityActivity =

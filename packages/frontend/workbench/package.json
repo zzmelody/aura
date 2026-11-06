@@ -11,14 +11,14 @@
     ".": "./src/App.tsx",
     "./file-picker": "./src/file-picker.ts",
     "./plugin": "./src/plugin-api.ts",
-    "./transport": "./src/plugin-transport.ts",
-    "./flow-graph": "./src/flowGraph.ts"
+    "./transport": "./src/plugin-transport.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.ts"
   },
   "dependencies": {
+    "@aura/i18n": "workspace:*",
     "@aura/core": "workspace:*",
     "@aura/demo": "workspace:*",
     "@aura/plugin-ui": "workspace:*",
@@ -27,7 +27,6 @@
     "@deepseek-ai/cordis": "4.0.5",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
-    "acorn": "8.18.0",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1"
   },

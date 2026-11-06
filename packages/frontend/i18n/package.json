@@ -1,0 +1,30 @@
+{
+  "name": "@aura/i18n",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "aura": {
+    "kind": "library",
+    "layer": "frontend"
+  },
+  "exports": {
+    ".": "./src/react.ts",
+    "./runtime": "./src/runtime.ts",
+    "./catalogs": "./src/catalogs.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "dependencies": {
+    "i18next": "26.7.2"
+  },
+  "peerDependencies": {
+    "react": "19.2.3",
+    "react-i18next": "17.1.13"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~5.9.2"
+  }
+}

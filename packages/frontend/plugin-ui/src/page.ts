@@ -1,6 +1,15 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { ReactNode } from "react";
 import type { JsonValue } from "@aura/protocol/types";
+import { useMessages } from "@aura/i18n";
+import { pluginNamespace, type TranslationCatalogs } from "@aura/i18n/runtime";
+
+export type { TranslationCatalogs } from "@aura/i18n/runtime";
+
+/** Uses the host's language and runtime; do not bundle a second i18next. */
+export function usePluginTranslation(pluginId: string) {
+  return useMessages(pluginNamespace(pluginId));
+}
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -35,7 +44,10 @@ export interface AuraPluginPageDefinition {
   id: string;
   /** Title shown in navigation and the document head. */
   title: string;
+  /** Optional key in this plugin's catalog; title remains the legacy fallback. */
+  titleKey?: string;
   description?: string;
+  descriptionKey?: string;
   /** Lucide icon name; the workbench falls back to a generic icon. */
   icon?: string;
   render(props: AuraPluginPageProps): ReactNode;
@@ -77,6 +89,8 @@ export interface AuraPluginResultDefinition {
  * fiber and are removed when the plugin unloads.
  */
 export interface AuraWorkbench {
+  /** Registers this plugin's catalogs, owned and disposed by its fiber. */
+  translations(catalogs: TranslationCatalogs): void;
   page(definition: AuraPluginPageDefinition): void;
   result(definition: AuraPluginResultDefinition): void;
 }
@@ -107,6 +121,11 @@ export function validatePageDefinition(
     !/^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/u.test(page.id) ||
     typeof page.title !== "string" ||
     !page.title.trim() ||
+    [page.titleKey, page.descriptionKey].some(
+      (key) =>
+        key !== undefined &&
+        (typeof key !== "string" || !key.trim() || key.length > 200),
+    ) ||
     typeof page.render !== "function"
   )
     throw new Error(
@@ -115,7 +134,9 @@ export function validatePageDefinition(
   return {
     id: page.id,
     title: page.title.trim(),
+    ...(page.titleKey ? { titleKey: page.titleKey } : {}),
     ...(page.description ? { description: page.description } : {}),
+    ...(page.descriptionKey ? { descriptionKey: page.descriptionKey } : {}),
     ...(page.icon ? { icon: page.icon } : {}),
     render: page.render,
   };

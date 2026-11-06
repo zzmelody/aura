@@ -3,7 +3,7 @@
   padding-inline: 32px;
 }
 .standalone .chat-composer {
-  border-radius: 16px;
+  border-radius: calc(16px * var(--radius-scale, 1));
   padding: 10px 10px 8px;
   background: var(--input);
 }
@@ -15,7 +15,9 @@
   max-width: min(600px, 86%);
   border: 0;
   background: var(--user);
-  border-radius: 14px 14px 4px 14px;
+  border-radius: calc(14px * var(--radius-scale, 1))
+    calc(14px * var(--radius-scale, 1)) calc(4px * var(--radius-scale, 1))
+    calc(14px * var(--radius-scale, 1));
   padding: 10px 14px;
 }
 .chat-home {
@@ -113,7 +115,7 @@
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale, 1));
   background: var(--elevated);
 }
 .composer-attachment.failed {
@@ -195,7 +197,7 @@
   display: block;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--elevated);
 }
 .message-images .image-thumbnail {

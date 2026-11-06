@@ -1,0 +1,7 @@
+{
+  "title": "Langue de l’interface",
+  "hint": "Enregistrée sur cet appareil. Le changement est immédiat.",
+  "system": "Suivre le système",
+  "saveError": "La langue a changé, mais n’a pas pu être enregistrée. Elle peut être réinitialisée au prochain démarrage.",
+  "changeError": "Impossible de changer de langue. Réessayez."
+}

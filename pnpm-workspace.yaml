@@ -19,3 +19,7 @@ allowBuilds:
   pnpm: true
   protobufjs: true
   sharp: true
+
+minimumReleaseAgeExclude:
+  - i18next@26.7.2
+  - react-i18next@17.1.13

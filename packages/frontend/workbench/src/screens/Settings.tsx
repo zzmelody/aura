@@ -16,7 +16,6 @@ import {
   Wifi,
 } from "lucide-react";
 import { useTheme } from "@aura/ui/components";
-import { palettes } from "@aura/ui/theme";
 import { validateEndpoint } from "@aura/core";
 import type { ThemeMode, Workspace } from "@aura/core/types";
 import type { WorkspaceController } from "../useWorkspace";
@@ -29,52 +28,64 @@ import {
 } from "./IntegrationSettings.tsx";
 import { PluginList } from "./Plugins.tsx";
 import { ModelServiceSettings } from "./ModelServiceSettings.tsx";
+import { AppearanceSettings } from "./AppearanceSettings.tsx";
+import { LanguageSettings } from "./LanguageSettings.tsx";
+import { useWorkbenchMessages, type WorkbenchMessageKey } from "../i18n.ts";
+import type { AppearanceController } from "../useAppearance.ts";
+import {
+  appearancePalette,
+  type AppearancePreferences,
+} from "../appearance.ts";
 import "./settings.css";
 
 const sections = [
-  { id: "appearance", label: "外观", icon: Palette },
-  { id: "models", label: "模型与账号", icon: Sparkles },
-  { id: "connection", label: "连接", icon: Wifi },
-  { id: "features", label: "功能开关", icon: Radio },
-  { id: "plugins", label: "插件", icon: PlugZap },
-  { id: "records", label: "会话记录", icon: Clock3 },
-  { id: "about", label: "关于", icon: Info },
+  { id: "appearance", icon: Palette },
+  { id: "models", icon: Sparkles },
+  { id: "connection", icon: Wifi },
+  { id: "features", icon: Radio },
+  { id: "plugins", icon: PlugZap },
+  { id: "records", icon: Clock3 },
+  { id: "about", icon: Info },
 ] as const;
-type SectionId = (typeof sections)[number]["id"];
+export type SettingsSectionId = (typeof sections)[number]["id"];
 
 const themes: Array<{
   id: ThemeMode;
-  title: string;
-  hint: string;
   icon: typeof Moon;
 }> = [
-  { id: "dark", title: "夜航", hint: "深色", icon: Moon },
-  { id: "light", title: "晨雾", hint: "浅色", icon: Sun },
-  { id: "system", title: "跟随系统", hint: "自动切换", icon: Monitor },
+  { id: "dark", icon: Moon },
+  { id: "light", icon: Sun },
+  { id: "system", icon: Monitor },
 ];
 
 const providers: Array<{
   id: Workspace["provider"];
-  title: string;
-  hint: string;
+  title: WorkbenchMessageKey<"settings">;
+  hint: WorkbenchMessageKey<"settings">;
 }> = [
-  { id: "offline", title: "本地演示", hint: "无需联网，规则生成回复" },
-  { id: "codex", title: "Codex 订阅", hint: "真实模型，需要登录 Codex" },
+  { id: "offline", title: "offline", hint: "offlineHint" },
+  { id: "codex", title: "codex", hint: "codexHint" },
   {
     id: "lumina",
-    title: "Lumina",
-    hint: "Lumina 网关，多家模型供应商，需要 API Key",
+    title: "lumina",
+    hint: "luminaHint",
   },
   {
     id: "custom",
-    title: "自定义 API",
-    hint: "OpenAI 或 Anthropic 兼容的自建服务",
+    title: "customApi",
+    hint: "customApiHint",
   },
 ];
 
 /** Miniature window drawn from one palette, so the choice previews itself. */
-function ThemePreview({ mode }: { mode: "dark" | "light" }) {
-  const p = palettes[mode];
+function ThemePreview({
+  mode,
+  preferences,
+}: {
+  mode: "dark" | "light";
+  preferences: AppearancePreferences;
+}) {
+  const p = appearancePalette(mode === "dark", preferences);
   return (
     <span
       className="settings-theme-preview"
@@ -115,21 +126,51 @@ function Row({
   );
 }
 
+/** Open pages stay mounted so switching categories preserves form drafts. */
+function SettingsPage({
+  id,
+  active,
+  children,
+}: {
+  id: SettingsSectionId;
+  active: SettingsSectionId;
+  children: React.ReactNode;
+}) {
+  const current = active === id;
+  const [visited, setVisited] = useState(current);
+  useEffect(() => {
+    if (current) setVisited(true);
+  }, [current]);
+  return (
+    <section
+      id={`settings-${id}`}
+      aria-labelledby={`settings-${id}-title`}
+      hidden={!current}
+    >
+      {current || visited ? children : null}
+    </section>
+  );
+}
+
 export function SettingsScreen({
   workspace,
+  appearance,
   codexAuth,
   systemReduced,
   section,
+  onSectionChange,
   pluginSettingsPages,
   onOpenPluginSettings,
   onHistory,
   onArchived,
 }: {
   workspace: WorkspaceController;
+  appearance: AppearanceController;
   codexAuth: CodexAuthController;
   systemReduced: boolean;
-  /** Section to scroll to on open, e.g. from the workbench home. */
-  section?: SectionId;
+  /** The selected settings page, also used by workbench shortcuts. */
+  section: SettingsSectionId;
+  onSectionChange(section: SettingsSectionId): void;
   pluginSettingsPages: ReadonlyMap<string, `plugin:${string}`>;
   onOpenPluginSettings(tab: `plugin:${string}`): void;
   /** Opens the full conversation log. */
@@ -138,58 +179,32 @@ export function SettingsScreen({
   onArchived(): void;
 }) {
   const { colors } = useTheme();
+  const { t } = useWorkbenchMessages("settings");
   const [address, setAddress] = useState(
     workspace.state.endpoint || "http://127.0.0.1:4311",
   );
   const [connection, setConnection] = useState<{
     tone: "ok" | "error" | "info";
-    text: string;
+    text: WorkbenchMessageKey<"settings">;
   }>();
   const [checking, setChecking] = useState(false);
-  const [lab, setLab] = useState(false);
-  const [active, setActive] = useState<SectionId>("appearance");
   const scroller = useRef<HTMLDivElement>(null);
-
-  // The active section is the last one whose top has passed the reading line;
-  // at the very bottom the final section wins even when it is short.
-  const jumping = useRef<SectionId | null>(null);
-  useEffect(() => {
-    const root = scroller.current;
-    if (!root) return;
-    const update = () => {
-      if (jumping.current) return;
-      const line = root.getBoundingClientRect().top + 48;
-      let current: SectionId = sections[0].id;
-      for (const { id } of sections) {
-        const node = root.querySelector(`#settings-${id}`);
-        if (node && node.getBoundingClientRect().top <= line) current = id;
-      }
-      if (root.scrollTop + root.clientHeight >= root.scrollHeight - 2)
-        current = sections[sections.length - 1].id;
-      setActive(current);
-    };
-    root.addEventListener("scroll", update, { passive: true });
-    return () => root.removeEventListener("scroll", update);
-  }, []);
-
-  function jump(id: SectionId) {
-    setActive(id);
-    // Keep the clicked item highlighted while smooth scrolling passes others.
-    jumping.current = id;
-    window.setTimeout(() => {
-      if (jumping.current === id) jumping.current = null;
-    }, 700);
-    scroller.current
-      ?.querySelector(`#settings-${id}`)
-      ?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }
+  const navigation = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    if (!section) return;
-    setActive(section);
-    scroller.current
-      ?.querySelector(`#settings-${section}`)
-      ?.scrollIntoView({ block: "start" });
+    scroller.current?.scrollTo({ top: 0 });
+  }, [section]);
+
+  useEffect(() => {
+    const nav = navigation.current;
+    const button = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!nav || !button) return;
+    const reveal = () =>
+      button.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const observer = new ResizeObserver(reveal);
+    observer.observe(nav);
+    reveal();
+    return () => observer.disconnect();
   }, [section]);
 
   async function connect() {
@@ -197,7 +212,7 @@ export function SettingsScreen({
     if (!endpoint) {
       setConnection({
         tone: "error",
-        text: "请输入完整服务地址，例如 http://192.168.1.8:4311",
+        text: "addressInvalid",
       });
       return;
     }
@@ -216,16 +231,16 @@ export function SettingsScreen({
         !Array.isArray(health.modes) ||
         !health.modes.includes("dsh-demo")
       )
-        throw new Error("此地址没有运行 Aura 对话服务。");
+        throw new Error(t("wrongService"));
       workspace.setState((s) => ({ ...s, endpoint }));
-      setConnection({ tone: "ok", text: "已连接工作台服务。" });
+      setConnection({ tone: "ok", text: "connected" });
     } catch (e) {
       setConnection({
         tone: "error",
         text:
           e instanceof Error && e.name !== "AbortError"
-            ? "连接失败。请确认地址、网络与工作台服务。"
-            : "连接超时，请检查工作台地址。",
+            ? "connectionFailed"
+            : "connectionTimedOut",
       });
     } finally {
       clearTimeout(timeout);
@@ -237,46 +252,49 @@ export function SettingsScreen({
   const codex = codexAuth.status;
   const codexLabel =
     codex.state === "authenticated"
-      ? "已登录"
+      ? t("signedIn")
       : codex.state === "pending"
-        ? "登录中"
+        ? t("signingIn")
         : codex.state === "error"
-          ? "登录失败"
-          : "未登录";
+          ? t("signInFailed")
+          : t("signedOut");
 
   return (
     <div className="settings-page">
-      <nav className="settings-nav" aria-label="设置分类">
-        <h1>设置</h1>
-        {sections.map(({ id, label, icon: Icon }) => (
+      <nav
+        className="settings-nav"
+        aria-label={t("categories")}
+        ref={navigation}
+      >
+        <h1>{t("title")}</h1>
+        {sections.map(({ id, icon: Icon }) => (
           <button
             key={id}
             type="button"
-            className={active === id ? "selected" : ""}
-            aria-current={active === id ? "true" : undefined}
-            onClick={() => jump(id)}
+            className={section === id ? "selected" : ""}
+            aria-current={section === id ? "page" : undefined}
+            aria-controls={`settings-${id}`}
+            onClick={() => onSectionChange(id)}
           >
-            <Icon size={16} />
-            {label}
+            <Icon size={16} aria-hidden="true" />
+            {t(id)}
           </button>
         ))}
       </nav>
       <div className="settings-scroll" ref={scroller}>
         <div className="settings-content">
-          <section
-            id="settings-appearance"
-            aria-labelledby="settings-appearance-title"
-          >
+          <SettingsPage id="appearance" active={section}>
             <header className="settings-section-head">
-              <h2 id="settings-appearance-title">外观</h2>
-              <p>主题和动效只保存在这台设备上。</p>
+              <h2 id="settings-appearance-title">{t("appearance")}</h2>
+              <p>{t("appearanceHint")}</p>
             </header>
+            <LanguageSettings />
             <div
               className="settings-themes"
               role="radiogroup"
-              aria-label="界面主题"
+              aria-label={t("theme")}
             >
-              {themes.map(({ id, title, hint, icon: Icon }) => {
+              {themes.map(({ id, icon: Icon }) => {
                 const selected = workspace.state.theme === id;
                 return (
                   <button
@@ -291,16 +309,33 @@ export function SettingsScreen({
                   >
                     {id === "system" ? (
                       <span className="settings-theme-split" aria-hidden="true">
-                        <ThemePreview mode="dark" />
-                        <ThemePreview mode="light" />
+                        <ThemePreview
+                          mode="dark"
+                          preferences={appearance.preferences}
+                        />
+                        <ThemePreview
+                          mode="light"
+                          preferences={appearance.preferences}
+                        />
                       </span>
                     ) : (
-                      <ThemePreview mode={id} />
+                      <ThemePreview
+                        mode={id}
+                        preferences={appearance.preferences}
+                      />
                     )}
                     <span className="settings-theme-label">
                       <Icon size={14} />
-                      <strong>{title}</strong>
-                      <span>{hint}</span>
+                      <strong>
+                        {t(
+                          id === "dark"
+                            ? "night"
+                            : id === "light"
+                              ? "dawn"
+                              : "system",
+                        )}
+                      </strong>
+                      <span>{t(id === "system" ? "automatic" : id)}</span>
                       {selected ? (
                         <Check size={14} className="settings-check" />
                       ) : null}
@@ -311,15 +346,11 @@ export function SettingsScreen({
             </div>
             <div className="settings-group">
               <Row
-                title="减少动态效果"
-                hint={
-                  systemReduced
-                    ? "已遵循系统的减少动态效果设置"
-                    : "关闭轨道旋转与入场过渡，按钮仍保留即时反馈"
-                }
+                title={t("reduceMotion")}
+                hint={systemReduced ? t("reducedSystem") : t("reducedHint")}
               >
                 <Switch
-                  accessibilityLabel="减少动态效果"
+                  accessibilityLabel={t("reduceMotion")}
                   value={workspace.state.reduceMotion || systemReduced}
                   disabled={systemReduced}
                   onValueChange={(value) =>
@@ -333,66 +364,19 @@ export function SettingsScreen({
                   }
                 />
               </Row>
-              <button
-                type="button"
-                className="settings-row settings-row-button"
-                aria-expanded={lab}
-                onClick={() => setLab((value) => !value)}
-              >
-                <span className="settings-row-copy">
-                  <strong>主题实验室</strong>
-                  <span>查看字体、色板与动效参数</span>
-                </span>
-                <ChevronRight
-                  size={16}
-                  className={`settings-chevron${lab ? " open" : ""}`}
-                />
-              </button>
-              {lab ? (
-                <div className="settings-lab">
-                  <div className="settings-lab-type">
-                    <span>Aa. aura</span>
-                    <p>
-                      系统字体 · 界面、标题与中文
-                      <br />
-                      SF Mono / JetBrains Mono · 代码与技术标签
-                    </p>
-                  </div>
-                  <div className="settings-swatches">
-                    {(
-                      [
-                        "background",
-                        "surface",
-                        "soft",
-                        "accent",
-                        "primary",
-                      ] as const
-                    ).map((key) => (
-                      <div key={key}>
-                        <span style={{ background: colors[key] }} />
-                        <code>{key}</code>
-                      </div>
-                    ))}
-                  </div>
-                  <code className="settings-lab-motion">
-                    PRESS 110ms · REVEAL 420ms · ORBIT 24s
-                  </code>
-                </div>
-              ) : null}
             </div>
-          </section>
+            <AppearanceSettings appearance={appearance} />
+          </SettingsPage>
 
-          <section id="settings-models" aria-labelledby="settings-models-title">
+          <SettingsPage id="models" active={section}>
             <header className="settings-section-head">
-              <h2 id="settings-models-title">模型与账号</h2>
-              <p>
-                新对话默认使用的回复方式。工作流的运行模式在运行时单独选择。
-              </p>
+              <h2 id="settings-models-title">{t("models")}</h2>
+              <p>{t("modelsHint")}</p>
             </header>
             <div
               className="settings-group settings-choices"
               role="radiogroup"
-              aria-label="默认对话模型"
+              aria-label={t("defaultProvider")}
             >
               {providers.map(({ id, title, hint }) => {
                 const selected = workspace.state.provider === id;
@@ -417,8 +401,8 @@ export function SettingsScreen({
                   >
                     <span className="settings-radio" aria-hidden="true" />
                     <span className="settings-row-copy">
-                      <strong>{title}</strong>
-                      <span>{hint}</span>
+                      <strong>{t(title)}</strong>
+                      <span>{t(hint)}</span>
                     </span>
                   </button>
                 );
@@ -426,7 +410,7 @@ export function SettingsScreen({
             </div>
             <div className="settings-group">
               <Row
-                title="Codex 账号"
+                title={t("codexAccount")}
                 hint={
                   <>
                     <span className={`settings-state ${codex.state}`}>
@@ -438,10 +422,7 @@ export function SettingsScreen({
               >
                 <CodexLoginButton auth={codexAuth} compact={false} />
               </Row>
-              <Row
-                title="默认 Codex 模型"
-                hint="后端默认配置；可在每个会话的输入框下单独覆盖模型与思考强度"
-              >
+              <Row title={t("defaultCodex")} hint={t("defaultCodexHint")}>
                 <code className="settings-value">{codex.model}</code>
               </Row>
             </div>
@@ -455,18 +436,12 @@ export function SettingsScreen({
                 }))
               }
             />
-          </section>
+          </SettingsPage>
 
-          <section
-            id="settings-connection"
-            aria-labelledby="settings-connection-title"
-          >
+          <SettingsPage id="connection" active={section}>
             <header className="settings-section-head">
-              <h2 id="settings-connection-title">连接</h2>
-              <p>
-                工作台服务负责对话、工作流和工作台数据。手机连接时请填写电脑的局域网
-                IP。
-              </p>
+              <h2 id="settings-connection-title">{t("connection")}</h2>
+              <p>{t("connectionHint")}</p>
             </header>
             <div className="settings-group">
               <div className="settings-row settings-row-stack">
@@ -474,11 +449,13 @@ export function SettingsScreen({
                   className="settings-row-copy"
                   htmlFor="settings-endpoint"
                 >
-                  <strong>工作台服务地址</strong>
+                  <strong>{t("serviceAddress")}</strong>
                   <span>
-                    当前：
                     <code>
-                      {workspace.state.endpoint || "http://127.0.0.1:4311"}
+                      {t("currentAddress", {
+                        address:
+                          workspace.state.endpoint || "http://127.0.0.1:4311",
+                      })}
                     </code>
                   </span>
                 </label>
@@ -505,7 +482,7 @@ export function SettingsScreen({
                     disabled={checking || workspace.busy}
                   >
                     <Wifi size={14} />
-                    {checking ? "正在连接…" : "测试并连接"}
+                    {checking ? t("connecting") : t("connect")}
                   </button>
                 </form>
                 {connection ? (
@@ -513,12 +490,12 @@ export function SettingsScreen({
                     className={`settings-feedback ${connection.tone}`}
                     aria-live="polite"
                   >
-                    {connection.text}
+                    {t(connection.text)}
                   </p>
                 ) : null}
               </div>
               {workspace.state.provider !== "offline" ? (
-                <Row title="断开工作台" hint="切回本地演示，不影响已保存的会话">
+                <Row title={t("disconnect")} hint={t("disconnectHint")}>
                   <button
                     type="button"
                     className="tool-button"
@@ -528,48 +505,39 @@ export function SettingsScreen({
                         ...s,
                         provider: "offline",
                       }));
-                      setConnection({ tone: "info", text: "已切回本地演示。" });
+                      setConnection({ tone: "info", text: "disconnected" });
                     }}
                   >
                     <Radio size={14} />
-                    使用本地演示
+                    {t("useDemo")}
                   </button>
                 </Row>
               ) : null}
             </div>
-          </section>
+          </SettingsPage>
 
-          <section
-            id="settings-features"
-            aria-labelledby="settings-features-title"
-          >
+          <SettingsPage id="features" active={section}>
             <header className="settings-section-head">
-              <h2 id="settings-features-title">功能开关</h2>
-              <p>按需开启额外的对话和插件功能。</p>
+              <h2 id="settings-features-title">{t("features")}</h2>
+              <p>{t("featuresHint")}</p>
             </header>
             <IntegrationSettingsPanel
               key={codexAuth.endpoint}
               endpoint={codexAuth.endpoint}
             />
-          </section>
+          </SettingsPage>
 
-          <section
-            id="settings-plugins"
-            aria-labelledby="settings-plugins-title"
-          >
+          <SettingsPage id="plugins" active={section}>
             <header className="settings-section-head">
-              <h2 id="settings-plugins-title">插件</h2>
-              <p>
-                启用插件，并显式接入本机的 Action 与 Flow 目录。插件以完整
-                Node.js 权限运行。
-              </p>
+              <h2 id="settings-plugins-title">{t("plugins")}</h2>
+              <p>{t("pluginsHint")}</p>
             </header>
             <PluginList
               endpoint={workspace.state.endpoint || "http://127.0.0.1:4311"}
               settingsPages={pluginSettingsPages}
               onOpenSettings={onOpenPluginSettings}
             />
-            <h3 className="settings-subhead">插件目录</h3>
+            <h3 className="settings-subhead">{t("pluginDirectories")}</h3>
             <PluginDirectorySettings
               endpoint={workspace.state.endpoint || "http://127.0.0.1:4311"}
             />
@@ -577,15 +545,12 @@ export function SettingsScreen({
               key={codexAuth.endpoint}
               endpoint={codexAuth.endpoint}
             />
-          </section>
+          </SettingsPage>
 
-          <section
-            id="settings-records"
-            aria-labelledby="settings-records-title"
-          >
+          <SettingsPage id="records" active={section}>
             <header className="settings-section-head">
-              <h2 id="settings-records-title">会话记录</h2>
-              <p>对话和工作空间会话都保存在本机。</p>
+              <h2 id="settings-records-title">{t("records")}</h2>
+              <p>{t("recordsHint")}</p>
             </header>
             <div className="settings-group">
               <button
@@ -594,8 +559,8 @@ export function SettingsScreen({
                 onClick={onHistory}
               >
                 <span className="settings-row-copy">
-                  <strong>全部记录</strong>
-                  <span>按时间浏览所有对话与工作空间会话</span>
+                  <strong>{t("history")}</strong>
+                  <span>{t("historyHint")}</span>
                 </span>
                 <ChevronRight size={16} className="settings-chevron" />
               </button>
@@ -605,30 +570,25 @@ export function SettingsScreen({
                 onClick={onArchived}
               >
                 <span className="settings-row-copy">
-                  <strong>已归档会话</strong>
-                  <span>
-                    在侧栏中查看已归档的会话，归档不影响已保存的执行记录
-                  </span>
+                  <strong>{t("archived")}</strong>
+                  <span>{t("archivedHint")}</span>
                 </span>
                 <Archive size={16} className="settings-chevron" />
               </button>
             </div>
-          </section>
+          </SettingsPage>
 
-          <section id="settings-about" aria-labelledby="settings-about-title">
+          <SettingsPage id="about" active={section}>
             <header className="settings-section-head">
-              <h2 id="settings-about-title">关于</h2>
+              <h2 id="settings-about-title">{t("about")}</h2>
             </header>
             <div className="settings-group">
-              <Row title="Aura" hint="专注于日常，也给灵感留白。">
+              <Row title="Aura" hint={t("tagline")}>
                 <code className="settings-value">v0.1.0</code>
               </Row>
-              <Row
-                title="本地数据"
-                hint="会话与偏好保存在本机浏览器存储；模型凭据只保存在后端。"
-              />
+              <Row title={t("localData")} hint={t("localDataHint")} />
             </div>
-          </section>
+          </SettingsPage>
         </div>
       </div>
     </div>

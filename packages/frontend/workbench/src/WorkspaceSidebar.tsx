@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useWorkbenchMessages } from "./i18n.ts";
 import {
   AlarmClock,
   ChevronDown,
@@ -45,9 +46,9 @@ import { isActiveStatus } from "./features/coding/conversationStatus";
 
 /** Task-independent destinations; archives and the full log live in Settings. */
 const tabs = [
-  { id: "flows", label: "工作流", icon: FlowIcon },
-  { id: "automation", label: "自动化任务", icon: AlarmClock },
-  { id: "studios", label: "工作台", icon: LayoutGrid },
+  { id: "flows", label: "workflows", icon: FlowIcon },
+  { id: "automation", label: "automation", icon: AlarmClock },
+  { id: "studios", label: "studios", icon: LayoutGrid },
 ] as const;
 
 export function WorkspaceSidebar({
@@ -55,7 +56,6 @@ export function WorkspaceSidebar({
   tab,
   dark,
   toggleTheme,
-  onOpenArchived,
   onAssistant,
   navigate,
   start,
@@ -75,7 +75,6 @@ export function WorkspaceSidebar({
   tab: Tab;
   dark: boolean;
   toggleTheme(): void;
-  onOpenArchived(): void;
   onAssistant(): void;
   navigate(tab: Tab): void;
   start(): void;
@@ -95,6 +94,7 @@ export function WorkspaceSidebar({
   scheduledIds?: ReadonlySet<string>;
 }) {
   /** `null` creates a workspace; a record configures that one. */
+  const { t } = useWorkbenchMessages("navigation");
   const [spaceDialog, setSpaceDialog] = useState<CodingProjectInfo | null>();
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -111,7 +111,7 @@ export function WorkspaceSidebar({
     toast({
       message: archiving ? `已归档「${label}」` : `已恢复「${label}」`,
       action: {
-        label: "撤销",
+        label: t("undo"),
         run: () => workspace.archiveChat(session.id, !archiving),
       },
     });
@@ -191,18 +191,18 @@ export function WorkspaceSidebar({
     searchButton.current?.focus();
   };
   return (
-    <aside className="workspace-sidebar" aria-label="工作区与会话">
+    <aside className="workspace-sidebar" aria-label={t("workspaceAndChats")}>
       <button className="new-session" onClick={start}>
         <SquarePen size={14} />
-        新任务
+        {t("newTask")}
       </button>
-      <nav className="workspace-nav panel-nav" aria-label="主导航">
+      <nav className="workspace-nav panel-nav" aria-label={t("mainNavigation")}>
         <button
           className={`aura-assistant-entry${tab === "assistant" ? " selected" : ""}`}
-          aria-label="打开 Aura 个人助手"
+          aria-label={t("openAssistant")}
           aria-current={tab === "assistant" ? "page" : undefined}
           aria-busy={codingWorkspaces.assistantLoading}
-          title="Aura · 持续使用同一段对话的个人助手"
+          title={t("assistantHint")}
           onClick={onAssistant}
         >
           <AuraAssistantIcon
@@ -220,7 +220,7 @@ export function WorkspaceSidebar({
               onClick={() => navigate(id)}
             >
               <Icon size={16} />
-              {label}
+              {t(label)}
             </button>
             {/* The pages the user has opened, nested under 工作台 in
                 registration order. Each closes on its own; 工作台 still
@@ -244,7 +244,7 @@ export function WorkspaceSidebar({
                         <Glyph size={15} />
                         <span>{studio.title}</span>
                       </button>
-                      <Tooltip label="从侧栏移除">
+                      <Tooltip label={t("removeShortcut")}>
                         <button
                           type="button"
                           className="icon-control studio-close row-control"
@@ -267,18 +267,18 @@ export function WorkspaceSidebar({
       <div
         className={`session-heading${searchOpen ? " searching" : ""}`}
         role="group"
-        aria-label="会话列表工具"
+        aria-label={t("chatTools")}
       >
         <span className="session-heading-label">
-          {showArchived ? "已归档" : onlyRunning ? "进行中" : "会话"}
+          {showArchived ? t("archived") : onlyRunning ? t("active") : t("chats")}
         </span>
         {searchOpen ? (
           <label className="session-search">
             <Search size={14} aria-hidden="true" />
             <input
               ref={search}
-              aria-label="搜索会话"
-              placeholder="搜索会话名称"
+              aria-label={t("searchChats")}
+              placeholder={t("searchNames")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onBlur={() => {
@@ -292,11 +292,11 @@ export function WorkspaceSidebar({
               }}
             />
             {query ? (
-              <Tooltip label="清除搜索">
+              <Tooltip label={t("clearSearch")}>
                 <button
                   type="button"
                   className="session-search-clear"
-                  aria-label="清除搜索"
+                  aria-label={t("clearSearch")}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     setQuery("");
@@ -310,11 +310,11 @@ export function WorkspaceSidebar({
           </label>
         ) : (
           <div className="session-heading-actions">
-            <Tooltip label="搜索">
+            <Tooltip label={t("search")}>
               <button
                 ref={searchButton}
                 className="icon-control"
-                aria-label="搜索会话"
+                aria-label={t("searchChats")}
                 aria-expanded={false}
                 onClick={() => setSearchOpen(true)}
               >
@@ -322,13 +322,13 @@ export function WorkspaceSidebar({
               </button>
             </Tooltip>
             <WorkbenchMenu
-              label="视图选项"
-              tooltip="视图选项"
+              label={t("viewOptions")}
+              tooltip={t("viewOptions")}
               className={`icon-control${showArchived || onlyRunning ? " filtered" : ""}`}
               items={[
                 {
                   id: "all",
-                  label: "全部会话",
+                  label: t("allChats"),
                   icon: (
                     <Check
                       size={14}
@@ -342,7 +342,7 @@ export function WorkspaceSidebar({
                 },
                 {
                   id: "running",
-                  label: "仅显示进行中",
+                  label: t("activeOnly"),
                   icon: <Check size={14} opacity={onlyRunning ? 1 : 0} />,
                   action: () => {
                     onArchived(false);
@@ -351,7 +351,7 @@ export function WorkspaceSidebar({
                 },
                 {
                   id: "archived",
-                  label: "仅显示已归档",
+                  label: t("archivedOnly"),
                   icon: <Check size={14} opacity={showArchived ? 1 : 0} />,
                   action: () => {
                     setOnlyRunning(false);
@@ -362,10 +362,10 @@ export function WorkspaceSidebar({
             >
               <SlidersHorizontal size={14} />
             </WorkbenchMenu>
-            <Tooltip label={offline ? "需要连接 Aura 服务" : "添加工作区"}>
+            <Tooltip label={offline ? t("serviceRequired") : t("addWorkspace")}>
               <button
                 className="icon-control"
-                aria-label="添加工作区"
+                aria-label={t("addWorkspace")}
                 disabled={offline}
                 onClick={() => setSpaceDialog(null)}
               >
@@ -422,12 +422,12 @@ export function WorkspaceSidebar({
                 <div className="workspace-folder-actions">
                   <WorkbenchMenu
                     label={`工作区“${space.title}”的操作`}
-                    tooltip="更多操作"
+                    tooltip={t("more")}
                     className="icon-control row-control"
                     items={[
                       {
                         id: "configure",
-                        label: "配置名称与目录",
+                        label: t("configureWorkspace"),
                         icon: <SlidersHorizontal size={14} />,
                         action: () => setSpaceDialog(space),
                       },
@@ -435,7 +435,7 @@ export function WorkspaceSidebar({
                   >
                     <Ellipsis size={14} />
                   </WorkbenchMenu>
-                  <Tooltip label="新会话">
+                  <Tooltip label={t("newChat")}>
                     <button
                       type="button"
                       className="icon-control row-control"
@@ -486,7 +486,7 @@ export function WorkspaceSidebar({
                               <AlarmClock
                                 size={14}
                                 className="session-schedule-mark"
-                                aria-label="有自动化任务"
+                                aria-label={t("hasAutomation")}
                               />
                             ) : null}
                             {badge ? (
@@ -505,14 +505,14 @@ export function WorkspaceSidebar({
                           <Tooltip
                             label={
                               item.archivedAt !== undefined
-                                ? "取消归档"
-                                : "归档（同时关闭旁支）"
+                                ? t("restore")
+                                : t("archiveWithBranches")
                             }
                           >
                             <button
                               type="button"
                               className="icon-control session-archive row-control"
-                              aria-label={`${item.archivedAt !== undefined ? "取消归档" : "归档"}：${item.title}`}
+                              aria-label={`${item.archivedAt !== undefined ? t("restore") : t("archive")}：${item.title}`}
                               onClick={() =>
                                 void codingWorkspaces
                                   .archive(
@@ -552,14 +552,12 @@ export function WorkspaceSidebar({
                               .refreshConversations(space.id, undefined, true)
                               .catch(() => {})
                           }
-                        >
-                          加载失败，点击重试
-                        </button>
+                        >{t("retryLoad")}</button>
                       ) : codingWorkspaces.conversations[space.id] ===
                         undefined ? (
-                        "正在加载对话…"
+                        t("loadingChats")
                       ) : (
-                        "还没有对话"
+                        t("noChats")
                       )}
                     </div>
                   ) : null}
@@ -580,7 +578,7 @@ export function WorkspaceSidebar({
             >
               <button
                 className="session-folder-heading"
-                aria-label={`${expanded ? "收起" : "展开"}${group.workflow ? "工作流会话" : "会话分组"}：${group.title}`}
+                aria-label={`${expanded ? "收起" : "展开"}${group.workflow ? t("workflowChat") : "会话分组"}：${group.title}`}
                 aria-expanded={expanded}
                 title={group.title}
                 onClick={() => toggleFolder(group.id)}
@@ -644,7 +642,7 @@ export function WorkspaceSidebar({
                             <FlowIcon
                               size={12}
                               className="session-workflow-icon"
-                              aria-label="工作流会话"
+                              aria-label={t("workflowChat")}
                             />
                           ) : null}
                           <span className="session-name">{label}</span>
@@ -666,12 +664,12 @@ export function WorkspaceSidebar({
                             )}
                           </span>
                           <Tooltip
-                            label={session.archivedAt ? "取消归档" : "归档"}
+                            label={session.archivedAt ? t("restore") : t("archive")}
                           >
                             <button
                               type="button"
                               className="icon-control session-archive row-control"
-                              aria-label={`${session.archivedAt ? "取消归档" : "归档"}：${label}`}
+                              aria-label={`${session.archivedAt ? t("restore") : t("archive")}：${label}`}
                               onClick={() => archiveWithUndo(session, label)}
                             >
                               {session.archivedAt ? (
@@ -693,10 +691,10 @@ export function WorkspaceSidebar({
         {!groups.length && !spaceFolders.length ? (
           <div className="sidebar-empty">
             {query || onlyRunning
-              ? "没有匹配的会话"
+              ? t("noMatches")
               : showArchived
-                ? "归档的会话会出现在这里"
-                : "从一段新会话开始"}
+                ? t("archiveEmpty")
+                : t("startChat")}
           </div>
         ) : null}
       </div>
@@ -720,8 +718,8 @@ export function WorkspaceSidebar({
                       id: "archive",
                       label:
                         target.archivedAt !== undefined
-                          ? "取消归档"
-                          : "归档会话",
+                          ? t("restore")
+                          : t("archiveChat"),
                       icon:
                         target.archivedAt !== undefined ? (
                           <ArchiveRestore size={15} />
@@ -739,7 +737,7 @@ export function WorkspaceSidebar({
                     },
                     {
                       id: "close",
-                      label: "关闭会话及旁支",
+                      label: t("closeChatAndBranches"),
                       icon: <X size={15} />,
                       action: () =>
                         void codingWorkspaces
@@ -782,13 +780,10 @@ export function WorkspaceSidebar({
       ) : null}
       <footer className="sidebar-footer">
         <WorkspaceMenu
-          workspace={workspace}
           dark={dark}
           settingsSelected={tab === "settings"}
           toggleTheme={toggleTheme}
           navigate={navigate}
-          onArchived={onOpenArchived}
-          onDialog={onDialog}
         />
       </footer>
     </aside>

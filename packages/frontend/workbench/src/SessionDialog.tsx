@@ -53,21 +53,19 @@ export function SessionDialog({
       >
         <div className="session-dialog-heading">
           <h2 id="session-dialog-title">
-            {rename ? "重命名会话" : "删除会话"}
+            {rename ? t("renameChat") : t("deleteChat")}
           </h2>
           <button
             type="button"
             className="icon-control"
-            aria-label="关闭"
+            aria-label={t("close")}
             onClick={onClose}
           >
             <X size={17} />
           </button>
         </div>
         {rename ? (
-          <label className="session-title-field">
-            会话名称
-            <input
+          <label className="session-title-field">{t("chatName")}<input
               ref={input}
               autoFocus
               required
@@ -79,15 +77,13 @@ export function SessionDialog({
           <p>确定删除“{title}”？本机对话记录无法恢复，已生成的文件会保留。</p>
         )}
         <div className="session-dialog-actions">
-          <button type="button" className="tool-button" onClick={onClose}>
-            取消
-          </button>
+          <button type="button" className="tool-button" onClick={onClose}>{t("cancel")}</button>
           <button
             type="submit"
             className={`primary-button${rename ? "" : " danger"}`}
             disabled={!rename && blocked}
           >
-            {rename ? "保存" : "删除"}
+            {rename ? t("save") : t("delete")}
           </button>
         </div>
       </form>

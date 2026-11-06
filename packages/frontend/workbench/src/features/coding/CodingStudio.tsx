@@ -38,6 +38,7 @@ import {
   type FlowConversationRequest,
 } from "../../flow-conversation";
 import { ConversationPane } from "./ConversationPane";
+import { SubagentPanel } from "./SubagentPanel.tsx";
 import {
   AgentTeamPanel,
   ConversationSearch,
@@ -101,6 +102,7 @@ export function CodingStudio({
   context,
   initialDraft,
   onApplyFlow,
+  onFlowReply,
   flows,
   flowsLoading,
   flowRequest,
@@ -129,6 +131,7 @@ export function CodingStudio({
   context?: string;
   initialDraft?: string;
   onApplyFlow?(code: string): void;
+  onFlowReply?(reply: string): void;
   flows?: FlowCatalogEntry[];
   flowsLoading?: boolean;
   flowRequest?: FlowConversationRequest;
@@ -234,6 +237,21 @@ export function CodingStudio({
     Record<string, { id: string; text: string }>
   >({});
   const studioRoot = useRef<HTMLElement>(null);
+  const subagentAnchor = useRef<HTMLElement>(null);
+  const searchTrigger = useRef<HTMLButtonElement>(null);
+  const [subagentView, setSubagentView] = useState<{
+    parentId: string;
+    sessionId: string;
+    open: boolean;
+  }>();
+  const closeSubagents = useCallback(
+    () =>
+      setSubagentView((current) =>
+        current ? { ...current, open: false } : current,
+      ),
+    [],
+  );
+  useEffect(() => setSubagentView(undefined), [endpoint, conversationId]);
   const terminals = useWorkspaceTerminals(endpoint, projectId);
   const [mainRunning, setMainRunning] = useState(false);
   /** Main conversation's turns, mirrored for the trajectory view. */
@@ -638,6 +656,44 @@ ${summary}`,
           action: () => setView("trajectory"),
           disabled: Boolean(branchFrom),
         },
+        ...(conversationId && !offline
+          ? [
+              {
+                id: "subagents",
+                label: "子 Agent",
+                icon: <Users size={14} />,
+                action: () => {
+                  subagentAnchor.current =
+                    document.activeElement instanceof HTMLElement
+                      ? document.activeElement
+                      : null;
+                  setSubagentView({
+                    parentId: conversationId,
+                    sessionId: conversationId,
+                    open: true,
+                  });
+                },
+              },
+              ...currentSides
+                .filter((side) => side.id === activeToolId)
+                .map((side) => ({
+                  id: "side-subagents",
+                  label: "侧边对话的子 Agent",
+                  icon: <Users size={14} />,
+                  action: () => {
+                    subagentAnchor.current =
+                      document.activeElement instanceof HTMLElement
+                        ? document.activeElement
+                        : null;
+                    setSubagentView({
+                      parentId: conversationId,
+                      sessionId: side.id,
+                      open: true,
+                    });
+                  },
+                })),
+            ]
+          : []),
       ]
     : [];
   const hostActions = headerActions?.(viewItems);
@@ -670,6 +726,7 @@ ${summary}`,
           type="button"
           className="icon-control"
           aria-label="会话全文搜索"
+          ref={searchTrigger}
           aria-expanded={integrationPanel === "search"}
           title="会话全文搜索"
           onClick={() =>
@@ -733,6 +790,24 @@ ${summary}`,
       {visible ? (
         <SelectionActions root={studioRoot} actions={selectionActions} />
       ) : null}
+      {visible &&
+      !offline &&
+      subagentView &&
+      subagentView.parentId === conversationId ? (
+        <SubagentPanel
+          key={`${endpoint}:${subagentView.sessionId}`}
+          endpoint={endpoint}
+          sessionId={subagentView.sessionId}
+          running={
+            subagentView.sessionId === conversationId
+              ? mainRunning
+              : Boolean(sideRunning[subagentView.sessionId])
+          }
+          open={subagentView.open}
+          anchor={subagentAnchor}
+          onClose={closeSubagents}
+        />
+      ) : null}
       <ConversationSplit
         mainHeader={
           <>
@@ -747,6 +822,10 @@ ${summary}`,
                 key={projectId}
                 endpoint={endpoint}
                 projectId={projectId}
+                onClose={() => {
+                  setIntegrationPanel(undefined);
+                  searchTrigger.current?.focus();
+                }}
                 open={(id) => {
                   open(projectId, id);
                   setIntegrationPanel(undefined);
@@ -853,6 +932,7 @@ ${summary}`,
                   conversationId ? draftInserts[conversationId] : undefined
                 }
                 onApplyFlow={onApplyFlow}
+                onFlowReply={onFlowReply}
                 flows={flows}
                 flowsLoading={flowsLoading}
                 flowRequest={flowRequest}

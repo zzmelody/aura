@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useMessages } from "@aura/i18n";
+import { pluginNamespace } from "@aura/i18n/runtime";
 import {
   pluginPageInvoke,
   startPluginHost,
@@ -11,12 +13,14 @@ import * as workbenchModule from "./plugin-api.ts";
 export interface PluginStudio {
   id: `plugin:${string}`;
   title: string;
+  description?: string;
   icon?: string;
   pluginId: string;
   page: RegisteredPage;
 }
 
 export function usePluginPages(endpoint: string, enabled: boolean) {
+  const { t } = useMessages("plugins");
   const [pages, setPages] = useState<RegisteredPage[]>([]);
   const [results, setResults] = useState<RegisteredResult[]>([]);
   const [failures, setFailures] = useState<
@@ -72,12 +76,23 @@ export function usePluginPages(endpoint: string, enabled: boolean) {
     () =>
       pages.map((page) => ({
         id: pluginTab(`${page.pluginId}/${page.definition.id}`),
-        title: page.definition.title,
+        title: page.definition.titleKey
+          ? t(page.definition.titleKey, {
+              ns: pluginNamespace(page.pluginId),
+              defaultValue: page.definition.title,
+            })
+          : page.definition.title,
+        description: page.definition.descriptionKey
+          ? t(page.definition.descriptionKey, {
+              ns: pluginNamespace(page.pluginId),
+              defaultValue: page.definition.description ?? "",
+            })
+          : page.definition.description,
         icon: page.definition.icon,
         pluginId: page.pluginId,
         page,
       })),
-    [pages],
+    [pages, t],
   );
 
   return { studios, results, failures, invoke: pluginPageInvoke };

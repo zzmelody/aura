@@ -4,6 +4,8 @@
 
 `createAgentService` 处理现有 `chat`、`coding`、`automation` 和对话集成请求。`@aura/agent-runtime/history` 选择冷读或实时历史，`@aura/agent-runtime/profile` 提供 Agent preset 与插件入口。
 
+`conversations/subagents.ts` 只读 DSH 子 Agent 目录与记录。状态、结果与累计执行耗时只来自子会话自身描述符后的记录，当前轮次未结束时不复用旧轮次结论。`executionError` 通过公共安全错误投影返回；`recordError` 独立表示读取失败，无实时运行事实时状态为 `unknown`，不能据此认定执行失败。重新读取不恢复 Agent、不重提任务，也不改写历史。
+
 `personalAssistant(create = false)` 读取 Aura 专属主会话与其工作空间；只有显式传入 `true` 才在缺失时创建。索引对并发打开合并处理，固定身份为协议定义的 `coding-aura-personal-assistant`，沿用现有 domain 与 DSH 日志。再次打开不改写已有记录、不触发模型、不更换目录，重启后继续原上下文和模型配置。普通会话的关闭、归档和删除接口拒绝结束此主会话；普通任务保持独立。所属工作空间不可用时返回冲突，不自动重建或迁移用户数据。
 
 `conversations(projectId, includeStatus = true)` 默认沿用历史状态投影；启动时传入 `false` 仅返回索引元数据和当前进程的运行、等待回答状态，不逐项读取 DSH 日志。`conversations/conversation-list.ts` 拥有该投影，历史日志失败不隐藏会话，旧日志中尚未结束的回合仍在完整查询时投影为已停止；不改写任何索引或日志。

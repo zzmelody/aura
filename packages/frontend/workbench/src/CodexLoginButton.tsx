@@ -389,7 +389,7 @@ export function CodexLoginButton({
 const styles = StyleSheet.create({
   trigger: {
     minHeight: 38,
-    borderRadius: 13,
+    borderRadius: "calc(13px * var(--radius-scale, 1))",
     borderWidth: 1,
     paddingHorizontal: 12,
     flexDirection: "row",
@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
     maxWidth: 480,
     maxHeight: "92%",
     borderWidth: 1,
-    borderRadius: 24,
+    borderRadius: "calc(24px * var(--radius-scale, 1))",
   },
   panelContent: { padding: 24 },
   panelTop: {
@@ -434,7 +434,7 @@ const styles = StyleSheet.create({
   statusCard: {
     marginTop: 22,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: "calc(16px * var(--radius-scale, 1))",
     padding: 16,
     flexDirection: "row",
     gap: 12,
@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     padding: 18,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: "calc(16px * var(--radius-scale, 1))",
     alignItems: "center",
   },
   code: {
@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
   manualInput: {
     minHeight: 44,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: "calc(12px * var(--radius-scale, 1))",
     paddingHorizontal: 12,
     fontFamily: fonts.mono,
     fontSize: 11,
@@ -472,7 +472,7 @@ const styles = StyleSheet.create({
   submit: {
     minHeight: 40,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: "calc(12px * var(--radius-scale, 1))",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 14,
@@ -486,14 +486,14 @@ const styles = StyleSheet.create({
   secondary: {
     minHeight: 40,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: "calc(12px * var(--radius-scale, 1))",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 14,
   },
   primary: {
     minHeight: 50,
-    borderRadius: 15,
+    borderRadius: "calc(15px * var(--radius-scale, 1))",
     marginTop: 20,
     paddingHorizontal: 18,
     flexDirection: "row",

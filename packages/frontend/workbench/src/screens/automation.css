@@ -63,7 +63,7 @@
   height: 32px;
   padding: 0 10px;
   border: 0.5px solid var(--border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   color: var(--muted);
 }
 .automation-search:focus-within {
@@ -95,7 +95,7 @@
   min-height: 56px;
   padding: 8px 12px;
   border: 0;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: transparent;
   color: var(--secondary);
   text-align: left;
@@ -151,7 +151,7 @@
   height: 64px;
   margin-bottom: 8px;
   border: 0.5px solid var(--hairline);
-  border-radius: 20px;
+  border-radius: calc(20px * var(--radius-scale, 1));
   background: var(--surface);
   color: var(--accent);
 }
@@ -231,7 +231,7 @@
 .automation-prompt {
   margin: 0;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--soft);
   font-size: 13px;
   line-height: 20px;
@@ -261,7 +261,7 @@
   max-height: calc(100vh - 48px);
   padding: 0;
   border: 0.5px solid var(--hairline);
-  border-radius: 20px;
+  border-radius: calc(20px * var(--radius-scale, 1));
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
@@ -299,7 +299,7 @@
   min-height: 36px;
   padding: 7px 10px;
   border: 0.5px solid var(--border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--input);
   color: var(--text);
   font: inherit;

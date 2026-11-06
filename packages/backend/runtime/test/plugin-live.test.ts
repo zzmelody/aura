@@ -31,6 +31,80 @@ async function catalogFlow(
 }
 
 test(
+  "a plugin with a description can be disabled while another described plugin stays enabled",
+  {
+    timeout: 60_000,
+    skip: nodeMajor < 24 ? "DSH requires Node >=24" : false,
+  },
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "aura-plugin-description-test-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const flowRoot = join(root, "flows");
+    const actionRoot = join(root, "actions");
+    await Promise.all([
+      mkdir(flowRoot, { recursive: true }),
+      mkdir(actionRoot, { recursive: true }),
+    ]);
+    const plugin = {
+      id: "test.described",
+      name: "Described plugin",
+      version: "1.0.0",
+      description: "A plugin with a manifest description.",
+      enabled: true,
+      available: true,
+    };
+    const remaining = { ...plugin, id: "test.remaining" };
+    const host = new OrchestrationHost({
+      root,
+      flowRoot,
+      actionRoot,
+      dshHome: join(root, "dsh"),
+      modelURL: "http://127.0.0.1:1/v1",
+      plugins: [plugin, remaining],
+      pluginSdkPackage,
+    });
+
+    try {
+      const before = await host.request<FlowCatalog>("catalog");
+      assert.deepEqual(before.plugins, [plugin, remaining]);
+      const disabled = { ...plugin, enabled: false, available: false };
+      await host.configureContributions({
+        flowRoots: [],
+        actionRoots: [],
+        plugins: [disabled, remaining],
+      });
+      const after = await host.request<FlowCatalog>("catalog");
+      assert.deepEqual(after.plugins, [disabled, remaining]);
+
+      for (const invalid of [
+        { ...plugin, description: 42 },
+        { ...plugin, description: "x".repeat(501) },
+        { ...plugin, unexpected: true },
+      ]) {
+        await assert.rejects(
+          host.request("plugins/configure", {
+            flowRoots: [],
+            actionRoots: [],
+            plugins: [invalid, remaining],
+          }),
+          { status: 400, message: "插件运行配置不符合 Aura 规则。" },
+        );
+      }
+
+      await host.configureContributions({
+        flowRoots: [],
+        actionRoots: [],
+        plugins: [plugin, remaining],
+      });
+      const restored = await host.request<FlowCatalog>("catalog");
+      assert.deepEqual(restored.plugins, [plugin, remaining]);
+    } finally {
+      await host.close();
+    }
+  },
+);
+
+test(
   "live plugin configuration applies, hot reloads and preserves a pinned run",
   {
     timeout: 120_000,

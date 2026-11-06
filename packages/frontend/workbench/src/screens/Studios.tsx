@@ -26,8 +26,8 @@ export function StudiosScreen({
     <section className="dsh-page studios-page" aria-labelledby="studios-title">
       <header className="dsh-page-head">
         <div>
-          <h1 id="studios-title">工作台</h1>
-          <p>插件提供的页面。启用或停用插件后，这里的入口随之变化。</p>
+          <h1 id="studios-title">{t("studios")}</h1>
+          <p>{t("studiosHint")}</p>
         </div>
         <div className="dsh-page-actions">
           <button
@@ -35,9 +35,7 @@ export function StudiosScreen({
             className="dsh-button"
             onClick={onManagePlugins}
           >
-            <PlugZap size={13} />
-            管理插件
-          </button>
+            <PlugZap size={13} />{t("managePlugins")}</button>
         </div>
       </header>
       {failures.length ? (
@@ -70,8 +68,8 @@ export function StudiosScreen({
                   </span>
                   <span className="studios-tile-copy">
                     <strong>{studio.title}</strong>
-                    {studio.page.definition.description ? (
-                      <span>{studio.page.definition.description}</span>
+                    {studio.description ? (
+                      <span>{studio.description}</span>
                     ) : null}
                   </span>
                 </button>
@@ -80,9 +78,7 @@ export function StudiosScreen({
           })}
         </ul>
       ) : failures.length ? null : (
-        <p className="dsh-page-empty">
-          还没有工作台页面。启用一个提供页面的插件后会出现在这里。
-        </p>
+        <p className="dsh-page-empty">{t("noStudios")}</p>
       )}
     </section>
   );

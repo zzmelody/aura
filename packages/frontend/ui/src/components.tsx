@@ -356,13 +356,13 @@ const styles = StyleSheet.create({
   iconButton: {
     width: 34,
     height: 34,
-    borderRadius: 7,
+    borderRadius: "calc(7px * var(--radius-scale, 1))",
     justifyContent: "center",
     alignItems: "center",
   },
   button: {
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: "calc(8px * var(--radius-scale, 1))",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",

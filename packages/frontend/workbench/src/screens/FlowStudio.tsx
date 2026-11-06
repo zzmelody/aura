@@ -1,20 +1,11 @@
-import React, {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  Check,
+  ArrowLeft,
   Download,
   FileCode2,
-  ArrowLeft,
   MoreHorizontal,
   Play,
   RefreshCw,
-  Sparkles,
   Undo2,
   Upload,
   Workflow,
@@ -24,35 +15,28 @@ import { FlowGraphView } from "./FlowGraphView";
 import type { FlowCatalogController } from "../flowCatalog";
 import type { FlowCatalogEntry } from "@aura/protocol/types";
 import { useFlowSource } from "../flowSource";
-import { buildFlowGraph } from "../flowGraph";
 import type { FlowDraftController } from "../flowDraft";
+import type { FlowAnalysisController } from "../useFlowAnalysis";
 
 export function FlowStudio({
   endpoint,
   draft,
-  editorRevision,
-  onAsk,
+  analysis,
   flowId,
   catalogState,
   onBack,
   onRun,
-  initialLine,
 }: {
   endpoint: string;
   draft: FlowDraftController;
-  editorRevision: number;
-  onAsk(): void;
+  analysis: FlowAnalysisController;
   flowId: string;
   catalogState: FlowCatalogController;
   onBack(): void;
   onRun(flow: FlowCatalogEntry): void;
-  initialLine?: number;
 }) {
-  const [view, setView] = useState<"graph" | "code">("graph");
-  const [localDraft, setLocalDraft] = useState(flowId === "");
+  const [isDraft, setIsDraft] = useState(flowId === "");
   const [notice, setNotice] = useState("");
-  const [line, setLine] = useState(1);
-  const isDraft = localDraft;
   const selectedFlow = isDraft
     ? undefined
     : catalogState.catalog?.flows.find((flow) => flow.id === flowId);
@@ -62,68 +46,25 @@ export function FlowStudio({
     selectedFlow?.revision ?? selectedFlow?.sourceHash,
   );
   const code = isDraft ? draft.code : (source.source?.code ?? "");
-  const deferredDraft = useDeferredValue(draft.code);
-  const draftGraph = useMemo(
-    () => buildFlowGraph(deferredDraft),
-    [deferredDraft],
-  );
+  const diagram = analysis.entries.find(
+    (entry) => entry.code === code,
+  )?.diagram;
   const title = isDraft
-    ? draftGraph.title
+    ? (diagram?.title ?? "工作流草稿")
     : (selectedFlow?.title ?? "工作流已移除");
   const description = isDraft
     ? "本地草稿 · 自动保存"
     : selectedFlow?.description;
+  const { selectSource } = analysis;
+  useEffect(() => {
+    selectSource(`${endpoint}:${isDraft ? "draft" : flowId}`, code);
+    return () => selectSource("", "");
+  }, [selectSource, endpoint, isDraft, flowId, code]);
   const file = useRef<HTMLInputElement>(null);
   const menu = useRef<HTMLDetailsElement>(null);
-  const gutter = useRef<HTMLDivElement>(null);
-  const codeInput = useRef<HTMLTextAreaElement>(null);
-  const codeNavigation = useRef("");
-  useEffect(() => {
-    if (editorRevision) {
-      setLocalDraft(true);
-      setView("graph");
-    }
-  }, [editorRevision]);
-  function selectFlow(_id: string) {
-    setLocalDraft(true);
-    setView("graph");
-    setNotice("");
+  function closeMenu() {
     if (menu.current) menu.current.open = false;
   }
-  const openCode = useCallback(
-    (targetLine = 1) => {
-      setView("code");
-      requestAnimationFrame(() => {
-        const editor = codeInput.current;
-        if (!editor) return;
-        const lines = code.split("\n");
-        const safeLine = Math.max(1, Math.min(targetLine, lines.length));
-        const start = lines
-          .slice(0, safeLine - 1)
-          .reduce((offset, value) => offset + value.length + 1, 0);
-        editor.focus();
-        editor.setSelectionRange(
-          start,
-          start + (lines[safeLine - 1]?.length ?? 0),
-        );
-        editor.scrollTop = Math.max(0, (safeLine - 3) * 23);
-        setLine(safeLine);
-      });
-    },
-    [code],
-  );
-  const hasCode = Boolean(code);
-  useEffect(() => {
-    if (!hasCode) {
-      codeNavigation.current = "";
-      return;
-    }
-    if (initialLine === undefined) return;
-    const request = `${flowId}:${initialLine}`;
-    if (codeNavigation.current === request) return;
-    codeNavigation.current = request;
-    openCode(initialLine);
-  }, [flowId, initialLine, hasCode, openCode]);
   function download() {
     const url = URL.createObjectURL(
       new Blob([code], { type: "text/javascript;charset=utf-8" }),
@@ -133,9 +74,10 @@ export function FlowStudio({
     anchor.download = `${isDraft ? "my-flow" : flowId}.flow.js`;
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    if (menu.current) menu.current.open = false;
+    closeMenu();
   }
-
+  const error =
+    (isDraft && draft.saveError) || selectedFlow?.error || analysis.error;
   return (
     <section className="workflow-editor" aria-label="工作流详情">
       <div className="flow-content">
@@ -153,21 +95,10 @@ export function FlowStudio({
             <p title={description}>{description}</p>
           </div>
           <div className="flow-content-actions">
-            {isDraft ? (
-              <button
-                className="tool-button accent"
-                onClick={() => {
-                  if (!isDraft && code) {
-                    draft.update(code);
-                    setLocalDraft(true);
-                  }
-                  onAsk();
-                }}
-              >
-                <Sparkles size={14} />
-                <span>助手生成</span>
-              </button>
-            ) : (
+            <span className="flow-view-status">
+              {isDraft ? (draft.saved ? "已保存" : "保存中…") : "已注册"}
+            </span>
+            {!isDraft ? (
               <button
                 className="primary-button"
                 disabled={!selectedFlow?.available}
@@ -176,14 +107,14 @@ export function FlowStudio({
                 <Play size={13} />
                 运行
               </button>
-            )}
+            ) : null}
             <details
               className="flow-more"
               ref={menu}
               onKeyDown={(event) => {
-                if (event.key === "Escape" && menu.current) {
-                  menu.current.open = false;
-                  menu.current.querySelector("summary")?.focus();
+                if (event.key === "Escape") {
+                  closeMenu();
+                  menu.current?.querySelector("summary")?.focus();
                 }
               }}
             >
@@ -197,7 +128,7 @@ export function FlowStudio({
                       disabled={!draft.canUndo}
                       onClick={() => {
                         draft.undo();
-                        if (menu.current) menu.current.open = false;
+                        closeMenu();
                       }}
                     >
                       <Undo2 size={14} />
@@ -206,7 +137,7 @@ export function FlowStudio({
                     <button
                       onClick={() => {
                         file.current?.click();
-                        if (menu.current) menu.current.open = false;
+                        closeMenu();
                       }}
                     >
                       <Upload size={14} />
@@ -218,8 +149,9 @@ export function FlowStudio({
                     disabled={!code}
                     onClick={() => {
                       draft.update(code);
-                      selectFlow("");
-                      setNotice("已复制到本地草稿，可编辑并导出。");
+                      setIsDraft(true);
+                      closeMenu();
+                      setNotice("已复制到本地草稿，可通过右侧对话修改并导出。");
                     }}
                   >
                     <FileCode2 size={14} />
@@ -234,96 +166,35 @@ export function FlowStudio({
             </details>
           </div>
         </header>
-        <div
-          className="studio-tabs"
-          role="tablist"
-          aria-label="工作流视图"
-          onKeyDown={(event) => {
-            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
-              return;
-            const tabs = Array.from(
-              event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                '[role="tab"]',
-              ),
-            );
-            const index = tabs.indexOf(event.target as HTMLButtonElement);
-            if (index < 0) return;
-            event.preventDefault();
-            const next =
-              event.key === "Home"
-                ? 0
-                : event.key === "End"
-                  ? tabs.length - 1
-                  : (index +
-                      (event.key === "ArrowRight" ? 1 : tabs.length - 1)) %
-                    tabs.length;
-            tabs[next]?.focus();
-            tabs[next]?.click();
-          }}
-        >
-          <button
-            id="graph-tab"
-            role="tab"
-            aria-selected={view === "graph"}
-            tabIndex={view === "graph" ? 0 : -1}
-            aria-controls="graph-panel"
-            onClick={() => setView("graph")}
-          >
-            <Workflow size={14} />
-            流程图
-          </button>
-          <button
-            id="code-tab"
-            role="tab"
-            aria-selected={view === "code"}
-            tabIndex={view === "code" ? 0 : -1}
-            aria-controls="code-panel"
-            onClick={() => setView("code")}
-          >
-            <FileCode2 size={14} />
-            代码
-          </button>
-          <span className="flow-view-status">
-            {isDraft
-              ? draft.saved
-                ? "已保存"
-                : "保存中…"
-              : selectedFlow?.available
-                ? "已注册"
-                : "不可用"}
-          </span>
-        </div>
         <input
           type="file"
           hidden
           ref={file}
           accept=".js,.ts,.txt"
-          aria-label="选择 工作流文件"
+          aria-label="选择工作流文件"
           onChange={async (event) => {
             const selected = event.target.files?.[0];
             event.target.value = "";
             if (!selected) return;
             if (selected.size > 100_000) {
-              setNotice("请选择小于 100 KB 的 工作流文件。");
+              setNotice("请选择小于 100 KB 的工作流文件。");
               return;
             }
             try {
               draft.update(await selected.text());
-              selectFlow("");
-              setNotice(`已导入 ${selected.name}。`);
+              setIsDraft(true);
+              closeMenu();
+              setNotice(
+                `已导入 ${selected.name}，在右侧发送消息即可分析流程。`,
+              );
             } catch {
               setNotice("文件读取失败，请重试。");
             }
           }}
         />
-        {notice || (isDraft && draft.saveError) || selectedFlow?.error ? (
-          <div
-            className="editor-notice"
-            role={draft.saveError || selectedFlow?.error ? "alert" : "status"}
-          >
-            <span>
-              {(isDraft && draft.saveError) || selectedFlow?.error || notice}
-            </span>
+        {notice || error ? (
+          <div className="editor-notice" role={error ? "alert" : "status"}>
+            <span>{error || notice}</span>
             {notice ? (
               <button
                 className="icon-control"
@@ -347,77 +218,35 @@ export function FlowStudio({
                 : !selectedFlow.available
                   ? "Flow 暂不可用"
                   : source.error
-                    ? "无法加载流程预览"
-                    : "正在加载流程图…"}
+                    ? "无法加载流程"
+                    : "正在加载流程…"}
             </strong>
             <p>{source.error || selectedFlow?.error}</p>
             {source.error && selectedFlow?.available ? (
               <button className="tool-button" onClick={source.refresh}>
                 <RefreshCw size={13} />
-                重试预览
+                重新加载
               </button>
             ) : null}
           </div>
-        ) : null}
-        {view === "graph" && (isDraft || source.source) ? (
-          <FlowGraphView key={flowId} code={code} onOpenCode={openCode} />
-        ) : null}
-        <div
-          id="code-panel"
-          role="tabpanel"
-          aria-labelledby="code-tab"
-          className="editor-panel"
-          hidden={view !== "code" || (!isDraft && !source.source)}
-        >
-          <div className="code-editor">
-            <div className="code-gutter" ref={gutter} aria-hidden="true">
-              {code.split("\n").map((_, index) => (
-                <div key={index}>{index + 1}</div>
-              ))}
-            </div>
-            <textarea
-              ref={codeInput}
-              className="flow-code"
-              aria-label={isDraft ? "工作流代码编辑器" : "工作流代码预览"}
-              readOnly={!isDraft}
-              spellCheck={false}
-              value={code}
-              onChange={(event) => draft.edit(event.target.value)}
-              onScroll={(event) => {
-                if (gutter.current)
-                  gutter.current.scrollTop = event.currentTarget.scrollTop;
-              }}
-              onSelect={(event) =>
-                setLine(
-                  event.currentTarget.value
-                    .slice(0, event.currentTarget.selectionStart)
-                    .split("\n").length,
-                )
-              }
-              onKeyDown={(event) => {
-                if (!isDraft || event.key !== "Tab" || event.shiftKey) return;
-                event.preventDefault();
-                const element = event.currentTarget;
-                const start = element.selectionStart;
-                const end = element.selectionEnd;
-                draft.edit(`${code.slice(0, start)}  ${code.slice(end)}`);
-                requestAnimationFrame(() => {
-                  element.selectionStart = element.selectionEnd = start + 2;
-                });
-              }}
-            />
-          </div>
-          <div className="editor-status">
-            <span>
-              <Check size={12} />
-              {isDraft ? "本地草稿 · Tab 缩进" : "已注册版本 · 只读"}
+        ) : diagram ? (
+          <FlowGraphView diagram={diagram} />
+        ) : (
+          <div className="flow-preview-empty flow-analysis-empty">
+            <span className="flow-analysis-symbol">
+              <Workflow size={28} />
             </span>
-            <span>Ln {line} · JavaScript</span>
+            <strong>让 Agent 读懂这个流程</strong>
+            <p>
+              在右侧描述你的想法，或让助手分析当前流程。
+              <br />
+              生成的 SVG 流程图会显示在这里。
+            </p>
           </div>
-        </div>
-        {isDraft && view === "graph" ? (
+        )}
+        {isDraft ? (
           <div className="flow-draft-hint">
-            草稿可编辑和导出，注册后即可运行。
+            通过右侧对话完善流程，导出并注册后即可运行。
           </div>
         ) : null}
       </div>

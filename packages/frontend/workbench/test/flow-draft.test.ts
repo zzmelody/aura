@@ -44,4 +44,9 @@ test("Flow context stays inside protocol history limits without truncating the u
   assert.match(starterFlow, /agentDefaults/);
   assert.match(starterFlow, /reasoningEffort: ctx.mode/);
   assert.ok(flowContext(starterFlow).includes(starterFlow));
+  const analysisContext = flowContext("x".repeat(20_000), "current-analysis");
+  assert.ok(analysisContext.length <= 12000);
+  assert.match(analysisContext, /前 7000 字符/);
+  assert.match(analysisContext, /data-analysis-id="current-analysis"/);
+  assert.match(analysisContext, /不要返回替换代码/);
 });

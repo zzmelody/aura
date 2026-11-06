@@ -3,7 +3,7 @@
   min-width: 0;
   padding: 14px 16px 12px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: calc(14px * var(--radius-scale, 1));
   background: var(--surface);
 }
 .workflow-response-heading {
@@ -15,7 +15,7 @@
   width: 28px;
   height: 28px;
   flex-basis: 28px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--soft);
 }
 .workflow-response-identity strong {
@@ -38,7 +38,7 @@
 .workflow-stream-steps {
   margin: 0 0 12px;
   padding: 6px 8px;
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale, 1));
   background: var(--background);
 }
 .workflow-stream-steps > li > button {
@@ -67,13 +67,13 @@
   margin: 0;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
   background: var(--background);
 }
 .artifact-inline video {
   width: 100%;
   max-height: 460px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: #000;
 }
 .artifact-inline-video video {
@@ -97,7 +97,7 @@
   flex: 0 0 32px;
   width: 32px;
   height: 32px;
-  border-radius: 9px;
+  border-radius: calc(9px * var(--radius-scale, 1));
   background: var(--soft);
   color: var(--accent);
 }
@@ -183,7 +183,7 @@
   gap: 10px;
 }
 .artifact-card {
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale, 1));
 }
 
 /* Local paths become compact, copyable file chips. */
@@ -195,7 +195,7 @@
   min-height: 30px;
   padding: 0 4px 0 10px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--background);
   color: var(--secondary);
   vertical-align: middle;
@@ -270,7 +270,7 @@
   margin: 4px 0 10px 26px;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale, 1));
   background: var(--surface);
 }
 .workflow-step-detail h4 {
@@ -291,7 +291,7 @@
 }
 .workflow-step-meta > code {
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   background: var(--elevated);
   color: var(--secondary);
   font:
@@ -302,14 +302,14 @@
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--elevated);
 }
 .workflow-step-attempts button {
   min-height: 24px;
   padding: 0 9px;
   border: 0;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale, 1));
   background: transparent;
   color: var(--secondary);
   font-size: 11px;
@@ -325,7 +325,7 @@
 .workflow-step-error {
   margin: 0;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
   font-size: 12px;
@@ -341,7 +341,7 @@
 .workflow-step-panel {
   min-width: 0;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--background);
 }
 .workflow-step-panel .workflow-value-fields {
@@ -388,7 +388,7 @@
   margin-top: 8px;
   padding: 8px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale, 1));
   background: var(--background);
 }
 .workflow-step-detail .workflow-history-entry small {

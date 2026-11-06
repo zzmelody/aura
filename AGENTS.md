@@ -8,6 +8,7 @@ Node.js >=24、pnpm 12.5.1，命令从仓库根执行。
 
 - 调整目录、模块或依赖：[项目结构](.agents/skills/aura-project-structure/SKILL.md)。
 - 编写或审查自有代码：[代码规范](.agents/skills/aura-code-style/SKILL.md)。
+- 开发或调整 UI、主题、组件、布局和动效：[UI 开发规范](.agents/skills/aura-ui-development/SKILL.md)。
 - 编写测试、执行检查或交付：[测试与验证](.agents/skills/aura-testing/SKILL.md)。
 
 ## 始终生效

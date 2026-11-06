@@ -85,6 +85,7 @@ const pluginStatusSchema = z
     version: z.string().optional(),
     enabled: z.boolean(),
     available: z.boolean(),
+    description: z.string().max(500).optional(),
     error: z.string().optional(),
   })
   .strict();
