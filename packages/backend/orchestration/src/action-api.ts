@@ -14,11 +14,17 @@ import type { FlowMode } from "@aura/protocol/types";
 import type { AuraPluginIdentity } from "@aura/protocol/types";
 import type { JsonValue } from "@aura/protocol/types";
 import { jsonValue } from "./schema.ts";
+import {
+  readErrorTranslations,
+  type ErrorTranslations,
+  type ApiErrorDetails,
+} from "@aura/protocol/errors";
 
 export type { InferArgs, InferValue, ParameterSchemaSpec, ValueSchemaSpec };
 
 export const ACTION_FAILURE_CODE = "ACTION_FAILURE";
 const MAX_ACTION_FAILURE_MESSAGE = 2_000;
+const failureTranslations = new WeakMap<Error, ErrorTranslations>();
 
 /**
  * A bounded, product-facing Action failure that may be persisted and shown in
@@ -26,7 +32,10 @@ const MAX_ACTION_FAILURE_MESSAGE = 2_000;
  * URLs, or stack traces in this message.
  */
 export class ActionFailure extends HarnessError {
-  constructor(message: string, options?: ErrorOptions) {
+  constructor(
+    message: string,
+    options?: ErrorOptions & { translations?: ErrorTranslations },
+  ) {
     const normalized = message
       // eslint-disable-next-line no-control-regex -- Intentionally sanitize or detect ASCII control characters.
       .replace(/[\u0000-\u001f\u007f]/gu, " ")
@@ -38,9 +47,11 @@ export class ActionFailure extends HarnessError {
         ? `${normalized.slice(0, MAX_ACTION_FAILURE_MESSAGE - 1)}…`
         : normalized,
       ACTION_FAILURE_CODE,
-      options,
+      options?.cause === undefined ? undefined : { cause: options.cause },
     );
     this.name = "ActionFailure";
+    const translations = readErrorTranslations(options?.translations);
+    if (translations) failureTranslations.set(this, translations);
   }
 }
 
@@ -97,6 +108,8 @@ export type ActionBinding = Omit<
   ActionContext,
   "signal" | "callId" | "directory"
 > & {
+  /** Private direct-dispatch feedback, never passed to the Action or model tool result. */
+  onFailure?: (details: ApiErrorDetails) => void;
   /** Host-only call-scoped adapters; never exposed to model/tool parameters. */
   bindCall?: (callId: string) => Pick<ActionContext, "aura" | "artifacts">;
 };
@@ -169,18 +182,31 @@ export function defineAction<
             timeoutMs: definition.timeoutMs ?? 30 * 60_000,
             async execute(input: InferArgs<S>, exec: ToolRunContext) {
               jsonValue(input, "Action 入参");
-              const { bindCall, ...contextBinding } = binding;
-              const output = await definition.execute(
-                Object.freeze({
-                  ...contextBinding,
-                  ...bindCall?.(exec.callId),
-                  directory: config.directory,
-                  signal: exec.signal,
-                  callId: exec.callId,
-                }),
-                input,
-              );
-              return jsonValue(output, "Action 出参");
+              const { bindCall, onFailure, ...contextBinding } = binding;
+              try {
+                const output = await definition.execute(
+                  Object.freeze({
+                    ...contextBinding,
+                    ...bindCall?.(exec.callId),
+                    directory: config.directory,
+                    signal: exec.signal,
+                    callId: exec.callId,
+                  }),
+                  input,
+                );
+                return jsonValue(output, "Action 出参");
+              } catch (error) {
+                const translations =
+                  error instanceof ActionFailure
+                    ? failureTranslations.get(error)
+                    : undefined;
+                if (translations)
+                  onFailure?.({
+                    code: "plugin_failure",
+                    params: { translations },
+                  });
+                throw error;
+              }
             },
           };
           // Author inference is retained above; erase generics only at the plugin boundary.

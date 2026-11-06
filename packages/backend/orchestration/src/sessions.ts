@@ -1,3 +1,4 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { Context } from "@deepseek-ai/cordis";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { LlmError, ReasoningEffortId } from "@deepseek-ai/dsh-llm";
@@ -26,7 +27,9 @@ export async function imagePromptParts(
     images.reduce((sum, image) => sum + image.bytes, 0) >
       limit.maxMessageImageBytes
   )
-    throw new FlowError("Agent 图片附件超过宿主上限。", 413);
+    throw new CodedFlowError("Agent 图片附件超过宿主上限。", 413, {
+      code: "flow_agent_images_limit",
+    });
   const parts = [];
   for (const ref of images) {
     const stored = await ctx.attachments.readImage(
@@ -79,9 +82,18 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
         const safeCode = /^[A-Z0-9_]+$/.test(code)
           ? code
           : "MODEL_CONFIG_UNAVAILABLE";
-        throw new FlowError(
+        throw new CodedFlowError(
           `Agent 模型配置不可用（${safeCode}）：${config.provider}/${config.model}，reasoningEffort=${config.reasoningEffort}。`,
           422,
+          {
+            code: "flow_model_config_unavailable",
+            params: {
+              reason: safeCode,
+              provider: config.provider,
+              model: config.model,
+              effort: config.reasoningEffort,
+            },
+          },
         );
       }
     },
@@ -101,7 +113,10 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
       requestId: savedRequestId,
       config,
     }) {
-      if (!config) throw new FlowError("Agent attempt 缺少已存档的模型配置。");
+      if (!config)
+        throw new CodedFlowError("Agent attempt 缺少已存档的模型配置。", 400, {
+          code: "flow_agent_config_missing",
+        });
       const sessionId = SessionId(rawId);
       const timeout = AbortSignal.timeout(timeoutMs);
       const stop = AbortSignal.any([signal, timeout]);
@@ -112,7 +127,10 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
         cwd: process.env.AURA_FLOW_CWD,
       });
       const agent = ctx.agents.get(sessionId);
-      if (!agent) throw new FlowError("DSH Agent 创建后不可用。");
+      if (!agent)
+        throw new CodedFlowError("DSH Agent 创建后不可用。", 400, {
+          code: "flow_agent_unavailable",
+        });
       const agentScopeDisposers: Array<() => void> = [];
       try {
         // Fail closed: Flow Agents never inherit tools from DSH, a preset, or
@@ -162,7 +180,11 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
             : { reasoningEffort: config.reasoningEffort }),
         });
         if (!savedRequestId)
-          throw new FlowError("Agent attempt 缺少持久化 requestId。");
+          throw new CodedFlowError(
+            "Agent attempt 缺少持久化 requestId。",
+            400,
+            { code: "flow_agent_request_missing" },
+          );
         const requestId = savedRequestId as SessionRequestId;
         let matchedTurn: number | undefined;
         let turn: number | undefined;
@@ -236,9 +258,10 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
               (error.details as { reason?: string } | undefined)?.reason ===
                 "MODEL_DOES_NOT_SUPPORT_IMAGES"
             )
-              throw new FlowError(
+              throw new CodedFlowError(
                 "MODEL_DOES_NOT_SUPPORT_IMAGES：当前 Agent 模型不支持图片输入，请使用支持视觉的模型；不会降级为仅路径或文本验收。",
                 422,
+                { code: "flow_agent_images_unsupported" },
               );
             throw error;
           }
@@ -269,9 +292,10 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
           timeout.aborted &&
           stop.reason === timeout.reason
         )
-          throw new FlowError(
+          throw new CodedFlowError(
             `Agent 步骤执行超时（${timeoutMs / 1000} 秒）。`,
             504,
+            { code: "flow_agent_timeout", params: { limit: timeoutMs / 1000 } },
           );
         throw error;
       } finally {
@@ -280,7 +304,9 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
     },
     async reconcile(step) {
       if (!step.requestId)
-        throw new FlowError("Agent attempt 缺少持久化 requestId。");
+        throw new CodedFlowError("Agent attempt 缺少持久化 requestId。", 400, {
+          code: "flow_agent_request_missing",
+        });
       let inspection;
       try {
         inspection = await controller.inspect(
@@ -332,7 +358,9 @@ export function dshSessions(ctx: Context, actions: ActionRuntime): SessionPort {
         beforeSeq !== undefined &&
         (!Number.isSafeInteger(beforeSeq) || beforeSeq < 0)
       )
-        throw new FlowError("无效的历史游标。");
+        throw new CodedFlowError("无效的历史游标。", 400, {
+          code: "history_cursor_invalid",
+        });
       if (!step.startedAt)
         return {
           sessionId: step.sessionId,

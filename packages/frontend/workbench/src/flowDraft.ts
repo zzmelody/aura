@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { flowAnalysisInstructions } from "./flow-analysis.ts";
+import {
+  useWorkflowMessages,
+  type WorkflowMessageKey,
+} from "./workflow-messages.ts";
 
 export const FLOW_DRAFT_KEY = "aura.flow-draft.v1";
 export const starterFlow = `import { defineFlow, z } from "@aura/orchestration/flow";
@@ -73,23 +77,27 @@ export function flowContext(code: string, analysisId?: string): string {
 }
 
 export function useFlowDraft() {
-  const [initial] = useState(() => {
-    try {
-      const value = JSON.parse(localStorage.getItem(FLOW_DRAFT_KEY) ?? "null");
-      return {
-        code:
-          value?.version === 1 && typeof value.code === "string"
-            ? value.code
-            : starterFlow,
-        error: "",
-      };
-    } catch {
-      return {
-        code: starterFlow,
-        error: "无法读取本地草稿，可编辑后导出保存。",
-      };
-    }
-  });
+  const { t } = useWorkflowMessages();
+  const [initial] = useState<{ code: string; error?: WorkflowMessageKey }>(
+    () => {
+      try {
+        const value = JSON.parse(
+          localStorage.getItem(FLOW_DRAFT_KEY) ?? "null",
+        );
+        return {
+          code:
+            value?.version === 1 && typeof value.code === "string"
+              ? value.code
+              : starterFlow,
+        };
+      } catch {
+        return {
+          code: starterFlow,
+          error: "draftReadFailed",
+        };
+      }
+    },
+  );
   const [code, setCode] = useState<string>(initial.code);
   const [previous, setPrevious] = useState<string>();
   const [saveError, setSaveError] = useState(initial.error);
@@ -102,10 +110,10 @@ export function useFlowDraft() {
           FLOW_DRAFT_KEY,
           JSON.stringify({ version: 1, code }),
         );
-        setSaveError("");
+        setSaveError(undefined);
         setSaved(true);
       } catch {
-        setSaveError("本地草稿保存失败，请导出文件保存。 ");
+        setSaveError("draftSaveFailed");
       }
     }, 300);
     return () => clearTimeout(timer);
@@ -113,7 +121,7 @@ export function useFlowDraft() {
   return {
     code,
     saved,
-    saveError,
+    saveError: saveError ? t(saveError) : "",
     edit: setCode,
     update: (next: string) => {
       setPrevious(code);

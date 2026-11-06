@@ -105,4 +105,23 @@ test("AI routes require the native loopback capability and never return submitte
     ).status,
     200,
   );
+  const before = JSON.stringify(await services.settings());
+  const invalid = await post("/model", {
+    mode: "custom",
+    model: "fixture-model",
+    reasoningEffort: "off",
+    key: "private key with spaces",
+    custom: {
+      name: "Local",
+      api: "openai-responses",
+      baseURL: "https://fixture.example/v1",
+      images: false,
+      contextWindow: 65536,
+    },
+  });
+  assert.equal(invalid.status, 400);
+  const refused = await invalid.json();
+  assert.equal(refused.code, "ai_key_invalid");
+  assert.equal(JSON.stringify(refused).includes("private key"), false);
+  assert.equal(JSON.stringify(await services.settings()), before);
 });

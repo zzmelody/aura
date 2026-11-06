@@ -5,10 +5,40 @@
   "version": "0.1.0",
   "engines": {
     "aura": "^0.1.0",
-    "pluginSdk": "^2.0.0"
+    "pluginSdk": "^2.6.0"
   },
   "contributes": {
     "backend": "./backend/dist/index.js",
     "pages": "./client/dist/client.js"
+  },
+  "localization": {
+    "nameKey": "siteName",
+    "descriptionKey": "siteDescription",
+    "catalogs": {
+      "zh-CN": {
+        "siteName": "站点启动",
+        "siteDescription": "启动本地 Web 项目并查看运行状态。"
+      },
+      "en": {
+        "siteName": "Site launcher",
+        "siteDescription": "Start local web projects and view their status."
+      },
+      "ja": {
+        "siteName": "サイト起動",
+        "siteDescription": "ローカルの Web プロジェクトを起動して状態を確認します。"
+      },
+      "ko": {
+        "siteName": "사이트 실행",
+        "siteDescription": "로컬 웹 프로젝트를 실행하고 상태를 확인합니다."
+      },
+      "ru": {
+        "siteName": "Запуск сайтов",
+        "siteDescription": "Запускайте локальные веб-проекты и просматривайте их состояние."
+      },
+      "fr": {
+        "siteName": "Lancement de sites",
+        "siteDescription": "Démarrez des projets web locaux et consultez leur état."
+      }
+    }
   }
 }

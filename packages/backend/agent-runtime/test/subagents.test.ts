@@ -7,12 +7,18 @@ type Inspection = Awaited<ReturnType<Context["sessionController"]["inspect"]>>;
 
 function fixture(
   events: unknown[],
-  options: { running?: boolean; unreadable?: boolean } = {},
+  options: {
+    running?: boolean;
+    unreadable?: boolean;
+    unlabeled?: boolean;
+  } = {},
 ) {
   let unreadable = options.unreadable;
   const ctx = {
     subagents: {
-      listChildren: async () => [{ id: "child", label: "调研插件" }],
+      listChildren: async () => [
+        { id: "child", ...(options.unlabeled ? {} : { label: "调研插件" }) },
+      ],
     },
     agents: {
       get: () => (options.running ? { status: "running" } : undefined),
@@ -66,6 +72,13 @@ test("execution errors and unreadable child records have separate outcomes and s
   const failed = (await fixture([start(), end("error")]).read())[0]!;
   assert.equal(failed.status, "error");
   assert.match(failed.executionError!, /HTTP 503/u);
+  assert.deepEqual(failed.executionErrorDetails, {
+    code: "model_http_failed",
+    params: { status: 503 },
+  });
+  assert.equal(failed.roleKind, "review");
+  assert.equal(failed.defaultLabel, undefined);
+  assert.equal(failed.label, "调研插件");
   assert.equal(failed.recordError, undefined);
   assert.ok(!JSON.stringify(failed).includes("synthetic-api-key"));
   assert.ok(!JSON.stringify(failed).includes("private-path"));
@@ -76,6 +89,9 @@ test("execution errors and unreadable child records have separate outcomes and s
   const unreadable = (await source.read())[0]!;
   assert.equal(unreadable.status, "unknown");
   assert.ok(unreadable.recordError);
+  assert.deepEqual(unreadable.recordErrorDetails, {
+    code: "subagent_record_unavailable",
+  });
   assert.equal(unreadable.executionError, undefined);
   assert.equal(unreadable.result, "");
   assert.ok(!JSON.stringify(unreadable).includes("synthetic-api-key"));
@@ -84,7 +100,11 @@ test("execution errors and unreadable child records have separate outcomes and s
   assert.equal(recovered.status, "complete");
   assert.equal(recovered.result, "done");
   assert.equal(recovered.recordError, undefined);
+  assert.equal(recovered.recordErrorDetails, undefined);
   assert.equal(recovered.durationMs, 2000);
+  const [unnamed] = await fixture([], { unlabeled: true }).read();
+  assert.equal(unnamed.defaultLabel, true);
+  assert.equal(unnamed.label, "子 Agent");
 });
 
 test("a read failure preserves a live child's independently known running state", async () => {
@@ -141,6 +161,9 @@ test("output limits are execution failures while canceled turns stay stopped", a
   )[0]!;
   assert.equal(limited.status, "error");
   assert.match(limited.executionError!, /输出上限/u);
+  assert.deepEqual(limited.executionErrorDetails, {
+    code: "subagent_output_limit",
+  });
   assert.equal(limited.result, "partial result");
   const stopped = (await fixture([start(), end("aborted")]).read())[0]!;
   assert.equal(stopped.status, "stopped");

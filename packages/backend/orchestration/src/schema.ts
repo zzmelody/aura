@@ -2,7 +2,11 @@ import {
   agentConfigSchema,
   agentOptionsSchema,
 } from "@aura/dsh-auth/model-config";
-import { FlowError } from "@aura/protocol/errors";
+import {
+  CodedFlowError,
+  FlowError,
+  validationParameters,
+} from "@aura/protocol/errors";
 import type { JsonValue } from "@aura/protocol/types";
 import { z } from "zod";
 import { snapshotJsonValue } from "@deepseek-ai/dsh-util-values";
@@ -295,14 +299,40 @@ export const active = (status: string) =>
 
 export { FlowError };
 
+/** Call-site context labels, never inferred from an exception message. */
+function validationTarget(label: string) {
+  const targets = {
+    "Flow 入参": "flow_input",
+    "Flow 出参": "flow_output",
+    "Action 入参": "action_input",
+    "Action 出参": "action_output",
+    "Agent 输出": "agent_output",
+    "子 Flow 入参": "child_input",
+    "子 Flow 出参 Schema": "child_output",
+    "memo 输出": "memo_output",
+    提交结果: "submitted_result",
+    "Flow 进度": "progress",
+    "步骤 Schema": "step_schema",
+    "Action input schema": "step_schema",
+    "Action output schema": "step_schema",
+  } as const;
+  return Object.entries(targets).find(([text]) => text === label)?.[1];
+}
+
 export function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
-  if (!result.success)
-    throw new FlowError(
-      result.error.issues
-        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-        .join("；"),
-    );
+  if (!result.success) {
+    const message = result.error.issues
+      .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+      .join("；");
+    const params = validationParameters(result.error.issues);
+    if (params)
+      throw new CodedFlowError(message, 400, {
+        code: "validation_failed",
+        params,
+      });
+    throw new FlowError(message);
+  }
   return result.data;
 }
 
@@ -316,6 +346,17 @@ export function parseJson(
   try {
     parsed = parse(schema, value);
   } catch (error) {
+    if (
+      error instanceof CodedFlowError &&
+      error.details.code === "validation_failed"
+    ) {
+      const target = validationTarget(label);
+      if (target)
+        throw new CodedFlowError(`${label}：${error.message}`, error.status, {
+          code: "validation_failed",
+          params: { ...error.details.params, target },
+        });
+    }
     if (error instanceof FlowError)
       throw new FlowError(`${label}：${error.message}`, error.status);
     throw error;
@@ -329,10 +370,25 @@ export function jsonValue(
   maxBytes = 256 * 1_024,
 ): JsonValue {
   const json = snapshotJsonValue(value);
-  if (json === undefined)
-    throw new FlowError(`${label}必须是可序列化的 JSON 数据。`);
+  const target = validationTarget(label);
+  if (json === undefined) {
+    const message = `${label}必须是可序列化的 JSON 数据。`;
+    if (target)
+      throw new CodedFlowError(message, 400, {
+        code: "json_not_serializable",
+        params: { target },
+      });
+    throw new FlowError(message);
+  }
   const content = JSON.stringify(json);
-  if (Buffer.byteLength(content, "utf8") > maxBytes)
-    throw new FlowError(`${label}超过 ${maxBytes} 字节限制。`, 413);
+  if (Buffer.byteLength(content, "utf8") > maxBytes) {
+    const message = `${label}超过 ${maxBytes} 字节限制。`;
+    if (target)
+      throw new CodedFlowError(message, 413, {
+        code: "json_too_large",
+        params: { target, limitBytes: maxBytes },
+      });
+    throw new FlowError(message, 413);
+  }
   return json as JsonValue;
 }

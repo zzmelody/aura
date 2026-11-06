@@ -392,9 +392,15 @@ export function historyTurns(
           : reason?.kind === "aborted"
             ? "stopped"
             : "error";
-      if (reason?.kind === "error")
-        current.error = agentFailure(reason.error?.message).message;
-      if (reason?.kind === "blocked") current.error = "这一轮被策略阻止了。";
+      if (reason?.kind === "error") {
+        const failure = agentFailure(reason.error?.message);
+        current.error = failure.message;
+        current.errorDetails = failure.details;
+      }
+      if (reason?.kind === "blocked") {
+        current.error = "这一轮被策略阻止了。";
+        current.errorDetails = { code: "conversation_policy_blocked" };
+      }
       current = undefined;
       continue;
     }

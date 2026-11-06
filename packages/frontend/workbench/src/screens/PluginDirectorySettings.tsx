@@ -5,6 +5,17 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { apiErrorText } from "../api-error-messages.ts";
+import {
+  errorMessage,
+  formatNumber,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import {
+  detailMessage,
+  useSettingsDetailsMessages,
+} from "./settings-details-messages.ts";
 import type {
   AuraPluginSettingsState,
   AuraPluginStatus,
@@ -41,27 +52,36 @@ interface DraftEntry {
   enabled: boolean;
 }
 
-function problemMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : "插件目录设置暂时不可用。";
+function problemMessage(cause: unknown): string | MessageReference {
+  return errorMessage(cause, detailMessage("pluginSettingsUnavailable"));
 }
 
-function statusLabel(status: AuraPluginStatus | undefined, enabled: boolean) {
-  if (!status) return "等待保存后校验";
-  if (!enabled) return "已禁用 · 下次启动不加载";
+function statusLabel(
+  status: AuraPluginStatus | undefined,
+  enabled: boolean,
+  t: ReturnType<typeof useSettingsDetailsMessages>["t"],
+  runtime: Parameters<typeof messageText>[1],
+) {
+  if (!status) return t("awaitingValidation");
+  if (!enabled) return t("pluginDisabled");
   if (status.available)
     return `${status.name}${status.version ? ` · v${status.version}` : ""}`;
-  return status.error || "插件不可用";
+  return messageText(
+    apiErrorText(status.errorDetails, status.error || t("pluginUnavailable")),
+    runtime,
+  );
 }
 
 export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
+  const { t, i18n } = useSettingsDetailsMessages();
   const { colors } = useTheme();
   const nextKey = useRef(0);
   const [settings, setSettings] = useState<AuraPluginSettingsState>();
   const [entries, setEntries] = useState<DraftEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
+  const [notice, setNotice] = useState<string | MessageReference>("");
 
   const replaceEntries = useCallback((state: AuraPluginSettingsState) => {
     setSettings(state);
@@ -112,7 +132,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
       enabled,
     }));
     if (plugins.some(({ path }) => !path)) {
-      setError("请填写完整插件目录，或移除空白项。");
+      setError(detailMessage("pluginPathRequired"));
       return;
     }
     setSaving(true);
@@ -126,12 +146,9 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
       ).length;
       if (unavailable)
         setError(
-          `目录已保存，但有 ${unavailable} 个已启用插件未通过校验；它们没有被加载。`,
+          detailMessage("pluginsFailedValidation", { count: unavailable }),
         );
-      else
-        setNotice(
-          "插件目录已保存并立即应用。已有运行继续使用启动时锁定的版本。",
-        );
+      else setNotice(detailMessage("pluginDirectoriesSaved"));
     } catch (cause) {
       setError(problemMessage(cause));
     } finally {
@@ -152,7 +169,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
       <View style={styles.heading}>
         <ShieldCheck size={16} color={colors.secondary} />
         <Text style={[textType.small, { color: colors.secondary, flex: 1 }]}>
-          只启用你信任的目录；Aura 只校验已有依赖，不会自动安装或下载内容。
+          {t("trustedDirectoriesHint")}
         </Text>
         <View style={[styles.counter, { backgroundColor: colors.soft }]}>
           <Text
@@ -162,7 +179,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
               fontSize: 10,
             }}
           >
-            {activeCount} 个已启用
+            {t("enabledCount", { count: activeCount })}
           </Text>
         </View>
       </View>
@@ -171,7 +188,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
         <View style={styles.loading}>
           <ActivityIndicator color={colors.accent} />
           <Text style={[textType.small, { color: colors.muted }]}>
-            读取本机配置…
+            {t("readingLocalConfig")}
           </Text>
         </View>
       ) : null}
@@ -180,16 +197,18 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
         <View style={[styles.problem, { backgroundColor: colors.input }]}>
           <AlertTriangle size={18} color={colors.danger} />
           <View style={{ flex: 1, gap: 5 }}>
-            <Text style={[textType.small, { color: colors.text }]}>
-              {error}
+            <Text
+              accessibilityRole="alert"
+              style={[textType.small, { color: colors.text }]}
+            >
+              {messageText(error, i18n)}
             </Text>
             <Text style={[textType.small, { color: colors.muted }]}>
-              该功能要求 Aura runtime 仅绑定
-              localhost。通过手机或局域网地址不能远程启用本机代码。
+              {t("localOnly")}
             </Text>
           </View>
           <Pressable
-            accessibilityLabel="重新读取插件目录"
+            accessibilityLabel={t("reloadDirectories")}
             onPress={() => void refresh()}
             style={[styles.iconButton, { borderColor: colors.border }]}
           >
@@ -221,7 +240,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
                 >
                   <View style={styles.entryRail}>
                     <Text style={[styles.index, { color: colors.muted }]}>
-                      {String(index + 1).padStart(2, "0")}
+                      {formatNumber(index + 1, { minimumIntegerDigits: 2 })}
                     </Text>
                     <View
                       style={[
@@ -232,9 +251,11 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
                   </View>
                   <View style={styles.entryContent}>
                     <View style={styles.entryTopline}>
-                      <Label>TRUSTED LOCAL DIRECTORY</Label>
+                      <Label>{t("trustedDirectory")}</Label>
                       <Pressable
-                        accessibilityLabel={`移除插件目录 ${index + 1}`}
+                        accessibilityLabel={t("removeDirectory", {
+                          index: index + 1,
+                        })}
                         onPress={() =>
                           setEntries((current) =>
                             current.filter(({ key }) => key !== entry.key),
@@ -246,7 +267,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
                       </Pressable>
                     </View>
                     <TextInput
-                      accessibilityLabel={`插件目录 ${index + 1}`}
+                      accessibilityLabel={t("directory", { index: index + 1 })}
                       value={entry.path}
                       onChangeText={(path) =>
                         setEntries((current) =>
@@ -271,14 +292,18 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
                     <View style={styles.entryFooter}>
                       <View style={{ flex: 1, gap: 3 }}>
                         <Text style={[styles.status, { color: statusColor }]}>
-                          {statusLabel(status, entry.enabled)}
+                          {statusLabel(status, entry.enabled, t, i18n)}
                         </Text>
                         <Text style={[textType.small, { color: colors.muted }]}>
-                          {entry.enabled ? "下次启动加载" : "保留目录但不加载"}
+                          {entry.enabled
+                            ? t("loadNextStart")
+                            : t("keepDisabled")}
                         </Text>
                       </View>
                       <Switch
-                        accessibilityLabel={`启用插件目录 ${index + 1}`}
+                        accessibilityLabel={t("enableDirectory", {
+                          index: index + 1,
+                        })}
                         value={entry.enabled}
                         onValueChange={(enabled) =>
                           setEntries((current) =>
@@ -305,7 +330,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
           </View>
 
           <Pressable
-            accessibilityLabel="添加外部插件目录"
+            accessibilityLabel={t("addExternalDirectory")}
             onPress={() =>
               setEntries((current) => [
                 ...current,
@@ -316,7 +341,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
           >
             <FolderPlus size={17} color={colors.accent} />
             <Text style={[textType.small, { color: colors.accent }]}>
-              添加目录
+              {t("addDirectory")}
             </Text>
             <Text
               style={[
@@ -324,7 +349,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
                 { color: colors.muted, marginLeft: "auto" },
               ]}
             >
-              默认关闭
+              {t("disabledByDefault")}
             </Text>
           </Pressable>
 
@@ -332,8 +357,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
             <View style={[styles.restart, { backgroundColor: colors.soft }]}>
               <AlertTriangle size={16} color={colors.accent} />
               <Text style={[textType.small, { color: colors.accent, flex: 1 }]}>
-                配置文件在 Aura
-                外部发生了变化。点击保存即可立即应用；已有运行不受影响。
+                {t("externalConfigChanged")}
               </Text>
             </View>
           ) : null}
@@ -343,7 +367,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
               accessibilityLiveRegion="polite"
               style={[textType.small, { color: colors.danger }]}
             >
-              {error}
+              {messageText(error, i18n)}
             </Text>
           ) : null}
           {notice ? (
@@ -353,14 +377,14 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
                 accessibilityLiveRegion="polite"
                 style={[textType.small, { color: colors.success, flex: 1 }]}
               >
-                {notice}
+                {messageText(notice, i18n)}
               </Text>
             </View>
           ) : null}
 
           <View style={styles.actions}>
             <View style={{ flex: 1, minWidth: 180, gap: 3 }}>
-              <Label>CONFIG FILE</Label>
+              <Label>{t("configFile")}</Label>
               <Text
                 numberOfLines={1}
                 selectable
@@ -380,7 +404,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
               onClick={() => void refresh()}
             >
               <RefreshCw size={14} />
-              重新读取
+              {t("reload")}
             </button>
             <button
               type="button"
@@ -389,7 +413,7 @@ export function PluginDirectorySettings({ endpoint }: { endpoint: string }) {
               onClick={() => void save()}
             >
               <Save size={14} />
-              {saving ? "正在校验…" : "保存目录"}
+              {saving ? t("validating") : t("saveDirectories")}
             </button>
           </View>
         </>

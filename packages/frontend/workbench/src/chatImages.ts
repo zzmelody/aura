@@ -1,3 +1,6 @@
+import { MessageError } from "@aura/i18n/runtime";
+import { conversationMessage as message } from "./conversation-messages.ts";
+import { apiErrorText } from "./api-error-messages.ts";
 import type { ChatImage } from "@aura/core/types";
 import { CHAT_IMAGE_LIMIT } from "@aura/protocol/types";
 
@@ -28,9 +31,9 @@ export async function uploadChatImage(
   signal?: AbortSignal,
 ): Promise<ChatImage> {
   const mimeType = chatImageType(file);
-  if (!mimeType) throw new Error("只支持 PNG、JPEG 或 WebP 图片。");
+  if (!mimeType) throw new MessageError(message("imageType"));
   if (file.size < 1 || file.size > 32 * 1024 * 1024)
-    throw new Error("图片必须小于 32 MB。");
+    throw new MessageError(message("imageSize"));
   const response = await fetch(
     `${endpoint.replace(/\/$/, "")}/flows/assets/images`,
     {
@@ -48,9 +51,14 @@ export async function uploadChatImage(
     message?: string;
   } | null;
   if (!response.ok)
-    throw new Error(value?.message || `图片上传失败（${response.status}）。`);
+    throw new MessageError(
+      apiErrorText(
+        value,
+        message("imageUploadStatus", { status: response.status }),
+      ),
+    );
   if (!value?.assetId || !/^[a-f0-9]{64}$/u.test(value.assetId))
-    throw new Error("图片上传没有返回有效的资产 ID。");
+    throw new MessageError(message("imageAssetMissing"));
   return {
     assetId: value.assetId,
     mimeType: (value.mimeType as ChatImage["mimeType"]) ?? mimeType,

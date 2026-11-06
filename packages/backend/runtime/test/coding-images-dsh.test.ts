@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { CodedFlowError } from "@aura/protocol/errors";
 import { serve, type ServerType } from "@hono/node-server";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -88,6 +89,8 @@ test(
       host.coding({ ...request, images: [image.artifactId] }, () => {}, signal),
       (error: unknown) => {
         assert.ok(error instanceof FlowError);
+        assert.ok(error instanceof CodedFlowError);
+        assert.deepEqual(error.details, { code: "model_images_unsupported" });
         assert.equal(error.status, 422);
         assert.match(error.message, /不支持图片输入/u);
         assert.match(error.message, /移除附件/u);

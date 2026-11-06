@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { CodedFlowError } from "@aura/protocol/errors";
 import { OrchestrationHost } from "../src/dsh/host.ts";
 
 const nodeMajor = Number(process.versions.node.split(".")[0]);
@@ -74,7 +75,17 @@ test(
       await assert.rejects(
         host.relocateProject(other.id, join(root, "missing")),
       );
-      await assert.rejects(host.relocateProject(other.id, "relative/dir"));
+      await assert.rejects(
+        host.relocateProject(other.id, "relative/dir"),
+        (error) => {
+          assert.ok(error instanceof CodedFlowError);
+          assert.equal(error.status, 400);
+          assert.deepEqual(error.details, {
+            code: "workspace_directory_absolute",
+          });
+          return true;
+        },
+      );
       assert.equal((await host.projects()).length, 3);
       const builtIn = (await host.projects()).find((item) => item.isDefault)!;
       await assert.rejects(host.removeProject(builtIn.id));

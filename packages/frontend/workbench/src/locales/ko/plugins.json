@@ -1,0 +1,21 @@
+{
+  "scriptTimeout": "플러그인 스크립트 로딩 시간이 초과되었습니다.",
+  "scriptLoadFailed": "플러그인 스크립트를 불러오지 못했습니다.",
+  "missingApply": "플러그인 브라우저 진입점이 apply(ctx)를 내보내지 않습니다.",
+  "duplicatePage": "플러그인 페이지 {{id}}이(가) 이미 등록되어 있습니다.",
+  "duplicateResult": "플러그인 결과 보기 {{id}}이(가) 이미 등록되어 있습니다.",
+  "alreadyStarted": "이 페이지에서 플러그인 모듈 시스템이 이미 실행 중입니다. 페이지를 새로 고치세요.",
+  "loaderUnavailable": "Aura 서비스가 DSH 모듈 로더를 제공하지 않았습니다.",
+  "loaderUnregistered": "DSH 모듈 로더 등록이 완료되지 않았습니다.",
+  "loaderBeforeStartup": "DSH 모듈 로더가 시작 전에 {{specifier}}을(를) 요청했습니다.",
+  "graphUpdateUnsupported": "DSH 모듈 시스템은 실행 중 모듈 그래프 업데이트를 지원하지 않습니다.",
+  "pagesReadFailed": "플러그인 페이지를 읽지 못했습니다({{status}}).",
+  "graphReadFailed": "플러그인 모듈 그래프를 읽지 못했습니다({{status}}).",
+  "renderFailed": "플러그인 페이지를 표시하지 못했습니다.",
+  "pageOpenFailed": "{{label}}을(를) 열 수 없습니다: {{message}}",
+  "settingsReadFailed": "플러그인 디렉터리를 읽지 못했습니다({{status}}).",
+  "settingsSaveFailed": "플러그인 디렉터리를 저장하지 못했습니다({{status}}).",
+  "invokeFailed": "플러그인 페이지 요청에 실패했습니다({{status, number}}).",
+  "directoryDesktopOnly": "폴더를 선택하려면 Aura Desktop이 필요합니다.",
+  "previewDesktopOnly": "사이트를 미리 보려면 Aura Desktop이 필요합니다."
+}

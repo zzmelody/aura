@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { errorMessage, language, messageText } from "@aura/i18n/runtime";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { ConversationStore } from "../src/features/coding/conversation-store.ts";
@@ -154,13 +155,42 @@ test("an unknown admission stays pending until an explicit retry reuses the orig
     type: "turn.start",
     input: { prompt: "check", mode: "demo" },
   };
-  await assert.rejects(store.submit(endpoint, id, command), /尚未确认/u);
+  let failure: unknown;
+  await assert.rejects(
+    store.submit(endpoint, id, command),
+    (error: unknown) => {
+      failure = error;
+      assert.deepEqual(errorMessage(error), {
+        namespace: "conversation",
+        key: "commandRetained",
+      });
+      return true;
+    },
+  );
   await delay(100);
   assert.equal(submitted.length, 1);
   assert.equal(store.view(endpoint, id).pending?.commandId, commandId);
+  const pending = store.view(endpoint, id).pending;
+  const errorTexts = new Set<string>();
+  const retainedTexts = new Set<string>();
+  for (const locale of ["zh-CN", "en", "ja", "ko", "ru", "fr"]) {
+    await language.systemChanged([locale]);
+    errorTexts.add(messageText(store.view(endpoint, id).error!));
+    retainedTexts.add(messageText(errorMessage(failure)));
+    assert.equal(store.view(endpoint, id).pending, pending);
+    assert.equal(submitted.length, 1);
+  }
+  assert.equal(errorTexts.size, 6);
+  assert.equal(retainedTexts.size, 6);
   await assert.rejects(
     store.submit(endpoint, id, { ...command, commandId: crypto.randomUUID() }),
-    /上一条命令/u,
+    (error: unknown) => {
+      assert.deepEqual(errorMessage(error), {
+        namespace: "conversation",
+        key: "previousCommandPending",
+      });
+      return true;
+    },
   );
   await store.retryPending(endpoint, id);
   assert.deepEqual(submitted, [command, command]);

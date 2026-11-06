@@ -1,3 +1,9 @@
+import { useToolMessages, toolMessage } from "../../tool-messages.ts";
+import {
+  MessageError,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -32,6 +38,7 @@ export interface BrowserPageInfo {
 }
 
 const pageAddress = (url: string) => (url.startsWith("about:blank") ? "" : url);
+// Keep the legacy fallback in saved page metadata; display labels are localized separately.
 const pageTitle = (guest: BrowserGuest) =>
   (guest.getTitle().trim() || "浏览器").slice(0, 100);
 
@@ -69,7 +76,8 @@ export function BrowserPane({
   const [address, setAddress] = useState(restore?.url ?? "");
   const [page, setPage] = useState<BrowserPage>();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const { t, i18n } = useToolMessages();
+  const [error, setError] = useState<string | MessageReference>("");
 
   useEffect(() => {
     const container = mount.current;
@@ -94,7 +102,6 @@ export function BrowserPane({
         guest.setAttribute("partition", reservation.partition);
         // The inert first page names the lease so the host can bind this guest.
         guest.setAttribute("src", `about:blank#${reservation.lease}`);
-        guest.setAttribute("aria-label", "网页内容");
         const sync = () => {
           if (disposed) return;
           const address = pageAddress(guest.getURL());
@@ -131,14 +138,19 @@ export function BrowserPane({
             errorCode?: number;
           };
           if (!disposed && isMainFrame && errorCode !== -3)
-            setError("网页加载失败，请检查地址或网络。");
+            setError(toolMessage("pageFailed"));
         });
         guestRef.current = guest;
         container.append(guest);
         setLease(reservation.lease);
       })
-      .catch(() => {
-        if (!disposed) setError("无法打开浏览器，请关闭不用的标签后重试。");
+      .catch((cause: unknown) => {
+        if (!disposed)
+          setError(
+            cause instanceof MessageError
+              ? cause.text
+              : toolMessage("browserFailed"),
+          );
       });
     return () => {
       disposed = true;
@@ -152,17 +164,27 @@ export function BrowserPane({
     if (visible && page && !page.url && !restore) addressRef.current?.focus();
   }, [visible, page, restore]);
 
+  useEffect(() => {
+    guestRef.current?.setAttribute("aria-label", t("webContent"));
+  }, [t, lease]);
+
   const open = (value: string) => {
     if (!lease || !page) return;
     const target = browserAddress(value);
     if (!target) {
-      setError("请输入有效的 HTTP 或 HTTPS 地址。");
+      setError(toolMessage("invalidAddress"));
       return;
     }
     setRestore(undefined);
     void host
       .navigate(lease, target)
-      .catch(() => setError("无法打开该地址，请检查地址或网络。"));
+      .catch((cause: unknown) =>
+        setError(
+          cause instanceof MessageError
+            ? cause.text
+            : toolMessage("addressFailed"),
+        ),
+      );
   };
   const navigate = () => open(address);
   const reload = () => {
@@ -188,8 +210,8 @@ export function BrowserPane({
         <button
           type="button"
           className="icon-control"
-          aria-label="后退"
-          title="后退"
+          aria-label={t("back")}
+          title={t("back")}
           disabled={!page?.back}
           onClick={() => guestRef.current?.goBack()}
         >
@@ -198,8 +220,8 @@ export function BrowserPane({
         <button
           type="button"
           className="icon-control"
-          aria-label="前进"
-          title="前进"
+          aria-label={t("forward")}
+          title={t("forward")}
           disabled={!page?.forward}
           onClick={() => guestRef.current?.goForward()}
         >
@@ -208,8 +230,8 @@ export function BrowserPane({
         <button
           type="button"
           className="icon-control"
-          aria-label="刷新网页"
-          title="刷新网页"
+          aria-label={t("reload")}
+          title={t("reload")}
           disabled={!page || (!page.url && !restore)}
           onClick={reload}
         >
@@ -217,8 +239,8 @@ export function BrowserPane({
         </button>
         <input
           ref={addressRef}
-          aria-label="网页地址"
-          placeholder="输入网页地址"
+          aria-label={t("address")}
+          placeholder={t("addressPlaceholder")}
           value={address}
           onChange={(event) => setAddress(event.target.value)}
           autoComplete="off"
@@ -228,14 +250,20 @@ export function BrowserPane({
         <button
           type="button"
           className="icon-control"
-          aria-label="在系统浏览器打开"
-          title="在系统浏览器打开"
+          aria-label={t("openExternal")}
+          title={t("openExternal")}
           disabled={!page?.url || !lease}
           onClick={() => {
             if (lease)
               void host
                 .openExternal(lease)
-                .catch(() => setError("无法打开系统浏览器。"));
+                .catch((cause: unknown) =>
+                  setError(
+                    cause instanceof MessageError
+                      ? cause.text
+                      : toolMessage("externalFailed"),
+                  ),
+                );
           }}
         >
           <ExternalLink size={14} />
@@ -243,12 +271,12 @@ export function BrowserPane({
       </form>
       {error ? (
         <p className="coding-notice" role="alert">
-          {error}
+          {messageText(error, i18n)}
         </p>
       ) : null}
       {loading ? (
         <span className="coding-browser-loading" role="status">
-          正在加载网页…
+          {t("loadingPage")}
         </span>
       ) : null}
       <div className="coding-browser-content">
@@ -264,13 +292,13 @@ export function BrowserPane({
               onClick={() => open(restore.url)}
             >
               <RotateCw size={14} />
-              恢复页面
+              {t("restore")}
             </button>
           </div>
         ) : page && !page.url && !loading ? (
           <div className="coding-browser-empty">
             <Globe size={25} />
-            输入地址，按 Enter 打开网页
+            {t("enterAddress")}
           </div>
         ) : null}
       </div>

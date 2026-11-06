@@ -3,6 +3,7 @@ import { SessionId } from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-subagent";
 import type { CodingSubagent } from "@aura/protocol/types";
 import { agentFailure } from "@aura/dsh-auth/agent-failure";
+import type { ApiErrorDetails } from "@aura/protocol/errors";
 import { messageText } from "./activity.ts";
 
 /** Native catalog and durable logs, without resuming or re-submitting any child. */
@@ -53,18 +54,25 @@ export async function codingSubagents(
               ? Date.now()
               : (events.at(-1)?.time ?? active.time)) - active.time,
           );
-        const executionError =
+        const failure =
           end?.type === "turn/end" && end.data.reason.kind === "error"
-            ? agentFailure(end.data.reason.error.message).message
-            : end?.type === "turn/end" && end.data.reason.kind === "max-tokens"
-              ? "子 Agent 达到输出上限，任务未完成。"
-              : undefined;
+            ? agentFailure(end.data.reason.error.message)
+            : undefined;
+        const limited =
+          end?.type === "turn/end" && end.data.reason.kind === "max-tokens";
+        const executionError =
+          failure?.message ??
+          (limited ? "子 Agent 达到输出上限，任务未完成。" : undefined);
+        const executionErrorDetails: ApiErrorDetails | undefined =
+          failure?.details ??
+          (limited ? { code: "subagent_output_limit" } : undefined);
+        const review = inspection.meta.agentPreset?.includes("reviewer");
         return {
           id: child.id,
           label: child.label ?? "子 Agent",
-          role: inspection.meta.agentPreset?.includes("reviewer")
-            ? "只读审查"
-            : "只读调研",
+          ...(child.label == null ? { defaultLabel: true as const } : {}),
+          role: review ? "只读审查" : "只读调研",
+          roleKind: review ? ("review" as const) : ("research" as const),
           status:
             live?.status === "running"
               ? "running"
@@ -81,18 +89,22 @@ export async function codingSubagents(
               : "",
           ...(start ? { durationMs } : {}),
           ...(executionError ? { executionError } : {}),
+          ...(executionErrorDetails ? { executionErrorDetails } : {}),
         };
       } catch {
         return {
           id: child.id,
           label: child.label ?? "子 Agent",
+          ...(child.label == null ? { defaultLabel: true as const } : {}),
           role: "子 Agent",
+          roleKind: "agent" as const,
           status:
             ctx.agents.get(child.id)?.status === "running"
               ? "running"
               : "unknown",
           result: "",
           recordError: "暂时无法读取子 Agent 记录，执行结果尚无法确认。",
+          recordErrorDetails: { code: "subagent_record_unavailable" as const },
         };
       }
     }),

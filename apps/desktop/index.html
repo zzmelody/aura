@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0C0B10" />
-    <title>Aura · 个人工作台</title>
+    <title>Aura · Personal workspace</title>
     <link rel="stylesheet" href="/src/startup.css" />
   </head>
   <body>
@@ -12,7 +12,7 @@
     <section
       class="desktop-startup"
       id="desktop-startup"
-      aria-label="正在打开 Aura"
+      aria-label="Opening Aura"
     >
       <div class="desktop-startup-drag" aria-hidden="true"></div>
       <div class="desktop-startup-grid" aria-hidden="true"></div>
@@ -33,17 +33,15 @@
       </div>
       <div class="desktop-startup-wordmark">
         <h1>aura</h1>
-        <p>你的个人智能助手</p>
+        <p id="desktop-startup-tagline">Your personal AI assistant</p>
       </div>
       <div class="desktop-startup-status">
         <p id="desktop-startup-message" role="status" aria-live="polite">
-          正在打开工作台
+          Opening your workspace
         </p>
-        <button id="desktop-startup-reload" type="button" hidden>
-          重新加载
-        </button>
+        <button id="desktop-startup-reload" type="button" hidden>Reload</button>
       </div>
-      <noscript>需要启用 JavaScript 才能打开 Aura。</noscript>
+      <noscript>Enable JavaScript to open Aura.</noscript>
     </section>
     <script type="module" src="/src/renderer.tsx"></script>
   </body>

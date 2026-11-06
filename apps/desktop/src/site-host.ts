@@ -1,10 +1,11 @@
 import {
   BrowserWindow,
   dialog,
-  ipcMain,
   type IpcMainInvokeEvent,
   type OpenDialogOptions,
 } from "electron";
+import { desktopText as t } from "./desktop-messages.ts";
+import { handleNative, NativeOperationError } from "./native-errors.ts";
 const SITE_URL_PATTERN = /^https?:\/\//i;
 const siteWindows = new Map<string, BrowserWindow>();
 
@@ -53,8 +54,8 @@ async function chooseDirectory(
 ): Promise<string | null> {
   const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined;
   const options: OpenDialogOptions = {
-    title: "选择前端项目目录",
-    buttonLabel: "使用这个目录",
+    title: t("projectDirectory"),
+    buttonLabel: t("useDirectory"),
     properties: ["openDirectory"],
   };
   const result = parent
@@ -65,9 +66,10 @@ async function chooseDirectory(
 }
 
 export function installSiteHost(): void {
-  ipcMain.handle("aura:directories:choose", chooseDirectory);
-  ipcMain.handle(
+  handleNative("aura:directories:choose", "pickerFailed", chooseDirectory);
+  handleNative(
     "aura:previews:open",
+    "previewFailed",
     async (_event, url: unknown, id: unknown, name: unknown) => {
       if (
         typeof url !== "string" ||
@@ -76,15 +78,16 @@ export function installSiteHost(): void {
         id.length > 4096 ||
         name.length > 256
       )
-        throw new Error("无效的站点预览。");
-      const parsed = new URL(url);
+        throw new NativeOperationError("previewInvalid");
+      const parsed = URL.parse(url);
+      if (!parsed) throw new NativeOperationError("previewInvalid");
       if (
         !["http:", "https:"].includes(parsed.protocol) ||
         !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname) ||
         parsed.username ||
         parsed.password
       )
-        throw new Error("预览地址必须是本机 HTTP 站点。");
+        throw new NativeOperationError("previewLocalOnly");
       await openSiteWindow(parsed.href, { id, name });
     },
   );

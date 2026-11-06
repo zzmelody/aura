@@ -1,0 +1,23 @@
+{
+  "startupTitle": "Aura · Personal workspace",
+  "startupOpening": "Opening Aura",
+  "tagline": "Your personal AI assistant",
+  "startupLoading": "Opening your workspace",
+  "reload": "Reload",
+  "startupSlow": "Loading is taking longer than usual. You can keep waiting or reload.",
+  "startupReady": "Workspace ready",
+  "startupFailed": "The interface could not load. Please reload.",
+  "runtimeStartFailed": "Aura service could not start",
+  "runtimeStartDetail": "The workspace is open. Check the local service and try again.",
+  "quitFailed": "Aura could not finish closing",
+  "quitRetry": "Please try quitting again.",
+  "startFailed": "Aura could not start",
+  "startDetail": "The desktop service could not start.",
+  "outputDirectory": "Choose workflow output folder",
+  "selectDirectory": "Select this folder",
+  "inputImage": "Choose workflow input image",
+  "useImage": "Use this image",
+  "images": "Images",
+  "projectDirectory": "Choose frontend project folder",
+  "useDirectory": "Use this folder"
+}

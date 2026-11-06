@@ -3,7 +3,11 @@ import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { FlowCatalog, FlowRun } from "@aura/protocol/types";
-import { FlowError } from "@aura/protocol/errors";
+import {
+  CodedFlowError,
+  FlowError,
+  flowErrorBody,
+} from "@aura/protocol/errors";
 import { ActionFailure } from "@aura/orchestration/action";
 import type { OrchestrationHost } from "./dsh/host.ts";
 
@@ -14,7 +18,9 @@ async function readBody(context: Context): Promise<Record<string, unknown>> {
       throw new Error("Invalid object");
     return value as Record<string, unknown>;
   } catch {
-    throw new FlowError("Flow 请求必须是有效的 JSON 对象。");
+    throw new CodedFlowError("Flow 请求必须是有效的 JSON 对象。", 400, {
+      code: "flow_request_invalid",
+    });
   }
 }
 
@@ -42,17 +48,29 @@ export function createFlowApp(
     bodyLimit({
       maxSize: 32 * 1024 * 1024,
       onError: (context) =>
-        context.json({ message: "图片不能超过 32 MB。" }, 413),
+        context.json(
+          {
+            message: "图片不能超过 32 MB。",
+            code: "image_too_large",
+            params: { limitMiB: 32 },
+          },
+          413,
+        ),
     }),
     async (context) => {
-      if (!host.uploadImage) throw new FlowError("图片资产服务不可用。", 503);
+      if (!host.uploadImage)
+        throw new CodedFlowError("图片资产服务不可用。", 503, {
+          code: "image_service_unavailable",
+        });
       const mediaType = context.req
         .header("content-type")
         ?.split(";", 1)[0]
         ?.trim()
         .toLowerCase();
       if (!["image/png", "image/jpeg", "image/webp"].includes(mediaType ?? ""))
-        throw new FlowError("请上传 PNG、JPEG 或 WebP 图片。", 415);
+        throw new CodedFlowError("请上传 PNG、JPEG 或 WebP 图片。", 415, {
+          code: "image_type_unsupported",
+        });
       const bytes = new Uint8Array(await context.req.arrayBuffer());
       try {
         const asset = await host.uploadImage(bytes, context.req.raw.signal);
@@ -78,13 +96,23 @@ export function createFlowApp(
     "*",
     bodyLimit({
       maxSize: 256 * 1024,
-      onError: (context) => context.json({ message: "Flow 请求过大。" }, 413),
+      onError: (context) =>
+        context.json(
+          {
+            message: "Flow 请求过大。",
+            code: "flow_request_too_large",
+            params: { limitKiB: 256 },
+          },
+          413,
+        ),
     }),
   );
 
   app.get("/assets/images/:id", async (context) => {
     if (!host.imageAssetContent)
-      throw new FlowError("图片资产服务不可用。", 503);
+      throw new CodedFlowError("图片资产服务不可用。", 503, {
+        code: "image_service_unavailable",
+      });
     return host.imageAssetContent(context.req.param("id"), context.req.raw);
   });
 
@@ -123,7 +151,9 @@ export function createFlowApp(
       `/runs/:id/artifacts/:artifactId/${variant}`,
       async (context) => {
         if (!host.artifactContent)
-          throw new FlowError("产物读取服务不可用。", 503);
+          throw new CodedFlowError("产物读取服务不可用。", 503, {
+            code: "artifact_service_unavailable",
+          });
         return host.artifactContent(
           context.req.param("id"),
           context.req.param("artifactId"),
@@ -188,7 +218,11 @@ export function createFlowApp(
       typeof body.requestId === "string" &&
       body.requestId !== headerRequestId
     )
-      throw new FlowError("Idempotency-Key 与请求体 requestId 必须一致。", 409);
+      throw new CodedFlowError(
+        "Idempotency-Key 与请求体 requestId 必须一致。",
+        409,
+        { code: "request_id_conflict" },
+      );
     const requestId = headerRequestId || body.requestId || randomUUID();
     const run = await host.request<FlowRun>("start", {
       ...body,
@@ -212,13 +246,18 @@ export function createFlowApp(
     );
   });
 
-  app.all("*", (context) => context.json({ message: "编排接口不存在。" }, 404));
+  app.all("*", (context) =>
+    context.json(
+      { message: "编排接口不存在。", code: "flow_endpoint_not_found" },
+      404,
+    ),
+  );
   app.onError((error, context) => {
     const status = error instanceof FlowError ? error.status : 500;
     return context.json(
-      {
-        message: error instanceof FlowError ? error.message : "编排请求失败。",
-      },
+      error instanceof FlowError
+        ? flowErrorBody(error)
+        : { message: "编排请求失败。", code: "flow_request_failed" },
       status as ContentfulStatusCode,
     );
   });

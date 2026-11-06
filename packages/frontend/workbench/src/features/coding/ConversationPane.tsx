@@ -1,7 +1,21 @@
+import { nativeCall } from "../../native-messages.ts";
+import { apiErrorText } from "../../api-error-messages.ts";
+import { flowTitle } from "../../metadata.ts";
 import {
-  conversations,
-  CONVERSATION_UPDATE_REQUIRED,
-} from "./conversation-store.ts";
+  useConversationMessages,
+  conversationMessage as message,
+  conversationText,
+  type ConversationMessageKey,
+} from "../../conversation-messages.ts";
+import {
+  formatNumber,
+  language,
+  MessageError,
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import { conversations } from "./conversation-store.ts";
 import { useConversation } from "./useConversation.ts";
 import { isExecutionActive } from "@aura/protocol/conversation-channel";
 import { MaskedUserText } from "./MaskedUserText.tsx";
@@ -159,10 +173,11 @@ type ConversationStream = {
 
 /** One file-change block inside an expanded step: path header, then lines. */
 function DiffCard({ diff }: { diff: CodingFileDiff }) {
+  const { t } = useConversationMessages();
   const { lines } = fileDiff(diff);
   return (
     <div className="coding-diff">
-      <pre aria-label={`${diff.path} 的改动`}>
+      <pre aria-label={t("fileChangesLabel", { path: diff.path })}>
         <span className="coding-diff-path">{diff.path}</span>
         {"\n"}
         {lines.map((line, index) => (
@@ -201,17 +216,18 @@ const toolIcons: Record<string, LucideIcon> = {
 };
 
 const toolStates = {
-  running: { icon: LoaderCircle, label: "执行中" },
-  ok: { icon: CircleCheck, label: "已完成" },
-  failed: { icon: CircleX, label: "失败" },
-  stopped: { icon: CircleStop, label: "已中断" },
-};
+  running: { icon: LoaderCircle, label: "executing" },
+  ok: { icon: CircleCheck, label: "completed" },
+  failed: { icon: CircleX, label: "failed" },
+  stopped: { icon: CircleStop, label: "interrupted" },
+} as const;
 
 /** DSH-style tool identity and expandable diff, with an explicit outcome. */
 function ToolRow({ tool }: { tool: ToolEntry }) {
+  const { t } = useConversationMessages();
   const [open, setOpen] = useState(false);
   const Icon = toolIcons[tool.name] ?? Wrench;
-  const title = toolLabels[tool.name] ?? tool.name;
+  const title = toolLabels[tool.name] ? t(toolLabels[tool.name]) : tool.name;
   const { icon: StateIcon, label: stateLabel } = toolStates[tool.state];
   const expandable = !!tool.diffs?.length && tool.state !== "running";
   const totals = tool.diffs?.length
@@ -243,8 +259,12 @@ function ToolRow({ tool }: { tool: ToolEntry }) {
       ) : null}
       {totals && tool.state === "ok" ? (
         <span className="coding-tool-stat">
-          <span className="coding-diff-added">+{totals.added}</span>{" "}
-          <span className="coding-diff-removed">-{totals.removed}</span>
+          <span className="coding-diff-added">
+            +{formatNumber(totals.added)}
+          </span>{" "}
+          <span className="coding-diff-removed">
+            -{formatNumber(totals.removed)}
+          </span>
         </span>
       ) : null}
       <span className={`coding-tool-state ${tool.state}`}>
@@ -253,7 +273,7 @@ function ToolRow({ tool }: { tool: ToolEntry }) {
           className={tool.state === "running" ? "coding-spin" : undefined}
           aria-hidden="true"
         />
-        <span>{stateLabel}</span>
+        <span>{t(stateLabel)}</span>
       </span>
     </>
   );
@@ -286,28 +306,36 @@ function ToolRow({ tool }: { tool: ToolEntry }) {
   );
 }
 
-const toolLabels: Record<string, string> = {
-  read: "读取文件",
-  read_image: "查看图片",
-  write: "写入文件",
-  edit: "编辑文件",
-  glob: "查找文件",
-  grep: "搜索内容",
-  bash: "运行命令",
-  pwsh: "运行命令",
-  todo_write: "更新任务清单",
-  present: "交付文件",
-  exit_plan_mode: "提交计划",
-  get_goal: "读取目标",
-  update_goal: "更新目标",
-  ask_user_question: "向你提问",
+const toolLabels: Record<string, ConversationMessageKey> = {
+  read: "readFile",
+  read_image: "viewImage",
+  write: "writeFile",
+  edit: "editFile",
+  glob: "findFile",
+  grep: "searchContent",
+  bash: "runCommand",
+  pwsh: "runCommand",
+  todo_write: "updateTasks",
+  present: "deliverFiles",
+  exit_plan_mode: "submitPlan",
+  get_goal: "readGoal",
+  update_goal: "updateGoal",
+  ask_user_question: "askQuestion",
 };
 
-function duration(ms: number): string {
+function duration(ms: number, locale: string): string {
   const seconds = Math.max(0, Math.round(ms / 1000));
-  if (seconds < 60) return `${seconds} 秒`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes} 分 ${seconds % 60} 秒`;
+  const format = (value: number, unit: string) =>
+    new Intl.NumberFormat(locale, {
+      style: "unit",
+      unit,
+      unitDisplay: "short",
+    }).format(value);
+  if (seconds < 60) return format(seconds, "second");
+  return new Intl.ListFormat(locale, { style: "short", type: "unit" }).format([
+    format(Math.floor(seconds / 60), "minute"),
+    format(seconds % 60, "second"),
+  ]);
 }
 
 /** One consecutive run stays between the assistant messages that surround it. */
@@ -320,17 +348,22 @@ function ToolGroup({
   expanded: boolean;
   onToggle(): void;
 }) {
+  const { t } = useConversationMessages();
   const id = useId();
   const summary = summarizeToolGroup(tools);
   if (!summary.total) return null;
   const description = summary.active
-    ? `正在${toolLabels[summary.active.name] ?? "调用工具"}`
+    ? t("toolActive", {
+        action: toolLabels[summary.active.name]
+          ? t(toolLabels[summary.active.name])
+          : t("callTool"),
+      })
     : describeToolGroup(tools);
   const Icon = summary.active ? LoaderCircle : Wrench;
   return (
     <section
       className={`coding-tool-group ${summary.state}`}
-      aria-label="工具调用组"
+      aria-label={t("toolGroup")}
       data-coding-process-record
     >
       <button
@@ -338,7 +371,10 @@ function ToolGroup({
         className="coding-tool-group-toggle"
         aria-expanded={expanded}
         aria-controls={id}
-        title={`${description} · ${summary.total} 次工具调用 · 点击${expanded ? "收起" : "展开"}详情`}
+        title={t(expanded ? "toolGroupExpanded" : "toolGroupCollapsed", {
+          description,
+          count: summary.total,
+        })}
         onClick={onToggle}
       >
         <Icon
@@ -348,12 +384,12 @@ function ToolGroup({
         <span className="coding-tool-group-title">{description}</span>
         {summary.failed ? (
           <span className="coding-tool-group-failed">
-            {summary.failed} 项失败
+            {t("failedCount", { count: summary.failed })}
           </span>
         ) : null}
         {summary.stopped ? (
           <span className="coding-tool-group-stopped">
-            {summary.stopped} 项中断
+            {t("interruptedCount", { count: summary.stopped })}
           </span>
         ) : null}
         <ChevronRight size={12} className="coding-tool-group-chevron" />
@@ -361,7 +397,7 @@ function ToolGroup({
       <ol
         id={id}
         className="coding-tools"
-        aria-label="操作记录"
+        aria-label={t("activityLog")}
         hidden={!expanded}
       >
         {expanded
@@ -389,6 +425,7 @@ function ApprovalNote({
   asked: AskedQuestion;
   live: boolean;
 }) {
+  const { t } = useConversationMessages();
   const question = asked.questions[0];
   const { allow } = approvalLabels(asked);
   const granted = asked.answered?.some((answer) =>
@@ -396,11 +433,11 @@ function ApprovalNote({
   );
   const state = asked.answered
     ? granted
-      ? { Icon: ShieldCheck, text: "已允许", tone: "" }
-      : { Icon: ShieldX, text: "已拒绝", tone: " rejected" }
+      ? { Icon: ShieldCheck, text: t("allowed"), tone: "" }
+      : { Icon: ShieldX, text: t("rejected"), tone: " rejected" }
     : live
-      ? { Icon: ShieldAlert, text: "等待你授权", tone: "" }
-      : { Icon: ShieldX, text: "授权请求已结束", tone: " rejected" };
+      ? { Icon: ShieldAlert, text: t("waitingApproval"), tone: "" }
+      : { Icon: ShieldX, text: t("approvalEnded"), tone: " rejected" };
   return (
     <div
       className={`coding-approval-note${state.tone}`}
@@ -426,8 +463,9 @@ function ApprovalCard({
   active: boolean;
   onAnswer(answers: CodingQuestionAnswer[]): Promise<void>;
 }) {
+  const { t, i18n } = useConversationMessages();
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
   const waiting = useRef(false);
   const composing = useRef(false);
   const compositionEnded = useRef(false);
@@ -446,7 +484,7 @@ function ApprovalCard({
     try {
       await onAnswer([{ id: question.id, selected: [label] }]);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorMessage(reason));
       waiting.current = false;
       setSending(false);
     }
@@ -456,7 +494,7 @@ function ApprovalCard({
       ref={root}
       className="coding-decision approval"
       role="region"
-      aria-label="授权请求"
+      aria-label={t("approvalRequest")}
       aria-busy={sending}
       tabIndex={-1}
       onCompositionStartCapture={() => {
@@ -500,7 +538,7 @@ function ApprovalCard({
     >
       <div className="coding-decision-strip">
         <span className="coding-decision-dot" aria-hidden="true" />
-        等待审批
+        {t("pendingApproval")}
       </div>
       <div className="coding-decision-body">
         <div className="coding-decision-headline">{question.question}</div>
@@ -515,7 +553,7 @@ function ApprovalCard({
           disabled={sending}
           onClick={() => void answer(labels.reject)}
         >
-          {labels.reject}
+          {labels.reject === "拒绝" ? t("reject") : labels.reject}
         </button>
         <button
           type="button"
@@ -523,12 +561,12 @@ function ApprovalCard({
           disabled={sending}
           onClick={() => void answer(labels.allow)}
         >
-          {labels.allow}
+          {labels.allow === "允许这一次" ? t("allowOnce") : labels.allow}
         </button>
       </div>
       {error ? (
         <p className="coding-decision-error" role="alert">
-          {error}
+          {messageText(error, i18n)}
         </p>
       ) : null}
     </div>
@@ -538,11 +576,12 @@ function ApprovalCard({
 /** The answer recorded for one question of a batch. */
 function answerText(asked: AskedQuestion, id: string) {
   const answer = asked.answered?.find((item) => item.id === id);
-  if (!answer) return "未回答";
+  if (!answer) return conversationText("unanswered");
   return (
-    [...answer.selected, ...(answer.custom ? [answer.custom] : [])].join(
-      "、",
-    ) || "已跳过"
+    new Intl.ListFormat(language.getSnapshot().locale).format([
+      ...answer.selected,
+      ...(answer.custom ? [answer.custom] : []),
+    ]) || conversationText("skipped")
   );
 }
 
@@ -566,10 +605,11 @@ function QuestionCard({
   /** Inside the composer card, which already draws the surface and strip. */
   bare?: boolean;
 }) {
+  const { t, i18n } = useConversationMessages();
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
   const waiting = useRef(false);
   const plan = asked.questions.some((item) => item.intent);
   const toggle = (id: string, label: string, multi: boolean) =>
@@ -600,7 +640,7 @@ function QuestionCard({
         })),
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorMessage(reason));
     } finally {
       waiting.current = false;
       setSending(false);
@@ -609,11 +649,11 @@ function QuestionCard({
   return (
     <section
       className={`coding-question${bare ? " bare" : ""}`}
-      aria-label="模型的提问"
+      aria-label={t("modelQuestion")}
     >
       <h3>
         <MessageCircleQuestion size={14} />
-        {plan ? "请审阅计划" : "需要你的决定"}
+        {plan ? t("reviewPlan") : t("decisionNeeded")}
       </h3>
       {asked.questions.map((question) => (
         <fieldset key={question.id} disabled={sending}>
@@ -641,7 +681,7 @@ function QuestionCard({
               <span>
                 {option.label}
                 {question.intent?.approve === option.label ? (
-                  <small>批准后开始实施</small>
+                  <small>{t("implementAfterApproval")}</small>
                 ) : null}
                 {option.description ? (
                   <small>{option.description}</small>
@@ -653,13 +693,13 @@ function QuestionCard({
           {question.kind === "approval" ? null : (
             <input
               className="coding-question-custom"
-              aria-label={`${question.question} 的其他回答`}
+              aria-label={t("otherAnswer", { question: question.question })}
               placeholder={
                 question.intent
-                  ? "或者写下要修改的地方"
+                  ? t("planChangesPlaceholder")
                   : question.options?.length
-                    ? "或者写下你的回答"
-                    : "写下你的回答"
+                    ? t("otherAnswerPlaceholder")
+                    : t("answerPlaceholder")
               }
               value={custom[question.id] ?? ""}
               onChange={(event) =>
@@ -681,12 +721,12 @@ function QuestionCard({
       <div className="coding-question-actions">
         <button disabled={sending} onClick={() => void submit()}>
           {sending ? <LoaderCircle size={13} className="coding-spin" /> : null}
-          发送回答
+          {t("sendAnswer")}
         </button>
       </div>
       {error ? (
         <p className="coding-error" role="alert">
-          {error}
+          {messageText(error, i18n)}
         </p>
       ) : null}
     </section>
@@ -705,16 +745,21 @@ function QuestionNote({
   asked: AskedQuestion;
   live: boolean;
 }) {
+  const { t, i18n } = useConversationMessages();
   const settled = asked.answered !== undefined;
-  const summary = asked.questions
-    .map((question) => question.question)
-    .join("；");
+  const summary = new Intl.ListFormat(i18n.resolvedLanguage).format(
+    asked.questions.map((question) => question.question),
+  );
   return (
     <details className="coding-question-note">
       <summary title={summary}>
         <MessageCircleQuestion size={14} aria-hidden="true" />
         <span className="coding-question-note-state">
-          {settled ? "已回答" : live ? "等待你的回答" : "提问已结束"}
+          {settled
+            ? t("answered")
+            : live
+              ? t("waitingAnswer")
+              : t("questionEnded")}
         </span>
         <span className="coding-question-note-question">{summary}</span>
         <ChevronDown
@@ -727,8 +772,12 @@ function QuestionNote({
         {asked.questions.map((question) => (
           <div key={question.id}>
             <dt>
-              {question.header ? `${question.header}：` : ""}
-              {question.question}
+              {question.header
+                ? t("questionWithHeader", {
+                    header: question.header,
+                    question: question.question,
+                  })
+                : question.question}
             </dt>
             <dd>{answerText(asked, question.id)}</dd>
           </div>
@@ -754,6 +803,7 @@ function QuestionDock({
   stopControl: React.ReactNode;
   onAnswer(answers: CodingQuestionAnswer[]): Promise<void>;
 }) {
+  const { t } = useConversationMessages();
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (active) root.current?.focus();
@@ -763,12 +813,12 @@ function QuestionDock({
       ref={root}
       className="coding-decision question"
       role="region"
-      aria-label="等待你的回答"
+      aria-label={t("waitingAnswer")}
       tabIndex={-1}
     >
       <div className="coding-decision-strip">
         <span className="coding-decision-dot" aria-hidden="true" />
-        等待你的回答
+        {t("waitingAnswer")}
         {stopControl}
       </div>
       <div className="coding-decision-body">
@@ -790,7 +840,8 @@ function DeliverableItem({
   path: string;
   directory: string;
 }) {
-  const [note, setNote] = useState("");
+  const { t, i18n } = useConversationMessages();
+  const [note, setNote] = useState<string | MessageReference>("");
   const reveal = globalThis.window?.auraHost?.files?.reveal;
   const full = fullPath(path, directory);
   useEffect(() => {
@@ -798,12 +849,15 @@ function DeliverableItem({
     const timer = setTimeout(() => setNote(""), 2000);
     return () => clearTimeout(timer);
   }, [note]);
-  const run = async (action: () => Promise<void>, done: string) => {
+  const run = async (
+    action: () => Promise<void>,
+    done: string | MessageReference,
+  ) => {
     try {
       await action();
       setNote(done);
     } catch (reason) {
-      setNote(reason instanceof Error ? reason.message : String(reason));
+      setNote(errorMessage(reason));
     }
   };
   return (
@@ -813,18 +867,25 @@ function DeliverableItem({
       <span className="coding-report-actions">
         <button
           className="icon-control row-control"
-          aria-label={`复制 ${path} 的完整路径`}
-          title="复制完整路径"
-          onClick={() => void run(() => writeClipboard(full), "已复制")}
+          aria-label={t("copyPathLabel", { path })}
+          title={t("copyPath")}
+          onClick={() =>
+            void run(() => writeClipboard(full), message("copied"))
+          }
         >
           <Copy size={13} />
         </button>
         {reveal ? (
           <button
             className="icon-control row-control"
-            aria-label={`在文件夹中显示 ${path}`}
-            title="在文件夹中显示"
-            onClick={() => void run(() => reveal(directory, path), "已定位")}
+            aria-label={t("revealLabel", { path })}
+            title={t("reveal")}
+            onClick={() =>
+              void run(
+                () => nativeCall(() => reveal(directory, path)),
+                message("located"),
+              )
+            }
           >
             <FolderSearch size={13} />
           </button>
@@ -832,7 +893,7 @@ function DeliverableItem({
       </span>
       {note ? (
         <span className="coding-report-note" role="status">
-          {note}
+          {messageText(note, i18n)}
         </span>
       ) : null}
     </li>
@@ -846,6 +907,7 @@ function PromptImages({
   endpoint: string;
   images?: ChatImage[];
 }) {
+  const { t } = useConversationMessages();
   if (!images?.length) return null;
   return (
     <ImageThumbnails
@@ -853,7 +915,7 @@ function PromptImages({
       images={images.map((image) => ({
         key: image.assetId,
         src: chatImageUrl(endpoint, image.assetId),
-        name: image.name ?? "附图",
+        name: image.name ?? t("attachedImage"),
       }))}
     />
   );
@@ -891,6 +953,7 @@ const TurnView = memo(function TurnView({
   hideFlowSvg?: boolean;
   onForkTurn?(endSeq: number): void;
 }) {
+  const { t, i18n } = useConversationMessages();
   const running = turn.status === "running";
   const endSeq = turn.endSeq;
   const waiting = turn.questions.some((item) => !item.answered);
@@ -920,15 +983,15 @@ const TurnView = memo(function TurnView({
   const missingFinalReply = turn.status === "complete" && finalReplyIndex < 0;
   const stateLabel = running
     ? turn.waitingForService
-      ? "正在连接本地服务，可停止等待"
+      ? t("connectingService")
       : waiting
-        ? "等待你的回答"
-        : "执行中"
+        ? t("waitingAnswer")
+        : t("executing")
     : turn.status === "complete"
-      ? "执行完成"
+      ? t("executionComplete")
       : turn.status === "stopped"
-        ? "已停止"
-        : "执行失败";
+        ? t("stopped")
+        : t("executionFailed");
   const StateIcon = running
     ? waiting
       ? MessageCircleQuestion
@@ -974,7 +1037,15 @@ const TurnView = memo(function TurnView({
             data-open={(expandable && expanded) || undefined}
             title={
               expandable
-                ? `${expanded ? "收起" : "展开"}${canCollapse ? "执行记录" : "工具明细"}`
+                ? t(
+                    canCollapse
+                      ? expanded
+                        ? "collapseExecution"
+                        : "expandExecution"
+                      : expanded
+                        ? "collapseTools"
+                        : "expandTools",
+                  )
                 : undefined
             }
             onClick={(event) => {
@@ -1000,15 +1071,17 @@ const TurnView = memo(function TurnView({
                   <TurnDuration turn={turn} visible={visible} />
                 </span>
               ) : null}
-              {turn.tools.length ? ` · ${turn.tools.length} 次工具调用` : null}
+              {turn.tools.length
+                ? ` · ${t("toolCalls", { count: turn.tools.length })}`
+                : null}
               {foldedTools?.failed ? (
                 <span className="coding-tool-group-failed">
-                  {` · ${foldedTools.failed} 项失败`}
+                  {` · ${t("failedCount", { count: foldedTools.failed })}`}
                 </span>
               ) : null}
               {foldedTools?.stopped ? (
                 <span className="coding-tool-group-stopped">
-                  {` · ${foldedTools.stopped} 项中断`}
+                  {` · ${t("interruptedCount", { count: foldedTools.stopped })}`}
                 </span>
               ) : null}
             </span>
@@ -1030,7 +1103,7 @@ const TurnView = memo(function TurnView({
                 <div
                   className="coding-progress-bar"
                   role="progressbar"
-                  aria-label="任务进度"
+                  aria-label={t("taskProgress")}
                   aria-valuemin={0}
                   aria-valuemax={turn.progress.total}
                   aria-valuenow={turn.progress.done}
@@ -1042,7 +1115,10 @@ const TurnView = memo(function TurnView({
                   />
                 </div>
                 <span>
-                  {turn.progress.done}/{turn.progress.total} 项任务
+                  {t("tasksProgress", {
+                    done: turn.progress.done,
+                    total: turn.progress.total,
+                  })}
                 </span>
               </div>
             </div>
@@ -1067,11 +1143,11 @@ const TurnView = memo(function TurnView({
           return (
             <aside key={index} className="coding-web-sources">
               <span>
-                网页来源
+                {t("webSources")}
                 {item.event.statusCode
                   ? ` · HTTP ${item.event.statusCode}`
                   : ""}
-                {item.event.truncated ? " · 结果已截断" : ""}
+                {item.event.truncated ? ` · ${t("truncated")}` : ""}
               </span>
               {item.event.sources.map((source, at) => (
                 <a key={at} href={source.url} target="_blank" rel="noreferrer">
@@ -1092,7 +1168,9 @@ const TurnView = memo(function TurnView({
                   hideFlowSvg
                     ? item.text.replace(
                         /```svg[^\n]*\n[\s\S]*?(?:```|$)/g,
-                        "\nSVG 流程图见画布。\n",
+                        `
+${t("svgOnCanvas")}
+`,
                       )
                     : item.text
                 }
@@ -1170,14 +1248,14 @@ const TurnView = memo(function TurnView({
             {item.delivery ? (
               <div className="coding-steer-status" role="status">
                 {item.delivery === "unconfirmed"
-                  ? "送达状态未确认"
+                  ? t("deliveryUnknown")
                   : item.delivery === "canceled"
-                    ? "已取消，未读取"
+                    ? t("deliveryCancelled")
                     : item.delivery === "queued"
                       ? running
-                        ? "等待 Agent 读取"
-                        : "已保留，继续对话时读取"
-                      : "正在确认送达"}
+                        ? t("waitingAgentRead")
+                        : t("retainedForRead")
+                      : t("checkingDelivery")}
               </div>
             ) : null}
           </div>
@@ -1190,17 +1268,17 @@ const TurnView = memo(function TurnView({
           className="tool-button"
           onClick={() => onApplyFlow(extractFlowCode(turn.reply)!)}
         >
-          放入工作流编辑器
+          {t("applyWorkflow")}
         </button>
       ) : null}
       {turn.error ? (
         <p className="coding-error" role="alert">
-          {turn.error}
+          {messageText(turn.error, i18n)}
         </p>
       ) : null}
       {turn.deliverables.length ? (
-        <section className="coding-report" aria-label="交付文件">
-          <h3>交付文件</h3>
+        <section className="coding-report" aria-label={t("deliverables")}>
+          <h3>{t("deliverables")}</h3>
           <ul>
             {turn.deliverables.map((path) => (
               <DeliverableItem key={path} path={path} directory={directory} />
@@ -1249,29 +1327,39 @@ const kindIcons: Record<FileKind, LucideIcon> = {
 
 /** Copies a path or reveals it, with a short note in place of the buttons. */
 function useFileActions(directory: string) {
-  const [note, setNote] = useState("");
+  const { i18n } = useConversationMessages();
+  const [note, setNote] = useState<string | MessageReference>("");
   useEffect(() => {
     if (!note) return;
     const timer = setTimeout(() => setNote(""), 2000);
     return () => clearTimeout(timer);
   }, [note]);
   const reveal = globalThis.window?.auraHost?.files?.reveal;
-  const run = async (action: () => Promise<void>, done: string) => {
+  const run = async (
+    action: () => Promise<void>,
+    done: string | MessageReference,
+  ) => {
     try {
       await action();
       setNote(done);
     } catch (reason) {
-      setNote(reason instanceof Error ? reason.message : String(reason));
+      setNote(errorMessage(reason));
     }
   };
   return {
-    note,
+    note: messageText(note, i18n),
     copy: (path: string) =>
-      void run(() => writeClipboard(fullPath(path, directory)), "已复制路径"),
+      void run(
+        () => writeClipboard(fullPath(path, directory)),
+        message("pathCopied"),
+      ),
     ...(reveal
       ? {
           reveal: (path: string) =>
-            void run(() => reveal(directory, path), "已在文件夹中显示"),
+            void run(
+              () => nativeCall(() => reveal(directory, path)),
+              message("revealed"),
+            ),
         }
       : {}),
   };
@@ -1295,6 +1383,7 @@ function RecapFile({
   diffs: CodingFileDiff[];
   directory: string;
 }) {
+  const { t } = useConversationMessages();
   const [open, setOpen] = useState(false);
   const actions = useFileActions(directory);
   const shown = displayPath(path, directory);
@@ -1318,14 +1407,18 @@ function RecapFile({
           <span>{fileName(shown)}</span>
           {dir ? <small>{dir}</small> : null}
         </span>
-        {created ? <span className="coding-recap-badge">新文件</span> : null}
+        {created ? (
+          <span className="coding-recap-badge">{t("newFile")}</span>
+        ) : null}
         <span className="coding-recap-counts">
           {binary ? (
-            <span>二进制</span>
+            <span>{t("binary")}</span>
           ) : (
             <>
-              <span className="coding-diff-added">+{added}</span>
-              <span className="coding-diff-removed">-{removed}</span>
+              <span className="coding-diff-added">+{formatNumber(added)}</span>
+              <span className="coding-diff-removed">
+                -{formatNumber(removed)}
+              </span>
             </>
           )}
         </span>
@@ -1340,9 +1433,12 @@ function RecapFile({
                 <button
                   type="button"
                   className="icon-control row-control"
-                  aria-label={`${open ? "收起" : "查看"} ${fileName(shown)} 的改动`}
+                  aria-label={t(
+                    open ? "collapseChangesLabel" : "viewChangesLabel",
+                    { path: fileName(shown) },
+                  )}
                   aria-expanded={open}
-                  title={open ? "收起改动" : "查看改动"}
+                  title={open ? t("collapseChanges") : t("viewChanges")}
                   onClick={() => setOpen((value) => !value)}
                 >
                   <FileDiff size={14} />
@@ -1351,8 +1447,8 @@ function RecapFile({
               <button
                 type="button"
                 className="icon-control row-control"
-                aria-label={`复制 ${fileName(shown)} 的完整路径`}
-                title="复制完整路径"
+                aria-label={t("copyPathLabel", { path: fileName(shown) })}
+                title={t("copyPath")}
                 onClick={() => actions.copy(path)}
               >
                 <Copy size={14} />
@@ -1361,8 +1457,8 @@ function RecapFile({
                 <button
                   type="button"
                   className="icon-control row-control"
-                  aria-label={`在文件夹中显示 ${fileName(shown)}`}
-                  title="在文件夹中显示"
+                  aria-label={t("revealLabel", { path: fileName(shown) })}
+                  title={t("reveal")}
                   onClick={() => actions.reveal?.(path)}
                 >
                   <FolderSearch size={14} />
@@ -1390,6 +1486,7 @@ function ChangedFilesView({
   turn: Turn;
   directory: string;
 }) {
+  const { t } = useConversationMessages();
   const [expanded, setExpanded] = useState(false);
   const { files } = useMemo(() => summarizeTurn(turn, fileDiff), [turn]);
   if (!files.length) return null;
@@ -1405,10 +1502,10 @@ function ChangedFilesView({
   return (
     <section
       className="coding-recap"
-      aria-label="文件改动"
+      aria-label={t("fileChanges")}
       data-coding-process-record
     >
-      <h3 className="coding-recap-title">文件改动</h3>
+      <h3 className="coding-recap-title">{t("fileChanges")}</h3>
       <ul className="coding-recap-files">
         {shown.map((file) => (
           <RecapFile
@@ -1428,7 +1525,7 @@ function ChangedFilesView({
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? "收起" : `全部 ${files.length} 个文件`}
+          {expanded ? t("collapse") : t("allFiles", { count: files.length })}
           <ChevronDown
             size={14}
             aria-hidden="true"
@@ -1458,8 +1555,12 @@ function useTicker(active: boolean): number {
 }
 
 function TurnDuration({ turn, visible }: { turn: Turn; visible: boolean }) {
+  const { i18n } = useConversationMessages();
   const now = useTicker(turn.status === "running" && visible);
-  return duration((turn.endedAt ?? now) - turn.startedAt);
+  return duration(
+    (turn.endedAt ?? now) - turn.startedAt,
+    i18n.resolvedLanguage ?? "en",
+  );
 }
 
 /** Sends one request; resolves with the finished turn, or nothing if refused. */
@@ -1470,13 +1571,19 @@ export type ConversationSend = (
 ) => Promise<Turn | undefined>;
 
 const PERMISSION_OPTIONS = {
-  "read-only": { label: "只读", detail: "只读 · 写入需审批" },
-  "workspace-write": { label: "工作区写入", detail: "工作区写入 · 越界需审批" },
-  "danger-full-access": {
-    label: "完全访问",
-    detail: "完全访问 · 无沙箱限制，无需审批",
+  "read-only": { label: "readOnly", detail: "readOnlyDetail" },
+  "workspace-write": {
+    label: "workspaceWrite",
+    detail: "workspaceWriteDetail",
   },
-} satisfies Record<CodingPermission, { label: string; detail: string }>;
+  "danger-full-access": {
+    label: "fullAccess",
+    detail: "fullAccessDetail",
+  },
+} satisfies Record<
+  CodingPermission,
+  { label: ConversationMessageKey; detail: ConversationMessageKey }
+>;
 
 /**
  * One conversation's transcript and composer. The studio hosts the main
@@ -1590,6 +1697,7 @@ export function ConversationPane({
   onRunning?(running: boolean): void;
   onTurns?(turns: readonly Turn[]): void;
 }) {
+  const { t, i18n } = useConversationMessages();
   const [turns, setTurns] = useState<Record<string, Turn[]>>({});
   const remote = useConversation(
     endpoint,
@@ -1604,7 +1712,7 @@ export function ConversationPane({
   );
   const { flags } = useIntegrations();
   const [modelOpenRequest, setModelOpenRequest] = useState(0);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
   const [collaborations, setCollaborations] = useState<
     Partial<Record<string, CodingCollaboration>>
   >({});
@@ -1618,7 +1726,7 @@ export function ConversationPane({
   const [historyRequest, setHistoryRequest] = useState<{
     id: string;
     state: "loading" | "error";
-    message?: string;
+    message?: string | MessageReference;
   }>();
   const [historyRetry, setHistoryRetry] = useState(0);
   const awaitingService = useRef(new Set<string>());
@@ -1757,30 +1865,33 @@ export function ConversationPane({
     editor.current?.focus();
   };
   const [compactStates, setCompactStates] = useState<
-    Record<string, { busy: boolean; text: string }>
+    Record<string, { busy: boolean; text: string | MessageReference }>
   >({});
   const compacting = compactStates[sessionId ?? ""]?.busy ?? false;
   const compactNotice = compactStates[sessionId ?? ""]?.text ?? "";
   async function compact() {
     const id = sessionId ?? "";
-    const update = (busy: boolean, text: string) =>
+    const update = (busy: boolean, text: string | MessageReference) =>
       setCompactStates((current) => ({ ...current, [id]: { busy, text } }));
     if (!id) {
-      update(false, "发送消息后才能压缩上下文。");
+      update(false, message("compactNeedsMessage"));
       return;
     }
     if (compacting || running) return;
-    update(true, "正在压缩较早的上下文…");
+    update(true, message("compacting"));
     try {
       const result = await compactCoding(endpoint, id);
       update(
         false,
         result.compacted
-          ? `已压缩 ${result.replacedMessages} 条上下文（约节省 ${result.savedTokens ?? 0} tokens），原始聊天记录仍然保留。`
-          : "还没有可压缩的上下文。",
+          ? message("compacted", {
+              messages: result.replacedMessages,
+              tokens: result.savedTokens ?? 0,
+            })
+          : message("nothingToCompact"),
       );
     } catch (cause) {
-      update(false, cause instanceof Error ? cause.message : "压缩未完成。");
+      update(false, errorMessage(cause, message("compactFailed")));
     }
   }
   const chooseCollaboration = async (
@@ -1809,7 +1920,7 @@ export function ConversationPane({
       setDraftIntents((current) => ({ ...current, [draftKey]: undefined }));
       return true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "协作模式更新失败。");
+      setError(errorMessage(reason, message("collaborationFailed")));
       return false;
     } finally {
       setCollaborationSaving(false);
@@ -1911,7 +2022,9 @@ export function ConversationPane({
               pending,
               execution.status === "error" ? "error" : "stopped",
               execution.endedAt,
-              execution.error,
+              execution.error === undefined
+                ? undefined
+                : apiErrorText(execution.errorDetails, execution.error),
             ),
           );
       }
@@ -2009,9 +2122,12 @@ export function ConversationPane({
           id,
           state: "error",
           message:
-            reason instanceof Error && reason.message.includes("读取超时")
-              ? "会话历史读取超时，草稿已保留，请重试。"
-              : "会话历史读取失败，草稿已保留，请重试。",
+            reason instanceof MessageError &&
+            typeof reason.text !== "string" &&
+            reason.text.namespace === "conversation" &&
+            reason.text.key === "historyReadTimeout"
+              ? message("historyTimedOut")
+              : message("historyFailed"),
         });
       })
       .finally(() => {
@@ -2065,17 +2181,20 @@ export function ConversationPane({
           new AbortController().signal,
         );
         if (receipt.status !== "applied")
-          throw new Error(receipt.error ?? "停止结果尚未确认。");
+          throw new MessageError(
+            apiErrorText(
+              receipt.errorDetails,
+              receipt.error ?? message("stopUnknown"),
+            ),
+          );
       } else if (compacting) {
         await stopCodingTurn(endpoint, id);
       } else {
-        throw new Error("当前执行尚未确认，请等待会话状态恢复。");
+        throw new MessageError(message("executionUnknown"));
       }
       await conversations.refresh(endpoint, id);
     } catch (reason) {
-      setError(
-        `停止失败：${reason instanceof Error ? reason.message : String(reason)}`,
-      );
+      setError(message("stopFailed", { reason: errorMessage(reason) }));
     } finally {
       setStopping(false);
     }
@@ -2132,11 +2251,7 @@ export function ConversationPane({
       transcript.current?.scrollTo({ top: 0 });
     } catch (reason) {
       if (!abort.signal.aborted)
-        setError(
-          reason instanceof Error
-            ? reason.message
-            : "较早记录读取失败，请重试。",
-        );
+        setError(errorMessage(reason, message("olderFailed")));
     } finally {
       if (!abort.signal.aborted) setOlderLoading(false);
     }
@@ -2170,7 +2285,7 @@ export function ConversationPane({
       const execution = conversations.view(endpoint, sessionId).snapshot
         ?.execution;
       if (!execution || !isExecutionActive(execution))
-        throw new Error("这项执行已结束，请刷新会话。");
+        throw new MessageError(message("executionEnded"));
       const commandId = crypto.randomUUID();
       await conversations.submit(endpoint, sessionId, {
         commandId,
@@ -2186,7 +2301,12 @@ export function ConversationPane({
         new AbortController().signal,
       );
       if (receipt.status !== "applied")
-        throw new Error(receipt.error ?? "回答结果尚未确认。");
+        throw new MessageError(
+          apiErrorText(
+            receipt.errorDetails,
+            receipt.error ?? message("answerUnknown"),
+          ),
+        );
     },
     [endpoint, sessionId],
   );
@@ -2248,7 +2368,7 @@ export function ConversationPane({
         );
         const execution = conversations.view(endpoint, id).snapshot?.execution;
         if (!execution || !isExecutionActive(execution))
-          throw new Error("这项执行已结束，请刷新会话。");
+          throw new MessageError(message("executionEnded"));
         await conversations.submit(endpoint, id, {
           commandId: requestId,
           type: "turn.steer",
@@ -2265,7 +2385,12 @@ export function ConversationPane({
         );
         const steered = receipt.status === "applied";
         if (receipt.status === "uncertain")
-          throw new Error(receipt.error ?? "追加消息结果尚未确认。");
+          throw new MessageError(
+            apiErrorText(
+              receipt.errorDetails,
+              receipt.error ?? message("steerUnknown"),
+            ),
+          );
         abort.signal.throwIfAborted();
         if (steered) {
           updateTurn(id, turnId, (turn) =>
@@ -2317,7 +2442,9 @@ export function ConversationPane({
         );
       updateGuidance();
       setError(
-        `${rejected ? "发送失败" : "无法确认追加消息是否送达"}：${reason instanceof Error ? reason.message : String(reason)}`,
+        message(rejected ? "sendFailedReason" : "steerUnknownReason", {
+          reason: errorMessage(reason),
+        }),
       );
       return false;
     } finally {
@@ -2333,7 +2460,7 @@ export function ConversationPane({
     const prompt = text.trim();
     const intent = options?.intent;
     if ((intent === "goal" || intent === "resume-goal") && attached.length) {
-      setError("目标指令需要纯文本。请先在普通消息中发送参考图片。");
+      setError(message("goalTextOnly"));
       return undefined;
     }
     if (
@@ -2444,14 +2571,15 @@ export function ConversationPane({
       const restored = snapshot && turnsFromHistory(id, snapshot.turns);
       if (restored?.length) latest = restored.at(-1)!;
       if (receipt.status === "rejected" || receipt.status === "uncertain")
-        setError(receipt.error ?? "执行状态尚未确认，请查看会话。");
+        setError(
+          apiErrorText(
+            receipt.errorDetails,
+            receipt.error ?? message("executionCheckConversation"),
+          ),
+        );
     } catch (reason) {
       if (!abort.signal.aborted) {
-        setError(
-          reason instanceof Error
-            ? reason.message
-            : "无法确认执行状态，请重新连接。",
-        );
+        setError(errorMessage(reason, message("executionReconnect")));
         if (
           reason instanceof WorkflowApiError &&
           reason.status >= 400 &&
@@ -2512,7 +2640,7 @@ export function ConversationPane({
         return false;
       }
       if (directive.action === "goal" && goal && goal.phase !== "complete") {
-        setError("这段对话已有目标，请先继续或清除它。");
+        setError(message("goalExists"));
         return false;
       }
       if ("prompt" in directive)
@@ -2551,8 +2679,8 @@ export function ConversationPane({
     <button
       type="button"
       className="icon-control composer-stop"
-      aria-label={stopping ? "正在停止" : "停止生成"}
-      title={stopping ? "正在停止" : "停止生成"}
+      aria-label={stopping ? t("stopping") : t("stop")}
+      title={stopping ? t("stopping") : t("stop")}
       disabled={offline || readOnly || stopping}
       onClick={() => void stop()}
     >
@@ -2574,10 +2702,10 @@ export function ConversationPane({
     >
       {compactNotice ? (
         <p role="status" className="coding-notice">
-          {compactNotice}
+          {messageText(compactNotice, i18n)}
           {compacting ? (
             <button type="button" onClick={() => void stop()}>
-              停止压缩
+              {t("stopCompacting")}
             </button>
           ) : null}
         </p>
@@ -2589,71 +2717,69 @@ export function ConversationPane({
       remote.connection !== "waiting" ? (
         <p className="coding-notice" role="status">
           {remote.connection === "unsupported"
-            ? CONVERSATION_UPDATE_REQUIRED
+            ? t("updateRequired")
             : remote.connection === "connecting"
-              ? "正在连接会话…"
-              : "连接已中断，正在恢复会话状态。"}
+              ? t("connectingConversation")
+              : t("recoveringConversation")}
           {remote.connection === "unsupported" ? (
             <button
               type="button"
               onClick={() => conversations.reconnect(endpoint, sessionId)}
             >
-              重新连接
+              {t("reconnect")}
             </button>
           ) : null}
         </p>
       ) : null}
       {remote.snapshot?.execution?.status === "interrupted" ? (
         <p className="coding-notice" role="status">
-          执行宿主已重启。请检查已完成的工作后决定是否继续。
+          {t("hostRestarted")}
         </p>
       ) : null}
       {remote.pending && sessionId ? (
         <p className="coding-notice" role="status">
-          正在确认命令接收状态。
+          {t("checkingCommand")}
           <button
             type="button"
             onClick={() =>
               void conversations
                 .retryPending(endpoint, sessionId)
                 .catch((reason: unknown) =>
-                  setError(
-                    reason instanceof Error ? reason.message : "查询未完成。",
-                  ),
+                  setError(errorMessage(reason, message("queryFailed"))),
                 )
             }
           >
-            查询并重试原命令
+            {t("retryOriginal")}
           </button>
         </p>
       ) : null}
       {error ? (
         <p className="coding-notice" role="alert">
-          {error}
+          {messageText(error, i18n)}
         </p>
       ) : null}
       {guidanceState?.phase === "checking" ? (
         <p className="coding-notice" role="status">
-          追加未送达，正在确认本轮是否结束。草稿已保留。
+          {t("steerChecking")}
         </p>
       ) : guidanceState?.phase === "retry" ? (
         <p className="coding-notice" role="alert">
-          暂时无法确认本轮状态。草稿已保留，点击发送可重新确认。
+          {t("steerRetry")}
         </p>
       ) : guidanceState?.phase === "ready" ? (
         <p className="coding-notice" role="status">
-          本轮已结束。草稿已保留，点击发送开始新一轮。
+          {t("steerReady")}
         </p>
       ) : null}
       {historyError ? (
         <div className="coding-notice" role="alert">
-          <span>{historyError}</span>{" "}
+          <span>{messageText(historyError, i18n)}</span>{" "}
           <button
             type="button"
             className="tool-button"
             onClick={() => setHistoryRetry((value) => value + 1)}
           >
-            重试读取
+            {t("retryRead")}
           </button>
         </div>
       ) : null}
@@ -2673,13 +2799,13 @@ export function ConversationPane({
             disabled={olderLoading}
             onClick={() => void older()}
           >
-            {olderLoading ? "正在读取较早记录…" : "查看较早记录"}
+            {olderLoading ? t("loadingOlder") : t("viewOlder")}
           </button>
         ) : null}
         {!shown.length ? (
           loadingHistory || empty ? (
             <div className="coding-empty">
-              {loadingHistory ? <p>正在读取这段对话的过程记录…</p> : empty}
+              {loadingHistory ? <p>{t("loadingHistory")}</p> : empty}
             </div>
           ) : null
         ) : (
@@ -2716,7 +2842,7 @@ export function ConversationPane({
                 })
               }
             >
-              查看后续记录
+              {t("viewLater")}
             </button>
             <button
               type="button"
@@ -2726,13 +2852,13 @@ export function ConversationPane({
                 setHistoryWindow(undefined);
               }}
             >
-              返回最新
+              {t("backLatest")}
             </button>
           </div>
         ) : null}
       </div>
       {readOnly ? (
-        <p className="composer-footnote">这段对话已归档，取消归档后可继续。</p>
+        <p className="composer-footnote">{t("archivedResume")}</p>
       ) : null}
       <div
         className="chat-composer-area"
@@ -2740,21 +2866,24 @@ export function ConversationPane({
       >
         {composerExtra}
         {goal ? (
-          <section className="coding-goal" aria-label="当前目标">
+          <section className="coding-goal" aria-label={t("currentGoal")}>
             <div className="coding-goal-detail">
               <strong title={goal.objective}>{goal.objective}</strong>
               <span role="status">
                 {goal.armed
-                  ? "正在续跑"
+                  ? t("goalRunning")
                   : goal.phase === "complete"
-                    ? "已完成"
+                    ? t("completed")
                     : goal.phase === "blocked"
-                      ? "已阻塞"
+                      ? t("goalBlocked")
                       : goal.phase === "paused"
-                        ? "已暂停"
-                        : "待继续"}
+                        ? t("goalPaused")
+                        : t("goalReady")}
                 {" · "}
-                {goal.roundsStarted}/{goal.maxGoalRounds} 轮
+                {t("goalRounds", {
+                  started: goal.roundsStarted,
+                  total: goal.maxGoalRounds,
+                })}
               </span>
             </div>
             {!readOnly && !offline ? (
@@ -2766,7 +2895,7 @@ export function ConversationPane({
                     disabled={stopping}
                     onClick={() => void stop()}
                   >
-                    暂停目标
+                    {t("pauseGoal")}
                   </button>
                 ) : (
                   <>
@@ -2781,7 +2910,7 @@ export function ConversationPane({
                         }
                         onClick={() => void resumeGoal()}
                       >
-                        继续目标
+                        {t("resumeGoal")}
                       </button>
                     ) : null}
                     <button
@@ -2790,7 +2919,7 @@ export function ConversationPane({
                       disabled={running || collaborationSaving}
                       onClick={() => void chooseCollaboration("clear-goal")}
                     >
-                      清除目标
+                      {t("clearGoal")}
                     </button>
                   </>
                 )}
@@ -2802,8 +2931,8 @@ export function ConversationPane({
           <WorkflowRunForm
             key={`${draftKey}:${flowForm.flow.id}`}
             id={flowFormId}
-            title="在当前对话中运行"
-            subtitle={flowForm.flow.title}
+            title={t("runHere")}
+            subtitle={flowTitle(flowForm.flow)}
             schema={flowForm.flow.inputSchema}
             text={flowForm.text}
             onTextChange={(text) =>
@@ -2822,7 +2951,7 @@ export function ConversationPane({
               offline
             }
             submitting={false}
-            submitLabel="发送运行请求"
+            submitLabel={t("sendRun")}
             unavailable={!flowForm.flow.available}
             onSubmit={(input, runMode) => {
               if (
@@ -2839,7 +2968,7 @@ export function ConversationPane({
                 runMode,
               );
               if (prompt.length > 80_000) {
-                setError("工作流输入过长，请缩短后再发送。");
+                setError(message("flowInputLong"));
                 return;
               }
               closeFlow();
@@ -2850,13 +2979,13 @@ export function ConversationPane({
         ) : null}
         {images.error ? (
           <p className="composer-attach-error" role="alert">
-            {images.error}
+            {messageText(images.error, i18n)}
           </p>
         ) : null}
         {images.attachments.map((item) =>
           item.error ? (
             <p key={item.key} className="composer-attach-error" role="alert">
-              {item.name} · {item.error}
+              {item.name} · {messageText(item.error, i18n)}
             </p>
           ) : null,
         )}
@@ -2880,9 +3009,7 @@ export function ConversationPane({
             if (!files.length) return;
             event.preventDefault();
             if (offline) {
-              images.setError(
-                "本地演示模式不能附带图片，请切换到 Codex 订阅或其他模式。",
-              );
+              images.setError(message("demoNoImages"));
               return;
             }
             images.attach(files);
@@ -2904,17 +3031,20 @@ export function ConversationPane({
           }}
         >
           {images.attachments.length ? (
-            <div className="composer-attachments" aria-label="已附加的图片">
+            <div
+              className="composer-attachments"
+              aria-label={t("attachedImages")}
+            >
               {images.attachments.map((item) => (
                 <figure
                   key={item.key}
                   className={`composer-attachment${item.error ? " failed" : ""}`}
-                  title={item.error ?? item.name}
+                  title={messageText(item.error ?? item.name, i18n)}
                 >
                   <button
                     type="button"
                     className="composer-attachment-open"
-                    aria-label={`查看大图 ${item.name}`}
+                    aria-label={t("viewLargeImage", { name: item.name })}
                     onClick={() => setPreviewKey(item.key)}
                   >
                     <img src={item.preview} alt={item.name} />
@@ -2922,7 +3052,9 @@ export function ConversationPane({
                   {!item.image && !item.error ? (
                     <span className="composer-attachment-state" role="status">
                       <LoaderCircle size={16} className="coding-spin" />
-                      <span className="sr-only">正在上传 {item.name}</span>
+                      <span className="sr-only">
+                        {t("uploadingImage", { name: item.name })}
+                      </span>
                     </span>
                   ) : null}
                   {item.error ? (
@@ -2936,7 +3068,7 @@ export function ConversationPane({
                   <button
                     type="button"
                     className="composer-attachment-remove"
-                    aria-label={`移除图片 ${item.name}`}
+                    aria-label={t("removeImage", { name: item.name })}
                     onClick={() => images.detach(item.key)}
                   >
                     <X size={12} />
@@ -2959,7 +3091,7 @@ export function ConversationPane({
           ) : null}
           {dragging ? (
             <div className="composer-drop-hint" aria-hidden="true">
-              松开以添加图片
+              {t("dropImages")}
             </div>
           ) : null}
           <ComposerCommands
@@ -3004,19 +3136,19 @@ export function ConversationPane({
           <div className="composer-tools coding-composer-tools">
             <div className="composer-leading">
               <WorkbenchMenu
-                label="添加附件或工具"
+                label={t("addAttachmentTool")}
                 className="icon-control composer-add-trigger"
                 items={[
                   {
                     id: "image",
-                    label: "添加图片",
+                    label: t("addImages"),
                     icon: <ImagePlus size={15} />,
                     disabled: offline || images.full,
                     action: () => fileInput.current?.click(),
                   },
                   {
                     id: "commands",
-                    label: "命令、Skills 和 Flows",
+                    label: t("commandsSkillsFlows"),
                     icon: <Terminal size={15} />,
                     shortcut: "/",
                     disabled: offline || !projectId,
@@ -3054,12 +3186,16 @@ export function ConversationPane({
               ) : null}
               {!offline ? (
                 <WorkbenchMenu
-                  label={`对话权限 · ${permission ? PERMISSION_OPTIONS[permission].detail : "默认权限"}`}
+                  label={t("permissionsLabel", {
+                    permissions: permission
+                      ? t(PERMISSION_OPTIONS[permission].detail)
+                      : t("defaultPermissions"),
+                  })}
                   className={`composer-context composer-permission${permission === "danger-full-access" ? " danger" : ""}`}
                   disabled={readOnly || !onPermission || permissionSaving}
                   items={CODING_PERMISSIONS.map((preset) => ({
                     id: preset,
-                    label: PERMISSION_OPTIONS[preset].detail,
+                    label: t(PERMISSION_OPTIONS[preset].detail),
                     icon:
                       preset === permission ? (
                         <Check size={14} />
@@ -3070,7 +3206,7 @@ export function ConversationPane({
                     action: () => {
                       setError("");
                       void onPermission?.(preset).catch(() =>
-                        setError("权限保存失败，请检查服务连接后重试。"),
+                        setError(message("permissionSaveFailed")),
                       );
                     },
                   }))}
@@ -3082,8 +3218,8 @@ export function ConversationPane({
                   )}
                   <span>
                     {permission
-                      ? PERMISSION_OPTIONS[permission].label
-                      : "默认权限"}
+                      ? t(PERMISSION_OPTIONS[permission].label)
+                      : t("defaultPermissions")}
                   </span>
                   <ChevronDown size={12} aria-hidden="true" />
                 </WorkbenchMenu>
@@ -3094,11 +3230,7 @@ export function ConversationPane({
                 selection={modelConfig}
                 disabled={readOnly || steering}
                 openRequest={modelOpenRequest}
-                note={
-                  running
-                    ? "随下一条消息生效；已发出的请求继续使用原配置。"
-                    : undefined
-                }
+                note={running ? t("nextMessageModel") : undefined}
                 onChange={onModelConfig}
                 onModeChange={
                   running
@@ -3114,14 +3246,14 @@ export function ConversationPane({
                   className="send-button"
                   aria-label={
                     guidanceState?.phase === "retry"
-                      ? "重新确认本轮状态"
+                      ? t("recheckTurn")
                       : running
-                        ? "发送引导"
-                        : "发送消息"
+                        ? t("sendGuidance")
+                        : t("send")
                   }
                   title={
                     running && guidanceState?.phase !== "retry"
-                      ? "发送引导（模型会在下一步读到）"
+                      ? t("guidanceHint")
                       : undefined
                   }
                   disabled={
@@ -3153,7 +3285,7 @@ export function ConversationPane({
         </div>
         {collaboration?.planning && !draftIntent ? (
           <p className="composer-footnote" role="status">
-            当前会话处于计划模式，输入 /plan off 可退出。
+            {t("planModeHint")}
           </p>
         ) : null}
         {footnote ? <p className="composer-footnote">{footnote}</p> : null}

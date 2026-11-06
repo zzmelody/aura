@@ -13,7 +13,11 @@ import type {
   FlowAgentOptions,
   FlowMode,
 } from "@aura/protocol/types";
-import { FlowError } from "@aura/protocol/errors";
+import {
+  CodedFlowError,
+  FlowError,
+  validationParameters,
+} from "@aura/protocol/errors";
 import { z } from "zod";
 
 const agentOptionFields = {
@@ -45,12 +49,18 @@ export const agentConfigSchema = z
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
-  if (!result.success)
-    throw new FlowError(
-      result.error.issues
-        .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-        .join("；"),
-    );
+  if (!result.success) {
+    const message = result.error.issues
+      .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+      .join("；");
+    const params = validationParameters(result.error.issues);
+    if (params)
+      throw new CodedFlowError(message, 400, {
+        code: "validation_failed",
+        params,
+      });
+    throw new FlowError(message);
+  }
   return result.data;
 }
 
@@ -61,7 +71,10 @@ export function agentDefaults(
   timeoutMs = 30 * 60_000,
   codexModel = process.env.AURA_CODEX_MODEL || "gpt-6.1-sol",
 ): FlowAgentConfig {
-  if (mode === "custom") throw new FlowError("自定义模型尚未配置。", 422);
+  if (mode === "custom")
+    throw new CodedFlowError("自定义模型尚未配置。", 422, {
+      code: "custom_model_unconfigured",
+    });
   if (mode === "lumina")
     return agentConfig(
       {
@@ -97,9 +110,10 @@ export function agentConfig(
     ),
   });
   if (config.provider === "openai-codex" && config.maxTokens !== undefined)
-    throw new FlowError(
+    throw new CodedFlowError(
       "AGENT_OPTION_UNSUPPORTED: 当前 DSH Codex 适配器不支持 maxTokens，请移除此选项；可使用 timeoutMs 限制执行时长。",
       422,
+      { code: "codex_max_tokens_unsupported" },
     );
   return config;
 }
@@ -120,7 +134,10 @@ export async function resolveModeDefaults(
     const route = document.selectedRoute
       ? document.routes[document.selectedRoute]
       : undefined;
-    if (!route) throw new FlowError("请先配置自定义模型服务。", 422);
+    if (!route)
+      throw new CodedFlowError("请先配置自定义模型服务。", 422, {
+        code: "custom_model_unconfigured",
+      });
     await settings.update("llm-pi-ai", {
       providers: customProfiles(document),
     });

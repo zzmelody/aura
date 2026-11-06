@@ -2,6 +2,8 @@ import {
   isConversationCursor,
   isExecutionActive,
 } from "@aura/protocol/conversation-channel";
+import { apiErrorText } from "../../api-error-messages.ts";
+import { readErrorDetails } from "@aura/protocol/errors";
 import type {
   ConversationCommand,
   ConversationExecution,
@@ -10,9 +12,10 @@ import type {
 } from "@aura/protocol/conversation-channel";
 import { parseConversationHistory } from "./api.ts";
 import { WorkflowApiError } from "../../workflowSessions.ts";
+import { MessageError, type MessageReference } from "@aura/i18n/runtime";
+import { conversationMessage as message } from "../../conversation-messages.ts";
 
-export const CONVERSATION_UPDATE_REQUIRED =
-  "运行中的后台尚未更新，请完全退出并重新打开 Aura。";
+export const CONVERSATION_UPDATE_REQUIRED = message("updateRequired");
 
 export interface ConversationView {
   snapshot?: ConversationSnapshot;
@@ -24,7 +27,7 @@ export interface ConversationView {
     | "waiting"
     | "unsupported";
   pending?: ConversationCommand;
-  error?: string;
+  error?: string | MessageReference;
 }
 interface Entry {
   endpoint: string;
@@ -109,7 +112,9 @@ function parseExecution(value: unknown): ConversationExecution | undefined {
     ].includes(execution.status)
   )
     return undefined;
-  return execution;
+  const { errorDetails, ...rest } = execution;
+  const details = readErrorDetails(errorDetails);
+  return { ...rest, ...(details ? { errorDetails: details } : {}) };
 }
 
 export function parseConversationSnapshot(
@@ -123,7 +128,7 @@ export function parseConversationSnapshot(
     source.sessionId !== id ||
     !isConversationCursor(source.cursor)
   )
-    throw new Error("无法读取会话快照。");
+    throw new MessageError(message("snapshotReadFailed"));
   return {
     ...parseConversationHistory(source),
     version: 1,
@@ -229,7 +234,7 @@ export class ConversationStore {
       this.publish(entry, { connection: "unsupported" });
       throw new WorkflowApiError(CONVERSATION_UPDATE_REQUIRED, 426);
     }
-    if (!response.ok) throw new Error("无法确认会话服务是否就绪。");
+    if (!response.ok) throw new MessageError(message("channelReadFailed"));
   }
 
   private url(entry: Entry, path: string) {
@@ -257,9 +262,7 @@ export class ConversationStore {
     const value: unknown = await response.json().catch(() => undefined);
     if (!response.ok)
       throw new WorkflowApiError(
-        typeof (value as { message?: unknown })?.message === "string"
-          ? (value as { message: string }).message
-          : "会话请求未完成。",
+        apiErrorText(value, message("conversationRequestFailed")),
         response.status,
       );
     return value;
@@ -358,14 +361,14 @@ export class ConversationStore {
         if (response.status === 404) {
           await response.body?.cancel();
           await this.checkChannel(entry, readSignal);
-          throw new WorkflowApiError("会话尚未保存。", 404);
+          throw new WorkflowApiError(message("conversationNotSaved"), 404);
         }
         if (!response.ok || !response.body)
-          throw new Error("会话事件连接不可用。");
+          throw new MessageError(message("eventsUnavailable"));
         if (
           !response.headers.get("Content-Type")?.startsWith("text/event-stream")
         )
-          throw new Error("会话事件响应无效。");
+          throw new MessageError(message("eventsInvalidResponse"));
         entry.readerOnline = true;
         this.publish(entry, { connection: "online" });
         this.invalidate(entry);
@@ -383,7 +386,7 @@ export class ConversationStore {
               .decode(chunk.value, { stream: true })
               .replace(/\r\n/gu, "\n");
             if (buffer.length > 16 * 1024 * 1024)
-              throw new Error("会话事件过大。");
+              throw new MessageError(message("eventTooLarge"));
             let boundary: number;
             while ((boundary = buffer.indexOf("\n\n")) >= 0) {
               const frame = buffer.slice(0, boundary);
@@ -402,7 +405,7 @@ export class ConversationStore {
                 ?.slice(3)
                 .trim();
               if (type === "unavailable")
-                throw new Error("会话事件连接已中断。");
+                throw new MessageError(message("eventsInterrupted"));
               if (type === "snapshot" || type === "reset") {
                 entry.generation++;
                 this.apply(
@@ -421,7 +424,7 @@ export class ConversationStore {
                   event.cursor !== cursor ||
                   !isConversationCursor(cursor)
                 )
-                  throw new Error("无效的会话事件。");
+                  throw new MessageError(message("eventInvalid"));
                 this.invalidate(entry);
               }
               if (isConversationCursor(cursor)) entry.cursor = cursor;
@@ -468,8 +471,14 @@ export class ConversationStore {
       typeof receipt.executionId !== "string" ||
       !["accepted", "applied", "rejected", "uncertain"].includes(receipt.status)
     )
-      throw new Error("无法确认命令接收状态。");
-    return { ...receipt, execution: parseExecution(receipt.execution) };
+      throw new MessageError(message("receiptUnconfirmed"));
+    const { errorDetails, ...rest } = receipt;
+    const details = readErrorDetails(errorDetails);
+    return {
+      ...rest,
+      ...(details ? { errorDetails: details } : {}),
+      execution: parseExecution(receipt.execution),
+    };
   }
 
   private async checkPending(entry: Entry, signal?: AbortSignal) {
@@ -486,7 +495,13 @@ export class ConversationStore {
     );
     if (entry.view.pending?.commandId === pending.commandId) {
       persist(entry);
-      this.publish(entry, { pending: undefined, error: receipt.error });
+      this.publish(entry, {
+        pending: undefined,
+        error:
+          receipt.error === undefined
+            ? undefined
+            : apiErrorText(receipt.errorDetails, receipt.error),
+      });
     }
     return receipt;
   }
@@ -503,7 +518,7 @@ export class ConversationStore {
       entry.view.pending &&
       entry.view.pending.commandId !== command.commandId
     )
-      throw new Error("上一条命令尚未确认，请先查询或重试原命令。");
+      throw new MessageError(message("previousCommandPending"));
     persist(entry, command);
     this.publish(entry, { pending: command });
     let receipt: ConversationReceipt;
@@ -539,12 +554,18 @@ export class ConversationStore {
       const found = await this.checkPending(entry).catch(() => undefined);
       if (found) return found;
       this.publish(entry, {
-        error: "命令是否送达尚未确认，可查询状态或重试原命令。",
+        error: message("commandUnconfirmed"),
       });
-      throw new Error("命令是否送达尚未确认，原命令已保留。", { cause: error });
+      throw new MessageError(message("commandRetained"), { cause: error });
     }
     persist(entry);
-    this.publish(entry, { pending: undefined, error: receipt.error });
+    this.publish(entry, {
+      pending: undefined,
+      error:
+        receipt.error === undefined
+          ? undefined
+          : apiErrorText(receipt.errorDetails, receipt.error),
+    });
     this.invalidate(entry);
     return receipt;
   }
@@ -611,7 +632,7 @@ export class ConversationStore {
       await pause(350, signal);
     }
     signal.throwIfAborted();
-    throw new Error("会话观察已结束。");
+    throw new MessageError(message("observationEnded"));
   }
 
   close(): void {

@@ -8,7 +8,7 @@ import type {
   WorkspaceTerminalInfo,
   WorkspaceTerminalOutput,
 } from "@aura/protocol/types";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 
 const MAX_OUTPUT = 1_048_576;
 const PAGE_SIZE = 65_536;
@@ -74,7 +74,9 @@ export class WorkspaceTerminals {
     const cwd = this.directory(projectId);
     this.lifetime.signal.throwIfAborted();
     if (this.records.size + this.pending.size >= 24)
-      throw new FlowError("打开的终端过多，请先关闭不用的终端。", 409);
+      throw new CodedFlowError("打开的终端过多，请先关闭不用的终端。", 409, {
+        code: "terminal_limit_reached",
+      });
     const signal = AbortSignal.any([
       this.lifetime.signal,
       AbortSignal.timeout(20_000),
@@ -202,7 +204,9 @@ export class WorkspaceTerminals {
   async write(id: string, data: string): Promise<void> {
     const record = this.require(id);
     if (record.info.status !== "running" || record.closing)
-      throw new FlowError("终端已退出，请新建终端。", 409);
+      throw new CodedFlowError("终端已退出，请新建终端。", 409, {
+        code: "terminal_exited",
+      });
     await record.handle.write(data);
     // eslint-disable-next-line no-control-regex -- Recognize ANSI device replies to advance the replay boundary.
     if (/\u001b\[[?>]?[\d;]*[cRn]/u.test(data))
@@ -236,9 +240,10 @@ export class WorkspaceTerminals {
     if (!force && record.info.status === "running") {
       idle = (await record.handle.inspectActivity()).state === "idle";
       if (!idle)
-        throw new FlowError(
+        throw new CodedFlowError(
           "终端可能仍有任务运行，关闭将结束其中的进程。",
           409,
+          { code: "terminal_close_confirmation" },
         );
     }
     if (record.posix && idle) {
@@ -279,7 +284,9 @@ export class WorkspaceTerminals {
   private require(id: string): TerminalRecord {
     const record = this.records.get(id);
     if (!record)
-      throw new FlowError("终端已退出或服务已重启，请新建终端。", 404);
+      throw new CodedFlowError("终端已退出或服务已重启，请新建终端。", 404, {
+        code: "terminal_exited",
+      });
     this.directory(record.info.projectId);
     return record;
   }

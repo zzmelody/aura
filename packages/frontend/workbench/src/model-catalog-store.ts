@@ -5,7 +5,7 @@ import { type StartupCache, startupCache } from "./startup-cache.ts";
 export interface ModelCatalogSnapshot {
   catalog?: ChatModelCatalog;
   loading: boolean;
-  error: string;
+  error: "" | "modelCatalogUnavailable";
   /** Restored from the previous window; a live read always validates it. */
   restored?: boolean;
 }
@@ -102,7 +102,7 @@ export class ModelCatalogStore {
         `${entry.endpoint}/chat/models?mode=${mode}`,
         request.signal,
       );
-      if (!response.ok) throw new Error("模型目录暂时不可用");
+      if (!response.ok) throw new Error("modelCatalogUnavailable");
       const catalog: ChatModelCatalog = await response.json();
       if (
         catalog.mode !== mode ||
@@ -120,7 +120,7 @@ export class ModelCatalogStore {
             ),
         )
       )
-        throw new Error("模型目录格式不可用");
+        throw new Error("Invalid model catalog");
       if (entry.request !== request || request.signal.aborted) return;
       entry.updatedAt = Date.now();
       this.cache.saveModels(entry.endpoint, catalog);
@@ -129,7 +129,7 @@ export class ModelCatalogStore {
       receive({
         ...entry.snapshot,
         loading: false,
-        error: "模型目录暂时不可用",
+        error: "modelCatalogUnavailable",
       });
     } finally {
       if (entry.request === request) entry.request = undefined;

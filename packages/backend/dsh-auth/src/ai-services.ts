@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ApiErrorDetails } from "@aura/protocol/errors";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Context } from "@deepseek-ai/cordis";
@@ -15,7 +16,16 @@ import type {
   FlowAgentConfig,
 } from "@aura/protocol/types";
 
-export class AiConfigurationError extends Error {}
+export class AiConfigurationError extends Error {
+  readonly details: ApiErrorDetails;
+  constructor(
+    message: string,
+    options?: ErrorOptions & { details?: ApiErrorDetails },
+  ) {
+    super(message, options);
+    this.details = options?.details ?? { code: "ai_configuration_invalid" };
+  }
+}
 /** Lumina is a fixed OpenAI-compatible gateway; only its key is user-supplied. */
 export const LUMINA_PROVIDER = "aura-lumina";
 export const LUMINA_BASE_URL = "https://lumina.tripo3d.com/v1";
@@ -34,13 +44,17 @@ function text(value: unknown, limit: number): string {
     // eslint-disable-next-line no-control-regex -- Intentionally sanitize or detect ASCII control characters.
     /[\x00-\x1f\x7f]/u.test(value)
   )
-    throw new AiConfigurationError("配置字段为空、过长或含无效字符。");
+    throw new AiConfigurationError("配置字段为空、过长或含无效字符。", {
+      details: { code: "ai_field_invalid" },
+    });
   return value.trim();
 }
 export function secret(value: unknown): string {
   const key = text(value, 4096);
   if (!/^[\x21-\x7e]+$/u.test(key))
-    throw new AiConfigurationError("密钥必须为不含空格的可打印字符。");
+    throw new AiConfigurationError("密钥必须为不含空格的可打印字符。", {
+      details: { code: "ai_key_invalid" },
+    });
   return key;
 }
 export function parseModelSettings(
@@ -61,11 +75,15 @@ export function parseModelSettings(
     ) ||
     !["codex", "lumina", "custom"].includes(String(value.mode))
   )
-    throw new AiConfigurationError("模型设置无效。");
+    throw new AiConfigurationError("模型设置无效。", {
+      details: { code: "model_configuration_invalid" },
+    });
   const model = text(value.model, 200);
   const reasoningEffort = text(value.reasoningEffort, 16);
   if (!efforts.includes(reasoningEffort))
-    throw new AiConfigurationError("思考强度无效。");
+    throw new AiConfigurationError("思考强度无效。", {
+      details: { code: "ai_reasoning_invalid" },
+    });
   let custom: AiCustomProvider | undefined;
   if (value.mode === "custom") {
     const item = value.custom;
@@ -76,13 +94,17 @@ export function parseModelSettings(
           !["name", "api", "baseURL", "images", "contextWindow"].includes(key),
       )
     )
-      throw new AiConfigurationError("自定义服务设置无效。");
+      throw new AiConfigurationError("自定义服务设置无效。", {
+        details: { code: "ai_custom_invalid" },
+      });
     const baseURL = text(item.baseURL, 2048);
     let url: URL;
     try {
       url = new URL(baseURL);
     } catch {
-      throw new AiConfigurationError("服务地址无效。");
+      throw new AiConfigurationError("服务地址无效。", {
+        details: { code: "ai_address_invalid" },
+      });
     }
     const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
     if (
@@ -94,6 +116,7 @@ export function parseModelSettings(
     )
       throw new AiConfigurationError(
         "服务地址须使用 HTTPS；本机服务可使用 HTTP，地址不得含凭据或查询参数。",
+        { details: { code: "ai_address_invalid" } },
       );
     if (
       ![
@@ -106,7 +129,9 @@ export function parseModelSettings(
       Number(item.contextWindow) < 1024 ||
       Number(item.contextWindow) > 4_000_000
     )
-      throw new AiConfigurationError("服务协议、图片能力或上下文长度无效。");
+      throw new AiConfigurationError("服务协议、图片能力或上下文长度无效。", {
+        details: { code: "ai_custom_invalid" },
+      });
     custom = {
       name: text(item.name, 80),
       api: item.api as AiCustomProvider["api"],
@@ -116,19 +141,26 @@ export function parseModelSettings(
     };
   } else if (value.mode === "lumina") {
     if (value.custom !== undefined)
-      throw new AiConfigurationError("Lumina 服务地址固定，不接受自定义地址。");
+      throw new AiConfigurationError(
+        "Lumina 服务地址固定，不接受自定义地址。",
+        { details: { code: "ai_lumina_fixed" } },
+      );
   } else if (
     value.custom !== undefined ||
     value.key !== undefined ||
     value.clearKey !== undefined
   ) {
-    throw new AiConfigurationError("Codex 订阅通过账号登录，不接受 API Key。");
+    throw new AiConfigurationError("Codex 订阅通过账号登录，不接受 API Key。", {
+      details: { code: "ai_codex_key_forbidden" },
+    });
   }
   if (
     (value.clearKey !== undefined && typeof value.clearKey !== "boolean") ||
     (value.clearKey === true && value.key !== undefined)
   )
-    throw new AiConfigurationError("密钥操作无效。");
+    throw new AiConfigurationError("密钥操作无效。", {
+      details: { code: "ai_key_invalid" },
+    });
   return {
     mode: value.mode as AiModelSettings["mode"],
     model,
@@ -182,7 +214,9 @@ export async function readAiServices(
         model: { mode: "codex", model: codexModel, reasoningEffort: "xhigh" },
         routes: {},
       };
-    throw new AiConfigurationError("AI 服务配置无法读取，请重新保存设置。");
+    throw new AiConfigurationError("AI 服务配置无法读取，请重新保存设置。", {
+      details: { code: "ai_configuration_unreadable" },
+    });
   }
   if (!record(raw) || raw.version !== 1 || !record(raw.routes))
     throw new AiConfigurationError("AI 服务配置无效。");
@@ -408,7 +442,7 @@ export async function validateCustomSettings(
   } catch (error) {
     throw new AiConfigurationError(
       "DSH 无法使用该模型配置，请检查协议、模型和思考强度。",
-      { cause: error },
+      { cause: error, details: { code: "model_configuration_invalid" } },
     );
   } finally {
     await ctx.fiber.dispose();
@@ -508,7 +542,10 @@ export async function saveDiscoveredCatalog(
     return next;
   }
   const route = previous.routes[target];
-  if (!route) throw new AiConfigurationError("自定义服务尚未保存。");
+  if (!route)
+    throw new AiConfigurationError("自定义服务尚未保存。", {
+      details: { code: "ai_custom_unsaved" },
+    });
   const next = {
     ...previous,
     routes: { ...previous.routes, [target]: { ...route, catalog: list } },

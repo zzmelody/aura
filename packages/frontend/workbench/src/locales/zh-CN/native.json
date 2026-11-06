@@ -1,0 +1,18 @@
+{
+  "pickerKindUnsupported": "不支持的路径选择类型。",
+  "pickerFailed": "无法打开路径选择窗口，请重试。",
+  "previewInvalid": "无效的站点预览。",
+  "previewLocalOnly": "预览地址必须是本机 HTTP 站点。",
+  "previewFailed": "无法打开站点预览，请重试。",
+  "browserOwnerRequired": "浏览器操作只能由 Aura 工作台发起。",
+  "browserWorkspaceRequired": "浏览器需要所属工作空间。",
+  "browserTabLimit": "浏览器标签数已达上限。",
+  "browserAddressBlocked": "不能在 Aura 浏览器打开这个地址。",
+  "browserOperationFailed": "浏览器操作失败，请重试。",
+  "fileMainWindowOnly": "只能从主窗口定位文件。",
+  "fileRevealFailed": "无法在文件夹中显示，请重试。",
+  "filePathInvalid": "文件路径无效。",
+  "fileRootRequired": "项目目录无效。",
+  "fileNotFound": "文件不存在或已被移动。",
+  "operationFailed": "桌面操作失败，请重试。"
+}

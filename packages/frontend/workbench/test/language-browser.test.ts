@@ -39,18 +39,25 @@ import { language, registerCatalogs } from ${module("@aura/i18n/runtime")};
 import { usePluginTranslation } from ${module("@aura/plugin-ui")};
 import { initialState } from ${module("@aura/core")};
 import { SettingsScreen } from ${source("../src/screens/Settings.tsx")};
+import { SessionStatus } from ${source("../src/SessionStatus.tsx")};
+import { conversationInfoStatus } from ${source("../src/features/coding/conversationStatus.ts")};
+import { ToastProvider, useToast } from ${source("../src/toast.tsx")};
 import { useAppearance } from ${source("../src/useAppearance.ts")};
 import ${source("../src/styles.css")};
 const titles = { "zh-CN": "示例插件", en: "Example plugin", ja: "サンプルプラグイン", ko: "예제 플러그인", ru: "Пример плагина", fr: "Exemple de plugin" };
 registerCatalogs("plugin.example", Object.fromEntries(Object.entries(titles).map(([locale, title]) => [locale, { title }])));
 let mounts = 0;
+const cachedStatus = conversationInfoStatus({ lastTurnStatus: "running", waitingForAnswer: true });
 let selectSection;
 const requests = [];
 globalThis.fetch = async input => { requests.push(String(input)); return Response.json({}, { status: 503 }); };
 function Plugin() {
   const { t } = usePluginTranslation("example");
-  React.useEffect(() => { mounts++; }, []);
-  return React.createElement("p", { id: "plugin-label" }, t("title"));
+  const toast = useToast();
+  React.useEffect(() => { mounts++; toast({ message: { namespace: "sidebar", key: "archivedNotice", values: { title: "My draft" } }, duration: 60000 }); }, [toast]);
+  return React.createElement(React.Fragment, null,
+    React.createElement("p", { id: "plugin-label" }, t("title")),
+    React.createElement(SessionStatus, { status: cachedStatus, text: true }));
 }
 function Harness() {
   const appearance = useAppearance(true);
@@ -69,7 +76,7 @@ const root = createRoot(document.getElementById("root"));
 const settle = async () => { await new Promise(resolve => setTimeout(resolve, 0)); flushSync(() => {}); };
 async function inspect() {
   await language.ready;
-  flushSync(() => root.render(React.createElement(LanguageProvider, null, React.createElement(Harness))));
+  flushSync(() => root.render(React.createElement(LanguageProvider, null, React.createElement(ToastProvider, null, React.createElement(Harness)))));
   await settle();
   const input = document.getElementById("settings-endpoint");
   flushSync(() => {
@@ -90,6 +97,8 @@ async function inspect() {
       snapshots.push({ locale, width, lang: document.documentElement.lang,
         title: document.querySelector(".settings-nav h1").textContent,
         plugin: document.getElementById("plugin-label").textContent,
+        status: document.querySelector(".session-execution-status").getAttribute("aria-label"),
+        toast: document.querySelector(".toast > span").textContent,
         draft: document.getElementById("settings-endpoint").value,
         sameInput: document.getElementById("settings-endpoint") === input,
         overflow: panel.scrollWidth > panel.clientWidth,
@@ -155,6 +164,8 @@ document.currentScript.remove();
         lang: string;
         title: string;
         plugin: string;
+        status: string;
+        toast: string;
         draft: string;
         sameInput: boolean;
         overflow: boolean;
@@ -172,14 +183,30 @@ document.currentScript.remove();
       fr: ["Paramètres", "Exemple de plugin"],
     };
     assert.equal(result.snapshots.length, 12);
+    const statuses: Record<string, string> = {
+      "zh-CN": "等待你的回答",
+      en: "Waiting for your answer",
+      ja: "回答を待っています",
+      ko: "답변을 기다리는 중",
+      ru: "Ожидание вашего ответа",
+      fr: "En attente de votre réponse",
+    };
     for (const snapshot of result.snapshots) {
       const label = `${snapshot.locale} at ${snapshot.width}px`;
       assert.equal(snapshot.lang, snapshot.locale, label);
       assert.equal(snapshot.title, expected[snapshot.locale]?.[0], label);
       assert.equal(snapshot.plugin, expected[snapshot.locale]?.[1], label);
+      assert.equal(snapshot.status, statuses[snapshot.locale], label);
+      assert.ok(snapshot.toast.includes("My draft"), label);
+      assert.equal(
+        snapshot.toast,
+        result.snapshots.find((item) => item.locale === snapshot.locale)?.toast,
+        label,
+      );
       assert.equal(snapshot.draft, "http://unsaved.example:9000", label);
       assert.equal(snapshot.sameInput, true, label);
       assert.equal(snapshot.overflow, false, label);
     }
+    assert.equal(new Set(result.snapshots.map((item) => item.toast)).size, 6);
   },
 );

@@ -59,7 +59,7 @@ test(
         "--no-first-run",
         `--user-data-dir=${join(root, "chrome")}`,
         "--window-size=1400,900",
-        "--virtual-time-budget=5000",
+        "--virtual-time-budget=8000",
         "--dump-dom",
         pathToFileURL(page).href,
       ],
@@ -78,6 +78,6 @@ test(
       undefined,
       `${result.error}\n${result.checks.join("\n")}`,
     );
-    assert.ok(result.checks.length >= 30);
+    assert.ok(result.checks.length >= 100);
   },
 );

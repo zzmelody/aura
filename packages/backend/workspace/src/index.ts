@@ -1,5 +1,5 @@
 import type { Context } from "@deepseek-ai/cordis";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import { z } from "zod";
 import { CodingProjects } from "./projects.ts";
 import { WorkspaceTerminals } from "./terminals.ts";
@@ -49,13 +49,19 @@ export function createWorkspaceService(ctx: Context) {
             force: z.boolean().default(false),
           })
           .safeParse(params);
-        if (!input.success) throw new FlowError("无效的终端请求。", 400);
+        if (!input.success)
+          throw new CodedFlowError("无效的终端请求。", 400, {
+            code: "terminal_request_invalid",
+          });
         const request = input.data;
         if (
           method === "coding/terminals/list" ||
           method === "coding/terminals/open"
         ) {
-          if (!request.projectId) throw new FlowError("请选择工作空间。", 400);
+          if (!request.projectId)
+            throw new CodedFlowError("请选择工作空间。", 400, {
+              code: "workspace_required",
+            });
           data =
             method === "coding/terminals/list"
               ? terminals.list(request.projectId)
@@ -65,12 +71,17 @@ export function createWorkspaceService(ctx: Context) {
                   request.rows,
                 );
         } else {
-          if (!request.terminalId) throw new FlowError("请选择终端。", 400);
+          if (!request.terminalId)
+            throw new CodedFlowError("请选择终端。", 400, {
+              code: "terminal_required",
+            });
           if (method === "coding/terminals/read")
             data = await terminals.read(request.terminalId, request.cursor);
           if (method === "coding/terminals/write") {
             if (request.data === undefined)
-              throw new FlowError("缺少终端输入。", 400);
+              throw new CodedFlowError("缺少终端输入。", 400, {
+                code: "terminal_input_missing",
+              });
             await terminals.write(request.terminalId, request.data);
             data = { updated: true };
           }
@@ -100,7 +111,10 @@ export function createWorkspaceService(ctx: Context) {
             title: z.string().trim().max(100).optional(),
           })
           .safeParse(params);
-        if (!input.success) throw new FlowError("无效的项目目录。", 400);
+        if (!input.success)
+          throw new CodedFlowError("无效的项目目录。", 400, {
+            code: "workspace_directory_invalid",
+          });
         data = await projects.create(input.data.directory, input.data.title);
         break;
       }
@@ -111,7 +125,10 @@ export function createWorkspaceService(ctx: Context) {
             title: z.string().trim().min(1).max(100),
           })
           .safeParse(params);
-        if (!input.success) throw new FlowError("无效的项目名称。", 400);
+        if (!input.success)
+          throw new CodedFlowError("无效的项目名称。", 400, {
+            code: "workspace_title_invalid",
+          });
         data = await projects.rename(input.data.id, input.data.title);
         break;
       }
@@ -122,7 +139,10 @@ export function createWorkspaceService(ctx: Context) {
             directory: z.string().trim().min(1).max(4096),
           })
           .safeParse(params);
-        if (!input.success) throw new FlowError("无效的项目目录。", 400);
+        if (!input.success)
+          throw new CodedFlowError("无效的项目目录。", 400, {
+            code: "workspace_directory_invalid",
+          });
         const relocated = await projects.relocate(
           input.data.id,
           input.data.directory,
@@ -134,14 +154,18 @@ export function createWorkspaceService(ctx: Context) {
       }
       case "coding/projects/remove": {
         if (typeof params.id !== "string")
-          throw new FlowError("无效的项目。", 400);
+          throw new CodedFlowError("无效的项目。", 400, {
+            code: "workspace_invalid",
+          });
         data = await projects.remove(params.id);
         if (data) await terminals.closeProject(params.id);
         break;
       }
       case "coding/projects/status": {
         if (typeof params.id !== "string")
-          throw new FlowError("无效的项目。", 400);
+          throw new CodedFlowError("无效的项目。", 400, {
+            code: "workspace_invalid",
+          });
         data = await projects.status(params.id);
         break;
       }

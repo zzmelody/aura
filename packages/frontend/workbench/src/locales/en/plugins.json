@@ -1,0 +1,21 @@
+{
+  "scriptTimeout": "The plugin script took too long to load.",
+  "scriptLoadFailed": "The plugin script could not be loaded.",
+  "missingApply": "The plugin browser entry does not export apply(ctx).",
+  "duplicatePage": "Plugin page {{id}} is already registered.",
+  "duplicateResult": "Plugin result view {{id}} is already registered.",
+  "alreadyStarted": "The plugin module system is already running on this page. Reload the page.",
+  "loaderUnavailable": "The Aura service did not provide the DSH module loader.",
+  "loaderUnregistered": "The DSH module loader did not finish registering.",
+  "loaderBeforeStartup": "The DSH module loader requested {{specifier}} before startup.",
+  "graphUpdateUnsupported": "The DSH module system does not support updating the module graph at runtime.",
+  "pagesReadFailed": "Could not read plugin pages ({{status}}).",
+  "graphReadFailed": "Could not read the plugin module graph ({{status}}).",
+  "renderFailed": "The plugin page could not be rendered.",
+  "pageOpenFailed": "Could not open {{label}}: {{message}}",
+  "settingsReadFailed": "Could not read plugin directories ({{status}}).",
+  "settingsSaveFailed": "Could not save plugin directories ({{status}}).",
+  "invokeFailed": "The plugin page request failed ({{status, number}}).",
+  "directoryDesktopOnly": "Folder selection requires Aura Desktop.",
+  "previewDesktopOnly": "Site previews require Aura Desktop."
+}

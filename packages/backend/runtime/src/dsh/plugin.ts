@@ -5,7 +5,11 @@ import { createWorkspaceService } from "@aura/workspace";
 import { createAgentService } from "@aura/agent-runtime";
 import { createWorkflowService } from "@aura/orchestration/service";
 import { installHostPluginSdkResolutionFromEnv } from "@aura/orchestration/host";
-import { FlowError } from "@aura/protocol/errors";
+import {
+  CodedFlowError,
+  FlowError,
+  flowErrorBody,
+} from "@aura/protocol/errors";
 import type { FlowMode } from "@aura/protocol/types";
 import { resolveModeDefaults } from "@aura/dsh-auth/model-config";
 import { childStartup, type StartupStage } from "./startup-timing.ts";
@@ -95,7 +99,10 @@ export async function apply(ctx: Context) {
   transport.onNotification(agent.notification);
   transport.onRequest(async (method, params) => {
     try {
-      if (exiting) throw new FlowError("编排服务正在关闭，请刷新。", 503);
+      if (exiting)
+        throw new CodedFlowError("编排服务正在关闭，请刷新。", 503, {
+          code: "service_closing",
+        });
       if (method === "ping") return { ok: true, data: {} };
       if (method === "initialize") {
         await flows.initialize();
@@ -117,10 +124,12 @@ export async function apply(ctx: Context) {
       return {
         ok: false,
         status: error instanceof FlowError ? error.status : 500,
-        message:
-          error instanceof FlowError
-            ? error.message
-            : "DSH 编排服务暂时不可用，请检查后端服务与 Flow 代码。",
+        ...(error instanceof FlowError
+          ? flowErrorBody(error)
+          : {
+              message: "DSH 编排服务暂时不可用，请检查后端服务与 Flow 代码。",
+              code: "service_unavailable",
+            }),
       };
     }
   });

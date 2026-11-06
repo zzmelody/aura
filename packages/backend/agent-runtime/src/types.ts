@@ -12,6 +12,7 @@ import type {
   FlowMode,
 } from "@aura/protocol/types";
 import type { KvTable } from "@deepseek-ai/dsh-storage-domain";
+import type { ApiErrorDetails } from "@aura/protocol/errors";
 
 export type Table<T> = Pick<
   KvTable<string, T>,
@@ -152,6 +153,8 @@ export interface CodingHistoryTurn {
   endSeq?: number;
   status: "running" | "complete" | "stopped" | "error";
   error?: string;
+  /** Read-only display projection from native execution outcomes. */
+  errorDetails?: ApiErrorDetails;
   /** The same events a live turn streams, in log order. */
   events: CodingTimelineEvent[];
 }

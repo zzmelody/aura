@@ -1,3 +1,17 @@
+import {
+  errorMessage,
+  formatDate,
+  formatNumber,
+  formatRelativeTime,
+  language,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import {
+  automationMessage,
+  useAutomationMessages,
+  type AutomationMessageKey,
+} from "./automation-messages.ts";
 import React, {
   useCallback,
   useEffect,
@@ -24,35 +38,80 @@ import type { CodingProjectsController } from "../features/coding/useCodingProje
 import "./automation.css";
 
 type Filter = "all" | "active" | "ended";
-const filters: Array<{ id: Filter; label: string }> = [
-  { id: "all", label: "全部" },
-  { id: "active", label: "运行中" },
-  { id: "ended", label: "已结束" },
+const filters: Array<{ id: Filter; label: AutomationMessageKey }> = [
+  { id: "all", label: "all" },
+  { id: "active", label: "active" },
+  { id: "ended", label: "ended" },
 ];
-const weekdayNames = ["一", "二", "三", "四", "五", "六", "日"];
+function weekdayName(day: number, locale: string, width: "short" | "long") {
+  return new Intl.DateTimeFormat(locale, {
+    weekday: width,
+    timeZone: "UTC",
+  }).format(Date.UTC(2026, 0, 4 + day));
+}
 const localZone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-function problem(cause: unknown): string {
-  return cause instanceof Error ? cause.message : "自动化任务暂时不可用。";
+function problem(cause: unknown): string | MessageReference {
+  return errorMessage(cause, automationMessage("unavailable"));
 }
 
-/** "每天 09:00", "每 30 分钟", "cron 0 9 * * 1-5". */
-export function timingLabel(timing: AutomationTiming): string {
+/** Schedule labels are display-only; stored timing and zone are unchanged. */
+export function timingLabel(
+  timing: AutomationTiming,
+  locale = language.getSnapshot().locale,
+): string {
+  const t = language.i18n.getFixedT(locale, "automation");
+  const clock = (value: string) =>
+    formatDate(
+      new Date("2000-01-01T" + clockOut(value) + "Z"),
+      { timeStyle: "short", timeZone: "UTC" },
+      locale,
+    );
   switch (timing.kind) {
     case "at":
-      return `一次 · ${new Date(timing.at).toLocaleString("zh-CN")}`;
+      return t("onceAt", {
+        date: formatDate(
+          timing.at,
+          { dateStyle: "short", timeStyle: "short" },
+          locale,
+        ),
+      });
     case "after":
-      return `一次 · ${Math.round(timing.afterSeconds / 60)} 分钟后`;
-    case "every":
-      return timing.everySeconds % 3_600 === 0
-        ? `每 ${timing.everySeconds / 3_600} 小时`
-        : `每 ${Math.round(timing.everySeconds / 60)} 分钟`;
+      return t("onceAfter", {
+        relative: formatRelativeTime(
+          Math.round(timing.afterSeconds / 60),
+          "minute",
+          locale,
+          { numeric: "always" },
+        ),
+      });
+    case "every": {
+      const hours = timing.everySeconds % 3600 === 0;
+      return t("interval", {
+        duration: formatNumber(
+          hours
+            ? timing.everySeconds / 3600
+            : Math.round(timing.everySeconds / 60),
+          {
+            style: "unit",
+            unit: hours ? "hour" : "minute",
+            unitDisplay: "long",
+          },
+          locale,
+        ),
+      });
+    }
     case "daily":
-      return `每天 ${clockIn(timing.time)}`;
+      return t("dailyAt", { time: clock(timing.time) });
     case "weekly":
-      return `每周${timing.weekdays.map((day) => weekdayNames[day - 1]).join("、")} ${clockIn(timing.time)}`;
+      return t("weeklyAt", {
+        days: new Intl.ListFormat(locale).format(
+          timing.weekdays.map((day) => weekdayName(day, locale, "short")),
+        ),
+        time: clock(timing.time),
+      });
     case "cron":
-      return `cron ${timing.expression}`;
+      return t("cronValue", { expression: timing.expression });
   }
 }
 
@@ -155,7 +214,8 @@ export function AutomationScreen({
   openConversation(projectId: string, sessionId: string): void;
 }) {
   const [tasks, setTasks] = useState<AutomationTask[]>();
-  const [error, setError] = useState("");
+  const { t, i18n } = useAutomationMessages();
+  const [error, setError] = useState<string | MessageReference>("");
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<{ id: string; open: boolean }>();
@@ -230,14 +290,14 @@ export function AutomationScreen({
       >
         <header className="dsh-page-head">
           <div>
-            <h1 id="automation-title">自动化任务</h1>
-            <p>按时间在工作空间对话中自动执行指令，结果会出现在那段对话里。</p>
+            <h1 id="automation-title">{t("title")}</h1>
+            <p>{t("description")}</p>
           </div>
           <div className="dsh-page-actions">
             <button
               type="button"
               className="dsh-icon-button"
-              aria-label="刷新任务"
+              aria-label={t("refresh")}
               onClick={() => void refresh()}
             >
               <RefreshCw size={15} />
@@ -246,24 +306,26 @@ export function AutomationScreen({
               type="button"
               className="dsh-button primary"
               disabled={!choices.length}
-              title={
-                choices.length ? undefined : "请先在工作空间中开始一段对话"
-              }
+              title={choices.length ? undefined : t("startConversation")}
               onClick={() => setEditing(null)}
             >
               <Plus size={14} />
-              新建任务
+              {t("newTask")}
             </button>
           </div>
         </header>
         {error ? (
           <p className="dsh-page-notice" role="alert">
-            {error}
+            {messageText(error, i18n)}
           </p>
         ) : null}
         {tasks?.length ? (
           <div className="automation-filters">
-            <div className="automation-pills" role="group" aria-label="筛选">
+            <div
+              className="automation-pills"
+              role="group"
+              aria-label={t("filter")}
+            >
               {filters.map((item) => (
                 <button
                   key={item.id}
@@ -271,7 +333,7 @@ export function AutomationScreen({
                   aria-pressed={filter === item.id}
                   onClick={() => setFilter(item.id)}
                 >
-                  {item.label}
+                  {t(item.label)}
                 </button>
               ))}
             </div>
@@ -279,8 +341,8 @@ export function AutomationScreen({
               <Search size={14} aria-hidden="true" />
               <input
                 type="search"
-                aria-label="搜索任务"
-                placeholder="搜索"
+                aria-label={t("searchTasks")}
+                placeholder={t("search")}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
               />
@@ -292,12 +354,10 @@ export function AutomationScreen({
             <span className="automation-empty-art" aria-hidden="true">
               <AlarmClock size={28} />
             </span>
-            <strong>还没有自动化任务</strong>
+            <strong>{t("empty")}</strong>
             <p>
-              让 Aura 每天整理日报、定时检查构建，或在某个时间提醒你。
-              {choices.length
-                ? ""
-                : "先在工作空间中开始一段对话，再为它添加任务。"}
+              {t("emptyHint")}
+              {choices.length ? "" : t("emptyStart")}
             </p>
             {choices.length ? (
               <button
@@ -306,13 +366,13 @@ export function AutomationScreen({
                 onClick={() => setEditing(null)}
               >
                 <Plus size={14} />
-                新建任务
+                {t("newTask")}
               </button>
             ) : null}
           </div>
         ) : null}
         {tasks?.length && !shown.length ? (
-          <p className="dsh-page-empty">没有符合条件的任务</p>
+          <p className="dsh-page-empty">{t("noMatch")}</p>
         ) : null}
         <ul className="automation-list">
           {shown.map((task) => {
@@ -333,10 +393,10 @@ export function AutomationScreen({
                   <span className="automation-row-text">
                     <strong>{task.title}</strong>
                     <span>
-                      {task.status === "active" ? "运行中" : "已结束"} ·{" "}
+                      {task.status === "active" ? t("active") : t("ended")} ·{" "}
                       {timingLabel(task.timing)}
                       {task.status === "active"
-                        ? ` · 下次 ${new Date(task.scheduledAt).toLocaleString("zh-CN")}`
+                        ? ` · ${t("nextAt", { date: formatDate(task.scheduledAt, { dateStyle: "short", timeStyle: "short" }) })}`
                         : ""}
                     </span>
                   </span>
@@ -402,7 +462,8 @@ function AutomationDetail({
   onDeleted(): void;
 }) {
   const [history, setHistory] = useState<AutomationHistory>();
-  const [error, setError] = useState("");
+  const { t, i18n } = useAutomationMessages();
+  const [error, setError] = useState<string | MessageReference>("");
   const [deleting, setDeleting] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -420,12 +481,7 @@ function AutomationDetail({
   }, [open, endpoint, task.sessionId, task.id, task.lastDeliveredAt]);
 
   async function remove() {
-    if (
-      !window.confirm(
-        `删除「${task.title}」？删除后不再运行，运行记录一并移除。`,
-      )
-    )
-      return;
+    if (!window.confirm(t("confirmDelete", { title: task.title }))) return;
     setDeleting(true);
     try {
       await deleteAutomation(endpoint, task.sessionId, task.id);
@@ -439,7 +495,7 @@ function AutomationDetail({
   return (
     <aside
       className="automation-detail"
-      aria-label={`任务：${task.title}`}
+      aria-label={t("taskLabel", { title: task.title })}
       inert={!open}
     >
       <header>
@@ -447,24 +503,29 @@ function AutomationDetail({
         <button
           type="button"
           className="dsh-icon-button"
-          aria-label="关闭详情"
+          aria-label={t("closeDetails")}
           onClick={onClose}
         >
           <X size={15} />
         </button>
       </header>
       <dl>
-        <dt>状态</dt>
-        <dd>{task.status === "active" ? "运行中" : "已结束"}</dd>
-        <dt>频率</dt>
+        <dt>{t("status")}</dt>
+        <dd>{task.status === "active" ? t("active") : t("ended")}</dd>
+        <dt>{t("frequency")}</dt>
         <dd>{timingLabel(task.timing)}</dd>
         {task.status === "active" ? (
           <>
-            <dt>下次运行</dt>
-            <dd>{new Date(task.scheduledAt).toLocaleString("zh-CN")}</dd>
+            <dt>{t("nextRun")}</dt>
+            <dd>
+              {formatDate(task.scheduledAt, {
+                dateStyle: "short",
+                timeStyle: "short",
+              })}
+            </dd>
           </>
         ) : null}
-        <dt>对话</dt>
+        <dt>{t("conversation")}</dt>
         <dd>
           <button type="button" className="automation-link" onClick={onOpen}>
             {task.conversationTitle}
@@ -472,13 +533,13 @@ function AutomationDetail({
         </dd>
       </dl>
       <section>
-        <h3>指令</h3>
+        <h3>{t("prompt")}</h3>
         <p className="automation-prompt">{task.prompt}</p>
       </section>
       <div className="dsh-page-actions">
         {task.status === "active" ? (
           <button type="button" className="dsh-button" onClick={onEdit}>
-            编辑
+            {t("edit")}
           </button>
         ) : null}
         <button
@@ -487,33 +548,38 @@ function AutomationDetail({
           disabled={deleting}
           onClick={() => void remove()}
         >
-          删除
+          {t("delete")}
         </button>
       </div>
       <section>
-        <h3>运行记录</h3>
+        <h3>{t("history")}</h3>
         {error ? (
           <p className="dsh-page-notice" role="alert">
-            {error}
+            {messageText(error, i18n)}
           </p>
         ) : null}
         {history && !history.records.length ? (
-          <p className="automation-muted">尚未运行</p>
+          <p className="automation-muted">{t("notRun")}</p>
         ) : null}
         <ol className="automation-history">
           {history?.records.map((record) => (
             <li key={record.deliveredAt}>
               <span>
-                {new Date(record.deliveredAt).toLocaleString("zh-CN")}
+                {formatDate(record.deliveredAt, {
+                  dateStyle: "short",
+                  timeStyle: "short",
+                })}
               </span>
               <small>
-                计划 {new Date(record.scheduledAt).toLocaleTimeString("zh-CN")}
+                {t("scheduledAt", {
+                  time: formatDate(record.scheduledAt, { timeStyle: "short" }),
+                })}
               </small>
             </li>
           ))}
         </ol>
         {history?.truncated ? (
-          <p className="automation-muted">更早的记录已按保留期限清理。</p>
+          <p className="automation-muted">{t("historyPruned")}</p>
         ) : null}
       </section>
     </aside>
@@ -537,7 +603,8 @@ function AutomationEditor({
     task ? draftOf(task) : emptyDraft(choices[0]?.id ?? ""),
   );
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const { t, i18n } = useAutomationMessages();
+  const [error, setError] = useState<string | MessageReference>("");
   const dialog = React.useRef<HTMLDialogElement>(null);
   useEffect(() => {
     dialog.current?.showModal();
@@ -548,7 +615,7 @@ function AutomationEditor({
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (draft.kind === "weekly" && !draft.weekdays.length) {
-      setError("请至少选择一天。");
+      setError(automationMessage("chooseDay"));
       return;
     }
     setSaving(true);
@@ -576,39 +643,39 @@ function AutomationEditor({
       <form onSubmit={(event) => void save(event)}>
         <header>
           <h2 id="automation-editor-title">
-            {task ? "编辑任务" : "新建自动化任务"}
+            {task ? t("editTask") : t("createTitle")}
           </h2>
           <button
             type="button"
             className="dsh-icon-button"
-            aria-label="关闭"
+            aria-label={t("close")}
             onClick={onClose}
           >
             <X size={15} />
           </button>
         </header>
         <label>
-          <span>名称</span>
+          <span>{t("name")}</span>
           <input
             required
             maxLength={120}
             value={draft.title}
-            placeholder="例如：每日构建检查"
+            placeholder={t("namePlaceholder")}
             onChange={(event) => set({ title: event.target.value })}
           />
         </label>
         <label>
-          <span>指令</span>
+          <span>{t("prompt")}</span>
           <textarea
             required
             rows={4}
             value={draft.prompt}
-            placeholder="到点时发送给 Aura 的消息"
+            placeholder={t("promptPlaceholder")}
             onChange={(event) => set({ prompt: event.target.value })}
           />
         </label>
         <label>
-          <span>在哪段对话中运行</span>
+          <span>{t("target")}</span>
           <select
             value={draft.sessionId}
             disabled={task !== null}
@@ -625,14 +692,14 @@ function AutomationEditor({
           </select>
         </label>
         <fieldset>
-          <legend>重复</legend>
+          <legend>{t("repeat")}</legend>
           <div className="automation-pills">
             {(
               [
-                ["at", "一次"],
-                ["daily", "每天"],
-                ["weekly", "每周"],
-                ["every", "间隔"],
+                ["at", t("once")],
+                ["daily", t("daily")],
+                ["weekly", t("weekly")],
+                ["every", t("every")],
                 ["cron", "Cron"],
               ] as const
             ).map(([kind, label]) => (
@@ -648,7 +715,7 @@ function AutomationEditor({
           </div>
           {draft.kind === "at" ? (
             <label>
-              <span>时间</span>
+              <span>{t("time")}</span>
               <input
                 type="datetime-local"
                 required
@@ -659,7 +726,7 @@ function AutomationEditor({
           ) : null}
           {draft.kind === "daily" || draft.kind === "weekly" ? (
             <label>
-              <span>时间（{localZone}）</span>
+              <span>{t("timeZone", { zone: localZone })}</span>
               <input
                 type="time"
                 required
@@ -669,8 +736,12 @@ function AutomationEditor({
             </label>
           ) : null}
           {draft.kind === "weekly" ? (
-            <div className="automation-weekdays" role="group" aria-label="星期">
-              {weekdayNames.map((name, index) => {
+            <div
+              className="automation-weekdays"
+              role="group"
+              aria-label={t("weekdays")}
+            >
+              {Array.from({ length: 7 }, (_, index) => {
                 const day = index + 1;
                 const on = draft.weekdays.includes(day);
                 return (
@@ -678,7 +749,11 @@ function AutomationEditor({
                     key={day}
                     type="button"
                     aria-pressed={on}
-                    aria-label={`周${name}`}
+                    aria-label={weekdayName(
+                      day,
+                      i18n.resolvedLanguage ?? "en",
+                      "long",
+                    )}
                     onClick={() =>
                       set({
                         weekdays: on
@@ -687,7 +762,7 @@ function AutomationEditor({
                       })
                     }
                   >
-                    {name}
+                    {weekdayName(day, i18n.resolvedLanguage ?? "en", "short")}
                   </button>
                 );
               })}
@@ -695,7 +770,7 @@ function AutomationEditor({
           ) : null}
           {draft.kind === "every" ? (
             <label>
-              <span>每隔（分钟）</span>
+              <span>{t("minutes")}</span>
               <input
                 type="number"
                 required
@@ -710,7 +785,7 @@ function AutomationEditor({
           ) : null}
           {draft.kind === "cron" ? (
             <label>
-              <span>Cron 表达式（{localZone}）</span>
+              <span>{t("cronZone", { zone: localZone })}</span>
               <input
                 required
                 value={draft.expression}
@@ -722,19 +797,19 @@ function AutomationEditor({
         </fieldset>
         {error ? (
           <p className="dsh-page-notice" role="alert">
-            {error}
+            {messageText(error, i18n)}
           </p>
         ) : null}
         <footer className="dsh-page-actions">
           <button type="button" className="dsh-button" onClick={onClose}>
-            取消
+            {t("cancel")}
           </button>
           <button
             type="submit"
             className="dsh-button primary"
             disabled={saving || !draft.sessionId}
           >
-            {task ? "保存" : "创建"}
+            {task ? t("save") : t("create")}
           </button>
         </footer>
       </form>

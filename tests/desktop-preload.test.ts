@@ -31,7 +31,9 @@ test("built desktop preload exposes native dialogs/previews without owning site 
           throw new Error(
             "Error invoking remote method 'aura:files:reveal': internal details",
           );
-        return { error: revealError };
+        return revealError
+          ? { type: "aura.native.failure", code: revealError }
+          : undefined;
       }
     },
   };
@@ -71,12 +73,14 @@ test("built desktop preload exposes native dialogs/previews without owning site 
     ["aura:previews:open", "http://127.0.0.1:5000/", "/tmp/site", "Site"],
     ["aura:files:reveal", "/tmp/project", "src/a.ts"],
   ]);
-  revealError = "文件不存在或已被移动。";
-  await assert.rejects(host.files.reveal("/tmp/project", "/outside.txt"), {
-    message: revealError,
-  });
+  revealError = "fileNotFound";
+  assert.equal(
+    JSON.stringify(await host.files.reveal("/tmp/project", "/outside.txt")),
+    JSON.stringify({ type: "aura.native.failure", code: revealError }),
+  );
   disconnected = true;
-  await assert.rejects(host.files.reveal("/tmp/project", "src/a.ts"), {
-    message: "无法在文件夹中显示，请重试。",
-  });
+  assert.equal(
+    JSON.stringify(await host.files.reveal("/tmp/project", "src/a.ts")),
+    JSON.stringify({ type: "aura.native.failure", code: "fileRevealFailed" }),
+  );
 });

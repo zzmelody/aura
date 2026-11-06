@@ -10,6 +10,7 @@ import {
   Square,
 } from "lucide-react";
 import type { SessionStatus as Status } from "./sidebarSessions";
+import { useSidebarMessages } from "./sidebar-messages.ts";
 
 const icons = {
   idle: CircleDashed,
@@ -30,16 +31,18 @@ export function SessionStatus({
   status: Status;
   text?: boolean;
 }) {
+  const { t } = useSidebarMessages();
+  const label = t(status.messageKey);
   const Icon = icons[status.kind];
   return (
     <span
       className={`session-execution-status ${status.kind}${text ? " with-label" : ""}`}
       role="img"
-      aria-label={status.label}
-      title={status.label}
+      aria-label={label}
+      title={label}
     >
       <Icon size={13} aria-hidden="true" />
-      {text ? <span aria-hidden="true">{status.label}</span> : null}
+      {text ? <span aria-hidden="true">{label}</span> : null}
     </span>
   );
 }

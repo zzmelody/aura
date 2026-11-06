@@ -1,4 +1,7 @@
 import { platform } from "./platform.ts";
+import { MessageError } from "@aura/i18n/runtime";
+import { workflowMessage as message } from "./workflow-messages.ts";
+import { nativeCall } from "./native-messages.ts";
 
 export type WorkflowPathKind = "image" | "directory";
 
@@ -19,12 +22,8 @@ export async function chooseWorkflowPath(
   const picker = globalThis.window?.auraHost?.workflowFiles;
   if (!picker) {
     if (platform() === "desktop")
-      throw new Error(
-        "Aura Desktop 路径选择服务未连接，请完全退出并重新启动 Aura Desktop。",
-      );
-    throw new Error(
-      "本机路径选择需要使用 Aura Desktop；Web 版可粘贴 Aura 服务端可访问的路径。",
-    );
+      throw new MessageError(message("pickerDisconnected"));
+    throw new MessageError(message("pickerDesktopOnly"));
   }
-  return picker.choose(kind);
+  return nativeCall(() => picker.choose(kind));
 }

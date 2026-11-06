@@ -1,4 +1,4 @@
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { MarketListing } from "@aura/protocol/types";
 
 const source = "https://cdn.jsdelivr.net/npm/dsh-plugin-catalog/index.json";
@@ -64,6 +64,8 @@ export async function pluginMarket(
       })
       .slice(0, 80);
   } catch {
-    throw new FlowError("暂时无法读取 DSH 插件市场。", 502);
+    throw new CodedFlowError("暂时无法读取 DSH 插件市场。", 502, {
+      code: "plugin_market_unavailable",
+    });
   }
 }

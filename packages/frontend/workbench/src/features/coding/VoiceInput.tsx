@@ -1,3 +1,12 @@
+import {
+  useConversationMessages,
+  conversationMessage,
+} from "../../conversation-messages.ts";
+import {
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
 import React, { useEffect, useRef, useState } from "react";
 import { Mic, Square, X } from "lucide-react";
 import { integrationRequest } from "../../integrations.tsx";
@@ -73,12 +82,13 @@ export function VoiceInput({
   endpoint: string;
   onText: (text: string) => void;
 }) {
+  const { t, i18n } = useConversationMessages();
   const active = useRef<Recording>(undefined);
   const insertText = useRef(onText);
   const [state, setState] = useState<
     "idle" | "starting" | "recording" | "transcribing"
   >("idle");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<string | MessageReference>("");
 
   useEffect(() => {
     insertText.current = onText;
@@ -123,13 +133,19 @@ export function VoiceInput({
         "/voice",
         { signal },
       );
-      if (!["ready", "standby", "waking"].includes(phase))
-        throw new Error("请先在「设置 → 功能开关」准备 SenseVoice 模型。");
+      if (!["ready", "standby", "waking"].includes(phase)) {
+        setMessage(conversationMessage("prepareVoice"));
+        finish();
+        return;
+      }
       if (
         !navigator.mediaDevices?.getUserMedia ||
         typeof MediaRecorder === "undefined"
-      )
-        throw new Error("当前环境无法访问麦克风。");
+      ) {
+        setMessage(conversationMessage("noMicrophone"));
+        finish();
+        return;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       current.stream = stream;
       signal.throwIfAborted();
@@ -142,7 +158,7 @@ export function VoiceInput({
       recorder.addEventListener(
         "error",
         () => {
-          if (!signal.aborted) setMessage("录音未完成，请检查麦克风权限。");
+          if (!signal.aborted) setMessage(conversationMessage("recordFailed"));
           current.abort.abort();
           finish();
         },
@@ -170,11 +186,11 @@ export function VoiceInput({
               );
               signal.throwIfAborted();
               if (text.trim()) insertText.current(text.trim());
-              else setMessage("没有识别到语音。");
+              else setMessage(conversationMessage("noSpeech"));
             } catch (error) {
               if (!signal.aborted)
                 setMessage(
-                  error instanceof Error ? error.message : "语音识别未完成。",
+                  errorMessage(error, conversationMessage("transcribeFailed")),
                 );
             } finally {
               finish();
@@ -190,19 +206,19 @@ export function VoiceInput({
       setState("recording");
     } catch (error) {
       if (!signal.aborted)
-        setMessage(error instanceof Error ? error.message : "无法开始录音。");
+        setMessage(errorMessage(error, conversationMessage("cannotRecord")));
       finish();
     }
   }
 
   const label =
     state === "recording"
-      ? "结束录音并识别"
+      ? t("finishRecording")
       : state === "transcribing"
-        ? "取消语音识别"
+        ? t("cancelTranscription")
         : state === "starting"
-          ? "取消开启麦克风"
-          : "开始语音输入";
+          ? t("cancelMicrophone")
+          : t("startVoice");
   return (
     <>
       <button
@@ -228,7 +244,7 @@ export function VoiceInput({
       </button>
       {message || state === "transcribing" ? (
         <span className="voice-input-message" role="status">
-          {message || "正在识别…"}
+          {message ? messageText(message, i18n) : t("transcribing")}
         </span>
       ) : null}
     </>

@@ -1,4 +1,6 @@
 import type { FlowRun } from "@aura/protocol/types";
+import { errorMessage, type MessageReference } from "@aura/i18n/runtime";
+import { workflowMessage } from "./workflow-messages.ts";
 import {
   isWorkflowOpen,
   workflowApi,
@@ -7,7 +9,7 @@ import {
 
 export interface WorkflowRunSnapshot {
   run?: FlowRun;
-  error?: string;
+  error?: string | MessageReference;
 }
 interface Entry {
   endpoint: string;
@@ -107,10 +109,7 @@ export class WorkflowRunStore {
         if (!abort.signal.aborted) {
           entry.snapshot = {
             ...entry.snapshot,
-            error:
-              cause instanceof Error
-                ? cause.message
-                : "运行记录读取失败，请重试。",
+            error: errorMessage(cause, workflowMessage("runReadFailed")),
           };
           for (const listener of entry.listeners) listener();
         }

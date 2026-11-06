@@ -4,7 +4,7 @@ import type { Context } from "@deepseek-ai/cordis";
 // Type-only: activates the workspace registry's `Context` augmentation.
 import type {} from "@deepseek-ai/dsh-workspace";
 import { SessionId } from "@deepseek-ai/dsh-session";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { CodingProjectInfo } from "@aura/protocol/types";
 
 /**
@@ -38,7 +38,10 @@ export class CodingProjects {
   async defaultProject(): Promise<CodingProjectInfo> {
     if (!this.defaultId) {
       const directory = process.env.AURA_DEFAULT_WORKSPACE;
-      if (!directory) throw new FlowError("默认工作目录未配置。", 503);
+      if (!directory)
+        throw new CodedFlowError("默认工作目录未配置。", 503, {
+          code: "workspace_default_unconfigured",
+        });
       const entry = await this.create(directory, "默认工作空间");
       this.defaultId = entry.id;
     }
@@ -61,7 +64,10 @@ export class CodingProjects {
 
   async rename(id: string, title: string): Promise<CodingProjectInfo> {
     const name = title.trim().slice(0, 100);
-    if (!name) throw new FlowError("项目名称不能为空。", 400);
+    if (!name)
+      throw new CodedFlowError("项目名称不能为空。", 400, {
+        code: "workspace_title_empty",
+      });
     const workspace = this.require(id);
     await workspace.setTitle(name);
     return project(workspace);
@@ -76,7 +82,9 @@ export class CodingProjects {
    */
   async relocate(id: string, directory: string): Promise<CodingProjectInfo> {
     if (id === this.defaultId)
-      throw new FlowError("默认工作空间不能更换目录。", 400);
+      throw new CodedFlowError("默认工作空间不能更换目录。", 400, {
+        code: "workspace_default_relocate_forbidden",
+      });
     const current = this.require(id);
     const path = await this.requireDirectory(directory);
     const taken = new Set(
@@ -85,7 +93,9 @@ export class CodingProjects {
     const next = await this.ctx.workspaceRegistry.create(path, current.title);
     if (next.id === current.id) return project(current);
     if (taken.has(next.id))
-      throw new FlowError("该目录已是另一个工作空间。", 400);
+      throw new CodedFlowError("该目录已是另一个工作空间。", 400, {
+        code: "workspace_directory_taken",
+      });
     await this.ctx.workspaceRegistry.delete(current.id);
     return project(next);
   }
@@ -96,7 +106,9 @@ export class CodingProjects {
    */
   async remove(id: string): Promise<boolean> {
     if (id === this.defaultId)
-      throw new FlowError("默认工作空间不能移除。", 400);
+      throw new CodedFlowError("默认工作空间不能移除。", 400, {
+        code: "workspace_default_remove_forbidden",
+      });
     return this.ctx.workspaceRegistry.delete(workspaceId(id));
   }
 
@@ -122,7 +134,10 @@ export class CodingProjects {
 
   private require(id: string) {
     const workspace = this.ctx.workspaceRegistry.get(workspaceId(id));
-    if (!workspace) throw new FlowError("项目不存在或已移除。", 404);
+    if (!workspace)
+      throw new CodedFlowError("项目不存在或已移除。", 404, {
+        code: "workspace_missing",
+      });
     return workspace;
   }
 
@@ -132,12 +147,19 @@ export class CodingProjects {
    */
   private async requireDirectory(directory: string): Promise<string> {
     const value = directory?.trim();
-    if (!value) throw new FlowError("请提供项目目录。", 400);
+    if (!value)
+      throw new CodedFlowError("请提供项目目录。", 400, {
+        code: "workspace_directory_required",
+      });
     if (!isAbsolute(value))
-      throw new FlowError("项目目录必须是绝对路径。", 400);
+      throw new CodedFlowError("项目目录必须是绝对路径。", 400, {
+        code: "workspace_directory_absolute",
+      });
     const info = await stat(value).catch(() => undefined);
     if (!info?.isDirectory())
-      throw new FlowError("该路径不存在或不是目录。", 400);
+      throw new CodedFlowError("该路径不存在或不是目录。", 400, {
+        code: "workspace_directory_missing",
+      });
     return value;
   }
 }

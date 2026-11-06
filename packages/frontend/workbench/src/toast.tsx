@@ -7,12 +7,14 @@ import React, {
   useState,
 } from "react";
 import { X } from "lucide-react";
+import { messageText, type MessageReference } from "@aura/i18n/runtime";
+import { useSidebarMessages } from "./sidebar-messages.ts";
 import "./toast.css";
 
 export interface ToastOptions {
-  message: string;
+  message: string | MessageReference;
   /** One optional action, such as undo; running it dismisses the toast. */
-  action?: { label: string; run(): void };
+  action?: { label: string | MessageReference; run(): void };
   /** Milliseconds before it fades out on its own. */
   duration?: number;
 }
@@ -25,6 +27,7 @@ const ToastContext = createContext<ShowToast>(() => undefined);
 
 /** Brief, self-dismissing notices at the top of the workbench. */
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useSidebarMessages();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const next = useRef(0);
   const dismiss = useCallback((id: number) => {
@@ -38,7 +41,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={show}>
       {children}
-      <div className="toast-region" role="region" aria-label="通知">
+      <div
+        className="toast-region"
+        role="region"
+        aria-label={t("notifications")}
+      >
         {toasts.map((toast) => (
           <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
         ))}
@@ -55,6 +62,7 @@ function ToastItem({
   /** Stable across renders, so app re-renders never restart the countdown. */
   onDismiss(id: number): void;
 }) {
+  const { t, i18n } = useSidebarMessages();
   const [paused, setPaused] = useState(false);
   const { id } = toast;
   useEffect(() => {
@@ -73,7 +81,7 @@ function ToastItem({
       onFocus={() => setPaused(true)}
       onBlur={() => setPaused(false)}
     >
-      <span>{toast.message}</span>
+      <span>{messageText(toast.message, i18n)}</span>
       {toast.action ? (
         <button
           type="button"
@@ -83,13 +91,13 @@ function ToastItem({
             onDismiss(id);
           }}
         >
-          {toast.action.label}
+          {messageText(toast.action.label, i18n)}
         </button>
       ) : null}
       <button
         type="button"
         className="toast-close"
-        aria-label="关闭通知"
+        aria-label={t("closeNotification")}
         onClick={() => onDismiss(id)}
       >
         <X size={14} />

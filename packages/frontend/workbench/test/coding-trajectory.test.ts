@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { language, messageText } from "@aura/i18n/runtime";
 import {
   applyTurnEvent,
   finishTurn,
@@ -33,10 +34,11 @@ function sampleTurn() {
 
 test("trajectory spans carry session times on three lanes", () => {
   const trajectory = buildTrajectory([sampleTurn()], 3_000);
+  const instance = language.i18n.cloneInstance({ lng: "zh-CN" });
   assert.deepEqual(
     trajectory.spans.map(({ lane, label, start, end, state, open }) => ({
       lane,
-      label,
+      label: messageText(label, instance),
       start,
       end,
       state,
@@ -98,8 +100,34 @@ test("a settled turn closes open spans at its end, not at now", () => {
 });
 
 test("span durations format compactly", () => {
-  assert.equal(formatSpan(820), "820ms");
-  assert.equal(formatSpan(4_200), "4.2s");
-  assert.equal(formatSpan(42_000), "42s");
-  assert.equal(formatSpan(185_000), "3m 05s");
+  assert.equal(formatSpan(820, "en"), "820 ms");
+  assert.equal(formatSpan(4_200, "en"), "4.2 sec");
+  assert.equal(formatSpan(42_000, "en"), "42 sec");
+  assert.equal(formatSpan(185_000, "en"), "3 min, 5 sec");
+  assert.equal(formatSpan(179_900, "en"), "3 min, 0 sec");
+  assert.equal(formatSpan(4_200, "fr"), "4,2 s");
+});
+
+test("trajectory labels change language without rebuilding time ranges or changing source text", () => {
+  const trajectory = buildTrajectory([sampleTurn()], 3000);
+  const input = trajectory.spans[0]!;
+  const times = trajectory.spans.map(({ start, end }) => [start, end]);
+  const texts = new Set<string>();
+  for (const locale of ["zh-CN", "en", "ja", "ko", "ru", "fr"]) {
+    const instance = language.i18n.cloneInstance({ lng: locale });
+    texts.add(messageText(input.label, instance));
+    assert.equal(input.detail, "修复构建");
+    assert.equal(
+      messageText(
+        trajectory.spans.find((item) => item.lane === "tool")!.label,
+        instance,
+      ),
+      "bash",
+    );
+  }
+  assert.equal(texts.size, 6);
+  assert.deepEqual(
+    trajectory.spans.map(({ start, end }) => [start, end]),
+    times,
+  );
 });

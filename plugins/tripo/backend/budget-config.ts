@@ -1,3 +1,8 @@
+import {
+  retainErrorTranslations,
+  tripoErrorMessages,
+  type TripoErrorKey,
+} from '../shared/error-messages.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -45,9 +50,10 @@ const saveBudget = z.strictObject({
 });
 
 export class TripoBudgetError extends Error {
-  constructor(message: string) {
+  constructor(message: string, key: TripoErrorKey = 'ledgerInvalid') {
     super(message);
     this.name = 'TripoBudgetError';
+    retainErrorTranslations(this, tripoErrorMessages(key));
   }
 }
 
@@ -63,6 +69,7 @@ export async function withBudgetLock<T>(
   } catch {
     throw new TripoBudgetError(
       'Tripo ledger is locked or requires recovery; no paid request submitted.',
+      'ledgerLocked',
     );
   }
   try {
@@ -102,6 +109,7 @@ export async function readBudgetConfig(
     invalid
       ? 'Tripo budget is missing or invalid; no paid request submitted.'
       : 'Tripo budget is not configured; no paid request submitted.',
+    'budgetMissing',
   );
 }
 

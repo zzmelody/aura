@@ -1,6 +1,6 @@
 @import "../../screens/feature-page.css";
 
-/* DSH trajectory: 44px lane labels, a 56px plot of 8px spans on three lanes,
+/* DSH trajectory: localized lane labels, a 56px plot of 8px spans on three lanes,
  * dashed turn boundaries, and a 30px-row step table. */
 .trajectory {
   display: grid;
@@ -13,6 +13,7 @@
 }
 .trajectory-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -26,7 +27,8 @@
 }
 .trajectory-chart {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 8px;
   padding: 12px 12px 8px 4px;
   border: 0.5px solid var(--hairline);
   border-radius: calc(16px * var(--radius-scale, 1));
@@ -137,8 +139,13 @@
 .trajectory-tooltip small {
   color: var(--muted);
 }
+.trajectory-steps {
+  min-width: 0;
+  overflow-x: auto;
+}
 .trajectory-table {
   width: 100%;
+  min-width: 560px;
   border-collapse: collapse;
   font-size: 13px;
   table-layout: fixed;
@@ -205,10 +212,6 @@
 @media (max-width: 767px) {
   .trajectory {
     padding-inline: 16px;
-  }
-  .trajectory-table th:nth-child(3),
-  .trajectory-table td:nth-child(3) {
-    display: none;
   }
 }
 [data-reduced="true"] .trajectory-span.running {

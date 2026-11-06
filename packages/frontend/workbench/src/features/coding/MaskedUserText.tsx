@@ -1,4 +1,5 @@
 import React, { useSyncExternalStore } from "react";
+import { useConversationMessages } from "../../conversation-messages.ts";
 import {
   secretMaskSnapshot,
   subscribeSecretMask,
@@ -6,13 +7,14 @@ import {
 } from "./secret-mask.ts";
 
 export function MaskedUserText({ text }: { text: string }) {
+  const { t } = useConversationMessages();
   const mask = useSyncExternalStore(subscribeSecretMask, secretMaskSnapshot);
   // Fail closed while the native browser bundle is loading or failed.
-  if (!mask) return <span title="正在加载 DSH 密钥遮罩">用户消息暂未显示</span>;
+  if (!mask) return <span title={t("maskLoading")}>{t("maskPending")}</span>;
   const Secret = mask.render;
   return (
     <span
-      title="密钥遮罩仅影响显示；模型输入、历史记录和复制仍保留原文。"
+      title={t("maskDisplayOnly")}
       onCopy={(event) => {
         event.preventDefault();
         event.clipboardData.setData("text/plain", text);

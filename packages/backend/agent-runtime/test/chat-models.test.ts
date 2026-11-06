@@ -3,6 +3,7 @@ import test from "node:test";
 import { LlmError, ReasoningEffortId } from "@deepseek-ai/dsh-llm";
 import { chatModelCatalog, resolveChatModel } from "../src/chat-models.ts";
 import { agentDefaults } from "@aura/dsh-auth/model-config";
+import { CodedFlowError } from "@aura/protocol/errors";
 
 function runtime() {
   const calls: Array<{ model: string; reasoningEffort?: string }> = [];
@@ -96,6 +97,16 @@ test("chat choices are per request, do not mutate Flow defaults and never silent
     await assert.rejects(
       resolveChatModel(llm, "codex", selection, signal),
       (error: Error & { status?: number }) => {
+        assert.ok(error instanceof CodedFlowError);
+        assert.deepEqual(error.details, {
+          code: "model_selection_unavailable",
+          params: {
+            reason:
+              selection.model === "unknown"
+                ? "UNKNOWN_MODEL"
+                : "UNSUPPORTED_REASONING_EFFORT",
+          },
+        });
         assert.equal(error.status, 422);
         assert.match(
           error.message,

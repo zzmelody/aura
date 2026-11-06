@@ -171,6 +171,60 @@ export function pluginNamespace(pluginId: string): string {
   return `plugin.${pluginId}`;
 }
 
+/** A UI message that can be kept in state without freezing its language. */
+export interface MessageReference {
+  namespace: string;
+  key: string;
+  /** Bounded plugin-owned literal error messages; English is the fallback. */
+  translations?: { en: string } & Partial<Record<Locale, string>>;
+  values?: Record<string, string | number | MessageReference>;
+}
+
+/** Local UI failures retain their message identity across async boundaries. */
+export class MessageError extends Error {
+  readonly text: string | MessageReference;
+
+  constructor(text: string | MessageReference, options?: ErrorOptions) {
+    // Legacy SDK consumers still read Error.message. Keep it human-readable;
+    // callers that retain errors use `text` to translate at display time.
+    super(messageText(text), options);
+    this.name = "MessageError";
+    this.text = text;
+  }
+}
+
+export function errorMessage(
+  error: unknown,
+  fallback?: string | MessageReference,
+): string | MessageReference {
+  if (error instanceof MessageError) return error.text;
+  if (error instanceof Error) return error.message;
+  return fallback ?? String(error);
+}
+
+export function messageText(
+  message: string | MessageReference,
+  instance: i18n = language.i18n,
+): string {
+  if (typeof message !== "string" && message.translations) {
+    const locale = resolveLocale("system", [
+      instance.language || instance.resolvedLanguage || "en",
+    ]);
+    return message.translations[locale] ?? message.translations.en;
+  }
+  return typeof message === "string"
+    ? message
+    : instance.t(message.key, {
+        ...Object.fromEntries(
+          Object.entries(message.values ?? {}).map(([key, value]) => [
+            key,
+            typeof value === "object" ? messageText(value, instance) : value,
+          ]),
+        ),
+        ns: message.namespace,
+      });
+}
+
 export function formatDate(
   value: Date | number | string,
   options?: Intl.DateTimeFormatOptions,
@@ -191,9 +245,10 @@ export function formatRelativeTime(
   value: number,
   unit: Intl.RelativeTimeFormatUnit,
   locale = language.getSnapshot().locale,
+  options?: Intl.RelativeTimeFormatOptions,
 ): string {
-  return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
-    value,
-    unit,
-  );
+  return new Intl.RelativeTimeFormat(locale, {
+    numeric: "auto",
+    ...options,
+  }).format(value, unit);
 }

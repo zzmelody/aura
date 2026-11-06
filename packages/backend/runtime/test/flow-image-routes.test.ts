@@ -65,6 +65,8 @@ test("Flow HTTP admits raw image uploads and returns a reusable asset ID", async
     assert.equal(oversized.status, 413);
     assert.deepEqual(await oversized.json(), {
       message: "图片不能超过 32 MB。",
+      code: "image_too_large",
+      params: { limitMiB: 32 },
     });
     const oversizedFlow = await mounted.request("/flows/fixture/runs", {
       method: "POST",
@@ -74,6 +76,8 @@ test("Flow HTTP admits raw image uploads and returns a reusable asset ID", async
     assert.equal(oversizedFlow.status, 413);
     assert.deepEqual(await oversizedFlow.json(), {
       message: "Flow 请求过大。",
+      code: "flow_request_too_large",
+      params: { limitKiB: 256 },
     });
     assert.equal(
       (

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { OrchestrationHost } from "./dsh/host.ts";
 import { FlowError } from "@aura/orchestration";
+import { flowErrorBody } from "@aura/protocol/errors";
 import { isRecord, validCodingImages } from "./validation.ts";
 import type { CodingSteerModelConfig } from "@aura/protocol/types";
 import {
@@ -98,7 +99,13 @@ export function createCodingApp(host: OrchestrationHost) {
       Object.keys(body).length !== 1 ||
       !isCodingCollaborationAction(body.action)
     )
-      return context.json({ message: "无效的协作模式请求。" }, 400);
+      return context.json(
+        {
+          message: "无效的协作模式请求。",
+          code: "collaboration_request_invalid",
+        },
+        400,
+      );
     try {
       return context.json(
         await host.codingCollaboration(context.req.param("id"), body.action),
@@ -136,7 +143,10 @@ export function createCodingApp(host: OrchestrationHost) {
   app.post("/projects", async (context) => {
     const body = await context.req.json().catch(() => undefined);
     if (!isRecord(body) || typeof body.directory !== "string")
-      return context.json({ message: "缺少项目目录。" }, 400);
+      return context.json(
+        { message: "缺少项目目录。", code: "workspace_directory_required" },
+        400,
+      );
     try {
       return context.json(
         await host.createProject(
@@ -153,7 +163,10 @@ export function createCodingApp(host: OrchestrationHost) {
   app.post("/projects/:id/rename", async (context) => {
     const body = await context.req.json().catch(() => undefined);
     if (!isRecord(body) || typeof body.title !== "string")
-      return context.json({ message: "缺少项目名称。" }, 400);
+      return context.json(
+        { message: "缺少项目名称。", code: "workspace_title_empty" },
+        400,
+      );
     try {
       return context.json(
         await host.renameProject(context.req.param("id"), body.title),
@@ -166,7 +179,10 @@ export function createCodingApp(host: OrchestrationHost) {
   app.post("/projects/:id/directory", async (context) => {
     const body = await context.req.json().catch(() => undefined);
     if (!isRecord(body) || typeof body.directory !== "string")
-      return context.json({ message: "缺少项目目录。" }, 400);
+      return context.json(
+        { message: "缺少项目目录。", code: "workspace_directory_required" },
+        400,
+      );
     try {
       return context.json(
         await host.relocateProject(context.req.param("id"), body.directory),
@@ -198,7 +214,10 @@ export function createCodingApp(host: OrchestrationHost) {
             !Number.isSafeInteger(Number(through)))) ||
         (before === undefined) !== (through === undefined)
       )
-        return context.json({ message: "无效的历史分页游标。" }, 400);
+        return context.json(
+          { message: "无效的历史分页游标。", code: "history_cursor_invalid" },
+          400,
+        );
       return context.json(
         await host.codingHistory(
           context.req.param("id"),
@@ -224,7 +243,10 @@ export function createCodingApp(host: OrchestrationHost) {
       typeof body.questionId !== "string" ||
       !Array.isArray(body.answers)
     )
-      return context.json({ message: "无效的回答。" }, 400);
+      return context.json(
+        { message: "无效的回答。", code: "question_answer_invalid" },
+        400,
+      );
     try {
       return context.json(
         await host.answerCoding(
@@ -273,7 +295,10 @@ export function createCodingApp(host: OrchestrationHost) {
       // An image-only message is allowed; an empty one is not.
       (!body.prompt.trim() && !(body.images as string[] | undefined)?.length)
     )
-      return context.json({ message: "无效的引导内容。" }, 400);
+      return context.json(
+        { message: "无效的引导内容。", code: "conversation_steer_invalid" },
+        400,
+      );
     try {
       return context.json(
         await host.steerCoding(
@@ -297,7 +322,10 @@ export function createCodingApp(host: OrchestrationHost) {
       !["demo", "codex", "lumina", "custom"].includes(String(body.mode)) ||
       !validateChatModelSelection(body.selection)
     )
-      return context.json({ message: "无效的模型配置。" }, 400);
+      return context.json(
+        { message: "无效的模型配置。", code: "model_configuration_invalid" },
+        400,
+      );
     try {
       return context.json(
         await host.selectConversationModel(
@@ -319,7 +347,10 @@ export function createCodingApp(host: OrchestrationHost) {
       Object.keys(body).some((key) => key !== "permission") ||
       !isCodingPermission(body.permission)
     )
-      return context.json({ message: "无效的权限设置。" }, 400);
+      return context.json(
+        { message: "无效的权限设置。", code: "permission_invalid" },
+        400,
+      );
     try {
       return context.json(
         await host.selectConversationPermission(
@@ -343,7 +374,10 @@ export function createCodingApp(host: OrchestrationHost) {
   app.post("/sessions/:id/archive", async (context) => {
     const body = await context.req.json().catch(() => undefined);
     if (!isRecord(body) || typeof body.archived !== "boolean")
-      return context.json({ message: "无效的归档状态。" }, 400);
+      return context.json(
+        { message: "无效的归档状态。", code: "conversation_options_invalid" },
+        400,
+      );
     try {
       await host.archiveCodingConversation(
         context.req.param("id"),
@@ -384,7 +418,11 @@ export function createCodingApp(host: OrchestrationHost) {
 
   app.post("/automation", async (context) => {
     const body = await context.req.json().catch(() => undefined);
-    if (!isRecord(body)) return context.json({ message: "无效的任务。" }, 400);
+    if (!isRecord(body))
+      return context.json(
+        { message: "无效的任务。", code: "automation_input_invalid" },
+        400,
+      );
     try {
       return context.json(await host.createAutomationTask(body), 201);
     } catch (error) {
@@ -395,7 +433,11 @@ export function createCodingApp(host: OrchestrationHost) {
   // POST like every other coding mutation: runtime CORS admits GET/POST only.
   app.post("/automation/:sessionId/:id", async (context) => {
     const body = await context.req.json().catch(() => undefined);
-    if (!isRecord(body)) return context.json({ message: "无效的任务。" }, 400);
+    if (!isRecord(body))
+      return context.json(
+        { message: "无效的任务。", code: "automation_input_invalid" },
+        400,
+      );
     try {
       return context.json(
         await host.updateAutomationTask(context.req.param("id"), {
@@ -437,7 +479,13 @@ export function createCodingApp(host: OrchestrationHost) {
   app.get("/projects/:id/conversations", async (context) => {
     const status = context.req.query("status");
     if (status !== undefined && status !== "metadata" && status !== "full")
-      return context.json({ message: "无效的对话状态选项。" }, 400);
+      return context.json(
+        {
+          message: "无效的对话状态选项。",
+          code: "conversation_options_invalid",
+        },
+        400,
+      );
     try {
       return context.json(
         await host.conversations(
@@ -461,7 +509,7 @@ function failure(
 ) {
   if (error instanceof FlowError)
     return context.json(
-      { message: error.message },
+      flowErrorBody(error),
       error.status === 404
         ? 404
         : error.status === 400
@@ -472,5 +520,8 @@ function failure(
               ? 503
               : 500,
     );
-  return context.json({ message: "编码项目操作失败。" }, 500);
+  return context.json(
+    { message: "编码项目操作失败。", code: "coding_operation_failed" },
+    500,
+  );
 }

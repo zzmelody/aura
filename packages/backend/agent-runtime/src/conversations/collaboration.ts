@@ -8,7 +8,7 @@ import type {
   CodingRunIntent,
 } from "@aura/protocol/types";
 import { z } from "zod";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 
 interface GoalRef {
   id: string;
@@ -62,7 +62,10 @@ function ref({ id, revision }: GoalRef): GoalRef {
 export function codingCollaboration(ctx: Context) {
   const goals = ctx.get("goals") as Goals | undefined;
   const plan = ctx.get("planMode") as PlanMode | undefined;
-  if (!goals || !plan) throw new FlowError("DSH 对话协作服务不可用。", 503);
+  if (!goals || !plan)
+    throw new CodedFlowError("DSH 对话协作服务不可用。", 503, {
+      code: "collaboration_unavailable",
+    });
 
   return {
     current(agent: Agent): CodingCollaboration {
@@ -111,7 +114,9 @@ export function codingCollaboration(ctx: Context) {
       if (action === "clear-goal") {
         const goal = goals.get(agent);
         if (goal?.activation === "armed")
-          throw new FlowError("请先停止目标续跑。", 409);
+          throw new CodedFlowError("请先停止目标续跑。", 409, {
+            code: "goal_stop_required",
+          });
         if (goal) goals.clear(agent, ref(goal));
       } else {
         plan.set(agent, action === "plan");
@@ -120,12 +125,18 @@ export function codingCollaboration(ctx: Context) {
     startGoal(agent: Agent, intent: "goal" | "resume-goal", objective: string) {
       const goal = goals.get(agent);
       if (intent === "goal" && goal && goal.phase !== "complete")
-        throw new FlowError("这段对话已有目标，请先继续或清除它。", 409);
+        throw new CodedFlowError("这段对话已有目标，请先继续或清除它。", 409, {
+          code: "goal_exists",
+        });
       if (intent === "resume-goal") {
         if (!goal || goal.phase === "complete" || goal.activation === "armed")
-          throw new FlowError("当前没有可继续的目标。", 409);
+          throw new CodedFlowError("当前没有可继续的目标。", 409, {
+            code: "goal_not_resumable",
+          });
         if (goal.roundsStarted >= goal.maxGoalRounds)
-          throw new FlowError("目标已达到续跑轮次上限。", 409);
+          throw new CodedFlowError("目标已达到续跑轮次上限。", 409, {
+            code: "goal_round_limit",
+          });
         plan.set(agent, false);
         goals.resume(agent, ref(goal));
         return;

@@ -97,3 +97,40 @@ test("history pages retain complete turns and a stable cut without walking the w
     ["prompt-2"],
   );
 });
+
+test("native failure reasons produce safe display metadata in a read-only history projection", () => {
+  for (const [reason, details] of [
+    [
+      {
+        kind: "error",
+        error: { message: "HTTP 429 private-provider-response" },
+      },
+      { code: "model_http_failed", params: { status: 429 } },
+    ],
+    [{ kind: "blocked" }, { code: "conversation_policy_blocked" }],
+  ] as const) {
+    const events = [
+      { type: "turn/start", seq: 1, time: 1, data: {} },
+      {
+        type: "user/message",
+        seq: 2,
+        time: 2,
+        data: {
+          source: { kind: "user" },
+          content: [{ type: "text", text: "原始问题" }],
+        },
+      },
+      { type: "turn/end", seq: 3, time: 3, data: { reason } },
+    ];
+    const before = JSON.stringify(events);
+    const turns = historyTurns(events, false);
+    assert.equal(turns[0].prompt, "原始问题");
+    assert.equal(turns[0].status, "error");
+    assert.deepEqual(turns[0].errorDetails, details);
+    assert.equal(
+      JSON.stringify(turns).includes("private-provider-response"),
+      false,
+    );
+    assert.equal(JSON.stringify(events), before);
+  }
+});

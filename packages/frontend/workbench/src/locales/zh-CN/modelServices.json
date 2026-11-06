@@ -1,0 +1,19 @@
+{
+  "unchecked": "未检查",
+  "key_required": "请先保存 Lumina Key。",
+  "discovery_failed": "连接失败，请检查密钥和网络。",
+  "catalog_failed": "模型列表获取失败；可手填模型 ID 后测试连接。",
+  "models_synced_other": "连接成功，已同步 {{count, number}} 个对话模型。",
+  "models_listed_other": "已获取 {{count, number}} 个模型；尚未测试模型请求。",
+  "probe_succeeded": "测试成功 · {{model}} · {{elapsedMs, number}} 毫秒 · 回复：{{reply}}",
+  "probe_failed": "测试失败 · {{model}} · {{reason}}",
+  "timeout": "请求超时或已取消，请检查网络后重试。",
+  "authentication": "认证失败，请检查模型密钥或重新登录。",
+  "permission": "没有权限使用所选模型。",
+  "not_found": "模型或 API 地址不存在，请检查地址、协议和模型 ID。",
+  "rate_limit": "服务限流或额度不足，请检查账户后重试。",
+  "empty_response": "服务没有返回有效文本，请检查模型和协议。",
+  "unsupported": "所选模型或参数不受支持，请检查模型和思考强度。",
+  "request_failed": "模型请求失败，请检查协议、地址、网络及服务状态。",
+  "settingsUnavailable": "模型服务设置不可用（{{status}}）。"
+}

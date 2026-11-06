@@ -1,5 +1,6 @@
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { conversationSplit } from "./split-layout";
+import { useToolMessages } from "../../tool-messages";
 
 const STORAGE_KEY = "aura.coding.side-width";
 
@@ -31,6 +32,7 @@ export function ConversationSplit({
   mainHeader?: React.ReactNode;
   sideHeader?: React.ReactNode;
 }) {
+  const { t } = useToolMessages();
   const root = useRef<HTMLDivElement>(null);
   const drag = useRef<{
     pointerId: number;
@@ -111,13 +113,13 @@ export function ConversationSplit({
               inert={!sideVisible}
               role="separator"
               tabIndex={0}
-              aria-label="调整主对话与工具面板宽度"
+              aria-label={t("resizeConversationSplit")}
               aria-orientation="vertical"
               aria-valuemin={min}
               aria-valuemax={max}
               aria-valuenow={width}
-              aria-valuetext={`工具面板 ${width} 像素`}
-              title="拖拽调整宽度 · 双击恢复默认"
+              aria-valuetext={t("toolPanelWidth", { width })}
+              title={t("resizeHint")}
               onPointerDown={(event) => {
                 if (event.button !== 0 || drag.current) return;
                 event.preventDefault();
@@ -183,7 +185,7 @@ export function ConversationSplit({
           {sideHeader ? (
             <aside
               className="coding-side"
-              aria-label="工具面板"
+              aria-label={t("toolPanel")}
               inert={!sideVisible}
             >
               {sideHeader}

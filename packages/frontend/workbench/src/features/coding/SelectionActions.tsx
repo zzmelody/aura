@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { selectionQuote } from "./selection-quote";
+import { useConversationMessages } from "../../conversation-messages";
 
 export interface SelectionAction {
   id: string;
@@ -37,6 +38,7 @@ export function SelectionActions({
   root: React.RefObject<HTMLElement | null>;
   actions: SelectionAction[];
 }) {
+  const { t } = useConversationMessages();
   const popup = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<TranscriptSelection | null>(null);
 
@@ -80,29 +82,41 @@ export function SelectionActions({
     const node = popup.current;
     if (!selection || !node) return;
     node.showPopover();
-    const margin = 8;
-    const gap = 8;
-    const { rect } = selection;
-    const bounds = node.getBoundingClientRect();
-    const above = rect.top - gap - bounds.height;
-    const top =
-      above >= margin
-        ? above
-        : Math.min(
-            rect.bottom + gap,
-            window.innerHeight - bounds.height - margin,
-          );
-    const left = Math.max(
-      margin,
-      Math.min(
-        rect.left + rect.width / 2 - bounds.width / 2,
-        window.innerWidth - bounds.width - margin,
-      ),
-    );
-    node.style.top = `${top}px`;
-    node.style.left = `${left}px`;
     return () => node.hidePopover();
   }, [selection]);
+
+  useLayoutEffect(() => {
+    const node = popup.current;
+    if (!selection || !node) return;
+    const position = () => {
+      const margin = 8;
+      const gap = 8;
+      const { rect } = selection;
+      const bounds = node.getBoundingClientRect();
+      const above = rect.top - gap - bounds.height;
+      const top =
+        above >= margin
+          ? above
+          : Math.min(
+              rect.bottom + gap,
+              window.innerHeight - bounds.height - margin,
+            );
+      const left = Math.max(
+        margin,
+        Math.min(
+          rect.left + rect.width / 2 - bounds.width / 2,
+          window.innerWidth - bounds.width - margin,
+        ),
+      );
+      node.style.top = `${top}px`;
+      node.style.left = `${left}px`;
+    };
+    position();
+    // Translated action labels can change the size without changing selection.
+    const observer = new ResizeObserver(position);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [actions, selection]);
 
   if (!selection) return null;
   return (
@@ -111,7 +125,7 @@ export function SelectionActions({
       popover="manual"
       className="selection-actions"
       role="toolbar"
-      aria-label="选中文字操作"
+      aria-label={t("selectionActions")}
       // Keep the transcript selection while pressing a button.
       onPointerDown={(event) => event.preventDefault()}
       onMouseDown={(event) => event.preventDefault()}

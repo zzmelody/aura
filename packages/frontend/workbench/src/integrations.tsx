@@ -7,6 +7,8 @@ import React, {
   useState,
 } from "react";
 import type { IntegrationFlags } from "@aura/protocol/types";
+import { MessageError } from "@aura/i18n/runtime";
+import { apiErrorText } from "./api-error-messages.ts";
 
 export async function integrationRequest<T>(
   endpoint: string,
@@ -19,8 +21,11 @@ export async function integrationRequest<T>(
   );
   const data = await response.json().catch(() => null);
   if (!response.ok || data === null)
-    throw new Error(
-      data?.message || `功能服务暂不可用（${response.status}）。`,
+    throw new MessageError(
+      apiErrorText(data, {
+        namespace: "apiErrors",
+        key: "integration_unavailable",
+      }),
     );
   return data as T;
 }

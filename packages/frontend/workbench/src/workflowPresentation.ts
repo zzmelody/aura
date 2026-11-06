@@ -1,5 +1,6 @@
 import type { Message } from "@aura/core/types";
 import type { FlowRun, JsonValue } from "@aura/protocol/types";
+import { language } from "@aura/i18n/runtime";
 
 /** Pair persisted input with its own run, never with a neighbouring execution. */
 export function workflowExecutions(messages: Message[]) {
@@ -89,10 +90,30 @@ export function workflowProgress(run: FlowRun | undefined) {
   };
 }
 
-export function workflowDuration(start: number, finish: number): string {
+export function workflowDuration(
+  start: number,
+  finish: number,
+  locale: string = language.getSnapshot().locale,
+): string {
   const seconds = Math.max(0, Math.floor((finish - start) / 1000));
-  if (seconds < 60) return `${seconds} 秒`;
+  const unit = (value: number, name: string) =>
+    new Intl.NumberFormat(locale, {
+      style: "unit",
+      unit: name,
+      unitDisplay: "short",
+    }).format(value);
+  const list = (values: string[]) =>
+    new Intl.ListFormat(locale, { type: "unit", style: "short" }).format(
+      values,
+    );
+  if (seconds < 60) return unit(seconds, "second");
   if (seconds < 3600)
-    return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
-  return `${Math.floor(seconds / 3600)} 小时 ${Math.floor((seconds % 3600) / 60)} 分`;
+    return list([
+      unit(Math.floor(seconds / 60), "minute"),
+      unit(seconds % 60, "second"),
+    ]);
+  return list([
+    unit(Math.floor(seconds / 3600), "hour"),
+    unit(Math.floor((seconds % 3600) / 60), "minute"),
+  ]);
 }

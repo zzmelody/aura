@@ -2,6 +2,8 @@ import type {
   AuraPluginSettingsState,
   AuraPluginSettingsUpdate,
 } from "@aura/protocol/types";
+import { MessageError } from "@aura/i18n/runtime";
+import { pluginMessage } from "./plugin-messages.ts";
 
 type Fetcher = (
   input: string | URL | Request,
@@ -20,12 +22,16 @@ async function pluginSettingsRequest(
   const result = (await response.json().catch(() => null)) as
     AuraPluginSettingsState | { message?: string } | null;
   if (!response.ok)
-    throw new Error(
+    throw new MessageError(
       (result &&
         typeof result === "object" &&
         "message" in result &&
+        typeof result.message === "string" &&
         result.message) ||
-        `插件目录读取失败（${response.status}）。`,
+        pluginMessage(
+          init.method === "POST" ? "settingsSaveFailed" : "settingsReadFailed",
+          { status: response.status },
+        ),
     );
   return result as AuraPluginSettingsState;
 }

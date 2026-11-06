@@ -1,0 +1,18 @@
+{
+  "pickerKindUnsupported": "This path picker type is not supported.",
+  "pickerFailed": "Could not open the path picker. Please try again.",
+  "previewInvalid": "Invalid site preview.",
+  "previewLocalOnly": "The preview address must be a local HTTP site.",
+  "previewFailed": "Could not open the site preview. Please try again.",
+  "browserOwnerRequired": "Browser operations must come from the Aura workbench.",
+  "browserWorkspaceRequired": "The browser needs a workspace.",
+  "browserTabLimit": "The browser tab limit has been reached.",
+  "browserAddressBlocked": "This address cannot be opened in the Aura browser.",
+  "browserOperationFailed": "The browser operation failed. Please try again.",
+  "fileMainWindowOnly": "Files can only be located from the main window.",
+  "fileRevealFailed": "Could not show the file in its folder. Please try again.",
+  "filePathInvalid": "Invalid file path.",
+  "fileRootRequired": "Invalid project folder.",
+  "fileNotFound": "The file does not exist or has been moved.",
+  "operationFailed": "The desktop operation failed. Please try again."
+}

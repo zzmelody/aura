@@ -1,0 +1,21 @@
+{
+  "scriptTimeout": "Время загрузки скрипта плагина истекло.",
+  "scriptLoadFailed": "Не удалось загрузить скрипт плагина.",
+  "missingApply": "Браузерная точка входа плагина не экспортирует apply(ctx).",
+  "duplicatePage": "Страница плагина {{id}} уже зарегистрирована.",
+  "duplicateResult": "Представление результатов плагина {{id}} уже зарегистрировано.",
+  "alreadyStarted": "Система модулей плагинов уже запущена на этой странице. Обновите страницу.",
+  "loaderUnavailable": "Сервис Aura не предоставил загрузчик модулей DSH.",
+  "loaderUnregistered": "Регистрация загрузчика модулей DSH не завершена.",
+  "loaderBeforeStartup": "Загрузчик модулей DSH запросил {{specifier}} до запуска.",
+  "graphUpdateUnsupported": "Система модулей DSH не поддерживает обновление графа модулей во время работы.",
+  "pagesReadFailed": "Не удалось прочитать страницы плагинов ({{status}}).",
+  "graphReadFailed": "Не удалось прочитать граф модулей плагинов ({{status}}).",
+  "renderFailed": "Не удалось отобразить страницу плагина.",
+  "pageOpenFailed": "Не удалось открыть {{label}}: {{message}}",
+  "settingsReadFailed": "Не удалось прочитать каталоги плагинов ({{status}}).",
+  "settingsSaveFailed": "Не удалось сохранить каталоги плагинов ({{status}}).",
+  "invokeFailed": "Запрос страницы плагина завершился ошибкой ({{status, number}}).",
+  "directoryDesktopOnly": "Для выбора папки требуется Aura Desktop.",
+  "previewDesktopOnly": "Для предпросмотра сайта требуется Aura Desktop."
+}

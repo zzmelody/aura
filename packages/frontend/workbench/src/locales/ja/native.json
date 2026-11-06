@@ -1,0 +1,18 @@
+{
+  "pickerKindUnsupported": "この種類のパス選択には対応していません。",
+  "pickerFailed": "パス選択ウィンドウを開けませんでした。再試行してください。",
+  "previewInvalid": "無効なサイトプレビューです。",
+  "previewLocalOnly": "プレビュー先はローカルの HTTP サイトである必要があります。",
+  "previewFailed": "サイトのプレビューを開けませんでした。再試行してください。",
+  "browserOwnerRequired": "ブラウザー操作は Aura ワークスペースから行ってください。",
+  "browserWorkspaceRequired": "ブラウザーにはワークスペースが必要です。",
+  "browserTabLimit": "ブラウザーのタブ数が上限に達しました。",
+  "browserAddressBlocked": "このアドレスは Aura ブラウザーで開けません。",
+  "browserOperationFailed": "ブラウザー操作に失敗しました。再試行してください。",
+  "fileMainWindowOnly": "ファイルの場所はメインウィンドウからのみ開けます。",
+  "fileRevealFailed": "フォルダー内のファイルを表示できませんでした。再試行してください。",
+  "filePathInvalid": "無効なファイルパスです。",
+  "fileRootRequired": "無効なプロジェクトフォルダーです。",
+  "fileNotFound": "ファイルが存在しないか、移動されています。",
+  "operationFailed": "デスクトップ操作に失敗しました。再試行してください。"
+}

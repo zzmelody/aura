@@ -5,6 +5,9 @@ import { useFlowAnalysis } from "../../src/useFlowAnalysis";
 import { useFlowDraft, starterFlow } from "../../src/flowDraft";
 import { readFlowSvg } from "../../src/flow-analysis";
 import { FlowStudio } from "../../src/screens/FlowStudio";
+import { LanguageProvider } from "@aura/i18n";
+import { language } from "@aura/i18n/runtime";
+import { workflowText } from "../../src/workflow-messages.ts";
 import "../../src/styles.css";
 
 // Headless virtual time advances timers without compositor frames. Drive frame
@@ -83,6 +86,15 @@ function Harness() {
 
 async function inspect() {
   localStorage.clear();
+  await language.systemChanged(["zh-CN"]);
+  const locales = ["zh-CN", "en", "ja", "ko", "ru", "fr"] as const;
+  const setItem = Storage.prototype.setItem;
+  let writes = 0;
+  Storage.prototype.setItem = function (key, value) {
+    if (key === "aura.flow-draft.v1" || key === "aura.flow-analysis.v1")
+      writes++;
+    return setItem.call(this, key, value);
+  };
   const parsed = readFlowSvg(svg("safe"), "test");
   check(
     parsed?.width === 900 && parsed.height === 240,
@@ -119,7 +131,11 @@ async function inspect() {
     "document entities are rejected",
   );
   const root = createRoot(document.getElementById("root")!);
-  flushSync(() => root.render(React.createElement(Harness)));
+  const render = () =>
+    root.render(
+      React.createElement(LanguageProvider, null, React.createElement(Harness)),
+    );
+  flushSync(render);
   await settle();
   check(
     !document.querySelector('[role="tab"], .flow-code'),
@@ -160,6 +176,56 @@ async function inspect() {
     shape.style.transform !== beforeZoom,
     `SVG zoom controls update the viewport (${beforeZoom} -> ${shape.style.transform})`,
   );
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  const zoomed = shape.style.transform;
+  const targetId = analysis.target!.id;
+  const graph = shape.querySelector("svg");
+  const input = document.querySelector<HTMLInputElement>(
+    '.workflow-editor input[type="file"]',
+  )!;
+  const transfer = new DataTransfer();
+  transfer.items.add(
+    new File(["x".repeat(100_001)], "Original workflow.js", {
+      type: "text/javascript",
+    }),
+  );
+  input.files = transfer.files;
+  flushSync(() => input.dispatchEvent(new Event("change", { bubbles: true })));
+  const menu = document.querySelector<HTMLDetailsElement>(".flow-more")!;
+  menu.open = true;
+  const originalWrites = writes;
+  for (const locale of locales) {
+    await language.select(locale);
+    await settle();
+    check(
+      document.querySelector(".editor-notice span")?.textContent ===
+        workflowText("workflowFileTooLarge"),
+      `import validation follows ${locale}`,
+    );
+    check(
+      document.querySelector(".graph-panel")?.getAttribute("aria-label") ===
+        workflowText("graphRegion"),
+      `diagram controls follow ${locale}`,
+    );
+    check(
+      menu.open && menu === document.querySelector(".flow-more"),
+      `open menu survives ${locale}`,
+    );
+    check(
+      shape === document.querySelector(".flow-svg-position") &&
+        shape.style.transform === zoomed &&
+        graph === shape.querySelector("svg"),
+      `diagram and viewport survive ${locale} (shape=${shape === document.querySelector(".flow-svg-position")}, svg=${graph === shape.querySelector("svg")}, ${zoomed} -> ${shape.style.transform})`,
+    );
+    check(
+      analysis.target!.id === targetId &&
+        draft.code === source &&
+        draft.canUndo &&
+        writes === originalWrites,
+      `language ${locale} preserves draft, undo, analysis identity and storage`,
+    );
+  }
+  menu.open = false;
   flushSync(() => draft.update(source + "\n// next revision"));
   await settle();
   check(
@@ -186,6 +252,15 @@ async function inspect() {
     !!analysis.error && !document.querySelector(".flow-svg-position"),
     "invalid SVG reports a recoverable error without replacing the draft",
   );
+  for (const locale of locales) {
+    await language.select(locale);
+    await settle();
+    check(
+      analysis.error === workflowText("analysisSvgInvalid") &&
+        analysis.target!.id === id,
+      `analysis failure follows ${locale} without starting another analysis`,
+    );
+  }
   flushSync(() => draft.undo());
   await settle();
   check(
@@ -193,7 +268,7 @@ async function inspect() {
     "undo restores the matching cached SVG",
   );
   const host = document.getElementById("root")!;
-  for (const width of [1120, 760, 390, 1120]) {
+  for (const width of [1120, 760, 360, 320, 1120]) {
     host.style.width = width + "px";
     flushSync(() => layout(width >= 720 ? "split" : "stacked"));
     await settle();
@@ -213,6 +288,16 @@ async function inspect() {
       host.scrollWidth <= host.clientWidth + 1,
       `layout does not overflow at ${width}px`,
     );
+    for (const locale of locales) {
+      await language.select(locale);
+      await settle();
+      const editor = document.querySelector<HTMLElement>(".workflow-editor")!;
+      check(
+        editor.scrollWidth <= editor.clientWidth + 1 &&
+          host.scrollWidth <= host.clientWidth + 1,
+        `editor does not overflow in ${locale} at ${width}px`,
+      );
+    }
   }
   for (const [background, surface, text, accent] of [
     ["#111114", "#242428", "#ededf0", "#bda1ff"],
@@ -229,9 +314,31 @@ async function inspect() {
       "SVG text follows the active theme",
     );
   }
+  let failedWrites = 0;
+  Storage.prototype.setItem = function (key, value) {
+    if (key === "aura.flow-draft.v1") {
+      failedWrites++;
+      throw new Error("Synthetic storage failure");
+    }
+    return setItem.call(this, key, value);
+  };
+  flushSync(() => draft.edit(source + "\n// original unsaved edit"));
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  for (const locale of locales) {
+    await language.select(locale);
+    await settle();
+    check(
+      draft.saveError === workflowText("draftSaveFailed") &&
+        draft.code.endsWith("// original unsaved edit") &&
+        failedWrites === 1,
+      `save failure and unsaved code survive ${locale} without a write retry`,
+    );
+  }
+  Storage.prototype.setItem = setItem;
+  flushSync(() => draft.edit(source));
   await new Promise((resolve) => setTimeout(resolve, 350));
   flushSync(() => root.render(null));
-  flushSync(() => root.render(React.createElement(Harness)));
+  flushSync(render);
   await settle();
   check(
     draft.code === source && !!document.querySelector(".flow-svg-position svg"),

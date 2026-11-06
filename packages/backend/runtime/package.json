@@ -13,7 +13,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test --test-concurrency=2 test/*.test.ts"
   },
   "dependencies": {
     "@aura/agent-runtime": "workspace:*",

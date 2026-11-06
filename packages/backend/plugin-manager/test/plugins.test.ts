@@ -324,6 +324,12 @@ test("isolates invalid and duplicate plugins as unavailable", async () =>
       2,
     );
     assert.equal(result.flowRoots.length, 1);
+    assert.deepEqual(
+      result.plugins
+        .filter((plugin) => !plugin.available)
+        .map((plugin) => plugin.errorDetails?.code),
+      ["plugin_id_duplicate", "plugin_directory_missing"],
+    );
   }));
 
 test("plugin manager applies UI updates before persisting them", async () =>

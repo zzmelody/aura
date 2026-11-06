@@ -1,0 +1,23 @@
+{
+  "startupTitle": "Aura · パーソナルワークスペース",
+  "startupOpening": "Aura を起動しています",
+  "tagline": "あなたのパーソナル AI アシスタント",
+  "startupLoading": "ワークスペースを開いています",
+  "reload": "再読み込み",
+  "startupSlow": "読み込みに時間がかかっています。このまま待つか、再読み込みしてください。",
+  "startupReady": "ワークスペースの準備ができました",
+  "startupFailed": "画面を読み込めませんでした。再読み込みしてください。",
+  "runtimeStartFailed": "Aura サービスを起動できませんでした",
+  "runtimeStartDetail": "ワークスペースは開いています。ローカルサービスを確認して再試行してください。",
+  "quitFailed": "Aura の終了処理に失敗しました",
+  "quitRetry": "もう一度終了してください。",
+  "startFailed": "Aura を起動できませんでした",
+  "startDetail": "デスクトップサービスを起動できませんでした。",
+  "outputDirectory": "ワークフローの出力フォルダーを選択",
+  "selectDirectory": "このフォルダーを選択",
+  "inputImage": "ワークフローの入力画像を選択",
+  "useImage": "この画像を使用",
+  "images": "画像",
+  "projectDirectory": "フロントエンドプロジェクトのフォルダーを選択",
+  "useDirectory": "このフォルダーを使用"
+}

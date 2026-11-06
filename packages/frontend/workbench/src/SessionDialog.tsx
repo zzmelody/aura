@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import type { WorkspaceController } from "./useWorkspace";
 import type { SessionDialogRequest } from "./SessionActions";
 import { sidebarSessionTitle } from "./sidebarSessions";
+import { useSidebarMessages } from "./sidebar-messages.ts";
 
 export function SessionDialog({
   request,
@@ -13,6 +14,7 @@ export function SessionDialog({
   workspace: WorkspaceController;
   onClose(): void;
 }) {
+  const { t } = useSidebarMessages();
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const session = workspace.state.sessions.find(
@@ -65,7 +67,9 @@ export function SessionDialog({
           </button>
         </div>
         {rename ? (
-          <label className="session-title-field">{t("chatName")}<input
+          <label className="session-title-field">
+            {t("chatName")}
+            <input
               ref={input}
               autoFocus
               required
@@ -74,10 +78,12 @@ export function SessionDialog({
             />
           </label>
         ) : (
-          <p>确定删除“{title}”？本机对话记录无法恢复，已生成的文件会保留。</p>
+          <p>{t("deleteConfirmation", { title })}</p>
         )}
         <div className="session-dialog-actions">
-          <button type="button" className="tool-button" onClick={onClose}>{t("cancel")}</button>
+          <button type="button" className="tool-button" onClick={onClose}>
+            {t("cancel")}
+          </button>
           <button
             type="submit"
             className={`primary-button${rename ? "" : " danger"}`}

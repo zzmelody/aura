@@ -1,0 +1,19 @@
+{
+  "unchecked": "확인하지 않음",
+  "key_required": "먼저 Lumina 키를 저장하세요.",
+  "discovery_failed": "연결에 실패했습니다. 키와 네트워크를 확인하세요.",
+  "catalog_failed": "모델 목록을 가져오지 못했습니다. 모델 ID를 입력하여 연결을 테스트할 수 있습니다.",
+  "models_synced_other": "연결되었습니다. 채팅 모델 {{count, number}}개를 동기화했습니다.",
+  "models_listed_other": "모델 {{count, number}}개를 가져왔습니다. 모델 요청은 아직 테스트하지 않았습니다.",
+  "probe_succeeded": "테스트 성공 · {{model}} · {{elapsedMs, number}}밀리초 · 응답: {{reply}}",
+  "probe_failed": "테스트 실패 · {{model}} · {{reason}}",
+  "timeout": "요청 시간이 초과되었거나 취소되었습니다. 네트워크를 확인한 후 다시 시도하세요.",
+  "authentication": "인증에 실패했습니다. 모델 키를 확인하거나 다시 로그인하세요.",
+  "permission": "선택한 모델을 사용할 권한이 없습니다.",
+  "not_found": "모델 또는 API 주소를 찾을 수 없습니다. 주소, 프로토콜, 모델 ID를 확인하세요.",
+  "rate_limit": "요청 속도 또는 사용량 한도에 도달했습니다. 계정을 확인한 후 다시 시도하세요.",
+  "empty_response": "서비스에서 유효한 텍스트를 반환하지 않았습니다. 모델과 프로토콜을 확인하세요.",
+  "unsupported": "선택한 모델 또는 매개변수가 지원되지 않습니다. 모델과 추론 강도를 확인하세요.",
+  "request_failed": "모델 요청에 실패했습니다. 프로토콜, 주소, 네트워크, 서비스 상태를 확인하세요.",
+  "settingsUnavailable": "모델 서비스 설정을 사용할 수 없습니다({{status}})."
+}

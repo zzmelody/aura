@@ -2,13 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createLanguageController,
+  errorMessage,
   formatDate,
   formatNumber,
+  language,
   languageStorageKey,
+  messageText,
+  MessageError,
   registerCatalogs,
   resolveLocale,
 } from "../src/runtime.ts";
-import { pseudolocalize, validateCatalogs } from "../src/catalogs.ts";
+import {
+  auditCatalogs,
+  pseudolocalize,
+  validateCatalogs,
+} from "../src/catalogs.ts";
 
 test("system matching respects preference order, region variants and explicit choices", () => {
   assert.equal(
@@ -21,6 +29,112 @@ test("system matching respects preference order, region variants and explicit ch
   assert.equal(resolveLocale("system", ["fr-CA"]), "fr");
   assert.equal(resolveLocale("system", []), "en");
   assert.equal(resolveLocale("fr", ["ja-JP"]), "fr");
+});
+
+test("inline plugin messages follow the requested locale even when registered catalogs fall back to English", async () => {
+  const controller = createLanguageController({ languages: ["en"] });
+  controller.i18n.addResourceBundle("en", "fixture", {
+    text: "English catalog fallback",
+  });
+  await controller.select("ja");
+  assert.equal(
+    controller.i18n.t("text", { ns: "fixture" }),
+    "English catalog fallback",
+  );
+  const message = {
+    namespace: "pluginErrors",
+    key: "failure",
+    translations: { en: "English literal {{name}}", ja: "日本語 {{name}}" },
+  };
+  assert.equal(messageText(message, controller.i18n), "日本語 {{name}}");
+  await controller.select("ko");
+  assert.equal(
+    messageText(message, controller.i18n),
+    "English literal {{name}}",
+  );
+});
+
+test("async failures retain nested message identities across a language change", async () => {
+  const controller = createLanguageController({ languages: ["en"] });
+  await controller.ready;
+  registerCatalogs(
+    "errors",
+    {
+      en: {
+        send: "Unable to send: {{reason}}",
+        limit: "Limit: {{size, number}} bytes",
+      },
+      fr: {
+        send: "Envoi impossible : {{reason}}",
+        limit: "Limite : {{size, number}} octets",
+      },
+    },
+    controller.i18n,
+  );
+  let retained;
+  try {
+    await Promise.reject(
+      new MessageError({
+        namespace: "errors",
+        key: "limit",
+        values: { size: 1234 },
+      }),
+    );
+  } catch (error) {
+    retained = {
+      namespace: "errors",
+      key: "send",
+      values: { reason: errorMessage(error) },
+    };
+  }
+  assert.ok(retained);
+  assert.equal(
+    messageText(retained, controller.i18n),
+    "Unable to send: Limit: 1,234 bytes",
+  );
+  await controller.systemChanged(["fr"]);
+  assert.equal(
+    messageText(retained, controller.i18n),
+    `Envoi impossible : Limite : ${new Intl.NumberFormat("fr").format(1234)} octets`,
+  );
+  assert.equal(errorMessage(new Error("Original 原文")), "Original 原文");
+  assert.equal(
+    errorMessage(new MessageError("Original 原文")),
+    "Original 原文",
+  );
+  assert.equal(errorMessage(null, "Fallback"), "Fallback");
+});
+
+test("localized errors retain their cause and a readable message for legacy consumers", async (t) => {
+  await language.ready;
+  const original = language.getSnapshot().locale;
+  t.after(() => language.systemChanged([original]));
+  const dispose = registerCatalogs("error-compatibility", {
+    en: { failed: "Could not read {{name}}." },
+    fr: { failed: "Impossible de lire {{name}}." },
+  });
+  t.after(dispose);
+  await language.systemChanged(["en"]);
+  const text = {
+    namespace: "error-compatibility",
+    key: "failed",
+    values: { name: "Original 原文" },
+  };
+  const cause = new Error("Synthetic network error");
+  const error = new MessageError(text, { cause });
+  assert.equal(error.message, "Could not read Original 原文.");
+  assert.equal(error.cause, cause);
+  assert.equal(errorMessage(error), text);
+  await language.systemChanged(["fr"]);
+  assert.equal(
+    messageText(errorMessage(error)),
+    "Impossible de lire Original 原文.",
+  );
+  assert.equal(error.message, "Could not read Original 原文.");
+  assert.equal(
+    new MessageError(text).message,
+    "Impossible de lire Original 原文.",
+  );
 });
 
 test("only an explicit language choice writes preferences and other data stays untouched", async () => {
@@ -178,4 +292,50 @@ test("pseudo translations expand text without changing interpolation or markup",
   const result = pseudolocalize({ greeting: source }).greeting;
   assert.ok(result.length > source.length);
   assert.ok(result.includes("<strong>{{name}}</strong>"));
+});
+
+test("catalog audits catch missing plural forms and renamed interpolation values", () => {
+  const issues = auditCatalogs(
+    {
+      en: {
+        files_one: "{{count}} file",
+        files_other: "{{count}} files",
+        name: "Hello {{name}}",
+      },
+      ru: {
+        files_one: "{{count}} файл",
+        files_other: "{{count}} файла",
+        name: "Привет {{user}}",
+      },
+    },
+    ["en", "ru", "ja"],
+  );
+  assert.deepEqual(
+    issues.sort(),
+    [
+      "Missing catalog: ja",
+      "ru: interpolation mismatch for name",
+      "ru: missing files_few",
+      "ru: missing files_many",
+    ].sort(),
+  );
+});
+
+test("retained UI messages change language without translating user supplied values", async () => {
+  const controller = createLanguageController({ languages: ["en"] });
+  await controller.ready;
+  registerCatalogs(
+    "notice",
+    { en: { saved: "Saved {{title}}" }, fr: { saved: "{{title}} enregistré" } },
+    controller.i18n,
+  );
+  const message = {
+    namespace: "notice",
+    key: "saved",
+    values: { title: "我的草稿" },
+  };
+  assert.equal(messageText(message, controller.i18n), "Saved 我的草稿");
+  await controller.systemChanged(["fr"]);
+  assert.equal(messageText(message, controller.i18n), "我的草稿 enregistré");
+  assert.equal(messageText("User content", controller.i18n), "User content");
 });

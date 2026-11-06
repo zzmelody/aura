@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { CodingQuestion, CodingQuestionAnswer } from "../types.ts";
 
 /** Upper bounds on what a client may send back for one question. */
@@ -63,7 +63,9 @@ export class CodingQuestions {
   ): CodingQuestionAnswer[] {
     const pending = this.pending.get(questionId);
     if (!pending || pending.sessionId !== sessionId)
-      throw new FlowError("这个问题已经结束或不存在。", 404);
+      throw new CodedFlowError("这个问题已经结束或不存在。", 404, {
+        code: "question_closed",
+      });
     const answers = validAnswers(pending.questions, value);
     pending.resolve(answers);
     return answers;
@@ -89,7 +91,10 @@ function validAnswers(
   questions: CodingQuestion[],
   value: unknown,
 ): CodingQuestionAnswer[] {
-  if (!Array.isArray(value)) throw new FlowError("无效的回答。", 400);
+  if (!Array.isArray(value))
+    throw new CodedFlowError("无效的回答。", 400, {
+      code: "question_answer_invalid",
+    });
   const given = new Map<string, Record<string, unknown>>();
   for (const item of value)
     if (

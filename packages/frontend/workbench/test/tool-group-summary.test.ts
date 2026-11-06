@@ -73,21 +73,30 @@ test("tool descriptions merge repeated activities and retain the order of work",
     { ...tool("c1", "ok"), name: "bash" },
     { ...tool("c2", "ok"), name: "pwsh" },
   ];
-  assert.equal(describeToolGroup(tools), "读取了文件、修改了文件、运行了命令");
+  assert.equal(
+    describeToolGroup(tools, "zh-CN"),
+    "读取了文件、修改了文件和运行了命令",
+  );
 });
 
 test("failed edits are described as attempts until one edit succeeds", () => {
   const failed = { ...tool("edit", "failed"), name: "edit" };
-  assert.equal(describeToolGroup([failed]), "尝试修改文件");
+  assert.equal(describeToolGroup([failed], "zh-CN"), "尝试修改文件");
   assert.equal(
-    describeToolGroup([failed, { ...failed, callId: "ok", state: "ok" }]),
+    describeToolGroup(
+      [failed, { ...failed, callId: "ok", state: "ok" }],
+      "zh-CN",
+    ),
     "修改了文件",
   );
 });
 
 test("unknown tools get a quiet generic description and empty groups have none", () => {
   assert.equal(
-    describeToolGroup([{ ...tool("custom", "ok"), name: "custom-tool" }]),
+    describeToolGroup(
+      [{ ...tool("custom", "ok"), name: "custom-tool" }],
+      "zh-CN",
+    ),
     "调用了工具",
   );
   assert.equal(describeToolGroup([]), "");

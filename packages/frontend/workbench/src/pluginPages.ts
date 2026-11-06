@@ -3,6 +3,9 @@ import type {
   AuraPluginPagesState,
   JsonValue,
 } from "@aura/protocol/types";
+import { MessageError } from "@aura/i18n/runtime";
+import { pluginMessage } from "./plugin-messages.ts";
+import { apiErrorText } from "./api-error-messages.ts";
 
 const LOADER_ID = "@deepseek-ai/dsh-client-modules";
 
@@ -54,12 +57,11 @@ export async function readPluginPages(
   const result = (await response.json().catch(() => null)) as
     PluginPagesSnapshot | { message?: string } | null;
   if (!response.ok)
-    throw new Error(
-      (result &&
-        typeof result === "object" &&
-        "message" in result &&
-        result.message) ||
-        `插件页面读取失败（${response.status}）。`,
+    throw new MessageError(
+      apiErrorText(
+        result,
+        pluginMessage("pagesReadFailed", { status: response.status }),
+      ),
     );
   return result as PluginPagesSnapshot;
 }
@@ -72,7 +74,9 @@ export async function readPluginGraph(
     signal,
   });
   if (!response.ok)
-    throw new Error(`插件模块图读取失败（${response.status}）。`);
+    throw new MessageError(
+      pluginMessage("graphReadFailed", { status: response.status }),
+    );
   return (await response.json()) as PluginPageGraph;
 }
 
@@ -101,14 +105,11 @@ export async function invokePluginPage(
   const result = (await response.json().catch(() => null)) as
     JsonValue | { message?: string } | null;
   if (!response.ok)
-    throw new Error(
-      (result &&
-        typeof result === "object" &&
-        result !== null &&
-        "message" in result &&
-        typeof result.message === "string" &&
-        result.message) ||
-        `插件页面调用失败（${response.status}）。`,
+    throw new MessageError(
+      apiErrorText(
+        result,
+        pluginMessage("invokeFailed", { status: response.status }),
+      ),
     );
   return result as JsonValue;
 }

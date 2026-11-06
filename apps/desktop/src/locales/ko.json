@@ -1,0 +1,23 @@
+{
+  "startupTitle": "Aura · 개인 워크스페이스",
+  "startupOpening": "Aura 여는 중",
+  "tagline": "나만의 AI 어시스턴트",
+  "startupLoading": "워크스페이스 여는 중",
+  "reload": "새로고침",
+  "startupSlow": "로딩이 평소보다 오래 걸리고 있습니다. 계속 기다리거나 새로고침하세요.",
+  "startupReady": "워크스페이스 준비 완료",
+  "startupFailed": "화면을 불러오지 못했습니다. 새로고침하세요.",
+  "runtimeStartFailed": "Aura 서비스를 시작하지 못했습니다",
+  "runtimeStartDetail": "워크스페이스가 열렸습니다. 로컬 서비스를 확인한 후 다시 시도하세요.",
+  "quitFailed": "Aura 종료 처리를 완료하지 못했습니다",
+  "quitRetry": "다시 종료해 주세요.",
+  "startFailed": "Aura를 시작하지 못했습니다",
+  "startDetail": "데스크톱 서비스를 시작하지 못했습니다.",
+  "outputDirectory": "워크플로 출력 폴더 선택",
+  "selectDirectory": "이 폴더 선택",
+  "inputImage": "워크플로 입력 이미지 선택",
+  "useImage": "이 이미지 사용",
+  "images": "이미지",
+  "projectDirectory": "프런트엔드 프로젝트 폴더 선택",
+  "useDirectory": "이 폴더 사용"
+}

@@ -1,3 +1,5 @@
+import { conversationMessage as message } from "./conversation-messages.ts";
+import { errorMessage, type MessageReference } from "@aura/i18n/runtime";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SetStateAction } from "react";
 import type { ChatImage } from "@aura/core/types";
@@ -12,7 +14,7 @@ export type Attachment = {
   preview: string;
   name: string;
   image?: ChatImage;
-  error?: string;
+  error?: string | MessageReference;
 };
 
 /**
@@ -49,7 +51,9 @@ export function pastedImages(data: DataTransfer, now = Date.now()): File[] {
  */
 export function useImageAttachments(endpoint: string, scope = "draft") {
   const [drafts, setDrafts] = useState<Record<string, Attachment[]>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<
+    Record<string, string | MessageReference>
+  >({});
   const attachments = drafts[scope] ?? [];
   const error = errors[scope] ?? "";
   // Upload callbacks retain the scope they started in, even after navigation.
@@ -63,7 +67,7 @@ export function useImageAttachments(endpoint: string, scope = "draft") {
     [scope],
   );
   const setError = useCallback(
-    (message: string) =>
+    (message: string | MessageReference) =>
       setErrors((current) => ({ ...current, [scope]: message })),
     [scope],
   );
@@ -84,12 +88,12 @@ export function useImageAttachments(endpoint: string, scope = "draft") {
     setError("");
     const accepted = Array.from(files).filter((file) => chatImageType(file));
     if (!accepted.length) {
-      setError("只支持 PNG、JPEG 或 WebP 图片。");
+      setError(message("imageType"));
       return;
     }
     const room = CHAT_IMAGE_LIMIT - attachments.length;
     if (accepted.length > room)
-      setError(`一条消息最多附带 ${CHAT_IMAGE_LIMIT} 张图片。`);
+      setError(message("imageLimit", { limit: CHAT_IMAGE_LIMIT }));
     for (const file of accepted.slice(0, Math.max(0, room))) {
       const key = crypto.randomUUID();
       const preview = URL.createObjectURL(file);
@@ -112,7 +116,7 @@ export function useImageAttachments(endpoint: string, scope = "draft") {
               item.key === key
                 ? {
                     ...item,
-                    error: cause instanceof Error ? cause.message : "上传失败",
+                    error: errorMessage(cause, message("uploadFailed")),
                   }
                 : item,
             ),

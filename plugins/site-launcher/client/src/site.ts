@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { errorMessage, type MessageReference } from "@aura/plugin-ui";
+import type { SiteMessageKey } from "./messages";
 import type {
   SiteProject,
   SiteStatus,
@@ -19,6 +21,12 @@ export type SiteHostApi = {
   open(project: SiteProject): Promise<void>;
   onStatus(callback: (status: SiteStatus) => void): () => void;
 };
+
+/** Transient UI messages stay separate from saved projects and server output. */
+interface SiteViewStatus extends SiteStatus {
+  messageKey?: SiteMessageKey;
+  errorText?: string | MessageReference;
+}
 
 const STORAGE_KEY = "aura.sites.v2";
 const LEGACY_STORAGE_KEY = "aura.site.v1";
@@ -118,13 +126,14 @@ export function useSiteProjects(host: SiteHostApi | undefined) {
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     readSelected(readProjects()),
   );
-  const [statuses, setStatuses] = useState<Record<string, SiteStatus>>({});
+  const [statuses, setStatuses] = useState<Record<string, SiteViewStatus>>({});
   const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
+  const [chooseError, setChooseError] = useState<string | MessageReference>();
   const selected =
     projects.find((project) => project.id === selectedId) ??
     projects[0] ??
     null;
-  const selectedStatus = selected
+  const selectedStatus: SiteViewStatus = selected
     ? (statuses[selected.id] ?? { state: "idle", project: selected })
     : { state: "idle" as SiteStatusState };
 
@@ -167,7 +176,14 @@ export function useSiteProjects(host: SiteHostApi | undefined) {
   }
   async function chooseDirectory() {
     if (!host) return;
-    const next = await host.chooseDirectory();
+    setChooseError(undefined);
+    let next: SiteProject | null;
+    try {
+      next = await host.chooseDirectory();
+    } catch (error) {
+      setChooseError(errorMessage(error, "chooseFailed"));
+      return;
+    }
     if (!next) return;
     setProjects((current) => {
       const index = current.findIndex((project) => project.id === next.id);
@@ -195,7 +211,7 @@ export function useSiteProjects(host: SiteHostApi | undefined) {
     setBusy(id, true);
     setStatuses((current) => ({
       ...current,
-      [id]: { state: "starting", project, message: "正在启动项目…" },
+      [id]: { state: "starting", project, messageKey: "startingProject" },
     }));
     try {
       const next = await host.start(project);
@@ -210,7 +226,7 @@ export function useSiteProjects(host: SiteHostApi | undefined) {
         [id]: {
           state: "error",
           project,
-          message: error instanceof Error ? error.message : "项目启动失败。",
+          errorText: errorMessage(error, "startFailed"),
         },
       }));
     } finally {
@@ -229,7 +245,7 @@ export function useSiteProjects(host: SiteHostApi | undefined) {
         [id]: {
           ...current[id],
           state: "error",
-          message: error instanceof Error ? error.message : "项目停止失败。",
+          errorText: errorMessage(error, "stopFailed"),
         },
       }));
     } finally {
@@ -251,8 +267,7 @@ export function useSiteProjects(host: SiteHostApi | undefined) {
           state: "error",
           previewReady: false,
           project,
-          message:
-            error instanceof Error ? error.message : "无法打开站点地址。",
+          errorText: errorMessage(error, "openFailed"),
         },
       }));
     } finally {
@@ -285,6 +300,7 @@ export function useSiteProjects(host: SiteHostApi | undefined) {
     statuses,
     runningCount,
     chooseDirectory,
+    chooseError,
     select,
     updateProject,
     run,

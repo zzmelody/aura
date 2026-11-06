@@ -1,3 +1,4 @@
+import { useConversationMessages } from "../conversation-messages.ts";
 import React, { useEffect, useRef, useState } from "react";
 import { VoiceInput } from "../features/coding/VoiceInput.tsx";
 import { useIntegrations } from "../integrations.tsx";
@@ -29,6 +30,7 @@ function MessageView({
   retry?: () => void;
   onApplyFlow?: (code: string) => void;
 }) {
+  const { t } = useConversationMessages();
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const [applied, setApplied] = useState(false);
@@ -54,7 +56,7 @@ function MessageView({
           <AuraMark size={20} />
           <strong>Aura</strong>
           {message.status === "streaming" ? (
-            <span className="generating-label">生成中</span>
+            <span className="generating-label">{t("generating")}</span>
           ) : null}
         </div>
       ) : null}
@@ -65,7 +67,7 @@ function MessageView({
           images={message.images.map((image) => ({
             key: image.assetId,
             src: chatImageUrl(endpoint, image.assetId),
-            name: image.name ?? "附图",
+            name: image.name ?? t("attachedImage"),
           }))}
         />
       ) : null}
@@ -83,11 +85,11 @@ function MessageView({
           ) : message.status === "streaming" ? (
             <span className="thinking">
               <span className="aura-spinner" />
-              正在准备回复…
+              {t("preparingReply")}
             </span>
           ) : null}
           {message.status === "stopped" ? (
-            <span className="message-stopped">回复已停止</span>
+            <span className="message-stopped">{t("replyStopped")}</span>
           ) : null}
         </div>
       ) : null}
@@ -95,7 +97,7 @@ function MessageView({
         <div className="message-actions">
           <button
             className="icon-control"
-            aria-label={copied ? "已复制" : "复制回复"}
+            aria-label={copied ? t("copied") : t("copyReply")}
             onClick={() =>
               void writeClipboard(message.text)
                 .then(() => {
@@ -110,7 +112,7 @@ function MessageView({
           {message.status === "error" && retry ? (
             <button className="tool-button" onClick={retry}>
               <RotateCcw size={13} />
-              重试
+              {t("retry")}
             </button>
           ) : null}
           {flowCode ? (
@@ -122,12 +124,10 @@ function MessageView({
               }}
             >
               <FileCode2 size={13} />
-              {applied ? "已放入编辑器" : "放入 工作流编辑器"}
+              {applied ? t("placedInEditor") : t("applyFlow")}
             </button>
           ) : null}
-          {copyError ? (
-            <span role="status">复制失败，请选择文字复制。</span>
-          ) : null}
+          {copyError ? <span role="status">{t("copyManually")}</span> : null}
         </div>
       ) : null}
     </article>
@@ -146,6 +146,7 @@ export function ChatScreen({
   context?: string;
   onApplyFlow?(code: string): void;
 }) {
+  const { t } = useConversationMessages();
   const scroll = useRef<HTMLDivElement>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
   const { flags } = useIntegrations();
@@ -160,11 +161,11 @@ export function ChatScreen({
     void workspace.send(workspace.draft, false, context);
   };
   return (
-    <section className="chat-screen" aria-label="本地演示对话">
+    <section className="chat-screen" aria-label={t("demoConversation")}>
       <div className="chat-transcript" ref={scroll}>
         {!messages?.length ? (
           <div className="chat-empty chat-home">
-            <h2>从一个想法开始</h2>
+            <h2>{t("startIdea")}</h2>
           </div>
         ) : (
           messages.map((message) => (
@@ -179,14 +180,14 @@ export function ChatScreen({
         )}
       </div>
       {session?.archivedAt ? (
-        <p className="composer-footnote">这段对话已归档。</p>
+        <p className="composer-footnote">{t("archived")}</p>
       ) : (
         <div className="chat-composer-area">
           <div className="chat-composer">
             <textarea
               ref={editor}
-              aria-label="消息输入框"
-              placeholder="发送消息…"
+              aria-label={t("messageInput")}
+              placeholder={t("messagePlaceholder")}
               value={workspace.draft}
               maxLength={4000}
               disabled={connecting}
@@ -205,7 +206,7 @@ export function ChatScreen({
             <div className="composer-tools">
               <label className="provider-select">
                 <select
-                  aria-label="对话模式"
+                  aria-label={t("conversationMode")}
                   value={workspace.state.provider}
                   disabled={running}
                   onChange={(event) =>
@@ -215,10 +216,10 @@ export function ChatScreen({
                     }))
                   }
                 >
-                  <option value="offline">本地演示</option>
-                  <option value="codex">Codex 订阅</option>
+                  <option value="offline">{t("demo")}</option>
+                  <option value="codex">{t("codex")}</option>
                   <option value="lumina">Lumina</option>
-                  <option value="custom">自定义 API</option>
+                  <option value="custom">{t("customApi")}</option>
                 </select>
               </label>
               <span className="composer-spacer" />
@@ -237,7 +238,7 @@ export function ChatScreen({
               ) : null}
               <button
                 className="send-button"
-                aria-label={running ? "停止生成" : "发送消息"}
+                aria-label={running ? t("stop") : t("send")}
                 disabled={!running && (connecting || !workspace.draft.trim())}
                 onClick={running ? workspace.stop : send}
               >
@@ -245,7 +246,7 @@ export function ChatScreen({
               </button>
             </div>
           </div>
-          <p className="composer-footnote">演示模式 · 未调用真实 AI</p>
+          <p className="composer-footnote">{t("demoHint")}</p>
         </div>
       )}
     </section>

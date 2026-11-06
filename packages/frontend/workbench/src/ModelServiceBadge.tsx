@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "@aura/ui/web";
 import { useTheme } from "@aura/ui/components";
 import { fonts } from "@aura/ui/theme";
 import { readModelServices } from "./modelServices";
+import { useAuthMessages } from "./auth-messages.ts";
 
 /**
  * Header status for gateway providers, in place of the Codex login button.
@@ -19,6 +20,7 @@ export function ModelServiceBadge({
   compact: boolean;
   onOpen(): void;
 }) {
+  const { t } = useAuthMessages();
   const { colors } = useTheme();
   const [ready, setReady] = useState<boolean>();
   useEffect(() => {
@@ -38,19 +40,19 @@ export function ModelServiceBadge({
       });
     return () => abort.abort();
   }, [endpoint, provider]);
-  const name = provider === "lumina" ? "Lumina" : "自定义 API";
+  const name = provider === "lumina" ? "Lumina" : t("customApi");
   const status =
     ready === undefined
-      ? `${name} 检查中`
+      ? t("checkingService", { name })
       : ready
-        ? `${name} 已配置`
-        : `${name} 未配置`;
+        ? t("configuredService", { name })
+        : t("unconfiguredService", { name });
   const label = compact || ready ? name : status;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${status}，打开模型设置`}
-      title={`${status}，打开模型设置`}
+      accessibilityLabel={t("openModelSettings", { status })}
+      title={t("openModelSettings", { status })}
       onPress={onOpen}
       style={({ pressed }) => [
         styles.trigger,

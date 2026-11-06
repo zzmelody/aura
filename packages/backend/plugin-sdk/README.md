@@ -2,12 +2,29 @@
 
 Public authoring contracts for trusted local backend plugins. External plugins
 use its explicit public `action`, `flow`, `backend`, `storage`,
-`media`, `browser` and `errors` exports. The package adapts those stable contracts to Aura
+`media`, `browser`, `metadata` and `errors` exports. The package adapts those stable contracts to Aura
 orchestration without exposing runtime composition, credentials, DSH internals,
 or frontend code.
 
 Plugin dependencies must be installed before Aura starts. Aura discovery is
 read-only and never runs package-manager or lifecycle commands.
+
+## Version 2.5
+
+The optional manifest `localization` field supplies static plugin names,
+Action/Flow titles and descriptions, and JSON Schema display labels before any
+page bundle loads. `@aura/plugin-sdk/metadata` exports `PluginLocalization`,
+`SchemaTextKeys`, `ContributionTextKeys`, `MetadataCatalogs`, `metadataLocales`
+and `isPluginLocalization` for authoring and validation. It has no UI dependency.
+
+Declare `engines.pluginSdk: "^2.5.0"` when using the new manifest field. Existing
+plugins without it keep their original display text and accepted `^2.0.0` ranges.
+Plugins in the separate aura-studio repository can adopt it individually; no
+IDs, schemas, prompts, saved configuration or historical records are migrated.
+Page translations still use the independent `@aura/plugin-ui` contract.
+
+See [static metadata](../../../docs/development/internationalization.md#插件静态元数据)
+for the manifest shape, fallback behavior and display-only boundary.
 
 ## Version 2.2
 
@@ -102,6 +119,18 @@ Plugin Actions may throw `ActionFailure` for a bounded message that is safe to
 persist and show in Workflow UI. Ordinary errors remain generic. Product-facing
 messages must identify the failed stage and next action without credentials,
 private paths, signed URLs, raw provider responses, or stack traces.
+
+SDK 2.6 adds `new ActionFailure(message, { translations: { en, "zh-CN", ja,
+ko, ru, fr }, cause? })`. English is required; missing locales fall back to
+English. These are literal public messages, limited to 2,000 characters each.
+They must not contain private diagnostics or input values. A private direct-call
+callback retains display data outside the Error object and DSH tool result;
+model-visible failures and durable records keep the original message.
+Backends may throw `PluginFailure(message, translations, status?)` from
+`@aura/plugin-sdk/errors` at page/admission boundaries. The host validates the
+display payload and keeps the original message/status. Require SDK `^2.6.0`
+when using these additions; older plugins and the independent aura-studio
+repository can adopt them without changing IDs, schemas or stored data.
 
 ## Product backends
 

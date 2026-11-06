@@ -1,3 +1,12 @@
+import {
+  useConversationMessages,
+  conversationMessage,
+} from "../../conversation-messages.ts";
+import {
+  formatNumber,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
 import React, {
   useCallback,
   useEffect,
@@ -68,6 +77,7 @@ export function useComposerCommands({
   onCommand(command: Exclude<ComposerCommand, "plan" | "goal">): void;
   editor: React.RefObject<HTMLTextAreaElement | null>;
 }) {
+  const { t } = useConversationMessages();
   const [launcherKey, setLauncherKey] = useState<string>();
   const [dismissed, setDismissed] = useState<DraftSelection>();
   const [position, setPosition] = useState<DraftSelection>();
@@ -84,7 +94,7 @@ export function useComposerCommands({
   const [catalog, setCatalog] = useState<{
     key: string;
     skills?: CodingSkillInfo[];
-    error?: string;
+    error?: string | MessageReference;
   }>();
   const id = useId();
   const key = `${endpoint}/${projectId}`;
@@ -111,6 +121,7 @@ export function useComposerCommands({
     catalog?.key !== key || (!catalog.skills && !catalog.error);
   const query = liveSlash?.query ?? search;
   const entries = composerEntries({
+    translate: t,
     flows,
     skills,
     query,
@@ -133,7 +144,7 @@ export function useComposerCommands({
       })
       .catch(() => {
         if (!abort.signal.aborted)
-          setCatalog({ key, error: "Skills 暂时无法读取" });
+          setCatalog({ key, error: conversationMessage("skillsUnavailable") });
       });
     return () => abort.abort();
   }, [visible, endpoint, projectId, key, revision]);
@@ -295,6 +306,7 @@ export function useComposerCommands({
       )?.[1];
       if (!name) return false;
       const entry = composerEntries({
+        translate: t,
         flows,
         skills,
         query: name,
@@ -362,6 +374,7 @@ export function ComposerCommands({
   anchor: React.RefObject<HTMLDivElement | null>;
   flowsLoading: boolean;
 }) {
+  const { t, i18n } = useConversationMessages();
   const popup = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const { visible, searchable, close, active, group } = menu;
@@ -398,26 +411,26 @@ export function ComposerCommands({
       popover="manual"
       className="composer-menu"
       role="dialog"
-      aria-label="对话命令"
+      aria-label={t("conversationCommands")}
     >
       <div className="composer-menu-header">
         {menu.group ? (
           <button
             type="button"
             className="composer-menu-back"
-            aria-label="返回快捷入口"
+            aria-label={t("backShortcuts")}
             onClick={menu.back}
           >
             <ArrowLeft size={14} />
           </button>
         ) : null}
         <span className="composer-menu-title">
-          {menu.group ? composerGroups[menu.group].title : "快捷入口"}
+          {menu.group ? t(composerGroups[menu.group].title) : t("shortcuts")}
         </span>
         <button
           type="button"
           className="composer-menu-close"
-          aria-label="关闭快捷入口"
+          aria-label={t("closeShortcuts")}
           onClick={close}
         >
           <X size={14} />
@@ -428,11 +441,11 @@ export function ComposerCommands({
           <Search size={14} aria-hidden="true" />
           <input
             ref={search}
-            aria-label="搜索命令、Skills 和 Flows"
+            aria-label={t("searchCommands")}
             aria-controls={menu.id}
             aria-activedescendant={menu.activeId}
             value={menu.query}
-            placeholder="搜索命令、Skills 和 Flows…"
+            placeholder={t("searchCommandsPlaceholder")}
             onChange={(event) => menu.setQuery(event.target.value)}
             onKeyDown={menu.handleKey}
           />
@@ -442,7 +455,9 @@ export function ComposerCommands({
         className="composer-menu-list"
         id={menu.id}
         role="listbox"
-        aria-label={menu.group ? composerGroups[menu.group].title : "快捷入口"}
+        aria-label={
+          menu.group ? t(composerGroups[menu.group].title) : t("shortcuts")
+        }
       >
         {menu.entries.map((entry, index) => (
           <button
@@ -471,7 +486,7 @@ export function ComposerCommands({
                 <span className="composer-menu-count">
                   {entry.group === "skills" && menu.skillsLoading
                     ? "…"
-                    : entry.count}
+                    : formatNumber(entry.count)}
                 </span>
                 <ChevronRight size={14} aria-hidden="true" />
               </span>
@@ -480,7 +495,7 @@ export function ComposerCommands({
             ) : (
               <span className="composer-menu-kind">
                 {entry.disabled
-                  ? "不可用"
+                  ? t("unavailable")
                   : entry.kind === "skill"
                     ? "Skill"
                     : "Flow"}
@@ -490,28 +505,31 @@ export function ComposerCommands({
         ))}
         {!menu.entries.length ? (
           <p className="composer-menu-empty" role="status">
-            {loading ? "正在读取目录…" : "没有匹配的项目"}
+            {loading ? t("loadingCatalog") : t("noItems")}
           </p>
         ) : null}
       </div>
       {menu.skillsError && (!menu.group || menu.group === "skills") ? (
         <div className="composer-menu-error" role="status">
-          {menu.skillsError}
+          {messageText(menu.skillsError, i18n)}
           <button type="button" onClick={menu.retry}>
-            重试
+            {t("retry")}
           </button>
         </div>
       ) : null}
       <div className="composer-menu-footer" aria-hidden="true">
         <span>
           <kbd>↑</kbd>
-          <kbd>↓</kbd> 选择
+          <kbd>↓</kbd>
+          {t("select")}
         </span>
         <span>
-          <kbd>↵</kbd> 确认
+          <kbd>↵</kbd>
+          {t("confirm")}
         </span>
         <span className="composer-menu-dismiss">
-          <kbd>Esc</kbd> 关闭
+          <kbd>Esc</kbd>
+          {t("close")}
         </span>
       </div>
     </div>

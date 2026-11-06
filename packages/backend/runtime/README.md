@@ -1,6 +1,18 @@
 # @aura/runtime
 
+运行时测试会启动真实 DSH 子进程，包级测试文件并发限制为 2，避免多实例启动争抢资源而耗尽诊断测试的原有时限。超时、断言及付费测试的环境门控保持不变；浏览器回归单独串行运行。
+
+HTTP 校验与访问限制携带稳定显示码，包括对话/模型目录、编码设置、功能与语音、插件页面、模型配置与授权结果。原正文和状态码保留；`AiConfigurationError` 与 Codex 状态仅投影受限详情，不暴露原因对象、凭据或输入值。前端保存语义引用，语言切换不重发请求。`api-server.test.ts`、`ai-services.test.ts` 与授权测试验证边界和拒绝后数据不变。
+
+`/ai/services` 通过可选 `checkDetails` 返回模型列表同步与实际模型请求各自的结构化结果，同时保留原 `checks` 文本。`model-probe.ts` 只投影受控失败原因，模型 ID、耗时和成功回复保留原值。检查结果仅在运行时内存中保存，不写配置；模型请求仍经过 DSH，仅由原有显式操作触发，语言切换不重试。`model-connection.test.ts` 使用真实 DSH 与本机合成服务验证成功、拒绝、空回复、请求次数及凭据隔离，不调用付费服务。
+
+插件静态 `localization` 只在宿主向界面返回 Flow catalog 时附加。DSH 子进程环境、动态 `plugins/configure` 参数与执行目录不包含翻译资源，避免大词库超过 Windows 环境变量限制，也不把界面资源传给模型或持久化身份。目录 ETag 包含这份显示资源；语言切换无需重新读取。`host-health.test.ts` 用真实 DSH 子进程验证初次加载、动态替换与执行边界，不调用外部模型。
+
 Runtime 的 `src/dsh/` 启动并管理一个长驻 DSH 进程。进程内装配 [Agent 会话](../agent-runtime/README.md)、[工作区与终端](../workspace/README.md) 和 [Flow 服务](../orchestration/README.md)。
+
+界面错误通过 `CodedFlowError` 增量提供稳定 code 和限定参数。DSH RPC 与 Flow、编码、会话、终端、集成和插件调用的 HTTP 错误投影保留这些字段及既有 message/status；未接入的旧错误继续按原文返回。编排启动/断连、Flow HTTP 校验和图片上传限制已接入。错误详情不改变执行、取消、幂等或重试策略，未知码和未声明参数不跨边界透传。`api-error-routes.test.ts` 验证合成端口的投影与原始异常隔离；`host-health.test.ts` 验证真实 DSH 子进程中的错误码往返，不调用外部模型。
+
+旧 chat/coding NDJSON 错误保留允许公开的稳定码，沿用原有安全过滤与 message。拒绝准入的纯文本 HTTP 响应保持原正文和状态，在 `X-Aura-Error-Code` 响应头附加受控码，并通过既有 CORS 策略向允许的来源公开此头。`api-server.test.ts` 覆盖兼容响应、流式投影和非公开异常遮蔽，不触发外部请求。
 
 Aura 的编排子进程通过 DSH 的公开 `runProfile()` 启动 `aura-flow`。环境分层、profile 合并、Cordis 服务装配和退出清理由 DSH 处理。父子进程通过 stdio RPC 通信，启动异常通过 Aura 的脱敏诊断输出。
 

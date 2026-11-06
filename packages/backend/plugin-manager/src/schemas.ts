@@ -1,6 +1,10 @@
 import { valid, validRange } from "semver";
 import { z } from "zod";
 import { isPluginHttpMount } from "@aura/protocol/plugin-http";
+import {
+  isPluginLocalization,
+  type PluginLocalization,
+} from "@aura/protocol/localization";
 const pluginIdPattern = /^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$/u;
 export const localIdPattern = /^[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?$/u;
 
@@ -62,6 +66,7 @@ export const manifestSchema = z
     name: z.string().trim().min(1).max(80),
     version: z.string().refine((value) => Boolean(valid(value))),
     description: z.string().max(500).optional(),
+    localization: z.custom<PluginLocalization>(isPluginLocalization).optional(),
     homepage: z.string().optional(),
     license: z.string().optional(),
     engines: z

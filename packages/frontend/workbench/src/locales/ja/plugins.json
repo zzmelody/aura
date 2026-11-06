@@ -1,0 +1,21 @@
+{
+  "scriptTimeout": "プラグインスクリプトの読み込みがタイムアウトしました。",
+  "scriptLoadFailed": "プラグインスクリプトを読み込めませんでした。",
+  "missingApply": "プラグインのブラウザーエントリーが apply(ctx) をエクスポートしていません。",
+  "duplicatePage": "プラグインページ {{id}} は登録済みです。",
+  "duplicateResult": "プラグインの結果ビュー {{id}} は登録済みです。",
+  "alreadyStarted": "このページではプラグインモジュールシステムが既に起動しています。ページを再読み込みしてください。",
+  "loaderUnavailable": "Aura サービスから DSH モジュールローダーが提供されていません。",
+  "loaderUnregistered": "DSH モジュールローダーの登録が完了していません。",
+  "loaderBeforeStartup": "DSH モジュールローダーが起動前に {{specifier}} を要求しました。",
+  "graphUpdateUnsupported": "DSH モジュールシステムは実行中のモジュールグラフ更新に対応していません。",
+  "pagesReadFailed": "プラグインページを読み込めませんでした（{{status}}）。",
+  "graphReadFailed": "プラグインのモジュールグラフを読み込めませんでした（{{status}}）。",
+  "renderFailed": "プラグインページを描画できませんでした。",
+  "pageOpenFailed": "{{label}}を開けません：{{message}}",
+  "settingsReadFailed": "プラグインフォルダーを読み込めませんでした（{{status}}）。",
+  "settingsSaveFailed": "プラグインフォルダーを保存できませんでした（{{status}}）。",
+  "invokeFailed": "プラグインページのリクエストに失敗しました（{{status, number}}）。",
+  "directoryDesktopOnly": "フォルダーの選択には Aura Desktop が必要です。",
+  "previewDesktopOnly": "サイトのプレビューには Aura Desktop が必要です。"
+}

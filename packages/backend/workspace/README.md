@@ -6,4 +6,6 @@
 
 ## 验证
 
+工作区目录、名称、默认工作区约束和终端请求／关闭确认的安全错误使用 `CodedFlowError` 附加稳定显示码，保留原 message/status。错误详情不包含目录或终端输出；目录注册、终端身份、强制关闭确认和进程清理规则保持原样。`coding-workspaces-dsh.test.ts` 在 runtime 包中验证真实 DSH RPC 的错误码往返，终端测试验证拒绝关闭仍不会结束进程。
+
 从仓库根运行 `pnpm --filter @aura/workspace run typecheck` 和 `pnpm --filter @aura/workspace run test`。项目变更与 HTTP 集成测试位于 `@aura/runtime`。

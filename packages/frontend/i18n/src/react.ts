@@ -81,7 +81,9 @@ export function useMessages<Key extends string = string>(namespace: string) {
     // Catalog validation guarantees flat string values. This narrows the keys
     // without replacing react-i18next's stable, language-bound t function.
     t: messages.t as (key: Key, options?: TOptions) => string,
-    i18n: messages.i18n,
+    // Resource ownership and effect dependencies need the controller's stable
+    // instance. react-i18next may return a new language-bound wrapper instead.
+    i18n: controller.i18n,
     ready: messages.ready,
   };
 }

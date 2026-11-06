@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
 import type { FlowSource } from "@aura/protocol/types";
+import {
+  MessageError,
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import {
+  useWorkflowMessages,
+  workflowMessage as message,
+} from "./workflow-messages.ts";
 
 /** Fetch only the selected entry; switching selection cancels stale previews. */
 export function useFlowSource(
@@ -7,11 +17,12 @@ export function useFlowSource(
   id: string,
   revision?: string | number,
 ) {
+  const { i18n } = useWorkflowMessages();
   const key = `${endpoint}\n${id}\n${revision ?? ""}`;
   const [result, setResult] = useState<{
     key: string;
     source?: FlowSource;
-    error?: string;
+    error?: string | MessageReference;
   }>();
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -25,19 +36,18 @@ export function useFlowSource(
           { signal: abort.signal },
         );
         if (!response.ok)
-          throw new Error(
-            `无法读取流程预览（${response.status}），请确认服务已更新。`,
+          throw new MessageError(
+            message("previewRequestFailed", { status: response.status }),
           );
         const source = (await response.json()) as FlowSource;
         if (source.id !== id || typeof source.code !== "string")
-          throw new Error("流程预览内容无效。");
+          throw new MessageError(message("previewInvalid"));
         if (!abort.signal.aborted) setResult({ key, source });
       } catch (cause) {
         if (!abort.signal.aborted)
           setResult({
             key,
-            error:
-              cause instanceof Error ? cause.message : "无法读取流程预览。",
+            error: errorMessage(cause, message("previewFailed")),
           });
       }
     })();
@@ -45,7 +55,10 @@ export function useFlowSource(
   }, [endpoint, id, key, retry]);
   return {
     source: result?.key === key ? result.source : undefined,
-    error: result?.key === key ? result.error : undefined,
+    error:
+      result?.key === key && result.error
+        ? messageText(result.error, i18n)
+        : undefined,
     refresh: () => setRetry((value) => value + 1),
   };
 }

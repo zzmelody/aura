@@ -1,0 +1,23 @@
+{
+  "unchecked": "Non vérifié",
+  "key_required": "Enregistrez d’abord votre clé Lumina.",
+  "discovery_failed": "Échec de la connexion. Vérifiez votre clé et votre réseau.",
+  "catalog_failed": "Impossible de récupérer les modèles. Saisissez un ID de modèle pour tester la connexion.",
+  "models_synced_one": "Connexion établie. {{count, number}} modèle de chat synchronisé.",
+  "models_synced_other": "Connexion établie. {{count, number}} modèles de chat synchronisés.",
+  "models_synced_many": "Connexion établie. {{count, number}} modèles de chat synchronisés.",
+  "models_listed_one": "{{count, number}} modèle récupéré. Aucune requête au modèle n’a encore été testée.",
+  "models_listed_other": "{{count, number}} modèles récupérés. Aucune requête au modèle n’a encore été testée.",
+  "models_listed_many": "{{count, number}} modèles récupérés. Aucune requête au modèle n’a encore été testée.",
+  "probe_succeeded": "Test réussi · {{model}} · {{elapsedMs, number}} ms · Réponse : {{reply}}",
+  "probe_failed": "Échec du test · {{model}} · {{reason}}",
+  "timeout": "La requête a expiré ou a été annulée. Vérifiez votre réseau et réessayez.",
+  "authentication": "Échec de l’authentification. Vérifiez la clé du modèle ou reconnectez-vous.",
+  "permission": "Vous n’avez pas l’autorisation d’utiliser le modèle sélectionné.",
+  "not_found": "Modèle ou adresse API introuvable. Vérifiez l’adresse, le protocole et l’ID du modèle.",
+  "rate_limit": "Limite de requêtes ou quota atteint. Vérifiez votre compte avant de réessayer.",
+  "empty_response": "Le service n’a renvoyé aucun texte valide. Vérifiez le modèle et le protocole.",
+  "unsupported": "Le modèle ou les paramètres sélectionnés ne sont pas pris en charge. Vérifiez le modèle et le niveau de raisonnement.",
+  "request_failed": "Échec de la requête au modèle. Vérifiez le protocole, l’adresse, le réseau et l’état du service.",
+  "settingsUnavailable": "Les paramètres du service de modèles sont indisponibles ({{status}})."
+}

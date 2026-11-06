@@ -12,6 +12,12 @@ import { installWindowHost, installWorkbenchBackdrop } from "./window-host.ts";
 import { installFileRevealHost } from "./file-reveal-host.ts";
 import { startRendererServer } from "./renderer-server.ts";
 import { installBrowserHost, registerBrowserOwner } from "./browser-host.ts";
+import {
+  initializeNativeLanguage,
+  installLanguageHost,
+  registerLanguageOwner,
+} from "./language-host.ts";
+import { desktopText as t } from "./desktop-messages.ts";
 
 const sourceDir = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(sourceDir, "..");
@@ -25,6 +31,7 @@ installBrowserHost();
 installWorkflowFileHost();
 installWindowHost();
 installFileRevealHost();
+installLanguageHost();
 // Renaming Electron on Windows sets isPackaged even through the default loader.
 const development =
   process.defaultApp === true && process.argv.includes("--dev");
@@ -141,15 +148,13 @@ async function openWorkbench() {
   window.setMenu(null);
   installWorkbenchBackdrop(window);
   registerBrowserOwner(window, url);
+  registerLanguageOwner(window, url);
   runtimeStartup = ensureRuntime().then(() => {
     if (!closingServices) watchBorrowedRuntime();
   });
   void runtimeStartup.catch(() => {
     if (!closingServices)
-      dialog.showErrorBox(
-        "Aura 服务启动失败",
-        "工作台已打开，请检查本地服务后重试。",
-      );
+      dialog.showErrorBox(t("runtimeStartFailed"), t("runtimeStartDetail"));
   });
   window.webContents.on("preload-error", (_event, _path, error) => {
     console.error("Aura desktop bridge failed to load:", error.message);
@@ -234,19 +239,20 @@ app.on("before-quit", (event) => {
     .catch((error) => {
       closingServices = false;
       dialog.showErrorBox(
-        "Aura 退出清理失败",
-        error instanceof Error ? error.message : "请重试退出。",
+        t("quitFailed"),
+        error instanceof Error ? error.message : t("quitRetry"),
       );
     });
 });
 app.on("will-quit", () => renderer?.close());
 app
   .whenReady()
+  .then(initializeNativeLanguage)
   .then(openWorkbench)
   .catch((error) => {
     dialog.showErrorBox(
-      "Aura 无法启动",
-      error instanceof Error ? error.message : "桌面服务启动失败。",
+      t("startFailed"),
+      error instanceof Error ? error.message : t("startDetail"),
     );
     app.quit();
   });

@@ -26,7 +26,9 @@ export async function readAuraPluginConfiguration(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT")
       return { version: 1, plugins: [] };
-    throw new AuraPluginConfigurationError("plugins.json 不可访问。");
+    throw new AuraPluginConfigurationError("plugins.json 不可访问。", {
+      code: "plugin_config_unreadable",
+    });
   }
   try {
     return parseConfiguration(JSON.parse(content) as unknown);
@@ -34,6 +36,7 @@ export async function readAuraPluginConfiguration(
     if (error instanceof AuraPluginConfigurationError) throw error;
     throw new AuraPluginConfigurationError(
       "plugins.json 不是有效的 UTF-8 JSON。",
+      { code: "plugin_json_invalid" },
     );
   }
 }
@@ -59,7 +62,9 @@ export async function writeAuraPluginConfiguration(
     });
     await rename(temporary, target);
   } catch {
-    throw new AuraPluginConfigurationError("插件配置保存失败。");
+    throw new AuraPluginConfigurationError("插件配置保存失败。", {
+      code: "plugin_config_write_failed",
+    });
   } finally {
     await rm(temporary, { force: true }).catch(() => undefined);
   }

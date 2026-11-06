@@ -1,10 +1,10 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import { createHash } from "node:crypto";
 import { open, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { WorkflowArtifact } from "@aura/protocol/types";
 import { validArtifactId } from "./media.ts";
-import { FlowError } from "../schema.ts";
 
 export interface ArtifactFile {
   artifact: Pick<WorkflowArtifact, "name" | "mimeType"> &
@@ -63,10 +63,14 @@ export async function artifactResponse(
       "zip",
     ].includes(format)
   )
-    throw new FlowError("产物不存在。", 404);
+    throw new CodedFlowError("产物不存在。", 404, {
+      code: "artifact_not_found",
+    });
   const download = new URL(request.url).searchParams.get("download") === "1";
   if (!thumbnail && artifact.status === "unsupported" && !download)
-    throw new FlowError("文件格式不支持预览，请下载查看。", 415);
+    throw new CodedFlowError("文件格式不支持预览，请下载查看。", 415, {
+      code: "artifact_preview_unsupported",
+    });
   const path = join(root, `${fileId}.${format}`);
   let file;
   try {
@@ -147,6 +151,8 @@ export async function artifactResponse(
     });
   } catch {
     await file?.close().catch(() => {});
-    throw new FlowError("产物文件不可用，请重试或检查原生成文件。", 404);
+    throw new CodedFlowError("产物文件不可用，请重试或检查原生成文件。", 404, {
+      code: "artifact_file_unavailable",
+    });
   }
 }

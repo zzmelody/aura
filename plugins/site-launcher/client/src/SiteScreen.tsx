@@ -14,17 +14,15 @@ import {
   Trash2,
 } from "lucide-react";
 import { platform } from "@aura/workbench/plugin";
+import { messageText } from "@aura/plugin-ui";
 import { useSiteProjects, type SiteHostApi } from "./site";
 import type { SiteStatus } from "@aura/protocol/types";
-
-function statusCopy(state: SiteStatus["state"]): string {
-  if (state === "starting") return "启动中";
-  if (state === "stopping") return "停止中";
-  if (state === "running") return "运行中";
-  if (state === "stopped") return "已停止";
-  if (state === "error") return "需要处理";
-  return "待运行";
-}
+import {
+  useSiteMessages,
+  isSiteMessageKey,
+  siteStatusText,
+  sitePortText,
+} from "./messages";
 
 function statusTone(state: SiteStatus["state"]): string {
   return state === "running"
@@ -42,6 +40,10 @@ function shortPath(directory: string): string {
 }
 
 export function SiteScreen({ host }: { host?: SiteHostApi }) {
+  const { t, i18n } = useSiteMessages();
+  const number = new Intl.NumberFormat(i18n.resolvedLanguage, {
+    minimumIntegerDigits: 2,
+  });
   const site = useSiteProjects(host);
   const project = site.selected;
   const status = site.selectedStatus;
@@ -52,51 +54,53 @@ export function SiteScreen({ host }: { host?: SiteHostApi }) {
   const desktop = platform() === "desktop";
 
   return (
-    <section className="site-page" aria-label="Site 本地项目运行器">
+    <section className="site-page" aria-label={t("runner")}>
       <div className="site-page-inner">
         <header className="site-hero site-hero-compact">
           <div className="site-hero-copy">
-            <span className="site-eyebrow">LOCAL / SITE RUNNER</span>
-            <h1>本地站点，一处管理。</h1>
-            <p>
-              把常用前端项目放在这里。每个项目都有独立的启动进程、预览窗口和端口。
-            </p>
+            <span className="site-eyebrow">{t("eyebrow")}</span>
+            <h1>{t("headline")}</h1>
+            <p>{t("description")}</p>
           </div>
-          <div className="site-hero-stats" aria-label="Site 概览">
-            <strong>{site.projects.length.toString().padStart(2, "0")}</strong>
-            <span>已保存项目</span>
+          <div className="site-hero-stats" aria-label={t("overview")}>
+            <strong>{number.format(site.projects.length)}</strong>
+            <span>{t("savedProjects")}</span>
             <i />
-            <strong>{site.runningCount.toString().padStart(2, "0")}</strong>
-            <span>正在运行</span>
+            <strong>{number.format(site.runningCount)}</strong>
+            <span>{t("runningProjects")}</span>
           </div>
         </header>
 
+        {site.chooseError !== undefined ? (
+          <p className="site-port-message" role="alert">
+            {typeof site.chooseError === "string" &&
+            isSiteMessageKey(site.chooseError)
+              ? t(site.chooseError)
+              : messageText(site.chooseError, i18n)}
+          </p>
+        ) : null}
         {!desktop || !site.available ? (
           <div className="site-unavailable" role="status">
             <MonitorOnly />
             <div>
               <strong>
-                {desktop ? "桌面连接未就绪" : "本机目录运行仅支持 Aura Desktop"}
+                {desktop ? t("desktopNotReady") : t("desktopOnly")}
               </strong>
-              <p>
-                {desktop
-                  ? "请完全退出 Aura，然后重新运行 pnpm desktop，以加载目录选择和项目运行功能。"
-                  : "在桌面版中打开这个菜单，就可以选择目录并运行前端项目。"}
-              </p>
+              <p>{desktop ? t("restartDesktop") : t("openDesktop")}</p>
             </div>
           </div>
         ) : (
           <div className="site-console">
-            <aside className="site-project-list" aria-label="Site 项目列表">
+            <aside className="site-project-list" aria-label={t("projectList")}>
               <div className="site-list-heading">
                 <div>
-                  <span className="site-card-kicker">PROJECTS</span>
-                  <strong>我的站点</strong>
+                  <span className="site-card-kicker">{t("projects")}</span>
+                  <strong>{t("mySites")}</strong>
                 </div>
                 <button
                   className="icon-control"
-                  aria-label="添加项目"
-                  title="添加项目"
+                  aria-label={t("addProject")}
+                  title={t("addProject")}
                   onClick={() => void site.chooseDirectory()}
                   disabled={site.busyIds.size > 0}
                 >
@@ -108,7 +112,8 @@ export function SiteScreen({ host }: { host?: SiteHostApi }) {
                 onClick={() => void site.chooseDirectory()}
                 disabled={site.busyIds.size > 0}
               >
-                <FolderOpen size={15} /> 添加项目目录
+                <FolderOpen size={15} />
+                {t("addDirectory")}
               </button>
               <div className="site-list-items">
                 {site.projects.map((item) => {
@@ -140,16 +145,16 @@ export function SiteScreen({ host }: { host?: SiteHostApi }) {
                   <div className="site-list-empty">
                     <Server size={20} />
                     <span>
-                      还没有项目
+                      {t("noProjects")}
                       <br />
-                      添加一个目录开始
+                      {t("addFirst")}
                     </span>
                   </div>
                 ) : null}
               </div>
               <div className="site-list-note">
                 <span className="site-list-dot online" />
-                每个项目可以独立运行
+                {t("independent")}
               </div>
             </aside>
 
@@ -167,9 +172,11 @@ export function SiteScreen({ host }: { host?: SiteHostApi }) {
         )}
 
         <footer className="site-footnote">
-          <span>LOCAL PROCESS · PORTS AUTO ASSIGNED</span>
+          <span>{t("processNote")}</span>
           <span>
-            {desktop ? `${site.runningCount} 个项目可独立预览` : "需要桌面版"}
+            {desktop
+              ? t("previewCount", { count: site.runningCount })
+              : t("desktopRequired")}
           </span>
         </footer>
       </div>
@@ -185,25 +192,27 @@ function ProjectDetail({
 }: {
   site: ReturnType<typeof useSiteProjects>;
   project: NonNullable<ReturnType<typeof useSiteProjects>["selected"]>;
-  status: SiteStatus;
+  status: ReturnType<typeof useSiteProjects>["selectedStatus"];
   active: boolean;
 }) {
+  const { t, i18n } = useSiteMessages();
   const busy = site.busyIds.has(project.id);
+  const portMessage = sitePortText(status.portDetails, status.portMessage, t);
   return (
     <main className="site-detail">
       <div className="site-detail-heading">
         <div className="site-detail-title">
           <span className={`site-status-dot ${statusTone(status.state)}`} />
           <div>
-            <span className="site-card-kicker">SELECTED PROJECT</span>
+            <span className="site-card-kicker">{t("selectedProject")}</span>
             <h2>{project.name}</h2>
             <p title={project.directory}>{project.directory}</p>
           </div>
         </div>
         <button
           className="icon-control site-delete"
-          aria-label="移除项目"
-          title="从列表移除"
+          aria-label={t("removeProject")}
+          title={t("removeFromList")}
           onClick={() => site.remove(project.id)}
           disabled={busy || active}
         >
@@ -213,11 +222,12 @@ function ProjectDetail({
       <div className="site-detail-grid">
         <section className="site-config-card">
           <div className="site-section-label">
-            <Terminal size={14} /> 项目配置
+            <Terminal size={14} />
+            {t("configuration")}
           </div>
           <div className="site-fields">
             <label>
-              <span>启动脚本</span>
+              <span>{t("script")}</span>
               <select
                 value={project.script}
                 disabled={active || busy}
@@ -233,7 +243,7 @@ function ProjectDetail({
               </select>
             </label>
             <label>
-              <span>预览地址（默认端口）</span>
+              <span>{t("previewAddress")}</span>
               <input
                 value={project.url}
                 disabled={active || busy}
@@ -248,17 +258,15 @@ function ProjectDetail({
             <span>
               <Terminal size={13} /> {project.packageManager}
             </span>
-            <span>{project.scripts.length} 个可用脚本</span>
+            <span>{t("scriptCount", { count: project.scripts.length })}</span>
           </div>
-          <p className="site-port-help">
-            已识别的开发服务器会从默认端口开始自动寻找可用端口。多个项目可以同时运行。
-          </p>
+          <p className="site-port-help">{t("portHelp")}</p>
         </section>
         <section className={`site-run-card${active ? " active" : ""}`}>
           <div className="site-run-heading">
             <span className={`site-status-dot ${statusTone(status.state)}`} />
-            <span>运行状态</span>
-            <strong>{statusCopy(status.state)}</strong>
+            <span>{t("runStatus")}</span>
+            <strong>{t(status.state)}</strong>
           </div>
           <div className="site-run-body">
             {status.state === "error" ? (
@@ -269,15 +277,28 @@ function ProjectDetail({
               <Play size={25} className="site-run-icon" />
             )}
             <p>
-              {status.message ??
+              {(status.errorText !== undefined
+                ? typeof status.errorText === "string" &&
+                  isSiteMessageKey(status.errorText)
+                  ? t(status.errorText)
+                  : messageText(status.errorText, i18n)
+                : status.messageKey
+                  ? t(status.messageKey)
+                  : siteStatusText(
+                      status.messageDetails,
+                      status.message && isSiteMessageKey(status.message)
+                        ? t(status.message)
+                        : status.message,
+                      t,
+                    )) ??
                 (status.previewReady
-                  ? `预览已就绪：${project.url}`
-                  : "运行脚本后会自动打开独立预览窗口。")}
+                  ? t("previewReady", { url: project.url })
+                  : t("autoPreview"))}
             </p>
           </div>
-          {status.portMessage ? (
+          {portMessage ? (
             <p className="site-port-message" role="status">
-              {status.portMessage}
+              {portMessage}
             </p>
           ) : null}
           <div className="site-run-actions">
@@ -287,7 +308,8 @@ function ProjectDetail({
                 disabled={busy || status.state === "stopping"}
                 onClick={() => void site.stop(project.id)}
               >
-                <Square size={14} /> 停止项目
+                <Square size={14} />
+                {t("stopProject")}
               </button>
             ) : (
               <button
@@ -295,7 +317,7 @@ function ProjectDetail({
                 disabled={busy}
                 onClick={() => void site.run(project.id)}
               >
-                <Play size={14} /> {busy ? "正在准备…" : "运行项目"}
+                <Play size={14} /> {busy ? t("preparing") : t("runProject")}
               </button>
             )}
             {status.previewReady ? (
@@ -304,12 +326,13 @@ function ProjectDetail({
                 disabled={busy}
                 onClick={() => void site.open(project.id)}
               >
-                <ExternalLink size={14} /> 打开预览
+                <ExternalLink size={14} />
+                {t("openPreview")}
               </button>
             ) : null}
           </div>
           {status.output ? (
-            <pre className="site-output" aria-label="项目输出">
+            <pre className="site-output" aria-label={t("output")}>
               {status.output}
             </pre>
           ) : null}
@@ -318,24 +341,24 @@ function ProjectDetail({
       <div className="site-detail-footer">
         <span>
           <Globe2 size={14} />{" "}
-          {status.previewReady
-            ? "预览窗口已关联"
-            : "预览窗口将在服务就绪后打开"}
+          {status.previewReady ? t("previewLinked") : t("previewWillOpen")}
         </span>
-        <span>{status.pid ? `PID ${status.pid}` : "尚未启动"}</span>
+        <span>{status.pid ? `PID ${status.pid}` : t("notStarted")}</span>
       </div>
     </main>
   );
 }
 
 function EmptyDetail({ onAdd }: { onAdd(): void }) {
+  const { t } = useSiteMessages();
   return (
     <main className="site-detail site-detail-empty">
       <Globe2 size={40} className="aura-icon--display aura-icon--muted" />
-      <h2>选择一个项目</h2>
-      <p>从左侧添加或选择一个前端项目，开始本地预览。</p>
+      <h2>{t("selectProject")}</h2>
+      <p>{t("selectHint")}</p>
       <button className="primary-button" onClick={onAdd}>
-        <FolderOpen size={15} /> 添加项目目录
+        <FolderOpen size={15} />
+        {t("addDirectory")}
       </button>
     </main>
   );

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { FlowError, type OrchestrationHost } from "./dsh/host.ts";
+import { flowErrorBody } from "@aura/protocol/errors";
 import type {
   AgentTeamView,
   ConversationSearchHit,
@@ -22,7 +23,7 @@ export function createIntegrationApp(
   app.onError((error, context) =>
     error instanceof FlowError
       ? context.json(
-          { message: error.message },
+          flowErrorBody(error),
           error.status === 400
             ? 400
             : error.status === 409
@@ -33,12 +34,18 @@ export function createIntegrationApp(
                   ? 502
                   : 503,
         )
-      : context.json({ message: "暂时无法使用此功能。" }, 503),
+      : context.json(
+          { message: "暂时无法使用此功能。", code: "integration_unavailable" },
+          503,
+        ),
   );
   app.use("/settings", async (context, next) => {
     if (!local)
       return context.json(
-        { message: "功能开关和 MCP 配置只能通过本机 Aura 服务修改。" },
+        {
+          message: "功能开关和 MCP 配置只能通过本机 Aura 服务修改。",
+          code: "integrations_local_only",
+        },
         403,
       );
     await next();
@@ -56,12 +63,21 @@ export function createIntegrationApp(
     bodyLimit({
       maxSize: 64 * 1024,
       onError: (context) =>
-        context.json({ message: "功能设置内容过大。" }, 413),
+        context.json(
+          { message: "功能设置内容过大。", code: "integrations_too_large" },
+          413,
+        ),
     }),
     async (context) => {
       const body: unknown = await context.req.json().catch(() => undefined);
       if (typeof body !== "object" || body === null || Array.isArray(body))
-        return context.json({ message: "功能设置不是有效 JSON。" }, 400);
+        return context.json(
+          {
+            message: "功能设置不是有效 JSON。",
+            code: "integrations_json_invalid",
+          },
+          400,
+        );
       return context.json(
         await host.request<IntegrationSettings>("integrations/save", body),
       );
@@ -98,7 +114,10 @@ export function createIntegrationApp(
   app.post("/voice/:action{prepare|cancel}", async (context) => {
     if (!local)
       return context.json(
-        { message: "请在 Aura 服务所在设备准备语音模型。" },
+        {
+          message: "请在 Aura 服务所在设备准备语音模型。",
+          code: "voice_prepare_local_only",
+        },
         403,
       );
     const { voicePhase } = await host.request<IntegrationSettings>(
@@ -114,7 +133,13 @@ export function createIntegrationApp(
     bodyLimit({
       maxSize: 960_044,
       onError: (context) =>
-        context.json({ message: "录音文件超过 30 秒的大小上限。" }, 413),
+        context.json(
+          {
+            message: "录音文件超过 30 秒的大小上限。",
+            code: "voice_recording_too_large",
+          },
+          413,
+        ),
     }),
     async (context) => {
       const type = context.req
@@ -123,7 +148,10 @@ export function createIntegrationApp(
         .trim()
         .toLowerCase();
       if (type !== "audio/wav")
-        return context.json({ message: "需要 WAV 录音。" }, 415);
+        return context.json(
+          { message: "需要 WAV 录音。", code: "voice_format_invalid" },
+          415,
+        );
       const audio = Buffer.from(await context.req.arrayBuffer());
       return context.json(
         await host.transcribeVoice(

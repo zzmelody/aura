@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { FlowError } from "@aura/protocol/errors";
+import {
+  CodedFlowError,
+  FlowError,
+  readErrorDetails,
+  type ApiErrorDetails,
+} from "@aura/protocol/errors";
 import { isExecutionActive } from "@aura/protocol/conversation-channel";
 import type {
   ConversationCommand,
@@ -46,6 +51,16 @@ export class ConversationExecutions {
   private readonly latest = new Map<string, string>();
   private readonly pending = new Map<string, Promise<ConversationReceipt>>();
   private readonly receipts = new Map<string, ConversationCommandRecord>();
+  // Presentation metadata lives only beside the durable records, never inside them.
+  private readonly feedback = new Map<
+    string,
+    {
+      receipt?: ApiErrorDetails;
+      execution?: ApiErrorDetails;
+      sessionId?: string;
+      turnId?: string;
+    }
+  >();
   private readonly dispatches = new Set<Promise<void>>();
   private closed = false;
 
@@ -71,6 +86,13 @@ export class ConversationExecutions {
 
   private project(record: ConversationCommandRecord): ConversationReceipt {
     const receipt = structuredClone(record.receipt);
+    const details = this.feedback.get(
+      commandKey(receipt.sessionId, receipt.commandId),
+    );
+    if (details?.receipt)
+      receipt.errorDetails = structuredClone(details.receipt);
+    if (receipt.execution && details?.execution)
+      receipt.execution.errorDetails = structuredClone(details.execution);
     if (record.epoch !== this.epoch) {
       if (receipt.status === "accepted") receipt.status = "uncertain";
       if (isExecutionActive(receipt.execution))
@@ -78,6 +100,7 @@ export class ConversationExecutions {
           ...receipt.execution!,
           status: "interrupted",
           error: "执行宿主已重启，请检查已完成的工作后决定是否继续。",
+          errorDetails: { code: "conversation_host_restarted" },
         };
     }
     return receipt;
@@ -85,7 +108,10 @@ export class ConversationExecutions {
 
   receipt(id: string, commandId: string): ConversationReceipt {
     const record = this.record(commandKey(id, commandId));
-    if (!record) throw new FlowError("尚未找到这条命令的接收记录。", 404);
+    if (!record)
+      throw new CodedFlowError("尚未找到这条命令的接收记录。", 404, {
+        code: "conversation_receipt_missing",
+      });
     const receipt = this.project(record);
     const live = this.active.get(id);
     if (receipt.execution && live?.state.id === receipt.executionId)
@@ -117,7 +143,10 @@ export class ConversationExecutions {
     id: string,
     command: ConversationCommand,
   ): Promise<ConversationReceipt> {
-    if (this.closed) throw new FlowError("会话服务正在关闭。", 503);
+    if (this.closed)
+      throw new CodedFlowError("会话服务正在关闭。", 503, {
+        code: "conversation_service_closing",
+      });
     const key = commandKey(id, command.commandId);
     const digest = commandDigest(command);
     const inFlight = this.pending.get(key);
@@ -125,7 +154,9 @@ export class ConversationExecutions {
     const existing = this.record(key);
     if (existing) {
       if (existing.digest !== digest)
-        throw new FlowError("命令 ID 已用于不同的内容。", 409);
+        throw new CodedFlowError("命令 ID 已用于不同的内容。", 409, {
+          code: "conversation_command_conflict",
+        });
       return this.receipt(id, command.commandId);
     }
     const admitted = this.admit(id, command, key, digest);
@@ -146,7 +177,9 @@ export class ConversationExecutions {
     let execution: Execution | undefined;
     if (command.type === "turn.start") {
       if (this.active.has(id))
-        throw new FlowError("这段对话还有一项执行在进行。", 409);
+        throw new CodedFlowError("这段对话还有一项执行在进行。", 409, {
+          code: "conversation_execution_active",
+        });
       let finish!: () => void;
       const done = new Promise<void>((resolve) => {
         finish = resolve;
@@ -172,7 +205,9 @@ export class ConversationExecutions {
         execution.state.id !== command.executionId ||
         !isExecutionActive(execution.state)
       )
-        throw new FlowError("目标执行已结束，请刷新会话状态。", 409);
+        throw new CodedFlowError("目标执行已结束，请刷新会话状态。", 409, {
+          code: "conversation_execution_ended",
+        });
     }
     const record: ConversationCommandRecord = {
       digest,
@@ -194,7 +229,9 @@ export class ConversationExecutions {
         this.active.delete(id);
         execution.finish();
       }
-      throw new FlowError("命令接收记录保存失败，尚未启动操作。", 503);
+      throw new CodedFlowError("命令接收记录保存失败，尚未启动操作。", 503, {
+        code: "conversation_admission_unsaved",
+      });
     }
     this.receipts.set(key, record);
     if (command.type === "turn.start") this.latest.set(id, key);
@@ -211,9 +248,18 @@ export class ConversationExecutions {
   }
 
   private publishExecution(id: string, execution: Execution): void {
+    const details = this.feedback.get(
+      commandKey(id, execution.state.commandId),
+    );
     this.events.publish(
       id,
-      { type: "execution", execution: execution.state },
+      {
+        type: "execution",
+        execution: {
+          ...execution.state,
+          ...(details?.execution ? { errorDetails: details.execution } : {}),
+        },
+      },
       execution.state.id,
       execution.turnId,
     );
@@ -273,7 +319,9 @@ export class ConversationExecutions {
           this.active.get(id) !== execution ||
           !isExecutionActive(execution.state)
         )
-          throw new FlowError("目标执行已结束，请刷新会话状态。", 409);
+          throw new CodedFlowError("目标执行已结束，请刷新会话状态。", 409, {
+            code: "conversation_execution_ended",
+          });
         invoked = true;
         if (command.type === "turn.stop") {
           execution.state.status = "stopping";
@@ -287,6 +335,12 @@ export class ConversationExecutions {
         record.receipt.status = "applied";
       }
     } catch (error) {
+      const details =
+        error instanceof FlowError && error.status < 500
+          ? error instanceof CodedFlowError
+            ? readErrorDetails(error.details)
+            : undefined
+          : { code: "conversation_operation_failed" as const };
       const message =
         error instanceof FlowError && error.status < 500
           ? error.message
@@ -311,6 +365,14 @@ export class ConversationExecutions {
           record.receipt.status = "rejected";
           record.receipt.error = message;
         }
+        this.feedback.set(key, {
+          sessionId: id,
+          turnId: execution.turnId,
+          ...(!execution.abort.signal.aborted && details
+            ? { execution: details }
+            : {}),
+          ...(!invoked && details ? { receipt: details } : {}),
+        });
       } else {
         record.receipt.status =
           error instanceof FlowError && error.status < 500
@@ -319,6 +381,7 @@ export class ConversationExecutions {
               ? "uncertain"
               : "rejected";
         record.receipt.error = message;
+        if (details) this.feedback.set(key, { receipt: details });
       }
     } finally {
       if (command.type === "turn.start")
@@ -329,11 +392,15 @@ export class ConversationExecutions {
         record.receipt.status = "uncertain";
         record.receipt.error =
           "操作结果未能保存，请核对会话；系统不会自动重发。";
+        this.feedback.set(key, {
+          ...this.feedback.get(key),
+          receipt: { code: "conversation_result_unsaved" },
+        });
         this.receipts.set(key, record);
       }
       this.events.publish(
         id,
-        { type: "command", receipt: record.receipt },
+        { type: "command", receipt: this.project(record) },
         execution.state.id,
       );
       if (command.type === "turn.start") {
@@ -352,6 +419,10 @@ export class ConversationExecutions {
             this.receipts.delete(storedKey);
         }
       }
+      // Like event history, translation metadata has a bounded in-memory lifetime.
+      // Eviction falls back to the original error without rewriting the ledger.
+      while (this.feedback.size > 256)
+        this.feedback.delete(this.feedback.keys().next().value!);
     }
   }
 
@@ -373,6 +444,22 @@ export class ConversationExecutions {
         history = { turns: [], running: true, hasMore: false };
       }
       if (cursor !== this.events.cursor(id)) continue;
+      const errors = new Map(
+        [...this.feedback.values()].flatMap((item) =>
+          item.sessionId === id && item.turnId && item.execution
+            ? [[item.turnId, item.execution] as const]
+            : [],
+        ),
+      );
+      history = {
+        ...history,
+        turns: history.turns.map((turn) => {
+          const details = turn.turnId ? errors.get(turn.turnId) : undefined;
+          return turn.status === "error" && turn.error && details
+            ? { ...turn, errorDetails: structuredClone(details) }
+            : turn;
+        }),
+      };
       for (const event of this.events.annotations(id)) {
         if (event.payload.type !== "activity") continue;
         const activity = event.payload.activity;
@@ -404,7 +491,9 @@ export class ConversationExecutions {
         ...(execution ? { execution } : {}),
       };
     }
-    throw new FlowError("会话状态正在更新，请重新连接。", 503);
+    throw new CodedFlowError("会话状态正在更新，请重新连接。", 503, {
+      code: "conversation_snapshot_updating",
+    });
   }
 
   async stop(id: string): Promise<boolean> {
@@ -440,7 +529,9 @@ export class ConversationExecutions {
       signal.throwIfAborted();
       const page = this.events.read(id, cursor);
       if (page.reset)
-        throw new FlowError("事件窗口已过期，请重新读取会话。", 409);
+        throw new CodedFlowError("事件窗口已过期，请重新读取会话。", 409, {
+          code: "conversation_events_expired",
+        });
       for (const event of page.events)
         if (
           event.executionId === command.commandId &&
@@ -453,6 +544,17 @@ export class ConversationExecutions {
       if (execution && !isExecutionActive(execution)) {
         if (execution.status === "complete")
           return { model: execution.model ?? "" };
+        const details = execution.errorDetails ?? receipt.errorDetails;
+        if (details)
+          throw new CodedFlowError(
+            execution.error ?? receipt.error ?? "执行已停止。",
+            execution.errorStatus ?? 409,
+            details,
+          );
+        if (!execution.error && !receipt.error)
+          throw new CodedFlowError("执行已停止。", 409, {
+            code: "conversation_execution_stopped",
+          });
         throw new FlowError(
           execution.error ?? receipt.error ?? "执行已停止。",
           execution.errorStatus ?? 409,

@@ -14,6 +14,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { StartupTimer } from "./startup-timing.ts";
+import {
+  catalogLocalization,
+  executionPlugins,
+} from "../plugin-localization.ts";
 import { artifactResponse, type ArtifactFile } from "@aura/orchestration/host";
 import { GeneratedArtifacts } from "@aura/orchestration/host";
 import { JsonRpcLineTransport } from "@deepseek-ai/dsh-sdk-protocol";
@@ -31,6 +35,7 @@ import type {
   PersonalAssistantInfo,
   FlowMode,
   FlowRun,
+  FlowCatalog,
 } from "@aura/protocol/types";
 import {
   defaultActionRoot,
@@ -38,7 +43,12 @@ import {
   dshHostEntry,
   provisionProfile,
 } from "./profile.ts";
-import { FlowError } from "@aura/protocol/errors";
+import {
+  CodedFlowError,
+  FlowError,
+  readErrorDetails,
+  type ApiErrorDetails,
+} from "@aura/protocol/errors";
 import { matchesPluginHttpMount } from "@aura/protocol/plugin-http";
 import { reservedPluginHttpMounts } from "../plugin-http-mounts.ts";
 import { jsonValue } from "@aura/orchestration/host";
@@ -88,7 +98,8 @@ export interface HostOptions {
 }
 
 type HostRpcResult<T> =
-  { ok: true; data: T } | { ok: false; status: number; message: string };
+  | { ok: true; data: T }
+  | ({ ok: false; status: number; message: string } & Partial<ApiErrorDetails>);
 
 export interface InvokeFlowOptions {
   input: unknown;
@@ -201,7 +212,9 @@ export class OrchestrationHost {
   /** Serves one uploaded image by content ID, for chat thumbnails. */
   async imageAssetContent(assetId: string, request: Request) {
     if (!/^[a-f0-9]{64}$/u.test(assetId))
-      throw new FlowError("图片不存在。", 404);
+      throw new CodedFlowError("图片不存在。", 404, {
+        code: "image_not_found",
+      });
     const root = join(this.options.dshHome, "aura-generated-assets");
     for (const format of ["png", "jpeg", "webp"] as const) {
       try {
@@ -220,7 +233,7 @@ export class OrchestrationHost {
         false,
       );
     }
-    throw new FlowError("图片不存在。", 404);
+    throw new CodedFlowError("图片不存在。", 404, { code: "image_not_found" });
   }
 
   /** Admit browser uploads without sending binary data through the DSH JSON-RPC link. */
@@ -250,7 +263,10 @@ export class OrchestrationHost {
   }
 
   async open() {
-    if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
+    if (this.closed)
+      throw new CodedFlowError("编排服务正在关闭。", 503, {
+        code: "service_closing",
+      });
     if (!this.opening) {
       this.phase = "starting";
       const startup = new StartupTimer(randomUUID(), (timing) =>
@@ -264,9 +280,10 @@ export class OrchestrationHost {
           if (!this.closed)
             for (const diagnostic of hostErrorDiagnostics(error))
               this.logger.write("startup-failed", diagnostic);
-          throw new FlowError(
+          throw new CodedFlowError(
             "DSH 编排服务启动失败，请查看 .aura/dsh/logs/aura-host.log。",
             503,
+            { code: "service_start_failed" },
           );
         });
     }
@@ -302,7 +319,10 @@ export class OrchestrationHost {
         modelURL,
       ),
     );
-    if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
+    if (this.closed)
+      throw new CodedFlowError("编排服务正在关闭。", 503, {
+        code: "service_closing",
+      });
     const spawned = startup.start("process-spawn");
     const child = spawn(
       process.execPath,
@@ -331,7 +351,9 @@ export class OrchestrationHost {
           AURA_ACTION_ROOT: actionRoot,
           AURA_FLOW_ROOTS: JSON.stringify(flowRoots),
           AURA_ACTION_ROOTS: JSON.stringify(actionRoots),
-          AURA_PLUGIN_STATUSES: JSON.stringify(this.options.plugins ?? []),
+          AURA_PLUGIN_STATUSES: JSON.stringify(
+            executionPlugins(this.options.plugins ?? []),
+          ),
           AURA_BACKEND_ROOTS: JSON.stringify(this.options.backendRoots ?? []),
           [PLUGIN_SDK_ENV]: this.options.pluginSdkPackage,
           AURA_CODEX_MODEL: codexModel || "gpt-6.1-sol",
@@ -458,13 +480,24 @@ export class OrchestrationHost {
     try {
       result = (await rpc.request(method, params, signal)) as HostRpcResult<T>;
     } catch {
-      throw new FlowError(
+      throw new CodedFlowError(
         "编排连接已中断。运行状态可能已保存，请刷新确认。",
         503,
+        { code: "connection_interrupted" },
       );
     }
-    if (!result.ok) throw new FlowError(result.message, result.status);
-    return result.data;
+    if (!result.ok) {
+      const details = readErrorDetails(result);
+      throw details
+        ? new CodedFlowError(result.message, result.status, details)
+        : new FlowError(result.message, result.status);
+    }
+    return method === "catalog"
+      ? (catalogLocalization(
+          result.data as FlowCatalog,
+          this.options.plugins ?? [],
+        ) as T)
+      : result.data;
   }
 
   async transcribeVoice(id: string, audio: string, signal: AbortSignal) {
@@ -829,7 +862,7 @@ export class OrchestrationHost {
       flowRoots: [{ root: flowRoot }, ...configuration.flowRoots],
       actionRoots: [{ root: actionRoot }, ...configuration.actionRoots],
       backendRoots: configuration.backendRoots ?? [],
-      plugins: configuration.plugins,
+      plugins: executionPlugins(configuration.plugins),
     };
     const candidate = this.createPluginHttp();
     try {

@@ -3,6 +3,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import { FlowError, type OrchestrationHost } from "./dsh/host.ts";
+import { flowErrorBody } from "@aura/protocol/errors";
 import type { PluginPageRegistry } from "./plugin-pages.ts";
 
 /**
@@ -71,17 +72,27 @@ export function createPluginPagesApp(
     bodyLimit({
       maxSize: 4 * 1_024 * 1_024,
       onError: (context) =>
-        context.json({ message: "插件页面请求过大。" }, 413),
+        context.json(
+          { message: "插件页面请求过大。", code: "plugin_page_too_large" },
+          413,
+        ),
     }),
     async (context) => {
-      if (!flows) return context.json({ message: "编排服务暂时不可用。" }, 503);
+      if (!flows)
+        return context.json(
+          { message: "编排服务暂时不可用。", code: "service_unavailable" },
+          503,
+        );
       const pluginId = context.req.param("pluginId");
       if (
         !pages
           .snapshot()
           .bundles.some((bundle) => bundle.plugin.id === pluginId)
       )
-        return context.json({ message: "插件页面未启用。" }, 404);
+        return context.json(
+          { message: "插件页面未启用。", code: "plugin_page_disabled" },
+          404,
+        );
       const body = (await context.req.json().catch(() => undefined)) as
         { operation?: unknown; input?: unknown } | undefined;
       if (
@@ -89,7 +100,13 @@ export function createPluginPagesApp(
         typeof body.operation !== "string" ||
         !/^[a-z][a-z0-9_.-]{0,63}$/u.test(body.operation)
       )
-        return context.json({ message: "页面调用的 operation 无效。" }, 400);
+        return context.json(
+          {
+            message: "页面调用的 operation 无效。",
+            code: "plugin_operation_invalid",
+          },
+          400,
+        );
       try {
         return context.json(
           await flows.request(
@@ -108,7 +125,7 @@ export function createPluginPagesApp(
       } catch (error) {
         if (error instanceof FlowError)
           return context.json(
-            { message: error.message },
+            flowErrorBody(error),
             error.status as ContentfulStatusCode,
           );
         throw error;

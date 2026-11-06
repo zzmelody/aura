@@ -52,3 +52,22 @@ test("tool labels distinguish terminal instances and project legacy side names w
   assert.equal(side.title, "旁支对话");
   assert.equal(tabs[2]?.status, "exited");
 });
+
+test("localized default tool labels preserve custom titles, saved names and selection", () => {
+  const side = { id: "side", title: "旁支对话", createdAt: 1 };
+  const browsers = [
+    { id: "blank", title: "浏览器", url: "" },
+    { id: "page", title: "浏览器", url: "https://example.com" },
+    { id: "custom", title: "用户原文", url: "" },
+  ];
+  const original = structuredClone({ side, browsers });
+  const tabs = workspaceToolTabs([side], [terminal], browsers, (key) =>
+    key === "browser" ? "Browser" : "New side conversation",
+  );
+  assert.deepEqual(
+    tabs.map((tab) => tab.title),
+    ["New side conversation", "PowerShell", "Browser", "浏览器", "用户原文"],
+  );
+  assert.equal(selectedToolId(tabs, "blank"), "blank");
+  assert.deepEqual({ side, browsers }, original);
+});

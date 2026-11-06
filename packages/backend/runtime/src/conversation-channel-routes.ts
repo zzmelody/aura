@@ -1,7 +1,9 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { setTimeout as delay } from "node:timers/promises";
 import { FlowError, type OrchestrationHost } from "./dsh/host.ts";
+import { flowErrorBody } from "@aura/protocol/errors";
 import { isConversationCursor } from "@aura/protocol/conversation-channel";
 import type {
   ConversationEventPage,
@@ -21,16 +23,17 @@ export function createConversationChannelApp(
         ? (error.status as 400 | 404 | 409 | 413 | 503)
         : 500;
     return context.json(
-      {
-        message:
-          error instanceof FlowError ? error.message : "会话连接暂时不可用。",
-      },
+      error instanceof FlowError
+        ? flowErrorBody(error)
+        : { message: "会话连接暂时不可用。", code: "conversation_unavailable" },
       status,
     );
   });
   app.use("/:id/*", async (context, next) => {
     if (!context.req.param("id") || context.req.param("id")!.length > 200)
-      throw new FlowError("无效的对话。", 400);
+      throw new CodedFlowError("无效的对话。", 400, {
+        code: "conversation_request_invalid",
+      });
     context.header("Cache-Control", "no-store");
     await next();
   });
@@ -69,7 +72,9 @@ export function createConversationChannelApp(
     let cursor =
       context.req.header("Last-Event-ID") ?? context.req.query("cursor");
     if (cursor !== undefined && !isConversationCursor(cursor))
-      throw new FlowError("无效的事件游标。", 400);
+      throw new CodedFlowError("无效的事件游标。", 400, {
+        code: "conversation_cursor_invalid",
+      });
     const initial = await host.request<ConversationEventPage>(
       "coding/events",
       { sessionId, cursor },

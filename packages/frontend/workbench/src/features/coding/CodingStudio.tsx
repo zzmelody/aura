@@ -6,6 +6,12 @@ import React, {
   useState,
 } from "react";
 import {
+  useConversationMessages,
+  conversationMessage as message,
+} from "../../conversation-messages.ts";
+import { messageText, type MessageReference } from "@aura/i18n/runtime";
+import { useToolMessages } from "../../tool-messages.ts";
+import {
   ArrowLeft,
   Ellipsis,
   FolderPlus,
@@ -48,6 +54,7 @@ import { ConversationSplit } from "./ConversationSplit";
 import { SideConversation } from "./SideConversation";
 import { ToolTabs } from "./ToolTabs";
 import { BrowserPane, type BrowserPageInfo } from "./BrowserPane.tsx";
+import { desktopBrowserHost } from "../../platform.ts";
 import { TerminalPane } from "./TerminalPane";
 import { TerminalCloseDialog } from "./TerminalCloseDialog";
 import { useWorkspaceTerminals } from "./useWorkspaceTerminals";
@@ -137,6 +144,8 @@ export function CodingStudio({
   flowRequest?: FlowConversationRequest;
   onFlowRequestTaken?(): void;
 }) {
+  const { t, i18n } = useConversationMessages();
+  const { t: toolText } = useToolMessages();
   const { flags } = useIntegrations();
   const [integrationPanel, setIntegrationPanel] = useState<"search" | "team">();
   const {
@@ -206,8 +215,8 @@ export function CodingStudio({
       })),
     [],
   );
-  const [toolError, setToolError] = useState("");
-  const browserHost = window.auraHost?.browser;
+  const [toolError, setToolError] = useState<string | MessageReference>("");
+  const browserHost = desktopBrowserHost();
   const saveBrowserPage = useCallback(
     (id: string, page: BrowserPageInfo) =>
       setLayouts((current) => {
@@ -337,6 +346,7 @@ export function CodingStudio({
     currentSides,
     terminals.current,
     browserHost ? layout?.browsers : undefined,
+    toolText,
   );
   const activeToolId = selectedToolId(tabs, layout?.selected);
   const sideVisible =
@@ -376,7 +386,7 @@ export function CodingStudio({
     }));
   const title = personalAssistant
     ? "Aura"
-    : (conversation?.title ?? legacy?.title ?? "新任务");
+    : (conversation?.title ?? legacy?.title ?? t("newTask"));
   const offline = provider === "offline";
   const refresh = useCallback(() => {
     if (project) void refreshConversations(project.id).catch(() => {});
@@ -501,14 +511,14 @@ export function CodingStudio({
   const selectionActions: SelectionAction[] = [
     {
       id: "main",
-      label: "发送到对话",
+      label: t("quoteMain"),
       icon: <MessageSquareQuote size={13} />,
       disabled: !conversationId || mainReadOnly,
       run: quoteToMain,
     },
     {
       id: "side",
-      label: "发送到侧边对话",
+      label: t("quoteSide"),
       icon: <PanelRight size={13} />,
       disabled:
         !conversation ||
@@ -559,6 +569,7 @@ ${summary}`,
     const id = `browser-${crypto.randomUUID()}`;
     updateLayout(layoutOwner, (current) => ({
       ...current,
+      // Retain the stored default; localization happens when presenting tabs.
       browsers: [...current.browsers, { id, title: "浏览器", url: "" }],
       selected: id,
       visible: true,
@@ -583,7 +594,7 @@ ${summary}`,
     } catch (error) {
       if (info && error instanceof WorkflowApiError && error.status === 409)
         setConfirmTerminal(info);
-      else setToolError("工具未能关闭，请检查服务连接后重试。仍可收起面板。");
+      else setToolError(message("toolCloseFailed"));
     } finally {
       setClosingTools((current) => current.filter((id) => id !== tab.id));
     }
@@ -649,10 +660,10 @@ ${summary}`,
 
   const viewItems: WorkbenchMenuItem[] = project
     ? [
-        { id: "chat", label: "对话", action: () => setView("chat") },
+        { id: "chat", label: t("conversation"), action: () => setView("chat") },
         {
           id: "trajectory",
-          label: "执行记录",
+          label: t("trajectory"),
           action: () => setView("trajectory"),
           disabled: Boolean(branchFrom),
         },
@@ -660,7 +671,7 @@ ${summary}`,
           ? [
               {
                 id: "subagents",
-                label: "子 Agent",
+                label: t("subagents"),
                 icon: <Users size={14} />,
                 action: () => {
                   subagentAnchor.current =
@@ -678,7 +689,7 @@ ${summary}`,
                 .filter((side) => side.id === activeToolId)
                 .map((side) => ({
                   id: "side-subagents",
-                  label: "侧边对话的子 Agent",
+                  label: t("sideSubagents"),
                   icon: <Users size={14} />,
                   action: () => {
                     subagentAnchor.current =
@@ -703,7 +714,7 @@ ${summary}`,
         <button
           type="button"
           className="icon-control studio-back"
-          aria-label="返回对话"
+          aria-label={t("backConversation")}
           onClick={onBack}
         >
           <ArrowLeft size={16} />
@@ -719,16 +730,16 @@ ${summary}`,
       </strong>
       {conversation?.archivedAt !== undefined ||
       legacy?.archivedAt !== undefined ? (
-        <span className="header-archived">已归档</span>
+        <span className="header-archived">{t("archivedBadge")}</span>
       ) : null}
       {flags?.sessionSearch && projectId && !legacy && !personalAssistant ? (
         <button
           type="button"
           className="icon-control"
-          aria-label="会话全文搜索"
+          aria-label={t("searchTitle")}
           ref={searchTrigger}
           aria-expanded={integrationPanel === "search"}
-          title="会话全文搜索"
+          title={t("searchTitle")}
           onClick={() =>
             setIntegrationPanel((current) =>
               current === "search" ? undefined : "search",
@@ -742,9 +753,9 @@ ${summary}`,
         <button
           type="button"
           className="icon-control"
-          aria-label="Agent 团队"
+          aria-label={t("team")}
           aria-expanded={integrationPanel === "team"}
-          title="Agent 团队"
+          title={t("team")}
           onClick={() =>
             setIntegrationPanel((current) =>
               current === "team" ? undefined : "team",
@@ -758,7 +769,7 @@ ${summary}`,
           and only stand alone when the host has no session menu to offer. */}
       {hostActions ??
         (project ? (
-          <WorkbenchMenu label="对话菜单" items={viewItems}>
+          <WorkbenchMenu label={t("conversationMenu")} items={viewItems}>
             <Ellipsis size={16} />
           </WorkbenchMenu>
         ) : null)}
@@ -767,9 +778,9 @@ ${summary}`,
           ref={sideToggle}
           type="button"
           className="icon-control"
-          aria-label="工具面板"
+          aria-label={t("toolPanel")}
           aria-expanded={sideVisible}
-          title="打开工具面板"
+          title={t("openToolPanel")}
           onClick={() => {
             moveToolFocus.current = true;
             setSideVisible(true);
@@ -785,7 +796,7 @@ ${summary}`,
     <section
       ref={studioRoot}
       className={`coding-studio chat-screen studio-main${sideVisible ? " with-side" : ""}`}
-      aria-label="工作空间对话"
+      aria-label={t("workspaceConversation")}
     >
       {visible ? (
         <SelectionActions root={studioRoot} actions={selectionActions} />
@@ -878,9 +889,14 @@ ${summary}`,
             ) : null}
             {branchFrom ? (
               <p className="coding-notice">
-                将继承{source ? `「${source.title}」` : "来源对话"}
-                {branchAt === undefined ? "的上下文" : "截至所选回复的上下文"}
-                。发送第一条消息后保存为独立会话。
+                {t(
+                  branchAt === undefined
+                    ? "inheritContext"
+                    : "inheritSelectedContext",
+                  {
+                    source: source?.title ?? t("sourceConversation"),
+                  },
+                )}
               </p>
             ) : null}
             {view === "trajectory" ? (
@@ -900,7 +916,7 @@ ${summary}`,
                 projectId={project?.id}
                 directory={project?.directory}
                 label={
-                  personalAssistant ? "Aura 助手输入框" : "工作空间请求输入框"
+                  personalAssistant ? t("assistantInput") : t("workspaceInput")
                 }
                 {...(conversationId ? { sessionId: conversationId } : {})}
                 readOnly={
@@ -909,8 +925,8 @@ ${summary}`,
                 }
                 placeholder={
                   !project || project.isDefault
-                    ? "描述你想讨论或完成的事情…"
-                    : `在「${project.title}」中描述要完成的事情…`
+                    ? t("taskPlaceholder")
+                    : t("workspacePlaceholder", { name: project.title })
                 }
                 branchFrom={branchFrom}
                 branchAt={branchAt}
@@ -940,9 +956,9 @@ ${summary}`,
                 composerLeading={
                   !conversationId && workspaces.canChooseWorkspace ? (
                     <WorkbenchMenu
-                      label="选择工作空间"
+                      label={t("chooseWorkspace")}
                       className="composer-context"
-                      title={project?.title ?? "选择工作空间"}
+                      title={project?.title ?? t("chooseWorkspace")}
                       disabled={mainRunning || personalAssistant}
                       items={[
                         ...projects.map((item) => ({
@@ -959,27 +975,27 @@ ${summary}`,
                           : []),
                         {
                           id: "create",
-                          label: "新建工作空间",
+                          label: t("createWorkspace"),
                           icon: <FolderPlus size={14} />,
                           action: () => setCreating(true),
                         },
                       ]}
                     >
                       <FolderOpen size={14} />
-                      <span>{project?.title ?? "工作空间"}</span>
+                      <span>{project?.title ?? t("workspace")}</span>
                       <ChevronDown size={12} />
                     </WorkbenchMenu>
                   ) : undefined
                 }
                 footnote={
                   offline
-                    ? "工作空间需要连接 Aura 服务，请切换到 Codex 订阅或其他模式"
+                    ? t("workspaceNeedsService")
                     : !project
                       ? !conversationId && !workspaces.canChooseWorkspace
-                        ? "此任务的工作空间暂不可用。恢复该工作空间后可继续发送。"
-                        : "工作空间暂不可用，仍可查看历史和编辑草稿；选择或新建工作空间后可继续发送。"
+                        ? t("restoreWorkspace")
+                        : t("chooseAvailableWorkspace")
                       : !workspaces.ready
-                        ? "服务正在连接，你可以先提交任务。"
+                        ? t("serviceConnecting")
                         : undefined
                 }
                 onOpen={(id, submittedConfig) => {
@@ -1051,12 +1067,12 @@ ${summary}`,
           <>
             {toolError || terminals.error ? (
               <p className="coding-notice" role="alert">
-                {toolError || terminals.error}
+                {messageText(toolError, i18n) || terminals.error}
               </p>
             ) : null}
             {!tabs.length ? (
               <div className="coding-tools-empty">
-                <strong>打开工具</strong>
+                <strong>{t("openTools")}</strong>
                 <button
                   type="button"
                   className="tool-button"
@@ -1068,7 +1084,7 @@ ${summary}`,
                   onClick={() => void openSide()}
                 >
                   <MessageSquare size={15} />
-                  侧边对话
+                  {t("sideConversation")}
                 </button>
                 <button
                   type="button"
@@ -1077,7 +1093,7 @@ ${summary}`,
                   onClick={() => void createTerminal()}
                 >
                   <SquareTerminal size={15} />
-                  终端
+                  {t("terminal")}
                 </button>
                 {browserHost ? (
                   <button
@@ -1086,7 +1102,7 @@ ${summary}`,
                     onClick={openBrowser}
                   >
                     <Globe size={15} />
-                    浏览器
+                    {t("browser")}
                   </button>
                 ) : null}
               </div>

@@ -5,7 +5,7 @@ import { defineDomain, domainTable } from "@deepseek-ai/dsh-storage-domain";
 import { z } from "zod";
 import type { CodingCapabilities } from "@aura/protocol/types";
 import type { Table } from "../types.ts";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 
 export const WEB_CREDENTIAL = "AURA_DEEPSEEK_WEB_KEY";
 const settings = z.object({
@@ -87,14 +87,21 @@ export class CodingCapabilityStore {
       })
       .strict()
       .safeParse(source);
-    if (!parsed.success) throw new FlowError("对话能力配置无效。", 400);
+    if (!parsed.success)
+      throw new CodedFlowError("对话能力配置无效。", 400, {
+        code: "capabilities_invalid",
+      });
     const input = parsed.data;
     if (input.key && (input.clearKey || /\s/u.test(input.key)))
-      throw new FlowError("Web 密钥无效。", 400);
+      throw new CodedFlowError("Web 密钥无效。", 400, {
+        code: "web_key_invalid",
+      });
     await this.serialize(async () => {
       const prior = this.config();
       if (input.revision !== prior.revision)
-        throw new FlowError("配置已变化，请刷新后保存。", 409);
+        throw new CodedFlowError("配置已变化，请刷新后保存。", 409, {
+          code: "settings_revision_conflict",
+        });
       const ref = credentialRef(WEB_CREDENTIAL);
       const previousKey =
         input.key || input.clearKey
@@ -138,7 +145,9 @@ export class CodingCapabilityStore {
           (item) => item.kind === "title" && item.sessionId === sessionId,
         )
       )
-        throw new FlowError("这段对话已请求过标题提炼。", 409);
+        throw new CodedFlowError("这段对话已请求过标题提炼。", 409, {
+          code: "title_request_exists",
+        });
       this.assertBudgetAvailable(prior);
       const id = randomUUID();
       await this.table.put("settings", {
@@ -160,21 +169,26 @@ export class CodingCapabilityStore {
           (item.state === "reserved" && !this.live.has(id)),
       )
     )
-      throw new FlowError(
+      throw new CodedFlowError(
         "有结果未知的额外请求，请在对话能力设置中核对后继续。",
         409,
+        { code: "extra_request_uncertain" },
       );
     if (Object.keys(prior.entries).length >= prior.maxRequests)
-      throw new FlowError(
+      throw new CodedFlowError(
         "额外请求额度不足，请在对话能力设置中增加额度。",
         409,
+        { code: "extra_request_budget_exhausted" },
       );
   }
   async settle(id: string, complete: boolean): Promise<void> {
     await this.serialize(async () => {
       const prior = this.config();
       const item = prior.entries[id];
-      if (!item) throw new FlowError("额外请求账本缺少预留记录。", 409);
+      if (!item)
+        throw new CodedFlowError("额外请求账本缺少预留记录。", 409, {
+          code: "extra_request_reservation_missing",
+        });
       await this.table.put("settings", {
         ...prior,
         entries: {

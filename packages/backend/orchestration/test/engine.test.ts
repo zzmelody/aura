@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
+import { CodedFlowError } from "@aura/protocol/errors";
 import { setTimeout as delay } from "node:timers/promises";
 import type { ActionRun, FlowRun } from "@aura/protocol/types";
 import { z } from "zod";
@@ -101,6 +102,7 @@ async function fixture(
   options: {
     loaded?: LoadedFlow;
     execute?: SessionPort["execute"];
+    reconcile?: SessionPort["reconcile"];
     runs?: Table<FlowRun>;
     actions?: EngineOptions["actions"];
   } = {},
@@ -112,6 +114,7 @@ async function fixture(
     domain,
     sessions: {
       execute: options.execute ?? (async (step) => `${step.id} output`),
+      ...(options.reconcile ? { reconcile: options.reconcile } : {}),
       history: async (step, beforeSeq) => ({
         sessionId: step.sessionId,
         preset: step.preset,
@@ -146,6 +149,115 @@ const request = (input: unknown = { task: "测试任务" }) => ({
   flowId: "test-flow",
   input,
   mode: "demo" as const,
+});
+
+test("Flow control errors carry display codes without changing completed records or reusing a request for different input", async (t) => {
+  const { engine, runs } = await fixture({
+    loaded: flow(async () => ({ report: "original output" })),
+  });
+  t.after(() => engine.close());
+  const input = request();
+  const started = await engine.start(input);
+  const completed = await engine.wait(started.id);
+  const saved = JSON.stringify([...runs.entries()]);
+  for (const operation of [
+    () => engine.pause(completed.id),
+    () => engine.resume(completed.id),
+  ])
+    await assert.rejects(operation(), (error) => {
+      assert.ok(error instanceof CodedFlowError);
+      assert.equal(error.status, 409);
+      assert.deepEqual(error.details, { code: "flow_ended" });
+      assert.match(error.message, /此运行已结束/u);
+      return true;
+    });
+  await assert.rejects(
+    engine.start({ ...input, input: { task: "different" } }),
+    (error) => {
+      assert.ok(error instanceof CodedFlowError);
+      assert.deepEqual(error.details, { code: "flow_input_conflict" });
+      return true;
+    },
+  );
+  assert.throws(
+    () => engine.get("missing"),
+    (error) => {
+      assert.ok(error instanceof CodedFlowError);
+      assert.equal(error.status, 404);
+      assert.deepEqual(error.details, { code: "flow_run_missing" });
+      return true;
+    },
+  );
+  assert.equal(JSON.stringify([...runs.entries()]), saved);
+  assert.equal(saved.includes("errorDetails"), false);
+  assert.deepEqual(engine.get(completed.id).output, {
+    report: "original output",
+  });
+});
+
+test("Flow failures project run, step and attempt translations without persisting them or dispatching another attempt", async (t) => {
+  for (const uncertain of [false, true]) {
+    let calls = 0;
+    const options = {
+      loaded: flow(async (ctx) => ({
+        report: (
+          await ctx.agent({
+            id: "model",
+            label: "Original step",
+            preset: "researcher-v1",
+            prompt: "Original prompt",
+          })
+        ).output,
+      })),
+      execute: async () => {
+        calls++;
+        throw new CodedFlowError("original safe failure", 402, {
+          code: "model_budget_exceeded",
+        });
+      },
+      reconcile: async () => ({ actionStarted: uncertain }),
+    };
+    const { engine, runs } = await fixture(options);
+    t.after(() => engine.close());
+    const started = await engine.start(request());
+    await engine.wait(started.id);
+    const durable = JSON.stringify([...runs.entries()]);
+    const view = engine.view(started.id);
+    const details = {
+      failure: { code: "model_budget_exceeded" },
+      ...(uncertain ? { uncertainty: "agent_result_unknown" } : {}),
+    };
+    assert.deepEqual(view.steps[0].errorDetails, details);
+    assert.deepEqual(view.steps[0].attempts?.[0].errorDetails, details);
+    if (!uncertain) assert.deepEqual(view.errorDetails, details);
+    else assert.equal(view.status, "needs_attention");
+    assert.equal(engine.get(started.id).steps[0].errorDetails, undefined);
+    assert.equal(durable.includes("errorDetails"), false);
+    assert.equal(JSON.stringify([...runs.entries()]), durable);
+    assert.equal(calls, 1);
+    view.steps[0].label = "changed client copy";
+    assert.equal(engine.get(started.id).steps[0].label, "Original step");
+    const restarted = await fixture({ ...options, runs });
+    t.after(() => restarted.engine.close());
+    assert.equal(
+      restarted.engine.view(started.id).steps[0].errorDetails,
+      undefined,
+    );
+    assert.equal(
+      calls,
+      1,
+      "restoring old failures never dispatches another model request",
+    );
+    await runs.update(started.id, (current) => ({
+      ...current,
+      steps: current.steps.map((step) => ({
+        ...step,
+        error: "different error",
+      })),
+    }));
+    assert.equal(engine.view(started.id).steps[0].errorDetails, undefined);
+    assert.equal(calls, 1);
+  }
 });
 
 test("all Flows enforce a 360 minute execution window and settle active attempts", async (t) => {
@@ -652,6 +764,10 @@ test("restart marks unfinished code runs interrupted and never replays them", as
   const restored = runs.get(id);
   assert.equal(restored?.status, "interrupted");
   assert.equal(restored?.steps[0]?.status, "interrupted");
+  assert.deepEqual(engine.view(id).errorDetails, {
+    failure: { code: "recovery_legacy" },
+  });
+  assert.equal(JSON.stringify(runs.get(id)).includes("errorDetails"), false);
   assert.equal(calls, 0);
   assert.equal(engine.running.size, 0);
 });

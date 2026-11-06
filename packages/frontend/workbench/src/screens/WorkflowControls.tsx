@@ -1,4 +1,15 @@
 import React, { useRef, useState } from "react";
+import { apiErrorText } from "../api-error-messages.ts";
+import {
+  useWorkflowMessages,
+  workflowMessage as message,
+} from "../workflow-messages.ts";
+import {
+  errorMessage,
+  messageText,
+  formatDate,
+  type MessageReference,
+} from "@aura/i18n/runtime";
 import type { FlowRun, FlowStep, JsonValue } from "@aura/protocol/types";
 import { workflowApi, WorkflowApiError } from "../workflowSessions";
 import { WorkflowInput, schemaInitialValue } from "./WorkflowInput";
@@ -19,6 +30,7 @@ function StepInput({
     output?: JsonValue,
   ): Promise<void>;
 }) {
+  const { t } = useWorkflowMessages();
   const schema =
     "outputSchema" in step
       ? step.outputSchema
@@ -27,7 +39,7 @@ function StepInput({
     JSON.stringify(schemaInitialValue(schema), null, 2),
   );
   const [showForm, setShowForm] = useState(step.kind === "checkpoint");
-  const [error, setError] = useState("");
+  const [invalidJson, setInvalidJson] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
   const checkpoint = step.kind === "checkpoint";
   async function send() {
@@ -36,10 +48,10 @@ function StepInput({
     try {
       output = JSON.parse(text);
     } catch {
-      setError("请输入有效的 JSON。");
+      setInvalidJson(true);
       return;
     }
-    setError("");
+    setInvalidJson(false);
     await submit(
       checkpoint ? "answer" : "resolve",
       step,
@@ -50,14 +62,12 @@ function StepInput({
   return (
     <section
       className="workflow-human-step"
-      aria-label={`${step.label} ${checkpoint ? "等待输入" : "结果待确认"}`}
+      aria-label={t(checkpoint ? "waitingInputLabel" : "unconfirmedLabel", {
+        label: step.label,
+      })}
     >
       <h4>{step.label}</h4>
-      <p>
-        {checkpoint
-          ? step.prompt
-          : "上次执行的结果尚未确认。重试可能再次执行外部操作，也可以提交已确认的结果。"}
-      </p>
+      <p>{checkpoint ? step.prompt : t("unknownResultHint")}</p>
       {!checkpoint && (
         <div className="workflow-history-actions">
           <button
@@ -65,21 +75,21 @@ function StepInput({
             disabled={busy}
             onClick={() => void submit("resolve", step, "retry")}
           >
-            重试此步骤
+            {t("retryStep")}
           </button>
           <button
             className="tool-button"
             disabled={busy}
             onClick={() => setShowForm(!showForm)}
           >
-            提交已有结果
+            {t("submitExisting")}
           </button>
           <button
             className="text-control"
             disabled={busy}
             onClick={() => void submit("resolve", step, "terminate")}
           >
-            终止运行
+            {t("terminateRun")}
           </button>
         </div>
       )}
@@ -98,9 +108,9 @@ function StepInput({
             endpoint={endpoint}
             onUploadBusyChange={setImageUploading}
           />
-          {error && (
+          {invalidJson && (
             <p className="error" role="alert">
-              {error}
+              {t("invalidJson")}
             </p>
           )}
           <button
@@ -108,7 +118,7 @@ function StepInput({
             disabled={busy || imageUploading}
             type="submit"
           >
-            {checkpoint ? "提交答案并继续" : "确认结果"}
+            {checkpoint ? t("answerContinue") : t("confirmResult")}
           </button>
         </form>
       )}
@@ -125,8 +135,9 @@ export function WorkflowControls({
   run: FlowRun;
   receive(endpoint: string, run: FlowRun): void;
 }) {
+  const { t, i18n } = useWorkflowMessages();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
   // Keep the same command identity after an uncertain network response.
   const pending = useRef(new Map<string, string>());
   async function command(
@@ -160,7 +171,7 @@ export function WorkflowControls({
         cause.status < 500
       )
         pending.current.delete(key);
-      setError(cause instanceof Error ? cause.message : "操作失败，请重试。");
+      setError(errorMessage(cause, message("operationFailed")));
     } finally {
       setBusy(false);
     }
@@ -174,19 +185,17 @@ export function WorkflowControls({
             disabled={busy}
             onClick={() => void command("pause")}
           >
-            暂停运行
+            {t("pauseRun")}
           </button>
         )}
-        {run.status === "pausing" && (
-          <p role="status">正在等待已开始的步骤结束…</p>
-        )}
+        {run.status === "pausing" && <p role="status">{t("waitingSteps")}</p>}
         {run.status === "paused" && (
           <button
             className="tool-button"
             disabled={busy}
             onClick={() => void command("resume")}
           >
-            继续运行
+            {t("resumeRun")}
           </button>
         )}
         {["paused", "waiting_input", "needs_attention"].includes(
@@ -197,7 +206,7 @@ export function WorkflowControls({
             disabled={busy}
             onClick={() => void command("cancel")}
           >
-            取消运行
+            {t("cancelRun")}
           </button>
         )}
       </div>
@@ -222,15 +231,23 @@ export function WorkflowControls({
         ))}
       {error && (
         <p className="error" role="alert">
-          {error}
+          {messageText(error, i18n)}
         </p>
       )}
       {run.recoveryEvents?.length ? (
         <details>
-          <summary>恢复记录</summary>
+          <summary>{t("recoveryHistory")}</summary>
           {run.recoveryEvents.map((event, index) => (
-            <p key={index}>
-              {new Date(event.at).toLocaleString()} · {event.reason}
+            <p className="workflow-recovery-event" key={index}>
+              {formatDate(event.at, {
+                dateStyle: "short",
+                timeStyle: "medium",
+              })}{" "}
+              ·{" "}
+              {messageText(
+                apiErrorText(event.reasonDetails, event.reason),
+                i18n,
+              )}
             </p>
           ))}
         </details>

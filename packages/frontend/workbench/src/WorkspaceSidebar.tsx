@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useWorkbenchMessages } from "./i18n.ts";
+import { useSidebarMessages } from "./sidebar-messages.ts";
+import { formatDate } from "@aura/i18n/runtime";
 import {
   AlarmClock,
   ChevronDown,
@@ -94,7 +96,8 @@ export function WorkspaceSidebar({
   scheduledIds?: ReadonlySet<string>;
 }) {
   /** `null` creates a workspace; a record configures that one. */
-  const { t } = useWorkbenchMessages("navigation");
+  const { t: nav } = useWorkbenchMessages("navigation");
+  const { t } = useSidebarMessages();
   const [spaceDialog, setSpaceDialog] = useState<CodingProjectInfo | null>();
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -109,9 +112,13 @@ export function WorkspaceSidebar({
     const archiving = !session.archivedAt;
     workspace.archiveChat(session.id, archiving);
     toast({
-      message: archiving ? `已归档「${label}」` : `已恢复「${label}」`,
+      message: {
+        namespace: "sidebar",
+        key: archiving ? "archivedNotice" : "restoredNotice",
+        values: { title: label },
+      },
       action: {
-        label: t("undo"),
+        label: { namespace: "sidebar", key: "undo" },
         run: () => workspace.archiveChat(session.id, !archiving),
       },
     });
@@ -194,7 +201,7 @@ export function WorkspaceSidebar({
     <aside className="workspace-sidebar" aria-label={t("workspaceAndChats")}>
       <button className="new-session" onClick={start}>
         <SquarePen size={14} />
-        {t("newTask")}
+        {nav("newTask")}
       </button>
       <nav className="workspace-nav panel-nav" aria-label={t("mainNavigation")}>
         <button
@@ -220,7 +227,7 @@ export function WorkspaceSidebar({
               onClick={() => navigate(id)}
             >
               <Icon size={16} />
-              {t(label)}
+              {nav(label)}
             </button>
             {/* The pages the user has opened, nested under 工作台 in
                 registration order. Each closes on its own; 工作台 still
@@ -248,7 +255,9 @@ export function WorkspaceSidebar({
                         <button
                           type="button"
                           className="icon-control studio-close row-control"
-                          aria-label={`从侧栏移除：${studio.title}`}
+                          aria-label={t("removeNamedShortcut", {
+                            title: studio.title,
+                          })}
                           onClick={() => closeStudio(studio.id)}
                         >
                           <X size={13} />
@@ -270,7 +279,11 @@ export function WorkspaceSidebar({
         aria-label={t("chatTools")}
       >
         <span className="session-heading-label">
-          {showArchived ? t("archived") : onlyRunning ? t("active") : t("chats")}
+          {showArchived
+            ? t("archived")
+            : onlyRunning
+              ? t("active")
+              : t("chats")}
         </span>
         {searchOpen ? (
           <label className="session-search">
@@ -378,7 +391,7 @@ export function WorkspaceSidebar({
       {query.trim() &&
       !filtered.length &&
       !spaceFolders.some((folder) => folder.conversations.length) ? (
-        <div className="sidebar-empty">无匹配会话</div>
+        <div className="sidebar-empty">{t("noMatches")}</div>
       ) : null}
       <div className="session-list">
         {spaceFolders.map(({ space, conversations }) => {
@@ -395,7 +408,7 @@ export function WorkspaceSidebar({
             <section
               className="session-folder workspace-folder"
               key={key}
-              aria-label={`工作空间：${space.title}`}
+              aria-label={t("workspaceTitle", { title: space.title })}
             >
               <div className="workspace-folder-head" data-row-highlight>
                 <Tooltip
@@ -404,7 +417,10 @@ export function WorkspaceSidebar({
                 >
                   <button
                     className={`session-folder-heading row-control${current ? " current" : ""}`}
-                    aria-label={`${expanded ? "收起" : "展开"}工作空间：${space.title}`}
+                    aria-label={t(
+                      expanded ? "collapseWorkspace" : "expandWorkspace",
+                      { title: space.title },
+                    )}
                     aria-expanded={expanded}
                     onClick={() => toggleFolder(key)}
                   >
@@ -421,7 +437,7 @@ export function WorkspaceSidebar({
                 </Tooltip>
                 <div className="workspace-folder-actions">
                   <WorkbenchMenu
-                    label={`工作区“${space.title}”的操作`}
+                    label={t("workspaceActions", { title: space.title })}
                     tooltip={t("more")}
                     className="icon-control row-control"
                     items={[
@@ -439,7 +455,7 @@ export function WorkspaceSidebar({
                     <button
                       type="button"
                       className="icon-control row-control"
-                      aria-label={`在“${space.title}”中新建会话`}
+                      aria-label={t("newWorkspaceChat", { title: space.title })}
                       onClick={() => openSpace(space.id)}
                     >
                       <SquarePen size={14} />
@@ -474,8 +490,19 @@ export function WorkspaceSidebar({
                         <button
                           className={`session-item row-control${selected ? " selected" : ""}`}
                           aria-current={selected ? "true" : undefined}
-                          aria-label={`打开工作空间对话：${item.title}`}
-                          aria-description={`${new Date(item.updatedAt).toLocaleString("zh-CN")}${status ? ` · ${status.label}` : ""}${item.archivedAt !== undefined ? " · 已归档" : ""}`}
+                          aria-label={t("openWorkspaceChat", {
+                            title: item.title,
+                          })}
+                          aria-description={[
+                            formatDate(item.updatedAt, {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            }),
+                            status && t(status.messageKey),
+                            item.archivedAt !== undefined && t("archived"),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                           onClick={() => openSpace(space.id, item.id)}
                         >
                           <span className="session-name">{item.title}</span>
@@ -512,7 +539,12 @@ export function WorkspaceSidebar({
                             <button
                               type="button"
                               className="icon-control session-archive row-control"
-                              aria-label={`${item.archivedAt !== undefined ? t("restore") : t("archive")}：${item.title}`}
+                              aria-label={t(
+                                item.archivedAt !== undefined
+                                  ? "restoreNamed"
+                                  : "archiveNamed",
+                                { title: item.title },
+                              )}
                               onClick={() =>
                                 void codingWorkspaces
                                   .archive(
@@ -552,7 +584,9 @@ export function WorkspaceSidebar({
                               .refreshConversations(space.id, undefined, true)
                               .catch(() => {})
                           }
-                        >{t("retryLoad")}</button>
+                        >
+                          {t("retryLoad")}
+                        </button>
                       ) : codingWorkspaces.conversations[space.id] ===
                         undefined ? (
                         t("loadingChats")
@@ -578,7 +612,16 @@ export function WorkspaceSidebar({
             >
               <button
                 className="session-folder-heading"
-                aria-label={`${expanded ? "收起" : "展开"}${group.workflow ? t("workflowChat") : "会话分组"}：${group.title}`}
+                aria-label={t(
+                  group.workflow
+                    ? expanded
+                      ? "collapseFlows"
+                      : "expandFlows"
+                    : expanded
+                      ? "collapseGroup"
+                      : "expandGroup",
+                  { title: group.title },
+                )}
                 aria-expanded={expanded}
                 title={group.title}
                 onClick={() => toggleFolder(group.id)}
@@ -634,8 +677,17 @@ export function WorkspaceSidebar({
                           key={session.id}
                           className={`session-item row-control${selected ? " selected" : ""}`}
                           aria-current={selected ? "true" : undefined}
-                          aria-label={`打开会话：${label}`}
-                          aria-description={`${new Date(session.updatedAt).toLocaleString("zh-CN")} · ${status.label}${session.archivedAt ? " · 已归档" : ""}`}
+                          aria-label={t("openChat", { title: label })}
+                          aria-description={[
+                            formatDate(session.updatedAt, {
+                              dateStyle: "medium",
+                              timeStyle: "short",
+                            }),
+                            t(status.messageKey),
+                            session.archivedAt && t("archived"),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                           onClick={() => open(session.id)}
                         >
                           {session.workflow ? (
@@ -664,12 +716,19 @@ export function WorkspaceSidebar({
                             )}
                           </span>
                           <Tooltip
-                            label={session.archivedAt ? t("restore") : t("archive")}
+                            label={
+                              session.archivedAt ? t("restore") : t("archive")
+                            }
                           >
                             <button
                               type="button"
                               className="icon-control session-archive row-control"
-                              aria-label={`${session.archivedAt ? t("restore") : t("archive")}：${label}`}
+                              aria-label={t(
+                                session.archivedAt
+                                  ? "restoreNamed"
+                                  : "archiveNamed",
+                                { title: label },
+                              )}
                               onClick={() => archiveWithUndo(session, label)}
                             >
                               {session.archivedAt ? (
@@ -712,7 +771,7 @@ export function WorkspaceSidebar({
                 });
               return target ? (
                 <WorkbenchContextMenu
-                  label={`会话操作：${target.title}`}
+                  label={t("chatActions", { title: target.title })}
                   items={[
                     {
                       id: "archive",
@@ -755,7 +814,7 @@ export function WorkspaceSidebar({
             );
             return target ? (
               <WorkbenchContextMenu
-                label={`会话操作：${sidebarSessionTitle(target)}`}
+                label={t("chatActions", { title: sidebarSessionTitle(target) })}
                 items={sessionMenuItems(target, workspace, onDialog, () =>
                   archiveWithUndo(target, sidebarSessionTitle(target)),
                 )}

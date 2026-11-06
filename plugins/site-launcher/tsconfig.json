@@ -7,8 +7,14 @@
       "../../packages/frontend/workbench/node_modules/@types"
     ],
     "jsx": "react-jsx",
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "resolveJsonModule": true
   },
-  "include": ["client/src/**/*.ts", "client/src/**/*.tsx", "backend/**/*.ts"],
+  "include": [
+    "client/src/**/*.ts",
+    "client/src/**/*.tsx",
+    "backend/**/*.ts",
+    "shared/**/*.ts"
+  ],
   "exclude": ["**/dist/**"]
 }

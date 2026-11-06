@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
+import { CodedFlowError, FlowError } from "@aura/protocol/errors";
 import { setTimeout as delay } from "node:timers/promises";
 import { ConversationExecutions } from "../src/conversations/conversation-executions.ts";
 import { ConversationEvents } from "../src/conversations/conversation-events.ts";
@@ -190,6 +191,13 @@ test("a receipt recovered across a crash is interrupted and never dispatches aga
   t.after(() => restored.close());
   const receipt = await restored.submit("one", command);
   assert.equal(receipt.execution?.status, "interrupted");
+  assert.deepEqual(receipt.execution?.errorDetails, {
+    code: "conversation_host_restarted",
+  });
+  assert.equal(
+    JSON.stringify([...copy.entries()]).includes("errorDetails"),
+    false,
+  );
   assert.equal(f.calls(), 1);
   assert.equal((await restored.snapshot("one")).running, false);
 });
@@ -348,4 +356,155 @@ test("completion remains active until its receipt is saved and the next turn can
   );
   const next = start();
   assert.equal((await f.service.submit("one", next)).status, "accepted");
+});
+
+test("live failures carry bounded translation metadata through receipts, events and legacy streams without changing durable records", async (t) => {
+  const f = fixture();
+  t.after(() => f.service.close());
+  let calls = 0;
+  const failure = new CodedFlowError("对话来源不匹配。", 409, {
+    code: "conversation_source_mismatch",
+  });
+  Object.assign(failure.details, { params: { token: "private" } });
+  failure.cause = new Error("private upstream response");
+  f.ports.start = async (_id, _command, emit) => {
+    calls++;
+    emit({ type: "turn-start", turnId: "failed-turn", at: 1 });
+    throw failure;
+  };
+  const history = {
+    turns: [
+      {
+        turnId: "failed-turn",
+        prompt: "original",
+        startedAt: 1,
+        status: "error" as const,
+        error: failure.message,
+        events: [],
+      },
+    ],
+    running: false,
+    hasMore: false,
+  };
+  f.ports.history = async () => history;
+  const originalHistory = JSON.stringify(history);
+  const command = start();
+  const cursor = f.service.events.cursor("one");
+  await f.service.submit("one", command);
+  const receipt = await settled(f.service, command);
+  const details = { code: "conversation_source_mismatch" };
+  assert.deepEqual(receipt.execution?.errorDetails, details);
+  assert.equal(receipt.execution?.error, failure.message);
+  assert.equal(receipt.execution?.errorStatus, 409);
+  assert.deepEqual(
+    (await f.service.snapshot("one")).execution?.errorDetails,
+    details,
+  );
+  assert.deepEqual(
+    (await f.service.snapshot("one")).turns[0]?.errorDetails,
+    details,
+  );
+  assert.equal(JSON.stringify(history), originalHistory);
+  const events = f.service.events.read("one", cursor).events;
+  const ended = events
+    .filter((event) => event.payload.type === "execution")
+    .at(-1);
+  assert.ok(ended?.payload.type === "execution");
+  assert.deepEqual(ended.payload.execution.errorDetails, details);
+  await assert.rejects(
+    f.service.stream(
+      "one",
+      command,
+      () => undefined,
+      new AbortController().signal,
+    ),
+    (error) => {
+      assert.ok(error instanceof CodedFlowError);
+      assert.equal(error.status, 409);
+      assert.equal(error.message, failure.message);
+      assert.deepEqual(error.details, details);
+      return true;
+    },
+  );
+  assert.equal(
+    calls,
+    1,
+    "observing or resubmitting the same command does not execute again",
+  );
+  const serialized = JSON.stringify([...f.table.entries()]);
+  assert.equal(serialized.includes("errorDetails"), false);
+  assert.equal(serialized.includes("conversation_source_mismatch"), false);
+  assert.equal(serialized.includes("private"), false);
+  const restored = new ConversationExecutions(f.table, f.ports);
+  t.after(() => restored.close());
+  const legacy = restored.receipt("one", command.commandId);
+  assert.equal(legacy.execution?.error, failure.message);
+  assert.equal(legacy.execution?.errorDetails, undefined);
+  assert.equal(
+    (await restored.snapshot("one")).turns[0]?.errorDetails,
+    undefined,
+  );
+  assert.equal(JSON.stringify([...f.table.entries()]), serialized);
+});
+
+test("uncertain persistence and rejected controls retain safe feedback without an automatic retry", async (t) => {
+  const table = storage();
+  const put = table.put;
+  table.put = async (key, value) => {
+    if (value.receipt.execution?.status === "error")
+      throw new Error("private disk error");
+    await put(key, value);
+  };
+  const f = fixture(table);
+  t.after(() => f.service.close());
+  let calls = 0;
+  f.ports.start = async () => {
+    calls++;
+    throw new Error("private provider response");
+  };
+  const command = start();
+  await f.service.submit("one", command);
+  const receipt = await settled(f.service, command);
+  assert.equal(receipt.status, "uncertain");
+  assert.deepEqual(receipt.errorDetails, {
+    code: "conversation_result_unsaved",
+  });
+  assert.deepEqual(receipt.execution?.errorDetails, {
+    code: "conversation_operation_failed",
+  });
+  assert.equal(JSON.stringify(receipt).includes("private"), false);
+  await f.service.submit("one", command);
+  assert.equal(calls, 1);
+  assert.equal(
+    JSON.stringify([...table.entries()]).includes("errorDetails"),
+    false,
+  );
+
+  const controls = fixture();
+  t.after(() => controls.service.close());
+  const active = start();
+  await controls.service.submit("one", active);
+  controls.ports.control = async () => {
+    throw new CodedFlowError("这个问题已经结束或不存在。", 404, {
+      code: "question_closed",
+    });
+  };
+  const steer = {
+    commandId: randomUUID(),
+    type: "turn.steer" as const,
+    executionId: active.commandId,
+    prompt: "original",
+  };
+  await controls.service.submit("one", steer);
+  assert.deepEqual((await settled(controls.service, steer)).errorDetails, {
+    code: "question_closed",
+  });
+  controls.ports.control = async () => {
+    throw new FlowError("external original message", 409);
+  };
+  const legacy = { ...steer, commandId: randomUUID() };
+  await controls.service.submit("one", legacy);
+  const legacyReceipt = await settled(controls.service, legacy);
+  assert.equal(legacyReceipt.error, "external original message");
+  assert.equal(legacyReceipt.errorDetails, undefined);
 });

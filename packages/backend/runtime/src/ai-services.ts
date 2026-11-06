@@ -12,7 +12,12 @@ import {
   type AiServiceDocument,
   type CodexSubscriptionAuth,
 } from "@aura/dsh-auth";
-import { probeModelConnection, modelProbeFailure } from "./model-probe.ts";
+import {
+  probeModelConnection,
+  modelProbeFailure,
+  modelProbeFailureCode,
+} from "./model-probe.ts";
+import type { ModelServiceCheck } from "@aura/protocol/model-checks";
 import { isChatModelId } from "@aura/protocol/models";
 import type { RuntimeConfig } from "./types.ts";
 
@@ -31,6 +36,10 @@ const object = (value: unknown): value is Record<string, unknown> =>
 export class AiServices implements AiServicesPort {
   private writes: Promise<unknown> = Promise.resolve();
   private checks = { model: "未检查", lumina: "未检查" };
+  private checkDetails: Record<"model" | "lumina", ModelServiceCheck> = {
+    model: { code: "unchecked" },
+    lumina: { code: "unchecked" },
+  };
   private checkRuns = { model: 0 };
   // Explicit fields: Node's strip-only TypeScript rejects parameter properties.
   private config: RuntimeConfig;
@@ -110,6 +119,7 @@ export class AiServices implements AiServicesPort {
           : {}),
       },
       checks: { ...this.checks },
+      checkDetails: structuredClone(this.checkDetails),
       checkRuns: { ...this.checkRuns },
       catalog: {
         codex: (await this.auth.ctx.llm.listModels("openai-codex"))
@@ -126,16 +136,20 @@ export class AiServices implements AiServicesPort {
       if (object(source) && source.clearKey && (await this.busy()))
         throw new AiConfigurationError(
           "仍有制作任务，请结束任务后再清除密钥。",
+          { details: { code: "ai_busy_clear_key" } },
         );
       const parsed = parseModelSettings(source);
       if (parsed.mode === "lumina")
-        throw new AiConfigurationError("请通过 Lumina 设置保存。");
+        throw new AiConfigurationError("请通过 Lumina 设置保存。", {
+          details: { code: "ai_lumina_settings_required" },
+        });
       if (parsed.mode === "codex") {
         try {
           await this.auth.validateModel(parsed.model, parsed.reasoningEffort);
         } catch {
           throw new AiConfigurationError(
             "Codex 模型或思考强度不可用，请检查模型 ID。",
+            { details: { code: "model_configuration_invalid" } },
           );
         }
       }
@@ -146,6 +160,7 @@ export class AiServices implements AiServicesPort {
         this.config.codexModel,
       );
       this.checks.model = "未检查";
+      this.checkDetails.model = { code: "unchecked" };
       return this.settings();
     });
   }
@@ -162,17 +177,21 @@ export class AiServices implements AiServicesPort {
         ) ||
         (source.select !== undefined && typeof source.select !== "boolean")
       )
-        throw new AiConfigurationError("Lumina 设置无效。");
+        throw new AiConfigurationError("Lumina 设置无效。", {
+          details: { code: "ai_custom_invalid" },
+        });
       if (
         (source.key !== undefined || source.clearKey) &&
         process.env[LUMINA_CREDENTIAL]?.trim()
       )
         throw new AiConfigurationError(
           "Lumina Key 由启动环境提供，请先移除环境变量再修改。",
+          { details: { code: "ai_environment_key_readonly" } },
         );
       if (source.clearKey && (await this.busy()))
         throw new AiConfigurationError(
           "仍有制作任务，请结束任务后再清除密钥。",
+          { details: { code: "ai_busy_clear_key" } },
         );
       const { select, ...rest } = source;
       const previous = await readAiServices(
@@ -192,6 +211,7 @@ export class AiServices implements AiServicesPort {
           model: previous.model,
         });
       this.checks.lumina = "未检查";
+      this.checkDetails.lumina = { code: "unchecked" };
       if (rest.key !== undefined)
         await this.discoverLumina(AbortSignal.timeout(15_000));
       return this.settings();
@@ -210,6 +230,7 @@ export class AiServices implements AiServicesPort {
     );
     if (!key) {
       this.checks.lumina = "请先保存 Lumina Key";
+      this.checkDetails.lumina = { code: "key_required" };
       return;
     }
     try {
@@ -230,8 +251,10 @@ export class AiServices implements AiServicesPort {
         this.config.codexModel,
       );
       this.checks.lumina = `连接成功，已同步 ${chat.length} 个对话模型`;
+      this.checkDetails.lumina = { code: "models_synced", count: chat.length };
     } catch {
       this.checks.lumina = "连接失败，请检查 Key 和网络";
+      this.checkDetails.lumina = { code: "discovery_failed" };
     }
   }
   async refreshModels(signal: AbortSignal) {
@@ -243,6 +266,7 @@ export class AiServices implements AiServicesPort {
       if (document.model.mode === "lumina") {
         await this.discoverLumina(signal);
         this.checks.model = this.checks.lumina;
+        this.checkDetails.model = this.checkDetails.lumina;
       } else {
         const route = document.selectedRoute
           ? document.routes[document.selectedRoute]
@@ -253,7 +277,9 @@ export class AiServices implements AiServicesPort {
             )
           : undefined;
         if (!route || !key)
-          throw new AiConfigurationError("请先保存模型密钥。");
+          throw new AiConfigurationError("请先保存模型密钥。", {
+            details: { code: "ai_key_required" },
+          });
         try {
           const models = await this.auth.ctx.llm.discoverModels(
             "llm-pi-ai",
@@ -274,8 +300,13 @@ export class AiServices implements AiServicesPort {
             this.config.codexModel,
           );
           this.checks.model = `已获取 ${models.filter(({ id }) => isChatModelId(id)).length} 个模型；尚未测试模型请求。`;
+          this.checkDetails.model = {
+            code: "models_listed",
+            count: models.filter(({ id }) => isChatModelId(id)).length,
+          };
         } catch {
           this.checks.model = "模型列表获取失败；可手填模型 ID 后测试连接。";
+          this.checkDetails.model = { code: "catalog_failed" };
         }
       }
       return this.settings();
@@ -299,9 +330,21 @@ export class AiServices implements AiServicesPort {
           this.config.credentialPath,
           signal,
         );
-        this.checks.model = `测试成功 · ${document.model.model} · ${Math.round(performance.now() - started)} ms · 回复：${reply}`;
+        const elapsedMs = Math.round(performance.now() - started);
+        this.checks.model = `测试成功 · ${document.model.model} · ${elapsedMs} ms · 回复：${reply}`;
+        this.checkDetails.model = {
+          code: "probe_succeeded",
+          model: document.model.model,
+          elapsedMs,
+          reply,
+        };
       } catch (error) {
         this.checks.model = `测试失败 · ${document.model.model} · ${modelProbeFailure(error, signal)}`;
+        this.checkDetails.model = {
+          code: "probe_failed",
+          model: document.model.model,
+          reason: modelProbeFailureCode(error, signal),
+        };
       }
       this.checkRuns.model++;
       return this.settings();
@@ -312,9 +355,11 @@ export class AiServices implements AiServicesPort {
       if (await this.busy())
         throw new AiConfigurationError(
           "仍有制作任务，请结束任务后再退出模型账号。",
+          { details: { code: "ai_busy_logout" } },
         );
       await this.auth.logout();
       this.checks.model = "未检查";
+      this.checkDetails.model = { code: "unchecked" };
       return this.settings();
     });
   }

@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useWorkflowMessages, workflowMessage } from "../workflow-messages.ts";
+import { messageText, type MessageReference } from "@aura/i18n/runtime";
 import {
   ArrowLeft,
   Download,
@@ -15,6 +17,7 @@ import { FlowGraphView } from "./FlowGraphView";
 import type { FlowCatalogController } from "../flowCatalog";
 import type { FlowCatalogEntry } from "@aura/protocol/types";
 import { useFlowSource } from "../flowSource";
+import { flowTitle, flowDescription, flowCatalogError } from "../metadata.ts";
 import type { FlowDraftController } from "../flowDraft";
 import type { FlowAnalysisController } from "../useFlowAnalysis";
 
@@ -35,8 +38,9 @@ export function FlowStudio({
   onBack(): void;
   onRun(flow: FlowCatalogEntry): void;
 }) {
+  const { t, i18n } = useWorkflowMessages();
   const [isDraft, setIsDraft] = useState(flowId === "");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<MessageReference>();
   const selectedFlow = isDraft
     ? undefined
     : catalogState.catalog?.flows.find((flow) => flow.id === flowId);
@@ -50,11 +54,13 @@ export function FlowStudio({
     (entry) => entry.code === code,
   )?.diagram;
   const title = isDraft
-    ? (diagram?.title ?? "工作流草稿")
-    : (selectedFlow?.title ?? "工作流已移除");
+    ? (diagram?.title ?? t("draftTitle"))
+    : selectedFlow
+      ? flowTitle(selectedFlow, i18n)
+      : t("removedTitle");
   const description = isDraft
-    ? "本地草稿 · 自动保存"
-    : selectedFlow?.description;
+    ? t("draftAutosave")
+    : selectedFlow && flowDescription(selectedFlow, i18n);
   const { selectSource } = analysis;
   useEffect(() => {
     selectSource(`${endpoint}:${isDraft ? "draft" : flowId}`, code);
@@ -77,15 +83,17 @@ export function FlowStudio({
     closeMenu();
   }
   const error =
-    (isDraft && draft.saveError) || selectedFlow?.error || analysis.error;
+    (isDraft && draft.saveError) ||
+    flowCatalogError(selectedFlow, i18n) ||
+    analysis.error;
   return (
-    <section className="workflow-editor" aria-label="工作流详情">
+    <section className="workflow-editor" aria-label={t("workflowDetails")}>
       <div className="flow-content">
         <header className="flow-content-heading">
           <button
             className="icon-control"
-            aria-label="返回工作流"
-            title="返回工作流"
+            aria-label={t("backWorkflows")}
+            title={t("backWorkflows")}
             onClick={onBack}
           >
             <ArrowLeft size={18} />
@@ -96,7 +104,11 @@ export function FlowStudio({
           </div>
           <div className="flow-content-actions">
             <span className="flow-view-status">
-              {isDraft ? (draft.saved ? "已保存" : "保存中…") : "已注册"}
+              {isDraft
+                ? draft.saved
+                  ? t("saved")
+                  : t("saving")
+                : t("registered")}
             </span>
             {!isDraft ? (
               <button
@@ -105,7 +117,7 @@ export function FlowStudio({
                 onClick={() => selectedFlow && onRun(selectedFlow)}
               >
                 <Play size={13} />
-                运行
+                {t("run")}
               </button>
             ) : null}
             <details
@@ -118,7 +130,7 @@ export function FlowStudio({
                 }
               }}
             >
-              <summary aria-label="工作流更多操作">
+              <summary aria-label={t("workflowMore")}>
                 <MoreHorizontal size={18} />
               </summary>
               <div className="flow-more-menu">
@@ -132,7 +144,7 @@ export function FlowStudio({
                       }}
                     >
                       <Undo2 size={14} />
-                      撤销草稿替换
+                      {t("undoDraft")}
                     </button>
                     <button
                       onClick={() => {
@@ -141,7 +153,7 @@ export function FlowStudio({
                       }}
                     >
                       <Upload size={14} />
-                      导入到草稿
+                      {t("importDraft")}
                     </button>
                   </>
                 ) : (
@@ -151,16 +163,16 @@ export function FlowStudio({
                       draft.update(code);
                       setIsDraft(true);
                       closeMenu();
-                      setNotice("已复制到本地草稿，可通过右侧对话修改并导出。");
+                      setNotice(workflowMessage("copiedDraft"));
                     }}
                   >
                     <FileCode2 size={14} />
-                    复制到草稿编辑
+                    {t("copyToDraft")}
                   </button>
                 )}
                 <button disabled={!code.trim()} onClick={download}>
                   <Download size={14} />
-                  导出代码
+                  {t("exportCode")}
                 </button>
               </div>
             </details>
@@ -171,13 +183,13 @@ export function FlowStudio({
           hidden
           ref={file}
           accept=".js,.ts,.txt"
-          aria-label="选择工作流文件"
+          aria-label={t("chooseWorkflowFile")}
           onChange={async (event) => {
             const selected = event.target.files?.[0];
             event.target.value = "";
             if (!selected) return;
             if (selected.size > 100_000) {
-              setNotice("请选择小于 100 KB 的工作流文件。");
+              setNotice(workflowMessage("workflowFileTooLarge"));
               return;
             }
             try {
@@ -185,21 +197,21 @@ export function FlowStudio({
               setIsDraft(true);
               closeMenu();
               setNotice(
-                `已导入 ${selected.name}，在右侧发送消息即可分析流程。`,
+                workflowMessage("importedDraft", { name: selected.name }),
               );
             } catch {
-              setNotice("文件读取失败，请重试。");
+              setNotice(workflowMessage("workflowFileReadFailed"));
             }
           }}
         />
         {notice || error ? (
           <div className="editor-notice" role={error ? "alert" : "status"}>
-            <span>{error || notice}</span>
+            <span>{error || (notice && messageText(notice, i18n))}</span>
             {notice ? (
               <button
                 className="icon-control"
-                aria-label="关闭提示"
-                onClick={() => setNotice("")}
+                aria-label={t("closeNotice")}
+                onClick={() => setNotice(undefined)}
               >
                 <X size={13} />
               </button>
@@ -214,18 +226,18 @@ export function FlowStudio({
             <Workflow size={28} className="aura-icon--display" />
             <strong>
               {!selectedFlow
-                ? "这个 Flow 已从目录移除"
+                ? t("removedFromCatalog")
                 : !selectedFlow.available
-                  ? "Flow 暂不可用"
+                  ? t("flowUnavailable")
                   : source.error
-                    ? "无法加载流程"
-                    : "正在加载流程…"}
+                    ? t("flowLoadFailed")
+                    : t("loadingFlow")}
             </strong>
-            <p>{source.error || selectedFlow?.error}</p>
+            <p>{source.error || flowCatalogError(selectedFlow, i18n)}</p>
             {source.error && selectedFlow?.available ? (
               <button className="tool-button" onClick={source.refresh}>
                 <RefreshCw size={13} />
-                重新加载
+                {t("reloadFlow")}
               </button>
             ) : null}
           </div>
@@ -236,18 +248,16 @@ export function FlowStudio({
             <span className="flow-analysis-symbol">
               <Workflow size={28} />
             </span>
-            <strong>让 Agent 读懂这个流程</strong>
+            <strong>{t("analyzeFlowTitle")}</strong>
             <p>
-              在右侧描述你的想法，或让助手分析当前流程。
+              {t("analyzeFlowHint")}
               <br />
-              生成的 SVG 流程图会显示在这里。
+              {t("generatedGraphHint")}
             </p>
           </div>
         )}
         {isDraft ? (
-          <div className="flow-draft-hint">
-            通过右侧对话完善流程，导出并注册后即可运行。
-          </div>
+          <div className="flow-draft-hint">{t("draftHint")}</div>
         ) : null}
       </div>
     </section>

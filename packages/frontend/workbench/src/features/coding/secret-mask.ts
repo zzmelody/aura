@@ -1,5 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { ComponentType } from "react";
+import { language } from "@aura/i18n/runtime";
+import { conversationText } from "../../conversation-messages.ts";
 
 export const SECRET_MASK_MODULE = "@deepseek-ai/dsh-client-ui-secret-mask";
 interface SecretNode {
@@ -79,7 +81,16 @@ export function installSecretMask(
   const mask: NativeMask = {
     rule,
     render,
-    translate: (key) => dictionaries.zh?.[key] ?? key,
+    translate: (key) => {
+      if (key === "secret.reveal") return conversationText("showSecret");
+      if (key === "secret.hide") return conversationText("hideSecret");
+      const locale = language.getSnapshot().locale;
+      return (
+        dictionaries[locale === "zh-CN" ? "zh" : locale]?.[key] ??
+        dictionaries.en?.[key] ??
+        key
+      );
+    },
   };
   current = mask;
   for (const listener of listeners) listener();

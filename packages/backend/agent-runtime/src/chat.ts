@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { ChatStreamEvent, ChatTurn } from "./types.ts";
 import type { conversationService } from "./conversations/conversations.ts";
 
@@ -15,7 +15,9 @@ export function chatService(service: ReturnType<typeof conversationService>) {
   ) => {
     const message = turn.messages.at(-1);
     if (!message || message.role !== "user")
-      throw new FlowError("对话请求需要以用户消息结束。", 400);
+      throw new CodedFlowError("对话请求需要以用户消息结束。", 400, {
+        code: "conversation_last_user_required",
+      });
     return service.stream(
       {
         sessionId: turn.sessionId ?? `chat-${randomUUID()}`,

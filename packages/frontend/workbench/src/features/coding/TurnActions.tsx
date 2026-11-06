@@ -1,3 +1,8 @@
+import {
+  useConversationMessages,
+  conversationMessage,
+} from "../../conversation-messages.ts";
+import { formatDate, formatNumber } from "@aura/i18n/runtime";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { Check, Copy, Database, GitFork } from "lucide-react";
 import type { CodingTurnUsage } from "@aura/protocol/types";
@@ -5,26 +10,6 @@ import { writeClipboard } from "../../clipboard.ts";
 import { Tooltip } from "../../Tooltip.tsx";
 import { useToast } from "../../toast.tsx";
 import { useAnchoredPopover } from "../../useAnchoredPopover.ts";
-
-const compactCount = new Intl.NumberFormat("en-US", {
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-const exactCount = new Intl.NumberFormat("zh-CN");
-const timeOfDay = new Intl.DateTimeFormat("zh-CN", {
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-});
-const monthDay = new Intl.DateTimeFormat("zh-CN", {
-  month: "numeric",
-  day: "numeric",
-});
-const fullDate = new Intl.DateTimeFormat("zh-CN", {
-  year: "numeric",
-  month: "numeric",
-  day: "numeric",
-});
 
 export function TurnActions({
   reply,
@@ -37,12 +22,13 @@ export function TurnActions({
   usage?: CodingTurnUsage;
   onFork?(): void;
 }) {
+  const { t } = useConversationMessages();
   const toast = useToast();
   const [copied, setCopied] = useState(false);
   const resetCopy = useRef<number>(undefined);
   useEffect(() => () => window.clearTimeout(resetCopy.current), []);
   if (!reply.trim() && !onFork && !usage) return null;
-  const copyLabel = copied ? "已复制本轮回复" : "复制本轮回复";
+  const copyLabel = copied ? t("turnCopied") : t("copyTurn");
   const copy = async () => {
     try {
       await writeClipboard(reply);
@@ -50,11 +36,15 @@ export function TurnActions({
       window.clearTimeout(resetCopy.current);
       resetCopy.current = window.setTimeout(() => setCopied(false), 1800);
     } catch {
-      toast({ message: "复制失败，请重试" });
+      toast({ message: conversationMessage("copyFailed") });
     }
   };
   return (
-    <div className="coding-turn-actions" role="group" aria-label="本轮回复操作">
+    <div
+      className="coding-turn-actions"
+      role="group"
+      aria-label={t("turnActions")}
+    >
       {reply.trim() ? (
         <Tooltip label={copyLabel} delayMs={0}>
           <button
@@ -71,14 +61,11 @@ export function TurnActions({
           </button>
         </Tooltip>
       ) : null}
-      <Tooltip
-        label={onFork ? "分叉到新对话" : "这条回复暂不可分叉"}
-        delayMs={0}
-      >
+      <Tooltip label={onFork ? t("fork") : t("cannotFork")} delayMs={0}>
         <button
           type="button"
           className="icon-control"
-          aria-label="分叉到新对话"
+          aria-label={t("fork")}
           aria-disabled={onFork ? undefined : true}
           onClick={onFork}
         >
@@ -94,22 +81,29 @@ export function TurnActions({
 }
 
 function TurnClock({ time }: { time: number }) {
+  useConversationMessages();
   const date = new Date(time);
   if (!Number.isFinite(date.getTime())) return null;
   const now = new Date();
-  const clock = timeOfDay.format(date);
-  const day =
-    date.toDateString() === now.toDateString()
-      ? ""
-      : (date.getFullYear() === now.getFullYear() ? monthDay : fullDate).format(
-          date,
-        );
-  return (
-    <time dateTime={date.toISOString()}>{day ? `${day} ${clock}` : clock}</time>
-  );
+  const sameDay = date.toDateString() === now.toDateString();
+  const label = formatDate(date, {
+    hour: "numeric",
+    minute: "2-digit",
+    ...(sameDay
+      ? {}
+      : {
+          month: "numeric",
+          day: "numeric",
+          ...(date.getFullYear() === now.getFullYear()
+            ? {}
+            : { year: "numeric" }),
+        }),
+  });
+  return <time dateTime={date.toISOString()}>{label}</time>;
 }
 
 function TurnUsage({ usage }: { usage: CodingTurnUsage }) {
+  const { t } = useConversationMessages();
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -118,15 +112,19 @@ function TurnUsage({ usage }: { usage: CodingTurnUsage }) {
   const promptTokens = usage.totalTokens - usage.outputTokens;
   const cacheHit =
     usage.cacheReadTokens !== undefined && promptTokens > 0
-      ? `${((usage.cacheReadTokens / promptTokens) * 100).toFixed(1)}%`
+      ? formatNumber(usage.cacheReadTokens / promptTokens, {
+          style: "percent",
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        })
       : undefined;
   const rows = [
-    ["缓存命中率", cacheHit],
-    ["未缓存输入", tokenLabel(usage.uncachedInputTokens)],
-    ["缓存读取", tokenLabel(usage.cacheReadTokens)],
-    ["缓存写入", tokenLabel(usage.cacheWriteTokens)],
-    ["输出", tokenLabel(usage.outputTokens)],
-    ["推理（计入输出）", tokenLabel(usage.reasoningTokens)],
+    [t("cacheHit"), cacheHit],
+    [t("uncachedInput"), tokenLabel(usage.uncachedInputTokens)],
+    [t("cacheRead"), tokenLabel(usage.cacheReadTokens)],
+    [t("cacheWrite"), tokenLabel(usage.cacheWriteTokens)],
+    [t("output"), tokenLabel(usage.outputTokens)],
+    [t("reasoningOutput"), tokenLabel(usage.reasoningTokens)],
   ] as const;
   return (
     <div className="coding-turn-usage">
@@ -134,20 +132,27 @@ function TurnUsage({ usage }: { usage: CodingTurnUsage }) {
         type="button"
         ref={trigger}
         className="coding-usage-trigger"
-        aria-label={`本轮用量 ${exactCount.format(usage.totalTokens)} tok`}
+        aria-label={t("turnUsageLabel", { count: usage.totalTokens })}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         onClick={() => setOpen((value) => !value)}
       >
         <Database size={15} aria-hidden="true" />
-        <span>用量 {compactCount.format(usage.totalTokens)} tok</span>
+        <span>
+          {t("usageCount", {
+            formatted: formatNumber(usage.totalTokens, {
+              notation: "compact",
+              maximumFractionDigits: 1,
+            }),
+          })}
+        </span>
       </button>
       <div
         ref={panel}
         id={id}
         role="dialog"
-        aria-label="本轮 Token 用量"
+        aria-label={t("turnTokens")}
         popover="auto"
         className="coding-usage-panel"
         onToggle={(event) => {
@@ -157,7 +162,7 @@ function TurnUsage({ usage }: { usage: CodingTurnUsage }) {
         <div className="coding-usage-heading">
           <span>
             <Database size={14} aria-hidden="true" />
-            本轮用量
+            {t("turnUsage")}
           </span>
           <strong>{tokenLabel(usage.totalTokens)}</strong>
         </div>
@@ -177,5 +182,5 @@ function TurnUsage({ usage }: { usage: CodingTurnUsage }) {
 }
 
 function tokenLabel(count: number | undefined): string | undefined {
-  return count === undefined ? undefined : `${exactCount.format(count)} tok`;
+  return count === undefined ? undefined : `${formatNumber(count)} tok`;
 }

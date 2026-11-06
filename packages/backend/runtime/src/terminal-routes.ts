@@ -1,7 +1,9 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { setTimeout as delay } from "node:timers/promises";
 import { FlowError, type OrchestrationHost } from "./dsh/host.ts";
+import { flowErrorBody } from "@aura/protocol/errors";
 import type {
   WorkspaceTerminalInfo,
   WorkspaceTerminalOutput,
@@ -13,12 +15,12 @@ export function createTerminalApp(host: Pick<OrchestrationHost, "request">) {
   const app = new Hono();
   app.onError((error, context) =>
     context.json(
-      {
-        message:
-          error instanceof FlowError
-            ? error.message
-            : "终端操作未完成，请检查服务连接。",
-      },
+      error instanceof FlowError
+        ? flowErrorBody(error)
+        : {
+            message: "终端操作未完成，请检查服务连接。",
+            code: "terminal_operation_failed",
+          },
       error instanceof FlowError && [400, 404, 409, 503].includes(error.status)
         ? (error.status as 400 | 404 | 409 | 503)
         : 500,
@@ -33,7 +35,10 @@ export function createTerminalApp(host: Pick<OrchestrationHost, "request">) {
   );
   app.post("/", async (context) => {
     const body: unknown = await context.req.json().catch(() => undefined);
-    if (!isRecord(body)) throw new FlowError("无效的终端请求。", 400);
+    if (!isRecord(body))
+      throw new CodedFlowError("无效的终端请求。", 400, {
+        code: "terminal_request_invalid",
+      });
     return context.json(
       await host.request<WorkspaceTerminalInfo>("coding/terminals/open", {
         projectId: body.projectId,
@@ -45,7 +50,10 @@ export function createTerminalApp(host: Pick<OrchestrationHost, "request">) {
   for (const action of ["write", "resize"] as const) {
     app.post(`/:id/${action}`, async (context) => {
       const body: unknown = await context.req.json().catch(() => undefined);
-      if (!isRecord(body)) throw new FlowError("无效的终端请求。", 400);
+      if (!isRecord(body))
+        throw new CodedFlowError("无效的终端请求。", 400, {
+          code: "terminal_request_invalid",
+        });
       return context.json(
         await host.request(`coding/terminals/${action}`, {
           terminalId: context.req.param("id"),
@@ -69,7 +77,9 @@ export function createTerminalApp(host: Pick<OrchestrationHost, "request">) {
       context.req.header("Last-Event-ID") ?? context.req.query("cursor") ?? 0,
     );
     if (!Number.isSafeInteger(cursor) || cursor < 0)
-      throw new FlowError("无效的终端输出位置。", 400);
+      throw new CodedFlowError("无效的终端输出位置。", 400, {
+        code: "terminal_cursor_invalid",
+      });
     const terminalId = context.req.param("id");
     const read = () =>
       host.request<WorkspaceTerminalOutput>("coding/terminals/read", {

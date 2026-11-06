@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { FlowRun } from "@aura/protocol/types";
 import { WorkflowRunStore } from "../src/workflow-run-store.ts";
+import { language, messageText } from "@aura/i18n/runtime";
 
 const endpoint = "http://localhost:4311";
 function run(id = "run-1", updatedAt = 1): FlowRun {
@@ -75,4 +76,34 @@ test("inactive Run snapshots are bounded while subscribed Runs remain available"
   assert.equal(store.snapshot(endpoint, "59").run?.id, "59");
   assert.equal(store.snapshot(endpoint, "pinned").run?.id, "pinned");
   stop();
+});
+
+test("a failed run refresh retains data and a localizable error without another request", async (t) => {
+  let calls = 0;
+  const store = new WorkflowRunStore(async () => {
+    calls++;
+    throw null;
+  });
+  t.after(() => store.close());
+  const saved = run();
+  store.publish(endpoint, saved);
+  await assert.rejects(
+    store.refresh(endpoint, saved.id),
+    (error) => error === null,
+  );
+  const snapshot = store.snapshot(endpoint, saved.id);
+  assert.equal(snapshot.run, saved);
+  assert.deepEqual(snapshot.error, {
+    namespace: "workflow",
+    key: "runReadFailed",
+  });
+  for (const locale of ["zh-CN", "en", "ja", "ko", "ru", "fr"]) {
+    const fixed = language.i18n.cloneInstance({ lng: locale });
+    assert.equal(
+      messageText(snapshot.error!, fixed),
+      fixed.t("runReadFailed", { ns: "workflow" }),
+    );
+    assert.equal(store.snapshot(endpoint, saved.id), snapshot);
+  }
+  assert.equal(calls, 1);
 });

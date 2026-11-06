@@ -6,7 +6,7 @@ import {
   conversationSides,
   PERSONAL_ASSISTANT_SESSION_ID,
 } from "@aura/protocol/conversations";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { CodingConversation, Table } from "../types.ts";
 import type {
   ChatMessage,
@@ -132,13 +132,19 @@ export class CodingConversationIndex {
     } = {},
   ): Promise<CodingConversationRecord> {
     if (id.startsWith("side-"))
-      throw new FlowError("旁支对话不能作为主对话打开。", 400);
+      throw new CodedFlowError("旁支对话不能作为主对话打开。", 400, {
+        code: "conversation_side_as_main",
+      });
     const existing = this.table.get(id);
     if (existing) {
       if (existing.closedAt !== undefined || existing.archivedAt !== undefined)
-        throw new FlowError("这段对话已关闭或归档。", 409);
+        throw new CodedFlowError("这段对话已关闭或归档。", 409, {
+          code: "conversation_closed",
+        });
       if (existing.projectId !== projectId)
-        throw new FlowError("这段对话属于另一个项目，请新建对话。", 409);
+        throw new CodedFlowError("这段对话属于另一个项目，请新建对话。", 409, {
+          code: "conversation_project_mismatch",
+        });
       return this.touch(id);
     }
     const now = Date.now();
@@ -207,10 +213,14 @@ export class CodingConversationIndex {
     const side = id.startsWith("side-");
     const parent = side ? this.sideParent(id) : this.get(id);
     if (!parent || parent.archivedAt !== undefined)
-      throw new FlowError("对话不存在或已归档。", 404);
+      throw new CodedFlowError("对话不存在或已归档。", 404, {
+        code: "conversation_missing",
+      });
     await this.table.update(parent.id, (current) => {
       if (current.closedAt !== undefined || current.archivedAt !== undefined)
-        throw new FlowError("对话不存在或已归档。", 404);
+        throw new CodedFlowError("对话不存在或已归档。", 404, {
+          code: "conversation_missing",
+        });
       if (!side)
         return {
           ...current,
@@ -218,7 +228,9 @@ export class CodingConversationIndex {
         };
       const sides = conversationSides(current);
       if (!sides.some((item) => item.id === id))
-        throw new FlowError("旁支已关闭。", 404);
+        throw new CodedFlowError("旁支已关闭。", 404, {
+          code: "conversation_side_closed",
+        });
       return withSides(
         current,
         sides.map((item) =>
@@ -244,14 +256,20 @@ export class CodingConversationIndex {
     const side = id.startsWith("side-");
     const parent = side ? this.sideParent(id) : this.get(id);
     if (!parent || parent.archivedAt !== undefined)
-      throw new FlowError("对话不存在或已归档。", 404);
+      throw new CodedFlowError("对话不存在或已归档。", 404, {
+        code: "conversation_missing",
+      });
     await this.table.update(parent.id, (current) => {
       if (current.closedAt !== undefined || current.archivedAt !== undefined)
-        throw new FlowError("对话不存在或已归档。", 404);
+        throw new CodedFlowError("对话不存在或已归档。", 404, {
+          code: "conversation_missing",
+        });
       if (!side) return { ...current, permission };
       const sides = conversationSides(current);
       if (!sides.some((item) => item.id === id))
-        throw new FlowError("旁支已关闭。", 404);
+        throw new CodedFlowError("旁支已关闭。", 404, {
+          code: "conversation_side_closed",
+        });
       return withSides(
         current,
         sides.map((item) => (item.id === id ? { ...item, permission } : item)),
@@ -267,11 +285,16 @@ export class CodingConversationIndex {
 
   /** Every explicit creation allocates an independent, durable side chat. */
   async openSide(parentId: string): Promise<string> {
-    if (!this.get(parentId)) throw new FlowError("主对话不存在或已关闭。", 404);
+    if (!this.get(parentId))
+      throw new CodedFlowError("主对话不存在或已关闭。", 404, {
+        code: "conversation_parent_missing",
+      });
     const id = `side-${randomUUID()}`;
     await this.table.update(parentId, (current) => {
       if (current.closedAt !== undefined || current.archivedAt !== undefined)
-        throw new FlowError("主对话已关闭或归档。", 409);
+        throw new CodedFlowError("主对话已关闭或归档。", 409, {
+          code: "conversation_parent_missing",
+        });
       return withSides(current, [
         ...conversationSides(current),
         {
@@ -287,7 +310,10 @@ export class CodingConversationIndex {
   /** The first submitted question supplies a provisional branch title. */
   async nameSide(sessionId: string, prompt: string): Promise<boolean> {
     const parent = this.sideParent(sessionId);
-    if (!parent) throw new FlowError("旁支已关闭。", 404);
+    if (!parent)
+      throw new CodedFlowError("旁支已关闭。", 404, {
+        code: "conversation_side_closed",
+      });
     let named = false;
     await this.table.update(parent.id, (current) => {
       if (
@@ -295,7 +321,9 @@ export class CodingConversationIndex {
         current.archivedAt !== undefined ||
         !this.side(current, sessionId)
       )
-        throw new FlowError("旁支已关闭。", 404);
+        throw new CodedFlowError("旁支已关闭。", 404, {
+          code: "conversation_side_closed",
+        });
       return withSides(
         current,
         conversationSides(current).map((item) => {
@@ -343,8 +371,13 @@ export class CodingConversationIndex {
   /** Archiving or closing a parent forgets its side, never its DSH logs. */
   async archive(id: string, archived: boolean): Promise<void> {
     if (archived && id === PERSONAL_ASSISTANT_SESSION_ID)
-      throw new FlowError("Aura 个人助手是固定会话，不能归档。", 409);
-    if (!this.get(id)) throw new FlowError("对话不存在或已关闭。", 404);
+      throw new CodedFlowError("Aura 个人助手是固定会话，不能归档。", 409, {
+        code: "conversation_assistant_archive_forbidden",
+      });
+    if (!this.get(id))
+      throw new CodedFlowError("对话不存在或已关闭。", 404, {
+        code: "conversation_missing",
+      });
     await this.table.update(id, (current) => {
       const {
         archivedAt: _archived,
@@ -359,7 +392,9 @@ export class CodingConversationIndex {
 
   async close(id: string): Promise<void> {
     if (id === PERSONAL_ASSISTANT_SESSION_ID)
-      throw new FlowError("Aura 个人助手是固定会话，不能关闭。", 409);
+      throw new CodedFlowError("Aura 个人助手是固定会话，不能关闭。", 409, {
+        code: "conversation_assistant_close_forbidden",
+      });
     if (!this.get(id)) return;
     await this.table.update(id, (current) => {
       const {
@@ -387,7 +422,9 @@ export class CodingConversationIndex {
   /** Drops the index entry; the DSH session log stays readable. */
   async remove(id: string): Promise<void> {
     if (id === PERSONAL_ASSISTANT_SESSION_ID)
-      throw new FlowError("Aura 个人助手是固定会话，不能删除。", 409);
+      throw new CodedFlowError("Aura 个人助手是固定会话，不能删除。", 409, {
+        code: "conversation_assistant_delete_forbidden",
+      });
     await this.table.delete(id);
   }
 }

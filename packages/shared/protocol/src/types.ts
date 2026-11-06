@@ -1,3 +1,6 @@
+import type { PluginLocalization } from "./localization.ts";
+import type { ApiErrorDetails, FlowFailureDetails } from "./errors.ts";
+
 /** Text-only message accepted by the demo HTTP endpoint. */
 /** One conversation turn; user turns may attach uploaded image asset IDs. */
 export type ChatMessage = {
@@ -21,14 +24,21 @@ export interface SiteProject {
 }
 export type SiteStatusState =
   "idle" | "starting" | "running" | "stopping" | "stopped" | "error";
+/** Plugin-owned transient display descriptor; consumers validate known codes and fields. */
+export interface SiteStatusMessage {
+  code: string;
+  params?: Record<string, string | number>;
+}
 export interface SiteStatus {
   state: SiteStatusState;
   project?: SiteProject;
   message?: string;
+  messageDetails?: SiteStatusMessage;
   output?: string;
   pid?: number;
   previewReady?: boolean;
   portMessage?: string;
+  portDetails?: SiteStatusMessage[];
 }
 
 /** Wire data only. Flow discovery, validation and execution live in the backend. */
@@ -90,10 +100,14 @@ export interface FlowAttempt {
   sessionId?: string;
   requestId?: string;
   error?: string;
+  /** Display projection only; never stored in the attempt record. */
+  errorDetails?: FlowFailureDetails;
 }
 export interface FlowRecoveryEvent {
   at: number;
   reason: string;
+  /** Transient display projection; persisted recovery events keep their old shape. */
+  reasonDetails?: ApiErrorDetails;
   action?: "retry" | "submit_output" | "terminate";
   requestId?: string;
 }
@@ -127,7 +141,10 @@ export interface AuraPluginStatus {
   available: boolean;
   /** Manifest `description`, shown on the plugins page. */
   description?: string;
+  /** Manifest-only display resources; excluded from durable plugin identity. */
+  localization?: PluginLocalization;
   error?: string;
+  errorDetails?: ApiErrorDetails;
 }
 
 /** Persisted trusted-local plugin entry. Paths are interpreted by the backend. */
@@ -204,6 +221,8 @@ export interface FlowCatalogEntry {
   service?: boolean;
   plugin?: AuraPluginIdentity;
   error?: string;
+  /** Transient display metadata, excluded from execution catalogs. */
+  errorDetails?: ApiErrorDetails;
 }
 export interface FlowCatalog {
   flows: FlowCatalogEntry[];
@@ -237,6 +256,8 @@ interface FlowStepBase {
   nextAttemptAt?: number;
   recoveryEvents?: FlowRecoveryEvent[];
   error?: string;
+  /** Display projection only; never stored in the step record. */
+  errorDetails?: FlowFailureDetails;
   startedAt?: number;
   finishedAt?: number;
 }
@@ -338,6 +359,8 @@ export interface FlowRun {
   steps: FlowStep[];
   output?: JsonValue;
   error?: string;
+  /** Display projection only; never stored in the Run record. */
+  errorDetails?: FlowFailureDetails;
   durableVersion?: 1;
   /** Frozen Run defaults, including environment-derived model selection. */
   agentDefaults?: FlowAgentConfig;
@@ -475,7 +498,7 @@ export interface ChatWorkflowStart {
 export type ChatEvent =
   | { type: "delta"; text: string }
   | ({ type: "workflow" } & ChatWorkflowStart)
-  | { type: "error"; message: string }
+  | ({ type: "error"; message: string } & Partial<ApiErrorDetails>)
   | { type: "done"; engine: "deepseek-harness"; mode: "demo" }
   | {
       type: "done";
@@ -494,7 +517,12 @@ export type CodexLoginInputRequest = { input: string };
 export type CodexAuthStatus =
   | { state: "signed_out"; model: string }
   | { state: "authenticated"; model: string }
-  | { state: "error"; message: string; model: string }
+  | {
+      state: "error";
+      message: string;
+      model: string;
+      messageDetails?: ApiErrorDetails;
+    }
   | {
       state: "pending";
       method: "browser" | "device_code";
@@ -502,6 +530,7 @@ export type CodexAuthStatus =
       verificationUri?: string;
       userCode?: string;
       message?: string;
+      messageDetails?: ApiErrorDetails;
       prompt?: {
         kind: "text" | "secret";
         message: string;
@@ -672,6 +701,8 @@ export interface CodingHistoryTurn {
   endSeq?: number;
   status: "running" | "complete" | "stopped" | "error";
   error?: string;
+  /** Optional live display metadata; stored DSH history remains unchanged. */
+  errorDetails?: ApiErrorDetails;
   /** The same events a live turn streams, in log order. */
   events: Array<{ type: "delta"; text: string } | CodingActivity>;
 }
@@ -791,13 +822,18 @@ export interface CodingSubagent {
   id: string;
   label: string;
   role: string;
+  /** Identifies host-generated display text without interpreting a user label. */
+  defaultLabel?: true;
+  roleKind?: "review" | "research" | "agent";
   status: "running" | "complete" | "stopped" | "error" | "unknown";
   result: string;
   durationMs?: number;
   /** Safe execution failure, independent of whether the record was readable. */
   executionError?: string;
+  executionErrorDetails?: ApiErrorDetails;
   /** A read failure does not establish the execution outcome. */
   recordError?: string;
+  recordErrorDetails?: ApiErrorDetails;
 }
 
 export type CodingCapabilityActivity =

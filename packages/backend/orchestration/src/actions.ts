@@ -1,3 +1,4 @@
+import { CodedFlowError, type ApiErrorDetails } from "@aura/protocol/errors";
 import type {} from "@deepseek-ai/dsh-tools";
 import { randomUUID } from "node:crypto";
 import type { Context } from "@deepseek-ai/cordis";
@@ -87,7 +88,11 @@ export class ActionRuntime {
         const release = action.retainServices?.();
         if (release) dispose.push(release);
         if (agent.ctx.tools.get(action.toolName, agent))
-          throw new FlowError(`Action 与已有 DSH 工具重名：${action.id}`);
+          throw new CodedFlowError(
+            `Action 与已有 DSH 工具重名：${action.id}`,
+            400,
+            { code: "action_tool_conflict", params: { id: action.id } },
+          );
         dispose.push(
           agent.ctx.tools.register(
             action.tool(action.toolName, {
@@ -120,10 +125,14 @@ export class ActionRuntime {
     const name = `${internalPrefix}${callId.replaceAll("-", "")}`;
     const release = action.retainServices?.();
     let dispose: () => void;
+    let displayFailure: ApiErrorDetails | undefined;
     try {
       dispose = this.ctx.tools.register(
         action.tool(name, {
           ...binding,
+          onFailure: (details) => {
+            displayFailure = details;
+          },
           services: action.services,
           aura: actionCapabilities(action, this.aura, binding),
           bindCall: artifactCallBinding(this.artifacts, binding),
@@ -149,9 +158,19 @@ export class ActionRuntime {
         if (
           code === ACTION_FAILURE_CODE &&
           result.error.info?.name === "ActionFailure"
-        )
+        ) {
+          if (displayFailure)
+            throw new CodedFlowError(result.error.message, 400, displayFailure);
           throw new FlowError(result.error.message);
-        throw new FlowError(`Action ${action.id} 执行失败（${code}）。`);
+        }
+        throw new CodedFlowError(
+          `Action ${action.id} 执行失败（${code}）。`,
+          400,
+          {
+            code: "action_execution_failed",
+            params: { id: action.id, reason: code },
+          },
+        );
       }
       return jsonValue(result.value, "Action 出参");
     } finally {

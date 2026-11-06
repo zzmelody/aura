@@ -13,6 +13,7 @@ import { createCodingApp } from "../src/coding-routes.ts";
 import type { OrchestrationHost } from "../src/dsh/host.ts";
 import { reservedPluginHttpMounts } from "../src/plugin-http-mounts.ts";
 import { FlowError } from "@aura/orchestration";
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { CodingSteerModelConfig } from "@aura/protocol/types";
 import type {
   AuraPluginSettingsPort,
@@ -64,6 +65,86 @@ const chat: ChatPort = {
     return { model: turn.model ?? "deepseek-v4-flash" };
   },
 };
+
+test("legacy chat streams expose safe error codes and keep text validation responses compatible", async () => {
+  let failure: Error = new CodedFlowError("safe legacy text", 422, {
+    code: "conversation_message_empty",
+  });
+  let calls = 0;
+  const host: ChatPort = {
+    ...chat,
+    async chat() {
+      calls++;
+      throw failure;
+    },
+    async coding() {
+      calls++;
+      throw failure;
+    },
+  };
+  const app = createApiApp({ codexAuth, chat: host });
+  const request = (path: string, body: unknown) =>
+    app.request(path, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Host: "localhost:4311",
+        Origin: "http://localhost:5173",
+      },
+      body: JSON.stringify(body),
+    });
+  for (const path of ["/chat", "/coding/turn"]) {
+    const invalid = await request(path, {});
+    assert.equal(invalid.status, 400);
+    assert.equal(
+      invalid.headers.get("X-Aura-Error-Code"),
+      "conversation_request_invalid",
+    );
+    assert.match(
+      invalid.headers.get("Access-Control-Expose-Headers") ?? "",
+      /X-Aura-Error-Code/iu,
+    );
+    assert.match(invalid.headers.get("Content-Type") ?? "", /^text\/plain/u);
+    assert.equal(
+      await invalid.text(),
+      path === "/chat" ? "无效的对话请求。" : "无效的编码请求。",
+    );
+  }
+  assert.equal(calls, 0);
+  const bodies = {
+    "/chat": {
+      sessionId: "one",
+      messages: [{ role: "user", text: "original" }],
+    },
+    "/coding/turn": { sessionId: "one", prompt: "original", mode: "demo" },
+  };
+  for (const [path, body] of Object.entries(bodies)) {
+    const response = await request(path, body);
+    assert.equal(response.status, 200);
+    assert.deepEqual(JSON.parse((await response.text()).trim()), {
+      type: "error",
+      message: "safe legacy text",
+      code: "conversation_message_empty",
+    });
+  }
+  failure = new FlowError("old external error", 422);
+  assert.deepEqual(
+    JSON.parse((await (await request("/chat", bodies["/chat"])).text()).trim()),
+    { type: "error", message: "old external error" },
+  );
+  failure = new Error("private upstream response");
+  for (const [path, body] of Object.entries(bodies)) {
+    const event = JSON.parse((await (await request(path, body)).text()).trim());
+    assert.equal(
+      event.code,
+      path === "/chat"
+        ? "chat_request_unavailable"
+        : "coding_request_unavailable",
+    );
+    assert.equal(JSON.stringify(event).includes("private"), false);
+  }
+  assert.equal(calls, 5);
+});
 
 test("conversation protocol discovery works before the host is ready or any session exists", async () => {
   const host = {
@@ -300,7 +381,9 @@ test("Hono API restricts and delegates trusted plugin configuration", async () =
     pluginSettings,
     pluginSettingsAccessible: false,
   });
-  assert.equal((await lan.request("/plugins/config")).status, 403);
+  const denied = await lan.request("/plugins/config");
+  assert.equal(denied.status, 403);
+  assert.equal((await denied.json()).code, "plugin_settings_local_only");
 });
 
 test("Hono API serves health, enforces origin policy and streams NDJSON", async () => {

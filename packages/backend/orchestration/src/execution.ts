@@ -42,8 +42,16 @@ import {
 import { runScoped } from "./scopes.ts";
 import { agentConfig } from "@aura/dsh-auth/model-config";
 import { FLOW_TIMEOUT_MS } from "./timeouts.ts";
+import { CodedFlowError, type FlowFailureDetails } from "@aura/protocol/errors";
+import { FlowDisplayError, flowFailureDetails } from "./flow-display-errors.ts";
 
 interface ExecutionOptions {
+  feedback?(
+    message: string,
+    details: FlowFailureDetails | undefined,
+    key?: string,
+    attempt?: number,
+  ): void;
   get(): FlowRun;
   update(change: (run: FlowRun) => FlowRun): Promise<FlowRun>;
   report(value: unknown): Promise<void>;
@@ -65,6 +73,7 @@ interface ExecutionOptions {
     }>;
     start(parentRunId: string, step: FlowChildStep): Promise<FlowRun>;
     run(runId: string): Promise<FlowRun>;
+    failure?(runId: string): FlowFailureDetails | undefined;
   };
 }
 
@@ -99,8 +108,10 @@ export class FlowExecution {
     this.admissionAbort.abort(this.suspension);
   }
   expire() {
-    this.fatalError = new FlowError(
+    this.fatalError = new CodedFlowError(
       `FLOW_TIMEOUT: 工作流执行超过 ${FLOW_TIMEOUT_MS / 60_000} 分钟。`,
+      400,
+      { code: "flow_timeout" },
     );
     this.abort.abort(this.fatalError);
     this.admissionAbort.abort(this.fatalError);
@@ -136,11 +147,19 @@ export class FlowExecution {
     this.boundary();
     const key = [...path, draft.id].join("/");
     if (this.visited.size >= (this.options.flow.stepLimit ?? 64))
-      throw new FlowError(
+      throw new CodedFlowError(
         `单次 Flow 最多执行 ${this.options.flow.stepLimit ?? 64} 个 durable 步骤。`,
+        400,
+        {
+          code: "flow_step_limit",
+          params: { limit: this.options.flow.stepLimit ?? 64 },
+        },
       );
     if (this.visited.has(key))
-      throw new FlowError(`Flow 步骤 ID 不能重复：${key}`);
+      throw new CodedFlowError(`Flow 步骤 ID 不能重复：${key}`, 400, {
+        code: "flow_step_duplicate",
+        params: { id: key },
+      });
     this.visited.add(key);
     const existing = this.step(key);
     // Legacy request fingerprints included source hashes. Reconstruct only that
@@ -179,6 +198,7 @@ export class FlowExecution {
       ) {
         this.fatalError = new ReplayMismatch(
           `步骤 ${key} 的调用与存档不一致。`,
+          { code: "flow_replay_step", params: { id: key } },
         );
         throw this.fatalError;
       }
@@ -216,18 +236,25 @@ export class FlowExecution {
     ) {
       this.fatalError = new ReplayMismatch(
         `Action ${id} 不再是运行创建时的版本。`,
+        { code: "flow_replay_action", params: { id } },
       );
       throw this.fatalError;
     }
     return action;
   }
-  private async failed(key: string, message: string): Promise<never> {
+  private async failed(
+    key: string,
+    message: string,
+    details?: FlowFailureDetails,
+  ): Promise<never> {
     await this.updateStep(key, (step) => ({
       ...step,
       status: "failed",
       error: message,
       finishedAt: Date.now(),
     }));
+    this.options.feedback?.(message, details, key);
+    if (details) throw new FlowDisplayError(message, details);
     throw new FlowError(message);
   }
   private async acquire() {
@@ -252,7 +279,9 @@ export class FlowExecution {
       if (this.reusable(step)) return step;
       this.boundary();
       if (!attemptsLeft(step))
-        return this.failed(key, "步骤已耗尽 retry 预算。");
+        return this.failed(key, "步骤已耗尽 retry 预算。", {
+          failure: { code: "recovery_exhausted" },
+        });
       if (step.nextAttemptAt && step.nextAttemptAt > Date.now())
         await delay(step.nextAttemptAt - Date.now(), undefined, {
           signal: AbortSignal.any([
@@ -302,6 +331,7 @@ export class FlowExecution {
             error instanceof FlowError &&
             /TOOL_OUTCOME_UNKNOWN/.test(error.message);
           let uncertainty: string | undefined;
+          let uncertaintyKind: FlowFailureDetails["uncertainty"];
           if (step.kind === "agent") {
             try {
               const result =
@@ -311,12 +341,17 @@ export class FlowExecution {
               unknown = result
                 ? result.actionStarted
                 : Boolean(step.actions?.length);
-              if (unknown)
+              if (unknown) {
+                uncertaintyKind = result
+                  ? "agent_result_unknown"
+                  : "agent_records_unavailable";
                 uncertainty = result
                   ? "Agent 已调用工具，外部结果需人工确认。"
                   : "无法核对 Agent 的工具执行记录，外部结果需人工确认。";
+              }
             } catch {
               unknown = true;
+              uncertaintyKind = "agent_records_unavailable";
               uncertainty =
                 "无法核对 Agent 的工具执行记录，外部结果需人工确认。";
             }
@@ -328,6 +363,24 @@ export class FlowExecution {
                 ? "DSH Agent 执行失败或超时，请查看对应会话。"
                 : "Action 执行失败。";
           const message = uncertainty ? `${uncertainty} ${failure}` : failure;
+          const display =
+            flowFailureDetails(error) ??
+            (!(error instanceof FlowError)
+              ? {
+                  failure: {
+                    code:
+                      step.kind === "agent"
+                        ? ("flow_agent_failed" as const)
+                        : ("flow_action_failed" as const),
+                  },
+                }
+              : undefined);
+          const details: FlowFailureDetails | undefined = display
+            ? {
+                ...display,
+                ...(uncertaintyKind ? { uncertainty: uncertaintyKind } : {}),
+              }
+            : undefined;
           const retry = !unknown && attemptsLeft(step);
           await this.updateStep(key, (current) => ({
             ...current,
@@ -346,8 +399,18 @@ export class FlowExecution {
                 : value,
             ),
           }));
+          this.options.feedback?.(message, details, key);
+          const attempt = this.options
+            .get()
+            .steps.find((step) => stepKey(step) === key)
+            ?.attempts?.at(-1);
+          if (attempt)
+            this.options.feedback?.(message, details, key, attempt.number);
           if (unknown) this.suspend("needs_attention");
-          if (!retry) throw new FlowError(message);
+          if (!retry) {
+            if (details) throw new FlowDisplayError(message, details);
+            throw new FlowError(message);
+          }
           continue;
         }
         // Never turn an output-commit failure into an automatic effect retry.
@@ -421,6 +484,7 @@ export class FlowExecution {
         return this.failed(
           prepared.key,
           "Agent Action 不存在或 actions 重复。",
+          { failure: { code: "flow_agent_actions_invalid" } },
         );
       const preset = (await this.options.ports.presets()).find(
         (item) => item.id === request.preset,
@@ -429,6 +493,12 @@ export class FlowExecution {
         return this.failed(
           prepared.key,
           `Preset 不存在或不可用：${request.preset}`,
+          {
+            failure: {
+              code: "flow_preset_missing",
+              params: { id: request.preset },
+            },
+          },
         );
       try {
         await this.options.ports.sessions.validateConfig?.(config);
@@ -438,6 +508,10 @@ export class FlowExecution {
           error instanceof FlowError
             ? error.message
             : "Agent 模型配置不可用，请检查模型及参数。",
+          flowFailureDetails(error) ??
+            (!(error instanceof FlowError)
+              ? { failure: { code: "flow_agent_config_invalid" } }
+              : undefined),
         );
       }
     }
@@ -453,7 +527,11 @@ export class FlowExecution {
         actionDefinitions: definitions as LoadedAction[],
       });
       if (!output.trim() || output.length > 80_000)
-        throw new FlowError("Agent 输出为空或超过 80,000 字符限制。");
+        throw new CodedFlowError(
+          "Agent 输出为空或超过 80,000 字符限制。",
+          400,
+          { code: "flow_agent_output_invalid" },
+        );
       return output;
     })) as FlowAgentStep;
     return {
@@ -490,6 +568,9 @@ export class FlowExecution {
         return this.failed(
           prepared.key,
           `Action 不存在或不可用：${request.action}`,
+          {
+            failure: { code: "action_missing", params: { id: request.action } },
+          },
         );
       if (
         action.recovery !== "idempotent" &&
@@ -498,6 +579,7 @@ export class FlowExecution {
         return this.failed(
           prepared.key,
           "只有声明 recovery: idempotent 的 Action 可以自动重试。",
+          { failure: { code: "flow_action_retry_forbidden" } },
         );
     }
     const step = (await this.perform(prepared.key, async (current) =>
@@ -641,9 +723,20 @@ export class FlowExecution {
         }));
         return this.suspend("paused");
       }
+      const childDetails = this.options.flows.failure?.(result.id);
       return this.failed(
         prepared.key,
         `子 Flow ${result.flow.id} ${result.status}：${result.error ?? "未返回结果。"}`,
+        childDetails &&
+          ["failed", "cancelled", "interrupted"].includes(result.status)
+          ? {
+              ...childDetails,
+              child: {
+                id: result.flow.id,
+                phase: result.status as "failed" | "cancelled" | "interrupted",
+              },
+            }
+          : undefined,
       );
     } finally {
       release();
@@ -685,6 +778,10 @@ export class FlowExecution {
         return this.failed(
           prepared.key,
           error instanceof FlowError ? error.message : "memo 计算失败。",
+          flowFailureDetails(error) ??
+            (!(error instanceof FlowError)
+              ? { failure: { code: "flow_memo_failed" } }
+              : undefined),
         );
       }
       return (await this.complete(prepared.key, output)).output;
@@ -819,6 +916,19 @@ export class FlowExecution {
             : step,
         ),
       }));
+      const current = this.options.get();
+      const details =
+        status === "cancelled"
+          ? { failure: { code: "flow_cancelled" as const } }
+          : (flowFailureDetails(error) ??
+            (!(error instanceof FlowError) && !suspension
+              ? { failure: { code: "flow_code_failed" as const } }
+              : undefined));
+      if (current.error) this.options.feedback?.(current.error, details);
+      if (timedOut && details)
+        for (const step of current.steps)
+          if (step.error && step.error === this.fatalError?.message)
+            this.options.feedback?.(step.error, details, stepKey(step));
     }
   }
 }

@@ -1,8 +1,8 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { Context } from "@deepseek-ai/cordis";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { SessionId } from "@deepseek-ai/dsh-session";
 import { agentDefaults } from "@aura/dsh-auth/model-config";
-import { FlowError } from "@aura/protocol/errors";
 import type { CodingTurn } from "../types.ts";
 import type { CodingCapabilityStore } from "./capabilities.ts";
 
@@ -80,7 +80,9 @@ export function conversationTitleGenerator(
         .trim()
         .slice(0, 80);
       if (!complete || !valid || !title || /\p{Cc}/u.test(title))
-        throw new FlowError("标题未能自动提炼。");
+        throw new CodedFlowError("标题未能自动提炼。", 400, {
+          code: "title_generation_failed",
+        });
       return title;
     } finally {
       await budget.settle(reservation, complete);

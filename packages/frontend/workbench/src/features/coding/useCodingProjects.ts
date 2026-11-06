@@ -1,4 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  errorMessage,
+  MessageError,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import {
+  conversationMessage as message,
+  useConversationMessages,
+} from "../../conversation-messages";
 import type {
   CodingConversationInfo,
   CodingPermission,
@@ -99,6 +109,7 @@ export function useCodingProjects(
   enabled: boolean,
   statusesEnabled = true,
 ): CodingProjectsController {
+  const { i18n } = useConversationMessages();
   const [restored] = useState(() => startupCache.sidebar(endpoint));
   const [projects, setProjects] = useState(restored.projects);
   const [dataEndpoint, setDataEndpoint] = useState(endpoint);
@@ -107,12 +118,12 @@ export function useCodingProjects(
     Record<string, CodingConversationInfo[]>
   >(restored.conversations);
   const [conversationErrors, setConversationErrors] = useState<
-    Record<string, string>
+    Record<string, string | MessageReference>
   >({});
   const [selection, setSelection] = useState<
     ConversationWorkspaceSelection & { branchFrom?: string; branchAt?: number }
   >({ projectId: conversationProject(restored.projects)?.id });
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
   const [pendingPermissions, setPendingPermissions] = useState<
     Partial<Record<string, CodingPermission>>
   >({});
@@ -142,7 +153,7 @@ export function useCodingProjects(
         const previous = current[sessionId];
         if (
           previous?.kind === status?.kind &&
-          previous?.label === status?.label
+          previous?.messageKey === status?.messageKey
         )
           return current;
         const next = { ...current };
@@ -169,7 +180,7 @@ export function useCodingProjects(
         if (!signal?.aborted && version === versions.current.get(projectId))
           setConversationErrors((current) => ({
             ...current,
-            [projectId]: "对话列表加载失败。",
+            [projectId]: message("conversationListFailed"),
           }));
         throw reason;
       }
@@ -252,8 +263,7 @@ export function useCodingProjects(
         setError("");
         return true;
       } catch (reason) {
-        if (!signal.aborted)
-          setError(reason instanceof Error ? reason.message : String(reason));
+        if (!signal.aborted) setError(errorMessage(reason));
         return false;
       } finally {
         setAssistantRequests((current) => current - 1);
@@ -333,7 +343,7 @@ export function useCodingProjects(
     const read = () =>
       refresh(abort.signal).catch((reason: unknown) => {
         if (!abort.signal.aborted) {
-          setError(reason instanceof Error ? reason.message : String(reason));
+          setError(errorMessage(reason));
           timer = setTimeout(read, 3000);
         }
       });
@@ -420,7 +430,7 @@ export function useCodingProjects(
         await refreshConversations(projectId);
         setError("");
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(errorMessage(reason));
         throw reason;
       }
     },
@@ -456,13 +466,11 @@ export function useCodingProjects(
         setError("");
         // Creation has succeeded even if this follow-up list is unavailable.
         void refreshConversations(projectId).catch(() => {
-          setError(
-            "旁支已创建，但列表刷新失败。请检查服务连接后重新打开会话。",
-          );
+          setError(message("sideCreatedRefreshFailed"));
         });
         return sessionId;
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(errorMessage(reason));
         throw reason;
       }
     },
@@ -493,10 +501,10 @@ export function useCodingProjects(
         setError("");
         // A failed refresh must never put a successfully closed panel back.
         void refreshConversations(projectId).catch(() => {
-          setError("旁支已关闭，但列表刷新失败。请检查服务连接。");
+          setError(message("sideClosedRefreshFailed"));
         });
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(errorMessage(reason));
         throw reason;
       }
     },
@@ -538,7 +546,15 @@ export function useCodingProjects(
     assistantLoading: assistantRequests > 0,
     loadAssistant: assistantLoader.load,
     conversations: dataEndpoint === endpoint ? conversations : {},
-    conversationErrors: dataEndpoint === endpoint ? conversationErrors : {},
+    conversationErrors:
+      dataEndpoint === endpoint
+        ? Object.fromEntries(
+            Object.entries(conversationErrors).map(([id, problem]) => [
+              id,
+              messageText(problem, i18n),
+            ]),
+          )
+        : {},
     selectedId: dataEndpoint === endpoint ? selection.projectId : undefined,
     canChooseWorkspace:
       dataEndpoint !== endpoint || canChooseConversationWorkspace(selection),
@@ -571,7 +587,9 @@ export function useCodingProjects(
             conversationSides(item).some((side) => side.id === sessionId),
         );
       if (!parent)
-        return Promise.reject(new Error("对话尚未保存，请稍后再试。"));
+        return Promise.reject(
+          new MessageError(message("conversationNotSaved")),
+        );
       setConversations((current) => ({
         ...current,
         [parent.projectId]: (current[parent.projectId] ?? []).map((item) =>
@@ -614,7 +632,7 @@ export function useCodingProjects(
             item.id === sessionId ||
             conversationSides(item).some((side) => side.id === sessionId),
         );
-      if (!parent) throw new Error("对话尚未保存，请稍后再试。");
+      if (!parent) throw new MessageError(message("conversationNotSaved"));
       const key = JSON.stringify([endpoint, sessionId]);
       if (permissionWrites.current.has(key)) return;
       permissionWrites.current.add(key);
@@ -667,6 +685,6 @@ export function useCodingProjects(
     close,
     statuses: dataEndpoint === endpoint ? statuses : {},
     reportStatus,
-    error,
+    error: messageText(error, i18n),
   };
 }

@@ -7,6 +7,8 @@ import { SessionActions, type SessionDialogRequest } from "../SessionActions";
 import { SessionStatus } from "../SessionStatus";
 import type { CodingProjectsController } from "../features/coding/useCodingProjects";
 import { PERSONAL_ASSISTANT_SESSION_ID } from "@aura/protocol/conversations";
+import { formatDate } from "@aura/i18n/runtime";
+import { useSidebarMessages } from "../sidebar-messages.ts";
 
 export function HistoryScreen({
   workspace,
@@ -23,6 +25,7 @@ export function HistoryScreen({
   conversations: CodingProjectsController;
   openConversation(projectId: string, sessionId: string): void;
 }) {
+  const { t } = useSidebarMessages();
   const [filter, setFilter] = useState<"all" | "active" | "archived">("all");
   const [query, setQuery] = useState("");
   const remote =
@@ -49,24 +52,28 @@ export function HistoryScreen({
         .includes(query.trim().toLowerCase()),
   );
   return (
-    <section className="history-screen" aria-label="全部会话记录">
+    <section className="history-screen" aria-label={t("allHistory")}>
       <div className="history-heading">
         <div>
-          <h1>全部记录</h1>
-          <p>{remoteSessions.length + sessions.length} 段会话。</p>
+          <h1>{t("historyTitle")}</h1>
+          <p>
+            {t("historyCount", {
+              count: remoteSessions.length + sessions.length,
+            })}
+          </p>
         </div>
         <button className="tool-button" onClick={start}>
           <SquarePen size={15} />
-          新对话
+          {t("newChat")}
         </button>
       </div>
       <div className="history-controls">
-        <div className="history-filters" aria-label="会话范围">
+        <div className="history-filters" aria-label={t("conversationScope")}>
           {(
             [
-              ["all", "全部"],
-              ["active", "未归档"],
-              ["archived", "已归档"],
+              ["all", t("all")],
+              ["active", t("unarchived")],
+              ["archived", t("archived")],
             ] as const
           ).map(([id, title]) => (
             <button
@@ -81,8 +88,8 @@ export function HistoryScreen({
         <label className="history-search">
           <Search size={15} />
           <input
-            aria-label="搜索全部记录"
-            placeholder="搜索会话…"
+            aria-label={t("searchHistory")}
+            placeholder={t("searchPlaceholder")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -93,7 +100,7 @@ export function HistoryScreen({
           <div key={item.id} className="history-row" data-row-highlight>
             <button
               className="history-session row-control"
-              aria-label={`打开会话：${item.title}`}
+              aria-label={t("openChat", { title: item.title })}
               onClick={() => openConversation(item.projectId, item.id)}
             >
               <MessageCircle size={17} />
@@ -105,14 +112,18 @@ export function HistoryScreen({
                       (project) => project.id === item.projectId,
                     )?.title
                   }{" "}
-                  · {new Date(item.updatedAt).toLocaleDateString("zh-CN")}
+                  · {formatDate(item.updatedAt, { dateStyle: "medium" })}
                 </small>
               </span>
-              <SessionStatus status={conversations.statuses[item.id]} text />
+              {conversations.statuses[item.id] ? (
+                <SessionStatus status={conversations.statuses[item.id]} text />
+              ) : null}
             </button>
             <button
               className="icon-control row-control"
-              aria-label={`${item.archivedAt ? "取消归档" : "归档"}：${item.title}`}
+              aria-label={t(item.archivedAt ? "restoreNamed" : "archiveNamed", {
+                title: item.title,
+              })}
               onClick={() =>
                 void conversations
                   .archive(item.projectId, item.id, !item.archivedAt)
@@ -130,7 +141,7 @@ export function HistoryScreen({
               <button
                 className="history-session row-control"
                 onClick={() => open(session.id)}
-                aria-label={`打开会话：${title}`}
+                aria-label={t("openChat", { title })}
               >
                 <span className="history-session-icon">
                   {session.workflow ? (
@@ -142,12 +153,12 @@ export function HistoryScreen({
                 <span className="history-session-name">
                   <strong>{title}</strong>
                   <small>
-                    {session.workflow?.title ?? "对话"} ·{" "}
-                    {new Date(session.updatedAt).toLocaleDateString("zh-CN")}
+                    {session.workflow?.title ?? t("conversations")} ·{" "}
+                    {formatDate(session.updatedAt, { dateStyle: "medium" })}
                     {session.archivedAt ? (
                       <>
                         <Archive size={11} />
-                        已归档
+                        {t("archived")}
                       </>
                     ) : null}
                   </small>
@@ -174,10 +185,10 @@ export function HistoryScreen({
             <Archive size={25} />
             <p>
               {query
-                ? "没有匹配的会话"
+                ? t("noMatches")
                 : filter === "archived"
-                  ? "归档的会话会出现在这里"
-                  : "还没有会话记录"}
+                  ? t("archiveEmpty")
+                  : t("noHistory")}
             </p>
           </div>
         ) : null}

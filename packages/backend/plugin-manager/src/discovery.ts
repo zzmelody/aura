@@ -2,9 +2,11 @@ import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { satisfies } from "semver";
 import { z } from "zod";
+import type { PluginLocalization } from "@aura/protocol/localization";
 import type {
   AuraPluginConfiguration,
   AuraPluginIdentity,
+  AuraPluginStatus,
   PluginCompatibility,
   PluginHttpContribution,
 } from "@aura/protocol/types";
@@ -21,7 +23,36 @@ async function json(path: string, label: string): Promise<unknown> {
   try {
     return JSON.parse(await readFile(path, "utf8")) as unknown;
   } catch {
-    throw new AuraPluginConfigurationError(`${label} 不是有效的 UTF-8 JSON。`);
+    throw new AuraPluginConfigurationError(`${label} 不是有效的 UTF-8 JSON。`, {
+      code: "plugin_json_invalid",
+    });
+  }
+}
+
+/** Settings can describe a disabled plugin without resolving or executing any contribution. */
+export async function readPluginDisplay(
+  path: string,
+): Promise<
+  | Pick<
+      AuraPluginStatus,
+      "id" | "name" | "version" | "description" | "localization"
+    >
+  | undefined
+> {
+  try {
+    const manifest = manifestSchema.parse(
+      await json(resolve(path, "aura.plugin.json"), "Plugin manifest"),
+    );
+    return {
+      id: manifest.id,
+      name: manifest.name,
+      version: manifest.version,
+      ...(manifest.description ? { description: manifest.description } : {}),
+      ...(manifest.localization ? { localization: manifest.localization } : {}),
+    };
+  } catch {
+    // Invalid/missing metadata does not activate the plugin or block its settings row.
+    return undefined;
   }
 }
 
@@ -68,13 +99,19 @@ async function validateEntryFile(
   try {
     entry = await realpath(resolve(pluginRoot, configuredPath));
   } catch {
-    throw new AuraPluginConfigurationError(`${label}不存在。`);
+    throw new AuraPluginConfigurationError(`${label}不存在。`, {
+      code: "plugin_entry_missing",
+    });
   }
   if (entry === pluginRoot || !inside(pluginRoot, entry))
-    throw new AuraPluginConfigurationError(`${label}必须位于插件根目录内。`);
+    throw new AuraPluginConfigurationError(`${label}必须位于插件根目录内。`, {
+      code: "plugin_path_outside",
+    });
   const info = await stat(entry);
   if (!info.isFile() || info.size === 0)
-    throw new AuraPluginConfigurationError(`${label}必须是非空文件。`);
+    throw new AuraPluginConfigurationError(`${label}必须是非空文件。`, {
+      code: "plugin_entry_empty",
+    });
   return entry;
 }
 
@@ -89,19 +126,24 @@ async function validateContributionRoot(
   } catch {
     throw new AuraPluginConfigurationError(
       `${kindLabels[kind]} 贡献目录不存在。`,
+      { code: "plugin_contribution_missing" },
     );
   }
   if (root === pluginRoot || !inside(pluginRoot, root))
     throw new AuraPluginConfigurationError(
       "插件贡献目录必须位于插件根目录内。",
+      { code: "plugin_path_outside" },
     );
   const children = await readdir(root, { withFileTypes: true });
   if (children.some((entry) => !entry.isDirectory()))
-    throw new AuraPluginConfigurationError("贡献根目录只能包含直接贡献目录。");
+    throw new AuraPluginConfigurationError("贡献根目录只能包含直接贡献目录。", {
+      code: "plugin_contribution_layout",
+    });
   for (const child of children) {
     if (!localIdPattern.test(child.name))
       throw new AuraPluginConfigurationError(
         `无效的本地贡献 ID：${child.name}`,
+        { code: "plugin_contribution_id_invalid" },
       );
     const directory = resolve(root, child.name);
     const expected = resolve(directory, `${child.name}.${kind}.js`);
@@ -109,6 +151,7 @@ async function validateContributionRoot(
     if (entries.length !== 1 || entries[0] !== expected)
       throw new AuraPluginConfigurationError(
         `${child.name} 必须且只能包含入口 ${child.name}.${kind}.js。`,
+        { code: "plugin_contribution_layout" },
       );
   }
   return root;
@@ -123,6 +166,7 @@ async function validatePresetRoot(root: string, path: string) {
   )
     throw new AuraPluginConfigurationError(
       "Preset root must be inside the plugin.",
+      { code: "plugin_path_outside" },
     );
   return target;
 }
@@ -133,6 +177,7 @@ async function validatePlugin(
 ): Promise<{
   identity: AuraPluginIdentity;
   description?: string;
+  localization?: PluginLocalization;
   pluginRoot: string;
   permissions: string[];
   actionRoot?: string;
@@ -149,7 +194,9 @@ async function validatePlugin(
   try {
     root = await realpath(resolve(configDirectory, configuredPath));
   } catch {
-    throw new AuraPluginConfigurationError("插件目录不存在或不可访问。");
+    throw new AuraPluginConfigurationError("插件目录不存在或不可访问。", {
+      code: "plugin_directory_missing",
+    });
   }
   const manifestResult = manifestSchema.safeParse(
     await json(resolve(root, "aura.plugin.json"), "aura.plugin.json"),
@@ -157,6 +204,7 @@ async function validatePlugin(
   if (!manifestResult.success)
     throw new AuraPluginConfigurationError(
       "aura.plugin.json 不符合 v2 插件规范。",
+      { code: "plugin_manifest_invalid" },
     );
   const manifest = manifestResult.data;
   const packageResult = z
@@ -166,6 +214,7 @@ async function validatePlugin(
   if (!packageResult.success || packageResult.data.type !== "module")
     throw new AuraPluginConfigurationError(
       'package.json 必须声明 "type": "module"。',
+      { code: "plugin_module_required" },
     );
   if (
     !satisfies(options.auraVersion, manifest.engines.aura, {
@@ -174,6 +223,7 @@ async function validatePlugin(
   )
     throw new AuraPluginConfigurationError(
       `插件不支持 Aura ${options.auraVersion}。`,
+      { code: "plugin_aura_incompatible" },
     );
   if (
     !satisfies(options.pluginSdkVersion, manifest.engines.pluginSdk, {
@@ -182,6 +232,7 @@ async function validatePlugin(
   )
     throw new AuraPluginConfigurationError(
       `插件不支持 Plugin SDK ${options.pluginSdkVersion}。`,
+      { code: "plugin_sdk_incompatible" },
     );
   const supported = new Set(options.supportedPermissions ?? []);
   const unsupported = manifest.permissions.filter(
@@ -190,6 +241,7 @@ async function validatePlugin(
   if (unsupported.length)
     throw new AuraPluginConfigurationError(
       `插件请求了未提供的权限：${unsupported.join(", ")}。`,
+      { code: "plugin_permission_unavailable" },
     );
 
   // `@aura/plugin-sdk` is provided by the host at load time; plugins never
@@ -216,6 +268,7 @@ async function validatePlugin(
       )
         throw new AuraPluginConfigurationError(
           "Legacy contribution grant has no matching entry.",
+          { code: "plugin_legacy_entry_missing" },
         );
     }
   }
@@ -225,10 +278,12 @@ async function validatePlugin(
   )
     throw new AuraPluginConfigurationError(
       "Backend HTTP/presets require contributes.backend.",
+      { code: "plugin_backend_required" },
     );
   return {
     identity,
     ...(manifest.description ? { description: manifest.description } : {}),
+    ...(manifest.localization ? { localization: manifest.localization } : {}),
     pluginRoot: root,
     ...(manifest.compatibility
       ? { compatibility: manifest.compatibility }
@@ -312,6 +367,7 @@ export async function resolveAuraPluginConfiguration(
       if (seen.has(plugin.identity.id))
         throw new AuraPluginConfigurationError(
           `插件 ID 重复：${plugin.identity.id}。`,
+          { code: "plugin_id_duplicate" },
         );
       const claims = [
         ...Object.keys(plugin.compatibility?.flows ?? {}).map(
@@ -333,6 +389,7 @@ export async function resolveAuraPluginConfiguration(
       if (claims.some((claim) => claimed.has(claim)))
         throw new AuraPluginConfigurationError(
           "Plugin compatibility grant is already owned.",
+          { code: "plugin_grant_conflict" },
         );
       for (const claim of claims) claimed.add(claim);
       seen.add(plugin.identity.id);
@@ -364,6 +421,7 @@ export async function resolveAuraPluginConfiguration(
       result.plugins.push({
         ...plugin.identity,
         ...(plugin.description ? { description: plugin.description } : {}),
+        ...(plugin.localization ? { localization: plugin.localization } : {}),
         enabled: true,
         available: true,
       });
@@ -376,6 +434,10 @@ export async function resolveAuraPluginConfiguration(
           error instanceof AuraPluginConfigurationError
             ? error.message
             : "插件校验失败。",
+        errorDetails:
+          error instanceof AuraPluginConfigurationError
+            ? error.details
+            : { code: "plugin_configuration_invalid" },
       });
     }
   }

@@ -1,5 +1,7 @@
 export {
   FlowError,
+  PluginFailure,
+  type ErrorTranslations,
   jsonValue,
   Suspension,
   StorageFailure,

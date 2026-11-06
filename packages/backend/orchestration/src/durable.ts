@@ -1,7 +1,8 @@
+import { CodedFlowError, type ApiErrorDetails } from "@aura/protocol/errors";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { FlowStep, FlowRunPhase, JsonValue } from "@aura/protocol/types";
-import { FlowError, jsonValue, parseJson } from "./schema.ts";
+import { jsonValue, parseJson } from "./schema.ts";
 
 export class Suspension extends Error {
   readonly phase: "paused" | "waiting_input" | "needs_attention";
@@ -10,9 +11,12 @@ export class Suspension extends Error {
     this.phase = phase;
   }
 }
-export class ReplayMismatch extends FlowError {
-  constructor(message: string) {
-    super(`FLOW_REPLAY_MISMATCH: ${message}`, 409);
+export class ReplayMismatch extends CodedFlowError {
+  constructor(
+    message: string,
+    details: ApiErrorDetails = { code: "flow_replay_mismatch" },
+  ) {
+    super(`FLOW_REPLAY_MISMATCH: ${message}`, 409, details);
   }
 }
 export class StorageFailure extends Error {
@@ -113,7 +117,11 @@ export function savedSchema(schema: z.ZodType): JsonValue {
     z.fromJSONSchema(value as Parameters<typeof z.fromJSONSchema>[0]);
     return value;
   } catch {
-    throw new FlowError("步骤 Schema 必须可无损表示为受支持的 JSON Schema。");
+    throw new CodedFlowError(
+      "步骤 Schema 必须可无损表示为受支持的 JSON Schema。",
+      400,
+      { code: "step_schema_unsupported" },
+    );
   }
 }
 export function validateSaved(schema: JsonValue, value: unknown): JsonValue {

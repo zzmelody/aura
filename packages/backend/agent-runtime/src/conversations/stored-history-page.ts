@@ -1,5 +1,5 @@
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 
 export interface HistoryCursor {
   beforeSeq?: number;
@@ -28,7 +28,9 @@ export function storedHistoryPage(
     (cursor.beforeSeq !== undefined &&
       (!Number.isSafeInteger(cursor.beforeSeq) || cursor.beforeSeq < 0))
   )
-    throw new FlowError("无效的历史分页游标。", 400);
+    throw new CodedFlowError("无效的历史分页游标。", 400, {
+      code: "history_cursor_invalid",
+    });
 
   const own = events.filter((event) => event.seq >= minimumSeq);
   const complete = (slice: readonly SessionEvent[]) => {

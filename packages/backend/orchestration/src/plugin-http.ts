@@ -1,3 +1,4 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
   isPluginHttpMount,
@@ -6,7 +7,6 @@ import {
 import type { BackendRoot } from "./types.ts";
 import type { PluginHttpDefinition, PluginHttpHost } from "./backend-api.ts";
 import { PluginModules } from "./plugin-modules.ts";
-import { FlowError } from "./schema.ts";
 
 /** Loads trusted Hono adapters. Only declared mounts and RPC prefixes are reachable. */
 export class PluginHttpRegistry {
@@ -31,10 +31,16 @@ export class PluginHttpRegistry {
         const entry = resolve(root.http.entry);
         const path = relative(root.pluginRoot, entry);
         if (!path || path.startsWith("..") || isAbsolute(path))
-          throw new FlowError("Plugin HTTP entry is outside its root.");
+          throw new CodedFlowError(
+            "Plugin HTTP entry is outside its root.",
+            400,
+            { code: "plugin_http_entry_invalid" },
+          );
         for (const mount of root.http.mounts) {
           if (!isPluginHttpMount(mount))
-            throw new FlowError("Invalid plugin HTTP mount.");
+            throw new CodedFlowError("Invalid plugin HTTP mount.", 400, {
+              code: "plugin_http_mount_invalid",
+            });
           if (
             this.reservedMounts.includes(mount) ||
             [...mounts].some(
@@ -43,7 +49,9 @@ export class PluginHttpRegistry {
                 matchesPluginHttpMount(existing, mount),
             )
           )
-            throw new FlowError("Plugin HTTP mount conflict.", 409);
+            throw new CodedFlowError("Plugin HTTP mount conflict.", 409, {
+              code: "plugin_http_mount_conflict",
+            });
           mounts.add(mount);
         }
         const module = (await this.#modules.import(entry, root.pluginRoot)) as {
@@ -52,7 +60,11 @@ export class PluginHttpRegistry {
           ) => PluginHttpDefinition | Promise<PluginHttpDefinition>;
         };
         if (typeof module.default !== "function")
-          throw new FlowError("Plugin HTTP entry must export a factory.");
+          throw new CodedFlowError(
+            "Plugin HTTP entry must export a factory.",
+            400,
+            { code: "plugin_http_factory_required" },
+          );
         const app = await module.default(
           Object.freeze({
             ...this.host,
@@ -67,13 +79,19 @@ export class PluginHttpRegistry {
                   method.startsWith(prefix),
                 )
               )
-                throw new FlowError("plugin_request_forbidden", 403);
+                throw new CodedFlowError("plugin_request_forbidden", 403, {
+                  code: "plugin_rpc_forbidden",
+                });
               return this.host.request<T>(method, input, signal);
             },
           }),
         );
         if (typeof app.fetch !== "function")
-          throw new FlowError("Plugin HTTP factory must return fetch().");
+          throw new CodedFlowError(
+            "Plugin HTTP factory must return fetch().",
+            400,
+            { code: "plugin_http_fetch_required" },
+          );
         candidates.push({ root, app });
       }
     } catch (error) {

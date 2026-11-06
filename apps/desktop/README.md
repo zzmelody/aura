@@ -6,6 +6,14 @@
 
 Aura 的 Windows/macOS/Linux Electron 桌面入口。Vite renderer 复用 `@aura/workbench` 的 React Web 界面；主进程提供受限本地静态服务器，并通过正式 workspace 依赖嵌入 `@aura/runtime`。退出桌面应用时会回收由它启动的服务。
 
+启动页和原生对话框使用 `@aura/i18n` 与应用自带的六语言词库 `src/locales/`。启动页在 React 加载前读取已有 `aura.language.v1` 偏好，包含标题、无障碍标签、加载状态和重新加载按钮；工作台就绪后接管页面标题。语言切换保留启动状态、画布和焦点。HTML 在 JavaScript 尚未执行时提供英文回退，不下载词库。
+
+主进程先通过 Electron 的 [系统语言列表](https://www.electronjs.org/docs/latest/api/app#appgetpreferredsystemlanguages) 选择语言；工作台加载后通过 `language-bridge.ts` 同步有效 locale。`language-host.ts` 只接收已登记窗口、相同 origin 的主 frame，并在关窗时移除登记。语言仅保存在进程内存，不增加设置文件或改写 `.aura/`。文件选择框的自定义标题、确认按钮、图片过滤名称和应用启动/退出提示使用当前语言；操作系统提供的取消按钮等原生控件仍由系统本地化，已经打开的原生对话框在下一次打开时应用新语言。
+
+路径选择、文件定位、站点预览和浏览器 IPC 通过 `native-errors.ts` 返回稳定错误码，preload 将失联等异常转换为安全回退码。结构化失败作为返回值穿过隔离桥接，不依赖 Electron 保留 Error 的自定义字段。renderer 的公开适配器恢复可读 Error 和实时翻译引用；未知系统异常、路径和远程调用包装不进入响应。`desktop-native-errors.test.ts` 使用合成 Electron 端口与隔离临时文件，验证错误码、来源/地址校验、标签上限与释放；`desktop-preload.test.ts` 验证沙箱 preload 不引入额外运行依赖。
+
+根测试 `desktop-startup.test.ts` 验证启动/失败状态、保存偏好、回退和资源清理；`desktop-language.test.ts` 使用合成 Electron 端口验证桥接来源、语言值、取消和原始路径保留。`desktop-language-layout.test.ts` 使用真实 HTML/CSS/Canvas 与隔离 Chromium，在准确的 320px、360px 和宽视口中检查六语言及加长文案、焦点和文字边界，需要 `CHROME_BIN`；它不代替系统原生选择框的视觉验收。修改主进程或 preload 后需完全退出并重启桌面应用。
+
 工作台在第一次成功读取后缓存公共模型目录和工作空间列表，之后重开窗口先恢复模型与工作空间选择，后台向服务校验。有缓存的新任务可在连接期间先提交，状态明确显示等待并支持停止；校验工作空间有效后才发出一次模型请求。首次没有缓存或已有会话的历史尚未读取时，仍需等待真实服务。该改动改善恢复与提交时间，不代表 DSH 或模型自身的冷启动已完成。
 
 静态 renderer 的本机 HTTP 服务复用上次成功监听的端口，使 Chromium 的 origin、界面偏好与目录缓存能跨应用重启保留。端口号保存在 Electron `userData/Cache/renderer-port`，只是可丢弃的启动提示，不改写 `.aura/` 用户配置；端口占用时由系统另选空闲端口并更新提示，缓存损坏或不可写不阻止打开界面。开发模式继续使用 Vite 的固定端口。

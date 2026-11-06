@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { language } from "@aura/i18n/runtime";
 import {
   collaborationCommand,
   collaborationPrefix,
@@ -36,6 +37,40 @@ const catalog = {
     },
   ],
 };
+
+test("command search uses the selected language while aliases and user entries retain their values", async () => {
+  await language.ready;
+  for (const locale of ["zh-CN", "en", "ja", "ko", "ru", "fr"]) {
+    const translate = language.i18n.getFixedT(locale, "conversation");
+    const entries = composerEntries({
+      ...catalog,
+      group: "commands",
+      translate,
+    });
+    assert.deepEqual(
+      entries.map((entry) => entry.name),
+      ["plan", "goal", "compact", "model", "stop", "clear"],
+    );
+    const title = translate("selectModel");
+    assert.notEqual(title, "selectModel");
+    const found = composerEntries({ ...catalog, query: title, translate });
+    assert.ok(
+      found.some(
+        (entry) => entry.kind === "command" && entry.command === "model",
+      ),
+      locale,
+    );
+    assert.equal(
+      composerEntries({ ...catalog, group: "skills", translate })[0]
+        ?.description,
+      "检查界面",
+    );
+    assert.equal(
+      composerEntries({ ...catalog, group: "flows", translate })[0]?.title,
+      "视频生成",
+    );
+  }
+});
 
 test("the slash root stays compact and opens separate command, skill and flow catalogs", () => {
   const root = composerEntries(catalog);

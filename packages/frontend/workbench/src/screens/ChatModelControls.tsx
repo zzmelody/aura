@@ -1,3 +1,7 @@
+import {
+  useConversationMessages,
+  type ConversationMessageKey,
+} from "../conversation-messages.ts";
 import { useAnchoredPopover } from "../useAnchoredPopover";
 import React, { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronDown, RotateCcw } from "lucide-react";
@@ -7,15 +11,23 @@ import { selectChatModel } from "../chatModels";
 import { useChatModels } from "../useChatModels";
 import "./chat-model-controls.css";
 
-const effortName = (effort: { id: string; name: string }) =>
-  effort.id === "xhigh" ? "Extra High" : effort.name;
+const effortKeys: Record<string, ConversationMessageKey> = {
+  off: "effortOff",
+  none: "effortOff",
+  minimal: "effortMinimal",
+  low: "effortLow",
+  medium: "effortMedium",
+  high: "effortHigh",
+  xhigh: "effortXhigh",
+  max: "effortMax",
+};
 
 const services = [
-  { mode: "codex", name: "Codex 订阅" },
-  { mode: "lumina", name: "Lumina" },
-  { mode: "custom", name: "自定义 API" },
-  { mode: "demo", name: "本地演示" },
-] satisfies Array<{ mode: FlowMode; name: string }>;
+  { mode: "codex", name: "codex" },
+  { mode: "lumina", name: "lumina" },
+  { mode: "custom", name: "customApi" },
+  { mode: "demo", name: "demo" },
+] satisfies Array<{ mode: FlowMode; name: ConversationMessageKey }>;
 
 /**
  * One compact trigger in the composer row: model name with its reasoning
@@ -42,6 +54,10 @@ export function ChatModelControls({
   onChange(selection: ChatModelSelection): void;
   onModeChange?(mode: FlowMode): void;
 }) {
+  const { t } = useConversationMessages();
+  const effortName = (effort: { id: string; name: string }) =>
+    effortKeys[effort.id] ? t(effortKeys[effort.id]) : effort.name;
+  const service = services.find((entry) => entry.mode === mode);
   const { catalog, error, refresh, restored, loading } = useChatModels(
     endpoint,
     mode,
@@ -97,7 +113,10 @@ export function ChatModelControls({
     (!model ||
       (effort && !model.reasoningEfforts.some(({ id }) => id === effort))),
   );
-  const label = model?.name ?? modelId ?? (error ? "模型不可用" : "读取模型…");
+  const label =
+    model?.name ??
+    modelId ??
+    (error ? t("modelUnavailable") : t("loadingModel"));
 
   /** Arrow keys move between menu items; Home/End jump to the ends. */
   function moveFocus(event: React.KeyboardEvent) {
@@ -131,11 +150,18 @@ export function ChatModelControls({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={`模型：${label}${shownEffort ? `，思考强度：${effortName(shownEffort)}` : ""}`}
+        aria-label={
+          shownEffort
+            ? t("modelEffortLabel", {
+                model: label,
+                effort: effortName(shownEffort),
+              })
+            : t("modelLabel", { model: label })
+        }
         title={
           unsupported
-            ? "已保存的配置不可用，请重新选择"
-            : `${label}${shownEffort ? ` · ${effortName(shownEffort)}` : ""} · ${services.find((service) => service.mode === mode)?.name ?? mode}`
+            ? t("unavailableSelection")
+            : `${label}${shownEffort ? ` · ${effortName(shownEffort)}` : ""} · ${service ? t(service.name) : mode}`
         }
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
@@ -153,16 +179,16 @@ export function ChatModelControls({
           id={menuId}
           className="chat-model-menu"
           role="menu"
-          aria-label="模型与思考强度"
+          aria-label={t("modelAndEffort")}
           onKeyDown={moveFocus}
         >
           {onModeChange ? (
             <>
-              <div className="chat-model-menu-heading">模型服务</div>
+              <div className="chat-model-menu-heading">{t("modelService")}</div>
               <div
                 className="chat-model-services"
                 role="group"
-                aria-label="模型服务"
+                aria-label={t("modelService")}
               >
                 {services.map((service) => (
                   <button
@@ -176,7 +202,7 @@ export function ChatModelControls({
                       trigger.current?.focus();
                     }}
                   >
-                    <span>{service.name}</span>
+                    <span>{t(service.name)}</span>
                     {service.mode === mode ? <Check size={13} /> : null}
                   </button>
                 ))}
@@ -187,14 +213,14 @@ export function ChatModelControls({
             <>
               {restored && loading ? (
                 <div className="chat-model-menu-heading" role="status">
-                  正在更新模型列表…
+                  {t("refreshingModels")}
                 </div>
               ) : null}
-              <div className="chat-model-menu-heading">模型</div>
+              <div className="chat-model-menu-heading">{t("model")}</div>
               <div
                 className="chat-model-menu-list"
                 role="group"
-                aria-label="模型"
+                aria-label={t("model")}
               >
                 {(catalog.models.some((entry) => entry.vendor)
                   ? groupModelsByVendor(catalog.models)
@@ -233,7 +259,7 @@ export function ChatModelControls({
                         >
                           <span>{entry.name}</span>
                           {entry.id === catalog.defaultModel ? (
-                            <small>默认</small>
+                            <small>{t("default")}</small>
                           ) : null}
                           {checked ? (
                             <Check size={14} aria-hidden="true" />
@@ -246,11 +272,11 @@ export function ChatModelControls({
               </div>
               {model?.reasoningEfforts.length ? (
                 <>
-                  <div className="chat-model-menu-heading">思考强度</div>
+                  <div className="chat-model-menu-heading">{t("effort")}</div>
                   <div
                     className="chat-model-menu-efforts"
                     role="group"
-                    aria-label="思考强度"
+                    aria-label={t("effort")}
                   >
                     {model.reasoningEfforts.map((entry) => {
                       const checked =
@@ -282,7 +308,7 @@ export function ChatModelControls({
                 </>
               ) : null}
               <p className="chat-model-menu-note">
-                {note ?? "仅影响当前会话，不改变工作流 Agent 的模型配置。"}
+                {note ?? t("selectionScope")}
               </p>
             </>
           ) : (
@@ -296,11 +322,11 @@ export function ChatModelControls({
                     onClick={refresh}
                   >
                     <RotateCcw size={13} aria-hidden="true" />
-                    重试
+                    {t("retry")}
                   </button>
                 </>
               ) : (
-                <span>正在读取模型…</span>
+                <span>{t("loadingModels")}</span>
               )}
             </div>
           )}

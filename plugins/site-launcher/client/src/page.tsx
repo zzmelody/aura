@@ -14,13 +14,14 @@ import type { SiteProject, SiteStatus, JsonValue } from "@aura/protocol/types";
 import { SiteScreen } from "./SiteScreen";
 import { normalizeSiteProject, type SiteHostApi } from "./site";
 import styles from "./site.css?inline";
+import { translations } from "./messages";
 
 function siteHost(call: AuraPluginPageProps["invoke"]): SiteHostApi {
   const invoke = (operation: string, input: JsonValue = {}) =>
     call(operation, input);
   const readProject = (value: unknown) => {
     const project = normalizeSiteProject(value);
-    if (!project) throw new Error("站点配置无效。");
+    if (!project) throw new Error("invalidProject");
     return project;
   };
   const readStatus = (value: unknown): SiteStatus => {
@@ -33,7 +34,7 @@ function siteHost(call: AuraPluginPageProps["invoke"]): SiteHostApi {
         value.state,
       )
     )
-      throw new Error("站点状态无效。");
+      throw new Error("invalidStatus");
     return value as SiteStatus;
   };
   const open = async (project: SiteProject) => {
@@ -61,7 +62,7 @@ function siteHost(call: AuraPluginPageProps["invoke"]): SiteHostApi {
       const poll = async () => {
         try {
           const source = await call("status", {}, abort.signal);
-          if (!Array.isArray(source)) throw new Error("站点状态无效。");
+          if (!Array.isArray(source)) throw new Error("invalidStatus");
           for (const value of source) {
             const status = readStatus(value);
             callback(status);
@@ -102,6 +103,7 @@ function SitePage(props: AuraPluginPageProps) {
 
 export const inject = ["auraWorkbench"];
 export function apply(ctx: Context) {
+  ctx.auraWorkbench.translations(translations);
   ctx.effect(() => {
     const style = document.createElement("style");
     style.dataset.auraPlugin = "site-launcher";
@@ -113,6 +115,7 @@ export function apply(ctx: Context) {
     definePage({
       id: "sites",
       title: "Site",
+      titleKey: "title",
       icon: "PanelsTopLeft",
       render: (props) => <SitePage key={props.endpoint} {...props} />,
     }),

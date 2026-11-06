@@ -12,6 +12,10 @@ import {
 } from "./site-network.ts";
 import { sitePortFlags, siteProjectInput } from "./site-project.ts";
 import { spawnSite, stopSiteProcess } from "./site-process.ts";
+import {
+  SiteStatusError,
+  type SiteMessage,
+} from "../shared/status-messages.ts";
 
 export { describeProject } from "./site-project.ts";
 export type { SiteProject, SiteStatus } from "@aura/protocol/types";
@@ -135,6 +139,7 @@ export class SiteRunner {
           project,
           previewReady: false,
           message: "正在检查项目端口…",
+          messageDetails: { code: "checkingPorts" },
         });
         const url = localSiteUrl(project.url);
         const preferred = sitePort(url);
@@ -145,8 +150,9 @@ export class SiteRunner {
           (this.reservedPorts.has(preferred) ||
             !(await portAvailable(preferred)))
         )
-          throw new Error(
+          throw new SiteStatusError(
             `端口 ${preferred} 已被占用。自定义启动脚本无法安全自动改端口，请同时修改脚本监听端口和预览地址，或自行停止占用服务后重试。Aura 不会结束其他服务。`,
+            { code: "portOccupied", params: { port: preferred } },
           );
         const port = supported
           ? await this.reservePort(preferred, id)
@@ -181,7 +187,9 @@ export class SiteRunner {
           this.append(id, entry!, String(chunk)),
         );
         child.once("error", (error) =>
-          this.exited(id, entry!, `无法启动项目：${error.message}`, true),
+          this.exited(id, entry!, `无法启动项目：${error.message}`, true, {
+            code: "startFailed",
+          }),
         );
         child.once("exit", (code, signal) =>
           this.exited(
@@ -191,6 +199,13 @@ export class SiteRunner {
               ? "项目进程已结束。"
               : `项目进程已退出（${signal ?? `代码 ${code}`}），请查看输出；若端口被抢占，请重新运行。`,
             code !== 0,
+            code === 0
+              ? { code: "processEnded" }
+              : signal
+                ? { code: "processExitSignal", params: { signal } }
+                : code !== null
+                  ? { code: "processExitCode", params: { exitCode: code } }
+                  : { code: "processExited" },
           ),
         );
         this.publish(id, {
@@ -199,10 +214,21 @@ export class SiteRunner {
           pid: child.pid,
           previewReady: false,
           message: `正在运行 ${runProject.packageManager} run ${runProject.script}…`,
+          messageDetails: {
+            code: "runningScript",
+            params: {
+              manager: runProject.packageManager,
+              script: runProject.script,
+            },
+          },
           portMessage:
             port !== preferred
               ? `端口 ${preferred} 已被占用，已自动选择可用端口 ${port}。`
               : undefined,
+          portDetails:
+            port !== preferred
+              ? [{ code: "portChanged", params: { preferred, port } }]
+              : [],
         });
         const runEntry = entry;
         void this.waitForPreview(id, runEntry).catch((error) => {
@@ -212,6 +238,7 @@ export class SiteRunner {
               state: "error",
               previewReady: false,
               message: String(error instanceof Error ? error.message : error),
+              messageDetails: { code: "previewFailed" },
             });
         });
         return this.getStatus(id);
@@ -225,6 +252,10 @@ export class SiteRunner {
           project,
           previewReady: false,
           message: error instanceof Error ? error.message : "项目启动失败。",
+          messageDetails:
+            error instanceof SiteStatusError
+              ? error.details
+              : { code: "startFailed" },
         });
       }
     });
@@ -255,6 +286,7 @@ export class SiteRunner {
         state: "stopping",
         previewReady: false,
         message: "正在停止项目…",
+        messageDetails: { code: "stoppingProject" },
       });
       try {
         await stopSiteProcess(entry.child);
@@ -264,6 +296,7 @@ export class SiteRunner {
           state: "error",
           message:
             error instanceof Error ? error.message : "停止失败，请重试。",
+          messageDetails: { code: "stopFailed" },
         });
         throw error;
       }
@@ -276,6 +309,7 @@ export class SiteRunner {
       pid: undefined,
       previewReady: false,
       message: "项目已停止。",
+      messageDetails: { code: "projectStopped" },
     });
   }
 
@@ -284,6 +318,7 @@ export class SiteRunner {
     entry: Entry,
     message: string,
     failed: boolean,
+    messageDetails: SiteMessage,
   ): void {
     // An exit event sets exitCode before this callback runs. live() would
     // reject the exited child and leave the site stuck in "starting".
@@ -296,6 +331,7 @@ export class SiteRunner {
         ...this.getStatus(id),
         state: failed ? "error" : "stopped",
         message,
+        messageDetails,
       });
     }).catch(() => {
       /* stopCurrent retains the process and publishes a retryable error. */
@@ -349,6 +385,7 @@ export class SiteRunner {
           project: entry.project,
           previewReady: true,
           message: "项目已启动，正在打开预览。",
+          messageDetails: { code: "openingPreview" },
           portMessage: changed
             ? [
                 this.getStatus(id).portMessage,
@@ -357,12 +394,19 @@ export class SiteRunner {
                 .filter(Boolean)
                 .join(" ")
             : this.getStatus(id).portMessage,
+          portDetails: changed
+            ? [
+                ...(this.getStatus(id).portDetails ?? []),
+                { code: "addressChanged", params: { url, previous } },
+              ]
+            : this.getStatus(id).portDetails,
         });
         await this.options.openPreview(entry.project.url, entry.project);
         if (this.live(id, entry))
           this.publish(id, {
             ...this.getStatus(id),
             message: "项目已启动，预览窗口已打开。",
+            messageDetails: { code: "previewOpened" },
           });
         return;
       }
@@ -375,6 +419,7 @@ export class SiteRunner {
         previewReady: false,
         message:
           "命令仍在运行，但未确认可用且属于本次进程的预览端口。请检查输出、监听地址及端口后停止重试；不会打开其他服务。端口归属检查需要系统进程查询工具。",
+        messageDetails: { code: "previewTimeout" },
       });
   }
 
@@ -393,7 +438,10 @@ export class SiteRunner {
       (typeof projectOrUrl === "object" && projectOrUrl.url !== project.url) ||
       !(await this.verified(project.id, entry, project.url))
     )
-      throw new Error("预览尚未就绪或端口已不属于本次项目，请停止后重新运行。");
+      throw new SiteStatusError(
+        "预览尚未就绪或端口已不属于本次项目，请停止后重新运行。",
+        { code: "previewNotReady" },
+      );
     await this.options.openPreview(project.url, project);
   }
 }

@@ -26,7 +26,7 @@ test("a locally queued turn reports connecting without claiming model execution"
   const turn = { ...newTurn("queued", "任务", 1), waitingForService: true };
   assert.deepEqual(codingConversationStatus([turn]), {
     kind: "queued",
-    label: "连接服务中",
+    messageKey: "connecting",
   });
   assert.equal(isActiveStatus(codingConversationStatus([turn])), false);
   assert.equal(
@@ -42,15 +42,15 @@ test("a locally queued turn reports connecting without claiming model execution"
 test("a finished turn reports completed, stopped or failed", () => {
   assert.deepEqual(codingConversationStatus([settled("complete")]), {
     kind: "completed",
-    label: "已完成",
+    messageKey: "completed",
   });
   assert.deepEqual(codingConversationStatus([settled("stopped")]), {
     kind: "stopped",
-    label: "已停止",
+    messageKey: "stopped",
   });
   assert.deepEqual(codingConversationStatus([settled("error")]), {
     kind: "failed",
-    label: "执行失败",
+    messageKey: "executionFailed",
   });
 });
 
@@ -58,7 +58,7 @@ test("an open question reports waiting, otherwise running", () => {
   const running = newTurn("t", "任务", 1);
   assert.deepEqual(codingConversationStatus([running]), {
     kind: "running",
-    label: "正在执行",
+    messageKey: "executing",
   });
   const waiting = applyTurnEvent(running, {
     type: "question",
@@ -67,7 +67,7 @@ test("an open question reports waiting, otherwise running", () => {
   });
   assert.deepEqual(codingConversationStatus([waiting]), {
     kind: "waiting",
-    label: "等待你的回答",
+    messageKey: "waitingAnswer",
   });
   const answered = applyTurnEvent(waiting, {
     type: "answered",
@@ -119,14 +119,20 @@ test("a running side chat keeps a settled main conversation running", () => {
   assert.equal(withSideActivity(completed, false)?.kind, "completed");
   assert.equal(withSideActivity(completed, true)?.kind, "running");
   assert.equal(withSideActivity(undefined, true)?.kind, "running");
-  const waiting = { kind: "waiting" as const, label: "等待你的回答" };
+  const waiting = {
+    kind: "waiting" as const,
+    messageKey: "waitingAnswer" as const,
+  };
   assert.equal(withSideActivity(waiting, true), waiting);
 });
 
 test("only running and waiting rows keep the sidebar polling", () => {
-  assert.equal(isActiveStatus({ kind: "running", label: "" }), true);
-  assert.equal(isActiveStatus({ kind: "waiting", label: "" }), true);
-  assert.equal(isActiveStatus({ kind: "completed", label: "" }), false);
+  assert.equal(isActiveStatus({ kind: "running", messageKey: "idle" }), true);
+  assert.equal(isActiveStatus({ kind: "waiting", messageKey: "idle" }), true);
+  assert.equal(
+    isActiveStatus({ kind: "completed", messageKey: "idle" }),
+    false,
+  );
   assert.equal(isActiveStatus(undefined), false);
 });
 

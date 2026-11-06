@@ -102,6 +102,14 @@ test("public Action failures are bounded product-facing errors", () => {
   assert.equal(error.code, "ACTION_FAILURE");
   assert.equal(error.message, "生成左视图 超时。");
   assert.throws(() => new ActionFailure("\n\t"), /message is required/u);
+  const localized = new ActionFailure("Original public failure", {
+    translations: { en: "UI-only translation", ja: "表示用の翻訳" },
+  });
+  assert.equal(
+    JSON.stringify(localized).includes("UI-only translation"),
+    false,
+  );
+  assert.equal(localized.message, "Original public failure");
 });
 
 test("relocated workflows preserve explicit root sequence paths", async () => {

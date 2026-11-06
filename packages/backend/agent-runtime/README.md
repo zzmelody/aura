@@ -4,7 +4,11 @@
 
 `createAgentService` 处理现有 `chat`、`coding`、`automation` 和对话集成请求。`@aura/agent-runtime/history` 选择冷读或实时历史，`@aura/agent-runtime/profile` 提供 Agent preset 与插件入口。
 
+对话准入、命令冲突、索引/旁支、回答和历史游标的已知失败通过 `CodedFlowError` 返回稳定显示码，保留原 message/status。执行层将失败的翻译信息保存在最多 256 条的内存映射中，投影到回执、实时事件和快照；有原生 turn ID 时只给对应失败回合附加 `errorDetails`。账本、DSH 历史、提示词和业务状态不保存这些字段。映射淘汰或进程重启后，依赖该映射的已完成错误保留原文；未完成执行的重启提示由既有恢复状态投影。存储失败仍标为不确定，不自动重发。`conversation-executions.test.ts` 验证投影、原记录不变、旧错误回退和幂等行为。
+
 `conversations/subagents.ts` 只读 DSH 子 Agent 目录与记录。状态、结果与累计执行耗时只来自子会话自身描述符后的记录，当前轮次未结束时不复用旧轮次结论。`executionError` 通过公共安全错误投影返回；`recordError` 独立表示读取失败，无实时运行事实时状态为 `unknown`，不能据此认定执行失败。重新读取不恢复 Agent、不重提任务，也不改写历史。
+
+原生 DSH 的失败原因经 `agentFailure` 分类后，可在历史读取结果附加 `errorDetails`；策略阻止使用原生 reason 枚举投影。该投影不需要内存错误映射，也不修改已存日志。子 Agent 结果提供对应的执行／读取错误详情，以及宿主默认名称和角色的显示标识。模型选择错误仅附带有界 DSH 原因码；用户名称、角色原字段、模型结果和原始错误消息不改写。
 
 `personalAssistant(create = false)` 读取 Aura 专属主会话与其工作空间；只有显式传入 `true` 才在缺失时创建。索引对并发打开合并处理，固定身份为协议定义的 `coding-aura-personal-assistant`，沿用现有 domain 与 DSH 日志。再次打开不改写已有记录、不触发模型、不更换目录，重启后继续原上下文和模型配置。普通会话的关闭、归档和删除接口拒绝结束此主会话；普通任务保持独立。所属工作空间不可用时返回冲突，不自动重建或迁移用户数据。
 
@@ -37,6 +41,10 @@
 旁支每轮使用专属系统规则，将主对话历史作为背景，并以旁支用户消息确定当前任务。用户可在旁支明确要求继续主对话的任务。新旁支首次 fork 后通过 DSH 关闭继承的计划模式，已建立的旁支恢复自身的计划状态。
 
 ## 验证
+
+会话工具与维护阶段的已知拒绝同样使用显示码，包括父会话、MCP 权限、子 Agent 目录、Web 配置、协作初始化、压缩结果未知、图片支持、目标纯文本与额度、分叉记录及运行中跨服务切换。旧 message/status 和取消原因保留；切换语言不改变工具调用、压缩、分叉、目标续跑或模型请求。图片集成测试在 runtime 包中验证描述符通过真实 DSH 往返，拒绝图片时仍不发起模型请求。
+
+工作区相关请求校验、协作目标、对话能力预算、设置 revision、语音与 MCP/团队/搜索开关的已知拒绝携带稳定显示码，原 message/status 保持兼容。自动化使用 DSH `ScheduleInputError.code` 投影八类输入错误，并区分任务冲突与不存在；任务标题、指令、时间、时区和 revision 校验不变。错误只补充返回给界面的信息，不写入设置或预算账本。`automation-errors.test.ts` 验证任务内容与调用次数，能力测试验证 revision 拒绝不会写入存储。
 
 从仓库根运行 `pnpm --filter @aura/agent-runtime run typecheck` 和 `pnpm --filter @aura/agent-runtime run test`。跨包 DSH 和 HTTP 集成测试位于 `@aura/runtime`。
 

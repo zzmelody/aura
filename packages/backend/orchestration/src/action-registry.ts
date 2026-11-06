@@ -1,3 +1,5 @@
+import { readErrorDetails, type ApiErrorDetails } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { FlowCatalogEntry, JsonValue } from "@aura/protocol/types";
 import type {
   ActionRegistration,
@@ -35,6 +37,8 @@ export class ActionRegistry {
   private loaded = new Map<string, LoadedAction>();
   private problems = new Map<string, string>();
   private warnings = new Map<string, string>();
+  private problemDetails = new Map<string, ApiErrorDetails>();
+  private warningDetails = new Map<string, ApiErrorDetails>();
   private revision = 0;
   private readonly loadId = randomUUID();
   private services: (pluginId: string) => Readonly<Record<string, unknown>> =
@@ -64,7 +68,9 @@ export class ActionRegistry {
     const id = parse(contributionIdSchema, config.actionId);
     parse(z.enum(["manual", "idempotent"]), definition.recovery ?? "manual");
     if (id === "run_code" || id.startsWith("aura_direct_"))
-      throw new FlowError("Action ID 为内部保留名称。");
+      throw new CodedFlowError("Action ID 为内部保留名称。", 400, {
+        code: "action_id_reserved",
+      });
     const title = parse(z.string().trim().min(1).max(100), definition.title);
     const description = parse(
       z.string().trim().min(1).max(2_000),
@@ -81,14 +87,21 @@ export class ActionRegistry {
       tool.timeoutMs! < 1 ||
       tool.timeoutMs! > 30 * 60_000
     )
-      throw new FlowError("Action timeoutMs 必须在 1 到 1800000 毫秒之间。");
+      throw new CodedFlowError(
+        "Action timeoutMs 必须在 1 到 1800000 毫秒之间。",
+        400,
+        { code: "action_timeout_invalid" },
+      );
     const inputSchema = jsonValue(tool.parameters, "Action input schema");
     const outputSchema = jsonValue(tool.output.schema, "Action output schema");
     if (
       this.loaded.has(id) &&
       this.loaded.get(id)?.plugin?.id !== config.plugin?.id
     )
-      throw new FlowError(`Contribution ID already owned: ${id}`, 409);
+      throw new CodedFlowError(`Contribution ID already owned: ${id}`, 409, {
+        code: "contribution_conflict",
+        params: { id },
+      });
     this.loaded.set(id, {
       ...definition,
       id,
@@ -103,7 +116,9 @@ export class ActionRegistry {
       permissions: Object.freeze([...(config.permissions ?? [])]),
     });
     this.problems.delete(id);
+    this.problemDetails.delete(id);
     this.warnings.delete(id);
+    this.warningDetails.delete(id);
   }
 
   snapshot(): ReadonlyMap<string, LoadedAction> {
@@ -113,11 +128,21 @@ export class ActionRegistry {
   }
   get(id: string): LoadedAction {
     const action = this.loaded.get(id);
-    if (!action)
+    if (!action) {
+      const details = this.problems.has(id)
+        ? this.problemDetails.get(id)
+        : { code: "action_missing" as const, params: { id } };
+      if (details)
+        throw new CodedFlowError(
+          this.problems.get(id) ?? `Action 不存在：${id}`,
+          this.problems.has(id) ? 422 : 404,
+          details,
+        );
       throw new FlowError(
         this.problems.get(id) ?? `Action 不存在：${id}`,
         this.problems.has(id) ? 422 : 404,
       );
+    }
     return this.bind(action);
   }
   has(id: string): boolean {
@@ -126,20 +151,48 @@ export class ActionRegistry {
   remove(id: string) {
     this.loaded.delete(id);
     this.problems.delete(id);
+    this.problemDetails.delete(id);
     this.warnings.delete(id);
+    this.warningDetails.delete(id);
   }
-  problem(id: string, error: string) {
+  problem(id: string, error: string, details?: ApiErrorDetails) {
     this.remove(id);
+    this.setDetails(this.problemDetails, id, details);
     this.problems.set(id, error);
   }
   clearProblem(id: string) {
     this.problems.delete(id);
+    this.problemDetails.delete(id);
   }
-  reloadProblem(id: string, error: string) {
-    if (this.loaded.has(id)) this.warnings.set(id, error);
+  reloadProblem(id: string, error: string, details?: ApiErrorDetails) {
+    if (this.loaded.has(id)) {
+      this.warnings.set(id, error);
+      this.setDetails(this.warningDetails, id, details);
+    }
   }
   clearReloadProblem(id: string) {
     this.warnings.delete(id);
+    this.warningDetails.delete(id);
+  }
+  private setDetails(
+    map: Map<string, ApiErrorDetails>,
+    id: string,
+    details?: ApiErrorDetails,
+  ) {
+    map.delete(id);
+    const safe = readErrorDetails(details);
+    if (safe) map.set(id, safe);
+  }
+  /** Read-only UI projection. Execution and model catalogs retain their original fields. */
+  displayCatalog(): FlowCatalogEntry[] {
+    return this.catalog().map((entry) => {
+      const details = (
+        entry.available ? this.warningDetails : this.problemDetails
+      ).get(entry.id);
+      return details && entry.error
+        ? { ...entry, errorDetails: structuredClone(details) }
+        : entry;
+    });
   }
   catalog(): FlowCatalogEntry[] {
     return [

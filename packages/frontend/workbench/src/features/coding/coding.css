@@ -1377,6 +1377,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
 .coding-agent-state.error,
 .coding-agent-execution-error {
   color: var(--danger);
+  overflow-wrap: anywhere;
 }
 .coding-agent-meta {
   display: flex;
@@ -1450,6 +1451,9 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   margin: 0;
   z-index: 30;
   display: flex;
+  flex-wrap: wrap;
+  width: max-content;
+  max-width: calc(100vw - 16px);
   gap: 2px;
   padding: 3px;
   border: 0.5px solid var(--hairline);
@@ -1463,6 +1467,7 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
 .selection-action {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
   gap: 5px;
   padding: 5px 9px;
   border: 0;
@@ -1470,7 +1475,8 @@ button.coding-tool-row:focus-visible .coding-tool-chevron,
   background: transparent;
   color: inherit;
   font-size: 12px;
-  white-space: nowrap;
+  white-space: normal;
+  text-align: start;
   cursor: pointer;
 }
 .selection-action:hover:not(:disabled),

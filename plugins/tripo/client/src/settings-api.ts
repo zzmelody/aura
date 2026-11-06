@@ -1,7 +1,8 @@
 import type { ConnectionSettings } from '../../shared/settings.ts';
+import { errorMessage as extractErrorMessage } from '@aura/plugin-ui';
 
 export function errorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : '';
+  const message = extractErrorMessage(error, 'operationFailed');
   return message || 'operationFailed';
 }
 

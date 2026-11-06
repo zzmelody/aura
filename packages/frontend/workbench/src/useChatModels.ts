@@ -1,3 +1,4 @@
+import { useConversationMessages } from "./conversation-messages.ts";
 import { useCallback, useSyncExternalStore } from "react";
 import type { FlowMode } from "@aura/protocol/types";
 import {
@@ -12,6 +13,7 @@ export function useChatModels(
   mode: FlowMode,
   enabled = true,
 ) {
+  const { t } = useConversationMessages();
   const subscribe = useCallback(
     (listener: () => void) =>
       enabled ? modelCatalogs.subscribe(endpoint, mode, listener) : () => {},
@@ -21,8 +23,10 @@ export function useChatModels(
     () => (enabled ? modelCatalogs.snapshot(endpoint, mode) : disabledSnapshot),
     [endpoint, mode, enabled],
   );
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   return {
-    ...useSyncExternalStore(subscribe, getSnapshot, getSnapshot),
+    ...snapshot,
+    error: snapshot.error ? t(snapshot.error) : "",
     refresh: () => void modelCatalogs.refresh(endpoint, mode),
   };
 }

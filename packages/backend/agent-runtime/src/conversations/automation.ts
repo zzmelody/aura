@@ -15,7 +15,7 @@ import type {
   AutomationTiming,
   AutomationTimingInput,
 } from "@aura/protocol/types";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { CodingConversationIndex } from "./index-record.ts";
 
 /** Deliveries returned per history read; DSH caps a page at 100. */
@@ -64,7 +64,10 @@ export function automationService(
     const expected = (await ctx.schedule.list({ sessionId })).find(
       (record) => record.id === id,
     );
-    if (!expected) throw new FlowError("任务不存在或已结束。", 404);
+    if (!expected)
+      throw new CodedFlowError("任务不存在或已结束。", 404, {
+        code: "automation_missing",
+      });
     const result = await guard(() =>
       ctx.schedule.update({
         sessionId,
@@ -76,11 +79,17 @@ export function automationService(
       }),
     );
     if ("code" in result)
-      throw new FlowError(
+      throw new CodedFlowError(
         result.code === "schedule_conflict"
           ? "任务刚刚被修改或已执行，请刷新后重试。"
           : "任务不存在或已结束。",
         result.code === "schedule_conflict" ? 409 : 404,
+        {
+          code:
+            result.code === "schedule_conflict"
+              ? "automation_conflict"
+              : "automation_missing",
+        },
       );
     return task(
       { ...result.record, sessionId, status: "active" },
@@ -108,7 +117,10 @@ export function automationService(
       id: ScheduleId(id),
       limit: HISTORY_LIMIT,
     });
-    if (!("records" in result)) throw new FlowError("任务不存在。", 404);
+    if (!("records" in result))
+      throw new CodedFlowError("任务不存在。", 404, {
+        code: "automation_missing",
+      });
     return {
       records: result.records.map(({ scheduledAt, deliveredAt, prompt }) => ({
         scheduledAt,
@@ -126,7 +138,9 @@ export function automationService(
   function conversation(sessionId: string) {
     const owner = conversations.get(sessionId);
     if (!owner || owner.archivedAt !== undefined)
-      throw new FlowError("对话不存在或已归档。", 404);
+      throw new CodedFlowError("对话不存在或已归档。", 404, {
+        code: "conversation_missing",
+      });
     return owner;
   }
 }
@@ -137,7 +151,9 @@ async function guard<T>(operation: () => Promise<T>): Promise<T> {
     return await operation();
   } catch (error) {
     if (error instanceof ScheduleInputError)
-      throw new FlowError(scheduleInputMessage(error.code), 400);
+      throw new CodedFlowError(scheduleInputMessage(error.code), 400, {
+        code: `automation_${error.code}`,
+      });
     throw error;
   }
 }

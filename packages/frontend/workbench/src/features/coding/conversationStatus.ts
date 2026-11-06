@@ -2,12 +2,12 @@ import type { CodingConversationInfo } from "@aura/protocol/types";
 import type { SessionStatus } from "../../sidebarSessions.ts";
 import type { Turn } from "./turns.ts";
 
-const RUNNING: SessionStatus = { kind: "running", label: "正在执行" };
-const CONNECTING: SessionStatus = { kind: "queued", label: "连接服务中" };
-const WAITING: SessionStatus = { kind: "waiting", label: "等待你的回答" };
-const COMPLETED: SessionStatus = { kind: "completed", label: "已完成" };
-const STOPPED: SessionStatus = { kind: "stopped", label: "已停止" };
-const FAILED: SessionStatus = { kind: "failed", label: "执行失败" };
+const RUNNING: SessionStatus = { kind: "running", messageKey: "executing" };
+const CONNECTING: SessionStatus = { kind: "queued", messageKey: "connecting" };
+const WAITING: SessionStatus = { kind: "waiting", messageKey: "waitingAnswer" };
+const COMPLETED: SessionStatus = { kind: "completed", messageKey: "completed" };
+const STOPPED: SessionStatus = { kind: "stopped", messageKey: "stopped" };
+const FAILED: SessionStatus = { kind: "failed", messageKey: "executionFailed" };
 
 /**
  * Sidebar status reported by the server for a listed conversation, so every

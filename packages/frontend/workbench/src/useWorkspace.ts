@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSidebarMessages, type SidebarMessageKey } from "./sidebar-messages";
 import { initialState, restoreState, STORAGE_KEY } from "@aura/core";
 import { streamDemo } from "@aura/demo";
 import type { ChatImage, Message, Session, Workspace } from "@aura/core/types";
@@ -20,9 +21,10 @@ const id = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export function useWorkspace() {
+  const { t } = useSidebarMessages();
   const [state, setState] = useState<Workspace>(initialState() as Workspace);
   const [ready, setReady] = useState(false);
-  const [saveError, setSaveError] = useState("");
+  const [saveError, setSaveError] = useState<"" | SidebarMessageKey>("");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [runningIds, setRunningIds] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -50,7 +52,7 @@ export function useWorkspace() {
       const raw = globalThis.localStorage.getItem(STORAGE_KEY);
       if (mounted && raw) setState(restoreState(JSON.parse(raw)) as Workspace);
     } catch {
-      if (mounted) setSaveError("无法读取本地记录，本次会话仍可使用。");
+      if (mounted) setSaveError("localHistoryReadFailed");
     } finally {
       if (mounted) setReady(true);
     }
@@ -65,7 +67,7 @@ export function useWorkspace() {
       try {
         globalThis.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       } catch {
-        setSaveError("本地存储空间不足，最新对话可能无法保存。");
+        setSaveError("localHistorySaveFailed");
       }
     }, 200);
     return () => clearTimeout(timer);
@@ -188,7 +190,7 @@ export function useWorkspace() {
     state,
     setState,
     ready,
-    saveError,
+    saveError: saveError ? t(saveError) : "",
     active,
     busy:
       (activeId !== null && allRunningIds.includes(activeId)) ||

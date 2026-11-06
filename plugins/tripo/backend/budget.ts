@@ -70,7 +70,7 @@ async function readLedger(directory: string): Promise<Ledger> {
       !ledger.requests ||
       typeof ledger.requests !== 'object'
     )
-      throw new TripoBudgetError('Tripo ledger is invalid.');
+      throw new TripoBudgetError('Tripo ledger is invalid.', 'ledgerInvalid');
     return ledger;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT')
@@ -148,6 +148,7 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
       if (request && request.fingerprint !== this.fingerprint)
         throw new TripoBudgetError(
           'Paid request identity conflict; changed prompt cannot reuse or repay the same work key.',
+          'identityConflict',
         );
       return request?.result;
     });
@@ -163,6 +164,7 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
       )
         throw new TripoBudgetError(
           'Paid model publication cannot be reconciled.',
+          'reconcileRequired',
         );
       request.result = result;
     });
@@ -177,22 +179,28 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
         stages: {},
       };
       if (request.fingerprint !== this.fingerprint)
-        throw new TripoBudgetError('Paid request identity conflict.');
+        throw new TripoBudgetError(
+          'Paid request identity conflict.',
+          'identityConflict',
+        );
       const prior = request.stages[stage];
       if (prior) {
         if (prior.kind !== kind)
           throw new TripoBudgetError(
             'Paid stage kind changed during recovery.',
+            'reconcileRequired',
           );
         if (!prior.taskId)
           throw new TripoBudgetError(
             'Paid task submission has an unknown result; do not retry automatically.',
+            'resultUnknown',
           );
         return prior.taskId;
       }
       if (this.scope?.noNewPaidWork)
         throw new TripoBudgetError(
           'This work cannot start new paid requests; reuse its retained results.',
+          'paidWorkForbidden',
         );
       if (
         Object.values(ledger.requests).some((item) =>
@@ -203,6 +211,7 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
       )
         throw new TripoBudgetError(
           'Another paid task submission has an unknown result; reconcile the Tripo ledger before any new paid request.',
+          'resultUnknown',
         );
       if (
         !config.unlimited &&
@@ -217,10 +226,12 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
       )
         throw new TripoBudgetError(
           'A paid stage exceeded its reserved credit ceiling; reconcile the Tripo budget before any new paid request.',
+          'overspent',
         );
       if (kind === 'cloud' && config.accountingUnit !== 'tripo_credits')
         throw new TripoBudgetError(
           'Cloud accounting unit must explicitly be tripo_credits; no paid request submitted.',
+          'accountingUnit',
         );
       const reserved = config.unlimited
         ? 0
@@ -236,6 +247,7 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
       )
         throw new TripoBudgetError(
           'Paid stage ceiling is not configured; no paid request submitted.',
+          'stageBudgetMissing',
         );
       const spent = (item: Request) =>
         Object.values(item.stages).reduce(
@@ -249,6 +261,7 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
       if (!config.unlimited && used + reserved > config.maxCredits!)
         throw new TripoBudgetError(
           'Tripo credit limit would be exceeded; no paid request submitted.',
+          'creditLimit',
         );
       if (this.scope && !config.unlimited) {
         if (
@@ -257,6 +270,7 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
         )
           throw new TripoBudgetError(
             'Per-scope credit ceiling is not configured; no paid request submitted.',
+            'scopeBudgetMissing',
           );
         const ownUsed = Object.values(ledger.requests)
           .filter((item) => item.scope === this.scope!.id)
@@ -264,6 +278,7 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
         if (ownUsed + reserved > config.maxScopeCredits!)
           throw new TripoBudgetError(
             'Per-scope credit limit would be exceeded; no paid request submitted.',
+            'scopeCreditLimit',
           );
       }
       request.stages[stage] = {
@@ -281,7 +296,10 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
     await this.#transaction(async (ledger) => {
       const entry = ledger.requests[this.key]?.stages[stage];
       if (!entry || (entry.taskId && entry.taskId !== taskId))
-        throw new TripoBudgetError('Paid task journal conflict.');
+        throw new TripoBudgetError(
+          'Paid task journal conflict.',
+          'reconcileRequired',
+        );
       entry.taskId = taskId;
       entry.status = 'submitted';
     });
@@ -291,13 +309,17 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
     await this.#transaction(async (ledger) => {
       const entry = ledger.requests[this.key]?.stages[stage];
       if (!entry?.taskId || !Number.isFinite(credits) || credits < 0)
-        throw new TripoBudgetError('Paid task cannot be reconciled.');
+        throw new TripoBudgetError(
+          'Paid task cannot be reconciled.',
+          'reconcileRequired',
+        );
       entry.actual = credits;
       entry.actualUnknown = false;
       entry.status = 'completed';
       if (!entry.unlimited && credits > entry.reserved)
         throw new TripoBudgetError(
           'Provider charged more than the configured stage ceiling; stop further paid work.',
+          'overspent',
         );
     });
   }
@@ -306,7 +328,10 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
     await this.#transaction(async (ledger) => {
       const entry = ledger.requests[this.key]?.stages[stage];
       if (!entry?.taskId)
-        throw new TripoBudgetError('Paid task cannot be reconciled.');
+        throw new TripoBudgetError(
+          'Paid task cannot be reconciled.',
+          'reconcileRequired',
+        );
       entry.actualUnknown = true;
     });
   }
@@ -318,6 +343,7 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
     if (!bytes.length || bytes.length > 8 * 1024 * 1024)
       throw new TripoBudgetError(
         'Paid cloud bytes exceeded the bounded limit; do not regenerate.',
+        'bytesLimit',
       );
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const directory = join(this.directory, 'cloud');
@@ -335,7 +361,10 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
         request.fingerprint !== this.fingerprint ||
         request.stages.cloud?.taskId !== result.taskId
       )
-        throw new TripoBudgetError('Paid cloud result cannot be reconciled.');
+        throw new TripoBudgetError(
+          'Paid cloud result cannot be reconciled.',
+          'reconcileRequired',
+        );
       request.cloud = { ...result, sha256 };
       if (result.creditsConsumed === null)
         request.stages.cloud.actualUnknown = true;
@@ -354,7 +383,10 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
     const result = await this.#transaction(async (ledger) => {
       const request = ledger.requests[this.key];
       if (request && request.fingerprint !== this.fingerprint)
-        throw new TripoBudgetError('Paid cloud identity conflict.');
+        throw new TripoBudgetError(
+          'Paid cloud identity conflict.',
+          'identityConflict',
+        );
       return request?.cloud;
     });
     if (!result) return undefined;
@@ -364,6 +396,7 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
     if (createHash('sha256').update(bytes).digest('hex') !== result.sha256)
       throw new TripoBudgetError(
         'Retained paid cloud bytes changed; do not regenerate.',
+        'retainedChanged',
       );
     return {
       bytes,
@@ -384,14 +417,17 @@ export class TripoBudgetJournal implements TripoPaidTaskJournal {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT')
         return { unreconciled: false, requests: [] };
-      throw new TripoBudgetError('Tripo ledger is unreadable.');
+      throw new TripoBudgetError(
+        'Tripo ledger is unreadable.',
+        'ledgerInvalid',
+      );
     }
     if (
       ledger?.schemaVersion !== 1 ||
       !ledger.requests ||
       typeof ledger.requests !== 'object'
     )
-      throw new TripoBudgetError('Tripo ledger is invalid.');
+      throw new TripoBudgetError('Tripo ledger is invalid.', 'ledgerInvalid');
     const requests = Object.entries(ledger.requests);
     return {
       unreconciled: requests.some(([, item]) =>

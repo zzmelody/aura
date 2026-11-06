@@ -1,4 +1,4 @@
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError, FlowError } from "@aura/protocol/errors";
 import type { CodingHistoryPage } from "@aura/protocol/types";
 
 type HistoryOptions = {
@@ -27,7 +27,10 @@ export async function readCodingHistory(
   options: HistoryOptions,
   signal?: AbortSignal,
 ): Promise<HistoryPage> {
-  if (host.closed()) throw new FlowError("编排服务正在关闭。", 503);
+  if (host.closed())
+    throw new CodedFlowError("编排服务正在关闭。", 503, {
+      code: "service_closing",
+    });
   const readSignal = signal ?? AbortSignal.timeout(30_000);
   readSignal.throwIfAborted();
   if (!host.ready() && options.page) {

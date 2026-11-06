@@ -1,3 +1,5 @@
+import { useToolMessages, toolMessage } from "../../tool-messages.ts";
+import { messageText, type MessageReference } from "@aura/i18n/runtime";
 import React, { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import type { Terminal } from "@xterm/xterm";
@@ -58,7 +60,8 @@ export function TerminalPane({
   const container = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | undefined>(undefined);
   const [activated, setActivated] = useState(visible);
-  const [error, setError] = useState("");
+  const { t, i18n } = useToolMessages();
+  const [error, setError] = useState<string | MessageReference>("");
   const [connected, setConnected] = useState(false);
   const [connection, setConnection] = useState(0);
   const [renderer, setRenderer] = useState(0);
@@ -132,9 +135,7 @@ export function TerminalPane({
               inputFailed = true;
               input = "";
               instance.options.disableStdin = true;
-              setError(
-                "终端输入未确认，请重新连接后检查状态；输入不会自动重发。",
-              );
+              setError(toolMessage("terminalInputUnknown"));
             });
         };
         const dataListener = instance.onData((data) => {
@@ -155,7 +156,7 @@ export function TerminalPane({
               Math.min(500, instance.cols),
               Math.min(200, instance.rows),
             ).catch(() => {
-              if (!disposed) setError("终端尺寸同步失败，请重新连接。");
+              if (!disposed) setError(toolMessage("terminalResizeFailed"));
             });
           }, 120);
         };
@@ -176,7 +177,7 @@ export function TerminalPane({
         };
       })
       .catch(() => {
-        if (!disposed) setError("终端界面加载失败，请重新打开工具面板。");
+        if (!disposed) setError(toolMessage("terminalLoadFailed"));
       });
     return () => {
       disposed = true;
@@ -197,14 +198,14 @@ export function TerminalPane({
       setConnected(false);
       if (exited) source.close();
       else if (source.readyState === EventSource.CLOSED) {
-        setError("终端已不存在或服务已重启，请新建终端。");
+        setError(toolMessage("terminalMissing"));
         onInfo({ ...latestInfo.current, status: "error" });
       }
     };
     source.addEventListener("unavailable", () => {
       source.close();
       setConnected(false);
-      setError("终端已不可用或服务已重启，请新建终端。");
+      setError(toolMessage("terminalUnavailable"));
     });
     source.addEventListener("output", (event: MessageEvent<string>) => {
       try {
@@ -223,7 +224,7 @@ export function TerminalPane({
       } catch {
         source.close();
         setConnected(false);
-        setError("终端输出读取失败，请重新连接。");
+        setError(toolMessage("terminalReadFailed"));
       }
     });
     return () => source.close();
@@ -242,22 +243,24 @@ export function TerminalPane({
     >
       {error ? (
         <p className="coding-notice" role="alert">
-          {error}
+          {messageText(error, i18n)}
         </p>
       ) : null}
       <div
         ref={container}
         className="coding-terminal-screen"
-        aria-label={`${info.title}交互终端`}
+        aria-label={t("terminalLabel", { name: info.title })}
       />
       <footer className="coding-terminal-footer">
         <span title={info.directory}>{info.directory}</span>
         <span>
           {info.status === "running"
             ? connected
-              ? "已连接"
-              : "连接已断开"
-            : `已退出${info.exitCode === undefined ? "" : ` · ${info.exitCode}`}`}
+              ? t("connected")
+              : t("disconnected")
+            : info.exitCode === undefined
+              ? t("exited")
+              : t("exitedCode", { code: info.exitCode })}
         </span>
         {info.status === "running" && (!connected || error) ? (
           <button
@@ -269,7 +272,7 @@ export function TerminalPane({
               setRenderer((value) => value + 1);
             }}
           >
-            重新连接
+            {t("reconnect")}
           </button>
         ) : null}
       </footer>

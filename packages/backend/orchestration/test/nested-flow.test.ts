@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { z } from "zod";
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { FlowRun } from "@aura/protocol/types";
 import type { LoadedFlow } from "../src/registry.ts";
 import type { EngineOptions, Table } from "../src/types.ts";
@@ -105,6 +106,38 @@ function request(flowId = "parent", value = 2) {
     mode: "demo" as const,
   };
 }
+
+test("child failure display preserves its known reason without changing parent or child durable diagnostics", async (t) => {
+  let effects = 0;
+  const child = loaded("child", () => {
+    effects++;
+    throw new CodedFlowError("original child failure", 422, {
+      code: "flow_agent_config_invalid",
+    });
+  });
+  const parent = loaded("parent", (ctx, input) =>
+    ctx.sequence(
+      { id: "main" },
+      async (scope) =>
+        (await scope.flow({ id: "child", flow: "child", input })).output,
+    ),
+  );
+  const { engine, records } = await setup([parent, child]);
+  t.after(() => engine.close());
+  const started = await engine.start(request());
+  const settled = await engine.wait(started.id);
+  assert.equal(settled.status, "failed");
+  assert.equal(effects, 1);
+  assert.match(settled.error!, /子 Flow child failed：original child failure/u);
+  assert.deepEqual(engine.view(started.id).errorDetails, {
+    failure: { code: "flow_agent_config_invalid" },
+    child: { id: "child", phase: "failed" },
+  });
+  for (const [, run] of records.entries()) {
+    assert.equal(run.errorDetails, undefined);
+    assert.equal(JSON.stringify(run).includes("translations"), false);
+  }
+});
 
 test("child Runs record their root, report lands on the root, and the root settles once", async () => {
   const grandchild = loaded("grandchild", (ctx, input) =>
@@ -438,9 +471,16 @@ test("nested calls reject cycles and plugin boundary crossings without capabilit
     const cycle = await engine.start(request("self"));
     assert.equal((await engine.wait(cycle.id)).status, "failed");
     assert.match(engine.get(cycle.id).error!, /循环调用/);
+    assert.equal(
+      engine.view(cycle.id).errorDetails?.failure.code,
+      "flow_cycle",
+    );
     const denied = await engine.start(request("plugin.one/parent"));
     assert.equal((await engine.wait(denied.id)).status, "failed");
     assert.match(engine.get(denied.id).error!, /aura\.flow\.invoke/);
+    assert.deepEqual(engine.view(denied.id).errorDetails, {
+      failure: { code: "flow_permission_missing", params: { id: caller.id } },
+    });
     assert.equal(
       [...engine.runs.entries()].filter(([, run]) => Boolean(run.parent))
         .length,

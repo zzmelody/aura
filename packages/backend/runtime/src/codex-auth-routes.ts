@@ -1,4 +1,5 @@
 import type { CodexLoginRequest } from "@aura/protocol/types";
+import { CodedFlowError, readErrorDetails } from "@aura/protocol/errors";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { isRecord } from "./validation.ts";
@@ -26,7 +27,10 @@ export function createCodexAuthApp(authorization: CodexAuthPort) {
     bodyLimit({
       maxSize: 4_096,
       onError: (context) =>
-        context.json({ message: "无法开始 Codex 登录。" }, 413),
+        context.json(
+          { message: "无法开始 Codex 登录。", code: "auth_login_start_failed" },
+          413,
+        ),
     }),
     async (context) => {
       try {
@@ -35,7 +39,10 @@ export function createCodexAuthApp(authorization: CodexAuthPort) {
         if (!method) throw new Error("Invalid login method.");
         return context.json(await authorization.startLogin(method));
       } catch {
-        return context.json({ message: "无法开始 Codex 登录。" }, 400);
+        return context.json(
+          { message: "无法开始 Codex 登录。", code: "auth_login_start_failed" },
+          400,
+        );
       }
     },
   );
@@ -45,7 +52,13 @@ export function createCodexAuthApp(authorization: CodexAuthPort) {
     bodyLimit({
       maxSize: 16 * 1_024,
       onError: (context) =>
-        context.json({ message: "授权结果请求过大。" }, 413),
+        context.json(
+          {
+            message: "授权结果请求过大。",
+            code: "auth_login_result_too_large",
+          },
+          413,
+        ),
     }),
     async (context) => {
       try {
@@ -59,6 +72,9 @@ export function createCodexAuthApp(authorization: CodexAuthPort) {
               error instanceof Error
                 ? error.message
                 : "无法提交 Codex 授权结果。",
+            ...(error instanceof CodedFlowError
+              ? readErrorDetails(error.details)
+              : { code: "auth_login_submit_failed" }),
           },
           409,
         );

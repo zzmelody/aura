@@ -11,10 +11,13 @@
     ".": "./src/index.ts",
     "./types": "./src/types.ts",
     "./models": "./src/models.ts",
+    "./model-checks": "./src/model-checks.ts",
     "./conversations": "./src/conversations.ts",
     "./browser": "./src/browser.ts",
+    "./native-ui": "./src/native-ui.ts",
     "./plugin-http": "./src/plugin-http.ts",
     "./errors": "./src/errors.ts",
+    "./localization": "./src/localization.ts",
     "./conversation-channel": "./src/conversation-channel.ts"
   },
   "scripts": {

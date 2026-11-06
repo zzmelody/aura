@@ -85,6 +85,7 @@ export interface EngineOptions {
   registry: {
     get(id: string): LoadedFlow;
     catalog(): FlowCatalogEntry[];
+    displayCatalog?(): FlowCatalogEntry[];
   };
   refreshFlows(): Promise<void>;
   presets(): Promise<FlowCatalog["presets"]>;
@@ -92,7 +93,8 @@ export interface EngineOptions {
   /** Called once per root Run after it reaches a terminal status. */
   onRootSettled?(run: FlowRun): Promise<void>;
   actions?: {
-    registry: Pick<ActionRegistry, "snapshot" | "catalog">;
+    registry: Pick<ActionRegistry, "snapshot" | "catalog"> &
+      Partial<Pick<ActionRegistry, "displayCatalog">>;
     runtime: Pick<ActionRuntime, "execute">;
     cwd: string;
   };

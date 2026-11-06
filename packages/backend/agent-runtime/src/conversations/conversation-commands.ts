@@ -7,7 +7,7 @@ import type {
   ConversationCommand,
   ConversationReceipt,
 } from "@aura/protocol/conversation-channel";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import {
   codingPermissionSchema,
   conversationMessageSchema,
@@ -89,7 +89,10 @@ const commandSchema = z.discriminatedUnion("type", [
 
 export function parseConversationCommand(value: unknown): ConversationCommand {
   const result = commandSchema.safeParse(value);
-  if (!result.success) throw new FlowError("无效的会话命令。", 400);
+  if (!result.success)
+    throw new CodedFlowError("无效的会话命令。", 400, {
+      code: "conversation_command_invalid",
+    });
   const command = result.data;
   const input =
     command.type === "turn.start"
@@ -98,7 +101,9 @@ export function parseConversationCommand(value: unknown): ConversationCommand {
         ? command
         : undefined;
   if (input && !input.prompt.trim() && !input.images?.length)
-    throw new FlowError("消息内容不能为空。", 400);
+    throw new CodedFlowError("消息内容不能为空。", 400, {
+      code: "conversation_message_empty",
+    });
   return command;
 }
 

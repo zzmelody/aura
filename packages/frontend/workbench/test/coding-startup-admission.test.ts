@@ -1,12 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { errorMessage, language, messageText } from "@aura/i18n/runtime";
+import { WorkflowApiError } from "../src/workflowSessions.ts";
 import {
   prepareCodingTurn,
   codingTurn,
   conversationHistory,
+  readCodingSubagents,
 } from "../src/features/coding/api.ts";
 
 const endpoint = "http://fixture:4311";
+function hasMessage(key: string) {
+  return (error: unknown) => {
+    assert.deepEqual(errorMessage(error), { namespace: "conversation", key });
+    return true;
+  };
+}
 const turn = {
   sessionId: "coding-fixture",
   projectId: "fixture",
@@ -37,6 +46,36 @@ test("startup admission waits for the real workspace and never sends a model req
   assert.equal(requested.length, 1);
 });
 
+test("coding HTTP failures preserve their status and readable SDK message while the UI changes language", async (t) => {
+  let requests = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    requests++;
+    return new Response("unavailable", { status: 503 });
+  });
+  const error = await readCodingSubagents(endpoint, "fixture").then(
+    () => assert.fail("request must fail"),
+    (error: unknown) => error,
+  );
+  assert.ok(error instanceof WorkflowApiError);
+  assert.equal(error.status, 503);
+  assert.equal(error.name, "Error");
+  assert.ok(error.message.includes("503"));
+  assert.deepEqual(errorMessage(error), {
+    namespace: "conversation",
+    key: "codingServiceUnavailable",
+    values: { status: 503 },
+  });
+  const texts = new Set<string>();
+  for (const locale of ["zh-CN", "en", "ja", "ko", "ru", "fr"]) {
+    await language.systemChanged([locale]);
+    const text = messageText(errorMessage(error));
+    assert.ok(text.includes("503"));
+    texts.add(text);
+  }
+  assert.equal(texts.size, 6);
+  assert.equal(requests, 1);
+});
+
 test("removed or missing cached workspaces fail before the turn is posted", async (t) => {
   let posts = 0;
   let missing = false;
@@ -52,9 +91,9 @@ test("removed or missing cached workspaces fail before the turn is posted", asyn
     for await (const chunk of codingTurn(endpoint, turn, signal))
       assert.ok(chunk);
   };
-  await assert.rejects(send, /工作空间已不可用/u);
+  await assert.rejects(send, hasMessage("workspaceUnavailable"));
   missing = true;
-  await assert.rejects(send, /工作空间已不可用/u);
+  await assert.rejects(send, hasMessage("workspaceUnavailable"));
   assert.equal(posts, 0);
 });
 
@@ -103,7 +142,7 @@ test("an expired startup admission reports an actionable error without contactin
   });
   await assert.rejects(
     prepareCodingTurn(endpoint, "fixture", new AbortController().signal),
-    /服务仍未就绪/u,
+    hasMessage("admissionTimedOut"),
   );
   assert.equal(requests, 0);
 });
@@ -121,7 +160,7 @@ test("a stalled history read is cancelled and reports a retryable timeout", asyn
   });
   await assert.rejects(
     conversationHistory(endpoint, "fixture"),
-    /会话历史读取超时/u,
+    hasMessage("historyReadTimeout"),
   );
   assert.equal(received?.aborted, true);
 });

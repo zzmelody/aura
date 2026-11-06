@@ -3,6 +3,7 @@ import { createServer, isIP } from "node:net";
 import { win32 } from "node:path";
 import { promisify } from "node:util";
 import { stripVTControlCharacters } from "node:util";
+import { SiteStatusError } from "../shared/status-messages.ts";
 
 const exec = promisify(execFile);
 const processQueryOptions = {
@@ -117,7 +118,14 @@ async function windowsListeners(port: number): Promise<number[] | null> {
 }
 
 export function localSiteUrl(input: string): URL {
-  const url = new URL(input.trim());
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    throw new SiteStatusError("预览地址无效，请填写本机 HTTP(S) 地址。", {
+      code: "invalidPreviewUrl",
+    });
+  }
   if (
     !["http:", "https:"].includes(url.protocol) ||
     url.username ||
@@ -126,7 +134,10 @@ export function localSiteUrl(input: string): URL {
       url.hostname,
     )
   )
-    throw new Error("预览地址必须是本机 HTTP(S) 地址，且不能包含账号或密码。");
+    throw new SiteStatusError(
+      "预览地址必须是本机 HTTP(S) 地址，且不能包含账号或密码。",
+      { code: "invalidPreviewUrl" },
+    );
   if (url.hostname === "0.0.0.0") url.hostname = "127.0.0.1";
   if (url.hostname === "[::]") url.hostname = "[::1]";
   return url;
@@ -205,8 +216,9 @@ export async function availableSitePort(preferred: number): Promise<number> {
     if (port > 65535) break;
     if (await portAvailable(port)) return port;
   }
-  throw new Error(
+  throw new SiteStatusError(
     `从端口 ${preferred} 开始未找到空闲端口，请修改预览地址后重试。`,
+    { code: "noFreePort", params: { port: preferred } },
   );
 }
 

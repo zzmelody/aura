@@ -29,10 +29,12 @@ test(
     const fixture = `
     import React, {useCallback,useRef,useState} from "react";
     import { createRoot } from "react-dom/client";
+    import { language } from "/@fs/${fileURLToPath(import.meta.resolve("@aura/i18n/runtime")).replaceAll("\\", "/")}";
     import { SubagentPanel } from "/@fs/${component}";
     import { WorkbenchMenu } from "/@fs/${fileURLToPath(new URL("../src/WorkbenchMenu.tsx", import.meta.url)).replaceAll("\\", "/")}";
     import { ConversationSearch } from "/@fs/${fileURLToPath(new URL("../src/features/coding/ConversationIntegrations.tsx", import.meta.url)).replaceAll("\\", "/")}";
     import "/@fs/${fileURLToPath(new URL("../src/styles.css", import.meta.url)).replaceAll("\\", "/")}";
+    import "/@fs/${fileURLToPath(new URL("../src/features/coding/coding.css", import.meta.url)).replaceAll("\\", "/")}";
     let mode = "complete";
     let pending = false;
     let aborts = 0;
@@ -51,6 +53,9 @@ test(
       if (mode === "list-error") return Response.json({}, {status:503});
       const item = mode === "read-error" ? {...initial,status:"unknown",role:"子 Agent",result:"",recordError:"执行结果尚无法确认。"}
         : mode === "execution-error" ? {...initial,status:"error",result:"",executionError:"安全的执行失败提示。"}
+        : mode === "localized-error" ? {...initial,label:"子 Agent",defaultLabel:true,roleKind:"research",status:"error",result:"",executionError:"legacy failure",executionErrorDetails:{code:"model_http_failed",params:{status:429,token:"private"}}}
+        : mode === "localized-model" ? {...initial,label:"子 Agent",defaultLabel:true,roleKind:"research",status:"error",result:"",executionError:"legacy failure",executionErrorDetails:{code:"model_codex_unsupported",params:{model:"model-"+"x".repeat(70)}}}
+        : mode === "localized-read-error" ? {...initial,label:"子 Agent",defaultLabel:true,roleKind:"agent",status:"unknown",result:"",recordError:"legacy read failure",recordErrorDetails:{code:"subagent_record_unavailable",params:{token:"private"}}}
         : mode === "running" ? {...initial,status:"running",result:""} : initial;
       return Response.json([item]);
     };
@@ -60,8 +65,9 @@ test(
     };
     const button = label => [...document.querySelectorAll("button")].find(el=>el.getAttribute("aria-label")===label);
     const refresh = async next => {
+      const before=requests.length;
       mode=next; button("重新读取子 Agent 记录").click();
-      await wait(()=>!button("重新读取子 Agent 记录").disabled);
+      await wait(()=>requests.length>before&&!button("重新读取子 Agent 记录").disabled);
     };
     const checks=[];
     const check=(condition,label)=>{if(!condition)throw new Error(label);checks.push(label)};
@@ -73,6 +79,7 @@ test(
       const close=useCallback(()=>setOpen(false),[]);
       return <div className="workbench" style={{"--input":"rgb(35, 35, 36)","--text":"rgb(234, 235, 238)","--hairline":"rgba(255,255,255,.12)","--muted":"rgb(166,170,178)"}}><WorkbenchMenu label="对话菜单" items={[{id:"subagents",label:"子 Agent",action:()=>{anchor.current=document.activeElement;setOpen(true)}}]}>…</WorkbenchMenu><SubagentPanel endpoint="http://synthetic.invalid" sessionId="parent" running={false} open={open} anchor={anchor} onClose={close}/><button aria-label="打开搜索" onClick={()=>setSearch(true)}>搜索</button>{search ? <ConversationSearch endpoint="http://synthetic.invalid" projectId="project" open={id=>opened=id} onClose={()=>setSearch(false)}/> : null}</div>;
     }
+    await language.systemChanged(["zh-CN"]);
     root.render(<Harness/>);
     const openCatalog=async()=>{
       button("对话菜单").click();
@@ -94,12 +101,48 @@ test(
       check(!document.body.innerText.includes("执行失败"),"read error is not an execution failure");
       check(document.querySelector(".workflow-rich-text").textContent.includes("已读取的结果"),"cached result survives a read failure");
       check(document.body.innerText.includes("以下为上次读取的结果"),"cached result is marked stale");
+      const selected=document.querySelector('.coding-agents-detail');
+      const beforeLanguages=requests.length;
+      const localized=[];
+      for(const locale of ["zh-CN","en","ja","ko","ru","fr"]){
+        await language.systemChanged([locale]);
+        await wait(()=>document.querySelector('.coding-agent-meta').textContent.includes(language.i18n.t('agentUnknown',{ns:'tools'})));
+        localized.push({state:document.querySelector('.coding-agent-meta').textContent, warning:document.querySelector('.coding-agent-read-error').textContent,
+          retained:document.querySelector('.coding-agents-detail')===selected&&document.querySelector('.workflow-rich-text').textContent.includes('已读取的结果')&&document.querySelector('.coding-agent-meta').textContent.includes('只读调研')});
+      }
+      check(localized.every(item=>item.retained),"language changes retain the selected child and cached user content");
+      check(new Set(localized.map(item=>item.state)).size===6&&new Set(localized.map(item=>item.warning)).size===6,"child status and record warning translate in six languages");
+      check(requests.length===beforeLanguages,"language changes do not restart child polling");
+      await language.systemChanged(["zh-CN"]);
+      await wait(()=>button("重新读取子 Agent 记录"));
       await refresh("complete");
       await wait(()=>!document.querySelector(".coding-agent-read-error"));
       await refresh("execution-error");
       await wait(()=>document.querySelector(".coding-agent-execution-error"));
       check(document.body.innerText.includes("安全的执行失败提示。"),"execution failure shows its own message");
       check(!document.querySelector(".coding-agent-read-error"),"execution failure is not a read warning");
+      for(const mode of ["localized-error","localized-model","localized-read-error"]){
+        await refresh(mode);
+        const detail=document.querySelector('.coding-agents-detail'),count=requests.length,texts=[];
+        const selector=mode==="localized-read-error"?'.coding-agent-read-error':'.coding-agent-execution-error';
+        for(const width of [320,560])for(const locale of ["zh-CN","en","ja","ko","ru","fr"]){
+          detail.style.width=width+'px';
+          await language.systemChanged([locale]);
+          await wait(()=>document.querySelector('.coding-agent-meta').textContent.includes(language.i18n.t('agentResearchRole',{ns:'tools'})));
+          const text=document.querySelector(selector).textContent;
+          if(text.includes('legacy')||text.includes('private'))throw new Error('raw descriptor text leaked');
+          if(mode==='localized-error'&&!text.includes('429'))throw new Error('status lost');
+          if(mode==='localized-model'&&!text.includes('model-'+'x'.repeat(70)))throw new Error('model lost');
+          const body=detail.querySelector('.coding-agents-body');
+          if(body.scrollWidth>body.clientWidth+1)throw new Error('child feedback overflows '+mode+' '+locale+' '+width);
+          texts.push(text);
+        }
+        check(texts.length===12&&new Set(texts).size===6,'known child feedback translates in six languages: '+mode);
+        check(document.querySelector('.coding-agents-detail')===detail&&requests.length===count,'known child feedback retains selection and polling: '+mode);
+        check(document.querySelector('[role="dialog"]').textContent.includes(language.i18n.t('agentDefaultLabel',{ns:'tools'})),'host default label translates: '+mode);
+        await language.systemChanged(['zh-CN']);
+        await wait(()=>button('重新读取子 Agent 记录'));
+      }
       await refresh("complete");
       await wait(()=>document.querySelector(".workflow-rich-text"));
       await refresh("list-error");
@@ -175,7 +218,7 @@ test(
       server: {
         host: "127.0.0.1",
         port: 0,
-        fs: { allow: [root, fileURLToPath(new URL("..", import.meta.url))] },
+        fs: { allow: [root, fileURLToPath(new URL("../..", import.meta.url))] },
       },
     });
     t.after(() => server.close());
@@ -199,6 +242,6 @@ test(
     assert.ok(result, stdout.slice(-2000));
     const parsed = JSON.parse(result) as { checks?: string[]; error?: string };
     assert.equal(parsed.error, undefined);
-    assert.equal(parsed.checks?.length, 20);
+    assert.equal(parsed.checks?.length, 32);
   },
 );

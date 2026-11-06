@@ -1,4 +1,13 @@
 import React, { useId, useRef, useState } from "react";
+import {
+  useWorkflowMessages,
+  workflowMessage as message,
+} from "../workflow-messages.ts";
+import {
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
 import { FolderOpen, ImagePlus } from "lucide-react";
 import type { JsonValue } from "@aura/protocol/types";
 import {
@@ -16,10 +25,12 @@ import {
 } from "../workflowInputModel";
 import { platform } from "../platform";
 import { uploadWorkflowImage } from "../workflowSessions";
+import { metadataText, metadataEnumLabel } from "../metadata.ts";
 
 function ImageAssetField({
   id,
   label,
+  placeholder,
   value,
   disabled,
   uploading,
@@ -28,12 +39,14 @@ function ImageAssetField({
 }: {
   id: string;
   label: string;
+  placeholder: string;
   value: string;
   disabled: boolean;
   uploading: boolean;
   onChange(value: string): void;
   onFile(file: File): void;
 }) {
+  const { t } = useWorkflowMessages();
   const fileInput = useRef<HTMLInputElement>(null);
   return (
     <div className="workflow-path-input">
@@ -46,7 +59,7 @@ function ImageAssetField({
         disabled={disabled || uploading}
         type="text"
         value={value}
-        placeholder="上传图片，或粘贴图片资产 ID"
+        placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         autoComplete="off"
       />
@@ -68,7 +81,7 @@ function ImageAssetField({
         disabled={disabled || uploading}
         onClick={() => fileInput.current?.click()}
       >
-        {uploading ? "上传中…" : "上传图片"}
+        {uploading ? t("uploading") : t("uploadImage")}
       </button>
     </div>
   );
@@ -115,8 +128,11 @@ export function WorkflowInput({
   endpoint?: string;
   onUploadBusyChange?(busy: boolean): void;
 }) {
+  const { t, i18n } = useWorkflowMessages();
   const id = useId();
-  const [pickerError, setPickerError] = useState<Record<string, string>>({});
+  const [pickerError, setPickerError] = useState<
+    Record<string, string | MessageReference>
+  >({});
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const uploading = useRef(false);
   const latestText = useRef(text);
@@ -148,8 +164,33 @@ export function WorkflowInput({
         const options = Array.isArray(spec.enum) ? spec.enum : [];
         const multiOptions = workflowEnumArrayOptions(spec);
         const selected = Array.isArray(current[key]) ? current[key] : [];
-        const label = workflowFieldLabel(key, spec);
+        const label = metadataText(
+          spec,
+          "title",
+          workflowFieldLabel(key, spec, t),
+          i18n,
+        );
         const kind = workflowFieldKind(key, spec);
+        const description = metadataText(
+          spec,
+          "description",
+          typeof spec.description === "string" ? spec.description : "",
+          i18n,
+        );
+        const placeholder = (native = false) => {
+          const fallback =
+            kind === "image-asset"
+              ? t("uploadImagePlaceholder")
+              : workflowFieldPlaceholder(key, kind, spec, native, t);
+          return metadataText(
+            spec,
+            "placeholder",
+            ["image", "image-asset", "directory"].includes(kind)
+              ? fallback
+              : description || fallback,
+            i18n,
+          );
+        };
         const fieldId = `${id}-${index}`;
         const update = (next: JsonValue) => {
           let latest = current;
@@ -176,7 +217,7 @@ export function WorkflowInput({
           if (!endpoint) {
             setPickerError((errors) => ({
               ...errors,
-              [key]: "工作流服务地址不可用。",
+              [key]: message("serviceUnavailable"),
             }));
             return;
           }
@@ -188,7 +229,7 @@ export function WorkflowInput({
           } catch (cause) {
             setPickerError((errors) => ({
               ...errors,
-              [key]: cause instanceof Error ? cause.message : "图片上传失败。",
+              [key]: errorMessage(cause, message("uploadFailed")),
             }));
           } finally {
             uploading.current = false;
@@ -203,8 +244,7 @@ export function WorkflowInput({
           } catch (cause) {
             setPickerError((errors) => ({
               ...errors,
-              [key]:
-                cause instanceof Error ? cause.message : "无法打开路径选择器。",
+              [key]: errorMessage(cause, message("pickerFailed")),
             }));
           }
         };
@@ -220,11 +260,11 @@ export function WorkflowInput({
             >
               <span>{label}</span>
               {required.has(key) ? (
-                <span className="workflow-required" aria-label="必填">
-                  必填
+                <span className="workflow-required" aria-label={t("required")}>
+                  {t("required")}
                 </span>
               ) : (
-                <span className="workflow-optional">可选</span>
+                <span className="workflow-optional">{t("optional")}</span>
               )}
             </label>
             {kind === "multi-select" && multiOptions ? (
@@ -232,13 +272,9 @@ export function WorkflowInput({
                 className="workflow-multi-select"
                 role="group"
                 aria-labelledby={`${fieldId}-label`}
-                aria-describedby={
-                  typeof spec.description === "string"
-                    ? `${fieldId}-hint`
-                    : undefined
-                }
+                aria-describedby={description ? `${fieldId}-hint` : undefined}
               >
-                {multiOptions.map((option) => {
+                {multiOptions.map((option, optionIndex) => {
                   const checked = selected.includes(option);
                   const min =
                     typeof spec.minItems === "number" ? spec.minItems : 0;
@@ -268,7 +304,14 @@ export function WorkflowInput({
                           )
                         }
                       />
-                      <span>{workflowOptionLabel(option)}</span>
+                      <span>
+                        {metadataEnumLabel(
+                          asObject(spec.items) ?? spec,
+                          optionIndex,
+                          workflowOptionLabel(option, t),
+                          i18n,
+                        )}
+                      </span>
                     </label>
                   );
                 })}
@@ -281,12 +324,17 @@ export function WorkflowInput({
                 value={JSON.stringify(current[key] ?? options[0])}
                 onChange={(event) => update(JSON.parse(event.target.value))}
               >
-                {options.map((option) => (
+                {options.map((option, optionIndex) => (
                   <option
                     key={JSON.stringify(option)}
                     value={JSON.stringify(option)}
                   >
-                    {workflowOptionLabel(option)}
+                    {metadataEnumLabel(
+                      spec,
+                      optionIndex,
+                      workflowOptionLabel(option, t),
+                      i18n,
+                    )}
                   </option>
                 ))}
               </select>
@@ -300,7 +348,9 @@ export function WorkflowInput({
                   onChange={(event) => update(event.target.checked)}
                 />
                 <span aria-hidden="true" />
-                <small>{current[key] === true ? "已开启" : "未开启"}</small>
+                <small>
+                  {current[key] === true ? t("enabled") : t("disabled")}
+                </small>
               </label>
             ) : kind === "long-text" ? (
               <textarea
@@ -308,7 +358,7 @@ export function WorkflowInput({
                 aria-label={label}
                 disabled={disabled}
                 rows={4}
-                placeholder={workflowFieldPlaceholder(key, kind, spec)}
+                placeholder={placeholder()}
                 value={String(current[key] ?? "")}
                 onChange={(event) => update(event.target.value)}
               />
@@ -317,6 +367,7 @@ export function WorkflowInput({
                 <ImageAssetField
                   id={fieldId}
                   label={label}
+                  placeholder={placeholder()}
                   value={String(current[key] ?? "")}
                   disabled={disabled}
                   uploading={uploadingKey === key}
@@ -325,11 +376,11 @@ export function WorkflowInput({
                 />
                 {pickerError[key] ? (
                   <small className="workflow-field-error" role="alert">
-                    {pickerError[key]}
+                    {messageText(pickerError[key], i18n)}
                   </small>
                 ) : (
                   <small className="workflow-field-hint">
-                    上传后保存图片资产 ID，可在下次运行中复用。
+                    {t("imageAssetHint")}
                   </small>
                 )}
               </>
@@ -349,12 +400,7 @@ export function WorkflowInput({
                     disabled={disabled}
                     type="text"
                     value={String(current[key] ?? "")}
-                    placeholder={workflowFieldPlaceholder(
-                      key,
-                      kind,
-                      spec,
-                      desktop,
-                    )}
+                    placeholder={placeholder(desktop)}
                     onChange={(event) => update(event.target.value)}
                     autoComplete="off"
                   />
@@ -366,23 +412,21 @@ export function WorkflowInput({
                       onClick={() => void choose(kind)}
                       title={
                         pickerAvailable
-                          ? `选择${label}`
-                          : "路径选择服务未连接；点击查看处理方法"
+                          ? t("chooseField", { label })
+                          : t("pickerUnavailable")
                       }
                     >
-                      选择
+                      {t("choose")}
                     </button>
                   ) : null}
                 </div>
                 {pickerError[key] ? (
                   <small className="workflow-field-error" role="alert">
-                    {pickerError[key]}
+                    {messageText(pickerError[key], i18n)}
                   </small>
                 ) : !desktop ? (
                   <small className="workflow-field-hint">
-                    Web 版可粘贴 Aura 服务端可访问的
-                    {kind === "image" ? "图片" : "目录"}
-                    路径；选择本机路径请使用 Aura Desktop。
+                    {t(kind === "image" ? "webImagePath" : "webDirectoryPath")}
                   </small>
                 ) : null}
               </>
@@ -409,7 +453,7 @@ export function WorkflowInput({
                     ? spec.maximum
                     : undefined
                 }
-                placeholder={workflowFieldPlaceholder(key, kind, spec)}
+                placeholder={placeholder()}
                 value={String(current[key] ?? "")}
                 onChange={(event) =>
                   update(
@@ -421,9 +465,9 @@ export function WorkflowInput({
                 autoComplete="off"
               />
             )}
-            {kind === "multi-select" && typeof spec.description === "string" ? (
+            {kind === "multi-select" && description ? (
               <small id={`${fieldId}-hint`} className="workflow-field-hint">
-                {spec.description}
+                {description}
               </small>
             ) : null}
           </div>
@@ -432,9 +476,9 @@ export function WorkflowInput({
     </div>
   ) : (
     <label className="workflow-input-field">
-      <span>运行输入（JSON）</span>
+      <span>{t("inputJson")}</span>
       <textarea
-        aria-label="运行输入 JSON"
+        aria-label={t("inputJsonLabel")}
         disabled={disabled}
         rows={4}
         value={text}

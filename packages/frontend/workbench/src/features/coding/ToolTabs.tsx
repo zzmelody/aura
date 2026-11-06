@@ -1,3 +1,4 @@
+import { useToolMessages } from "../../tool-messages.ts";
 import React, { useEffect, useRef } from "react";
 import {
   ChevronDown,
@@ -39,6 +40,7 @@ export function ToolTabs({
   hideButtonRef: React.Ref<HTMLButtonElement>;
   onHide(): void;
 }) {
+  const { t } = useToolMessages();
   const strip = useRef<HTMLDivElement>(null);
   useEffect(() => {
     strip.current
@@ -46,12 +48,12 @@ export function ToolTabs({
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [selectedId]);
   return (
-    <header className="coding-tools-header" aria-label="工具面板">
+    <header className="coding-tools-header" aria-label={t("panel")}>
       <div
         ref={strip}
         className="coding-tool-tabs"
         role="tablist"
-        aria-label="已打开的工具"
+        aria-label={t("opened")}
         onKeyDown={(event) => {
           if (
             !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) ||
@@ -95,14 +97,14 @@ export function ToolTabs({
               <ToolIcon kind={tab.kind} size={13} />
               <span>{tab.title}</span>
               {tab.status && tab.status !== "running" ? (
-                <small>已退出</small>
+                <small>{t("exited")}</small>
               ) : null}
             </button>
             <button
               type="button"
               className="icon-control row-control"
-              aria-label={`关闭工具：${tab.title}`}
-              title={`关闭${tab.title}`}
+              aria-label={t("closeTool", { name: tab.title })}
+              title={t("closeTool", { name: tab.title })}
               disabled={closing.includes(tab.id)}
               onClick={() => onClose(tab)}
             >
@@ -114,21 +116,23 @@ export function ToolTabs({
             </button>
           </div>
         ))}
-        {!tabs.length ? <span className="coding-tools-label">工具</span> : null}
+        {!tabs.length ? (
+          <span className="coding-tools-label">{t("tools")}</span>
+        ) : null}
       </div>
       <WorkbenchMenu
-        label="打开工具"
+        label={t("openTool")}
         items={[
           {
             id: "chat",
-            label: "新建侧边对话",
+            label: t("newSideChat"),
             icon: <MessageSquare size={14} />,
             disabled: busy || !canChat,
             action: onChat,
           },
           {
             id: "terminal",
-            label: "新建终端",
+            label: t("newTerminal"),
             icon: <SquareTerminal size={14} />,
             disabled: busy,
             action: onTerminal,
@@ -137,7 +141,7 @@ export function ToolTabs({
             ? [
                 {
                   id: "browser",
-                  label: "新建浏览器",
+                  label: t("newBrowser"),
                   icon: <Globe size={14} />,
                   action: onBrowser,
                 },
@@ -154,7 +158,7 @@ export function ToolTabs({
       <div className="coding-tools-spacer" />
       {tabs.length > 1 ? (
         <WorkbenchMenu
-          label="切换工具"
+          label={t("switchTool")}
           items={tabs.map((tab) => ({
             id: tab.id,
             label: `${tab.id === selectedId ? "✓ " : ""}${tab.title}`,
@@ -169,8 +173,8 @@ export function ToolTabs({
         ref={hideButtonRef}
         type="button"
         className="icon-control"
-        aria-label="收起工具面板"
-        title="收起工具面板，保留任务"
+        aria-label={t("hidePanel")}
+        title={t("hidePanelHint")}
         onClick={onHide}
       >
         <PanelRightClose size={15} />

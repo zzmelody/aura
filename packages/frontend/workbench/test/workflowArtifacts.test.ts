@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { WorkflowArtifact } from "@aura/protocol/types";
-import { artifactUrl, visibleArtifacts } from "../src/workflowArtifacts.ts";
+import {
+  artifactSize,
+  artifactUrl,
+  visibleArtifacts,
+} from "../src/workflowArtifacts.ts";
 const artifact: WorkflowArtifact = {
   id: "reference",
   artifactId: "content",
@@ -42,4 +46,12 @@ test("run gallery deduplicates content while step galleries preserve nested run 
       .length,
     0,
   );
+});
+
+test("artifact sizes localize units without changing thresholds or precision", () => {
+  assert.equal(artifactSize(0, "en"), "1 kB");
+  assert.equal(artifactSize(1536, "en"), "2 kB");
+  assert.equal(artifactSize(1024 * 1024 - 1, "en"), "1,024 kB");
+  assert.equal(artifactSize(1024 * 1024, "en"), "1.0 MB");
+  assert.equal(artifactSize(1.5 * 1024 * 1024, "fr"), "1,5 Mo");
 });

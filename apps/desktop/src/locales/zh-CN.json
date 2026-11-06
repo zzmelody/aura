@@ -1,0 +1,23 @@
+{
+  "startupTitle": "Aura · 个人工作台",
+  "startupOpening": "正在打开 Aura",
+  "tagline": "你的个人智能助手",
+  "startupLoading": "正在打开工作台",
+  "reload": "重新加载",
+  "startupSlow": "界面加载较慢，你可以继续等待或重新加载。",
+  "startupReady": "工作台已就绪",
+  "startupFailed": "界面加载失败，请重新加载。",
+  "runtimeStartFailed": "Aura 服务启动失败",
+  "runtimeStartDetail": "工作台已打开，请检查本地服务后重试。",
+  "quitFailed": "Aura 退出清理失败",
+  "quitRetry": "请重试退出。",
+  "startFailed": "Aura 无法启动",
+  "startDetail": "桌面服务启动失败。",
+  "outputDirectory": "选择工作流输出目录",
+  "selectDirectory": "选择此目录",
+  "inputImage": "选择工作流输入图片",
+  "useImage": "使用此图片",
+  "images": "图片",
+  "projectDirectory": "选择前端项目目录",
+  "useDirectory": "使用这个目录"
+}

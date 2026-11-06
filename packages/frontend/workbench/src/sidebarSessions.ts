@@ -1,5 +1,11 @@
 import type { Session } from "@aura/core/types";
-import { isWorkflowActive, workflowPhaseLabels } from "./workflowSessions.ts";
+import { formatRelativeTime, language } from "@aura/i18n/runtime";
+import { isWorkflowActive } from "./workflowSessions.ts";
+import {
+  sidebarMessage,
+  workflowPhaseMessageKeys,
+  type SidebarMessageKey,
+} from "./sidebar-messages.ts";
 
 export type SessionStatus = {
   kind:
@@ -12,22 +18,30 @@ export type SessionStatus = {
     | "paused"
     | "attention"
     | "waiting";
-  label: string;
+  /** Resolve at render time so cached statuses follow the selected language. */
+  messageKey: SidebarMessageKey;
 };
 
 /** Compact row metadata; callers may supply a clock for deterministic rendering. */
 export function sidebarSessionTime(
   updatedAt: number,
   now = Date.now(),
+  locale = language.getSnapshot().locale,
 ): string {
   if (!Number.isFinite(updatedAt) || !Number.isFinite(now)) return "—";
   const seconds = Math.max(0, Math.floor((now - updatedAt) / 1000));
-  if (seconds < 60) return "刚刚";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时`;
-  if (seconds < 30 * 86400) return `${Math.floor(seconds / 86400)}天`;
-  if (seconds < 365 * 86400) return `${Math.floor(seconds / (30 * 86400))}个月`;
-  return `${Math.floor(seconds / (365 * 86400))}年`;
+  if (seconds < 60)
+    return language.i18n.t("justNow", { ns: "sidebar", lng: locale });
+  const relative = (size: number, unit: Intl.RelativeTimeFormatUnit) =>
+    formatRelativeTime(-Math.floor(seconds / size), unit, locale, {
+      style: "narrow",
+      numeric: "always",
+    });
+  if (seconds < 3600) return relative(60, "minute");
+  if (seconds < 86400) return relative(3600, "hour");
+  if (seconds < 30 * 86400) return relative(86400, "day");
+  if (seconds < 365 * 86400) return relative(30 * 86400, "month");
+  return relative(365 * 86400, "year");
 }
 
 /**
@@ -55,12 +69,15 @@ export function sidebarSessionStatus(
     message.workflowPhase ? [message.workflowPhase] : [],
   );
   if (phases.includes("waiting_input"))
-    return { kind: "attention", label: "等待输入" };
+    return { kind: "attention", messageKey: "waitingInput" };
   if (phases.includes("needs_attention"))
-    return { kind: "attention", label: "需要处理" };
-  if (phases.includes("pausing")) return { kind: "running", label: "正在暂停" };
-  if (phases.includes("running")) return { kind: "running", label: "正在运行" };
-  if (phases.includes("queued")) return { kind: "queued", label: "等待执行" };
+    return { kind: "attention", messageKey: "attention" };
+  if (phases.includes("pausing"))
+    return { kind: "running", messageKey: "pausing" };
+  if (phases.includes("running"))
+    return { kind: "running", messageKey: "running" };
+  if (phases.includes("queued"))
+    return { kind: "queued", messageKey: "queued" };
   if (
     running ||
     session.messages.some(
@@ -69,11 +86,12 @@ export function sidebarSessionStatus(
   )
     return {
       kind: "running",
-      label: session.workflow ? "正在提交" : "正在生成",
+      messageKey: session.workflow ? "submitting" : "generating",
     };
-  if (phases.includes("paused")) return { kind: "paused", label: "已暂停" };
+  if (phases.includes("paused"))
+    return { kind: "paused", messageKey: "paused" };
   if (session.workflow?.pending || session.pendingWorkflow)
-    return { kind: "attention", label: "提交待确认" };
+    return { kind: "attention", messageKey: "submissionUnknown" };
   const last = [...session.messages]
     .reverse()
     .find((message) => message.role === "assistant");
@@ -84,12 +102,14 @@ export function sidebarSessionStatus(
         : last.workflowPhase === "completed"
           ? "completed"
           : "stopped";
-    return { kind, label: workflowPhaseLabels[last.workflowPhase] };
+    return { kind, messageKey: workflowPhaseMessageKeys[last.workflowPhase] };
   }
-  if (last?.status === "error") return { kind: "failed", label: "回复失败" };
-  if (last?.status === "stopped") return { kind: "stopped", label: "已停止" };
-  if (last) return { kind: "completed", label: "已完成" };
-  return { kind: "idle", label: "尚未开始" };
+  if (last?.status === "error")
+    return { kind: "failed", messageKey: "replyFailed" };
+  if (last?.status === "stopped")
+    return { kind: "stopped", messageKey: "stopped" };
+  if (last) return { kind: "completed", messageKey: "completed" };
+  return { kind: "idle", messageKey: "idle" };
 }
 
 export function sidebarSessionTitle(session: Session): string {
@@ -111,7 +131,7 @@ export function sidebarSessionTitle(session: Session): string {
       /* Truncated legacy previews remain searchable as plain text. */
     }
   }
-  return text.replace(/\s+/g, " ").slice(0, 80) || "新的运行";
+  return text.replace(/\s+/g, " ").slice(0, 80) || sidebarMessage("newRun");
 }
 
 export function groupSidebarSessions(sessions: Session[]) {
@@ -125,7 +145,7 @@ export function groupSidebarSessions(sessions: Session[]) {
       : "chat";
     const group = groups.get(id) ?? {
       id,
-      title: session.workflow?.title ?? "对话",
+      title: session.workflow?.title ?? sidebarMessage("conversations"),
       workflow: Boolean(session.workflow),
       sessions: [],
     };

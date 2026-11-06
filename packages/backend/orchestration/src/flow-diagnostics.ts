@@ -1,5 +1,5 @@
 import { parse, type Node } from "acorn";
-import { FlowError } from "./schema.ts";
+import { CodedFlowError } from "@aura/protocol/errors";
 type Ast = Node & Record<string, unknown>;
 const node = (value: unknown): value is Ast =>
   Boolean(value && typeof value === "object" && "type" in value);
@@ -56,8 +56,13 @@ export function validateFlowSource(
         object === "Promise" &&
         ["all", "allSettled", "race", "any"].includes(String(property))
       )
-        throw new FlowError(
+        throw new CodedFlowError(
           `第 ${root.loc?.start.line} 行：Flow 并发请使用 scope.parallel，旧 Promise.${property} 写法已停用。`,
+          400,
+          {
+            code: "flow_source_promise",
+            params: { line: root.loc!.start.line, method: String(property) },
+          },
         );
       if (
         !options.allowRootOperations &&
@@ -67,8 +72,17 @@ export function validateFlowSource(
           String(property),
         )
       )
-        throw new FlowError(
+        throw new CodedFlowError(
           `第 ${root.loc?.start.line} 行：根 ${context} 只提供 sequence，请在回调作用域内调用 ${property}。`,
+          400,
+          {
+            code: "flow_source_root",
+            params: {
+              line: root.loc!.start.line,
+              context,
+              operation: String(property),
+            },
+          },
         );
     }
     for (const child of children(root)) inspect(child, context, shadowed);

@@ -6,6 +6,7 @@ import { runInNewContext } from "node:vm";
 import { Context } from "@deepseek-ai/cordis";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { language } from "@aura/i18n/runtime";
 import {
   installSecretMask,
   secretMaskSnapshot,
@@ -55,12 +56,31 @@ test("published DSH matcher and renderer mask credentials while preserving the o
       );
       assert.ok(!html.includes(credential));
       assert.ok(!html.includes("synthetic-password"));
-      assert.match(html, /显示密钥/u);
+      assert.ok(html.includes(mask.translate("secret.reveal")));
       assert.match(html, /aria-pressed="false"/u);
     }
     assert.deepEqual(secretSegments("ordinary text", mask.rule), [
       { text: "ordinary text" },
     ]);
+    const expected = {
+      "zh-CN": "显示密钥",
+      en: "Show secret",
+      ja: "シークレットを表示",
+      ko: "비밀 정보 표시",
+      ru: "Показать секрет",
+      fr: "Afficher le secret",
+    };
+    for (const [locale, label] of Object.entries(expected)) {
+      await language.systemChanged([locale]);
+      assert.equal(mask.translate("secret.reveal"), label);
+      assert.equal(secretMaskSnapshot(), mask);
+      assert.equal(
+        secretSegments(raw, mask.rule)
+          .map((part) => part.text)
+          .join(""),
+        raw,
+      );
+    }
   } finally {
     await plugin.dispose();
   }

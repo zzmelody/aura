@@ -1,3 +1,4 @@
+import type { ApiErrorDetails } from "@aura/protocol/errors";
 import type {
   PluginCompatibility,
   PluginHttpContribution,
@@ -50,4 +51,13 @@ export interface LoadAuraPluginsOptions {
   supportedPermissions?: readonly string[];
 }
 
-export class AuraPluginConfigurationError extends Error {}
+export class AuraPluginConfigurationError extends Error {
+  readonly details: ApiErrorDetails;
+  constructor(
+    message: string,
+    details: ApiErrorDetails = { code: "plugin_configuration_invalid" },
+  ) {
+    super(message);
+    this.details = details;
+  }
+}

@@ -1,3 +1,9 @@
+import { language, type MessageReference } from "@aura/i18n/runtime";
+import { apiErrorText } from "../../api-error-messages.ts";
+import {
+  conversationMessage,
+  type ConversationMessageKey,
+} from "../../conversation-messages.ts";
 import type {
   CodingActivity,
   ChatWorkflowStart,
@@ -30,41 +36,50 @@ export type ToolGroupSummary = {
   active?: ToolEntry;
 };
 
-const toolGroupActivities: Record<string, readonly [string, string]> = {
-  web_search: ["搜索了网页", "尝试搜索网页"],
-  web_fetch: ["读取了网页", "尝试读取网页"],
-  subagent: ["委派了子 Agent", "尝试委派子 Agent"],
-  read: ["读取了文件", "尝试读取文件"],
-  read_image: ["查看了图片", "尝试查看图片"],
-  glob: ["搜索了项目", "尝试搜索项目"],
-  grep: ["搜索了项目", "尝试搜索项目"],
-  write: ["修改了文件", "尝试修改文件"],
-  edit: ["修改了文件", "尝试修改文件"],
-  bash: ["运行了命令", "尝试运行命令"],
-  pwsh: ["运行了命令", "尝试运行命令"],
-  todo_write: ["更新了任务清单", "尝试更新任务清单"],
-  present: ["交付了文件", "尝试交付文件"],
+const toolGroupActivities: Record<
+  string,
+  readonly [ConversationMessageKey, ConversationMessageKey]
+> = {
+  web_search: ["searchedWeb", "triedSearchWeb"],
+  web_fetch: ["readWeb", "triedReadWeb"],
+  subagent: ["delegatedAgent", "triedDelegate"],
+  read: ["readFiles", "triedReadFiles"],
+  read_image: ["viewedImages", "triedViewImages"],
+  glob: ["searchedProject", "triedSearchProject"],
+  grep: ["searchedProject", "triedSearchProject"],
+  write: ["editedFiles", "triedEditFiles"],
+  edit: ["editedFiles", "triedEditFiles"],
+  bash: ["ranCommands", "triedRunCommands"],
+  pwsh: ["ranCommands", "triedRunCommands"],
+  todo_write: ["updatedTasks", "triedUpdateTasks"],
+  present: ["deliveredFiles", "triedDeliverFiles"],
 };
 
 /** Describe the work once per activity, without claiming failed edits succeeded. */
-export function describeToolGroup(tools: readonly ToolEntry[]): string {
+export function describeToolGroup(
+  tools: readonly ToolEntry[],
+  locale = language.getSnapshot().locale,
+): string {
+  const t = language.i18n.getFixedT(locale, "conversation");
   const activities = new Map<
     string,
     { attempted: string; succeeded: boolean }
   >();
   for (const tool of tools) {
     const [done, attempted] = toolGroupActivities[tool.name] ?? [
-      "调用了工具",
-      "尝试调用工具",
+      "calledTools",
+      "triedCallTools",
     ];
     activities.set(done, {
       attempted,
       succeeded: tool.state === "ok" || !!activities.get(done)?.succeeded,
     });
   }
-  return [...activities]
-    .map(([done, activity]) => (activity.succeeded ? done : activity.attempted))
-    .join("、");
+  return new Intl.ListFormat(locale).format(
+    [...activities].map(([done, activity]) =>
+      t(activity.succeeded ? done : activity.attempted),
+    ),
+  );
 }
 
 /** A collapsed run keeps failures visible even while another call is active. */
@@ -166,7 +181,7 @@ export type Turn = {
   status: "running" | "complete" | "stopped" | "error";
   /** Local admission only; no model request has been sent yet. */
   waitingForService?: boolean;
-  error?: string;
+  error?: string | MessageReference;
   startedAt: number;
   endedAt?: number;
   endSeq?: number;
@@ -487,7 +502,7 @@ export function finishTurn(
   turn: Turn,
   status: Exclude<Turn["status"], "running">,
   endedAt?: number,
-  error?: string,
+  error?: string | MessageReference,
 ): Turn {
   return {
     ...turn,
@@ -518,7 +533,14 @@ export function turnsFromHistory(
       for (const event of item.events) turn = applyTurnEvent(turn, event);
       return item.status === "running"
         ? turn
-        : finishTurn(turn, item.status, item.endedAt, item.error);
+        : finishTurn(
+            turn,
+            item.status,
+            item.endedAt,
+            item.error === undefined
+              ? undefined
+              : apiErrorText(item.errorDetails, item.error),
+          );
     }),
   );
 }
@@ -654,7 +676,7 @@ export function reconcileFinishedTurn(
         turn,
         "error",
         checkedAt,
-        "本轮已结束，历史中没有可确认的结果。",
+        conversationMessage("unconfirmedHistory"),
       )
     : turn;
 }

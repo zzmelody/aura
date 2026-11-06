@@ -1,11 +1,12 @@
 import type { FlowCatalogEntry, JsonValue } from "@aura/protocol/types";
+import { flowTitle, flowDescription } from "./metadata.ts";
 
 /** Available flows first, then the catalog order; matches title, purpose or ID. */
 export function filterFlows(flows: FlowCatalogEntry[], query: string) {
   const needle = query.trim().toLowerCase();
   return flows
     .filter((flow) =>
-      `${flow.title} ${flow.description} ${flow.id}`
+      `${flowTitle(flow)} ${flowDescription(flow)} ${flow.title} ${flow.description} ${flow.id}`
         .toLowerCase()
         .includes(needle),
     )

@@ -114,9 +114,41 @@ The file `aura.plugin.json` uses UTF-8 JSON without executable values:
 
 - `permissions` lists built-in host capabilities (IDs such as `aura.codex.image`, `aura.flow.invoke`) and defaults to an empty array; omit it when empty. A plugin's own backend is never listed here.
 - `description`, `homepage`, and `license` MAY provide display metadata and MUST NOT affect execution.
+- `localization` MAY provide static display catalogs and key mappings on SDK 2.5 or later; see section 5.3.
 - Unknown top-level fields MUST be rejected so misspelled security- or execution-related fields cannot be silently ignored.
 
 The only executable entries are the prebuilt files named by `contributes` (`backend`, `http.entry`, `pages`) and the Action/Flow entry files. The manifest MUST NOT contain lifecycle scripts, shell commands, arbitrary environment variables, or remote download URLs.
+
+### 5.3 Static display localization (SDK 2.5)
+
+Plugins using `localization` MUST require `engines.pluginSdk: "^2.5.0"` or a
+compatible newer range. The object contains `catalogs` and optional `nameKey`,
+`descriptionKey`, `flows` and `actions`. Catalogs are flat string maps for `zh-CN`,
+`en`, `ja`, `ko`, `ru`, `fr`; English is required, and every referenced key MUST
+exist in English. Missing translations fall back to English, then original text.
+Catalog text is literal display text, not HTML, interpolation or executable code.
+
+`flows` and `actions` use the declaring plugin's local contribution IDs. Each
+entry MAY contain `titleKey`, `descriptionKey`, `input` and `output`. Input/output
+maps use JSON Pointers to existing schema nodes, with `titleKey`,
+`descriptionKey`, `placeholderKey` and `enumKeys`. `enumKeys` is a list of display
+keys in original enum order; it MUST NOT supply replacement enum values.
+For an array's enum labels, target its `/items` node. Invalid/unmatched pointers
+do not change the original schema. All other fields are rejected.
+
+The host validates limits: at most 2,000 messages per locale, 4,000 characters
+per message, 128 entries per contribution kind, 256 pointers per schema map,
+256 enum labels per node, and 256 Ki characters in the serialized localization
+object. Message keys are nonempty, at most 200 characters, and exclude prototype
+property names; JSON Pointers are at most 1,024 characters and use valid escapes.
+
+Discovery MUST read these resources without executing page bundles or disabled
+plugin code. They belong to display status, not durable identity or DSH model
+tools. UI owners MUST isolate resources by reader/plugin, replace removed keys
+on refresh and dispose them on unload. Language changes MUST NOT rewrite
+schemas, IDs, prompts, user data, configuration or historical records, nor repeat
+requests. Original title/description fields remain required compatibility text.
+Page bundles continue to use the separate public UI translation contract.
 
 ## 6. Identifiers and namespacing
 

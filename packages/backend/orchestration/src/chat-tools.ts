@@ -1,3 +1,4 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import { createHash } from "node:crypto";
 import { defineTool, type ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { PluginTaskTool } from "./backend-api.ts";
@@ -345,7 +346,9 @@ export function chatTools(host: ChatToolHost, scope: ChatToolScope) {
   ]);
   const plugins = (host.taskTools?.() ?? []).map((tool) => {
     if (names.has(tool.name))
-      throw new FlowError("Chat tool name already owned.", 409);
+      throw new CodedFlowError("Chat tool name already owned.", 409, {
+        code: "chat_tool_conflict",
+      });
     names.add(tool.name);
     return compileTool({
       name: tool.name,

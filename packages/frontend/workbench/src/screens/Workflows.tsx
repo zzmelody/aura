@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useWorkflowMessages } from "../workflow-messages.ts";
 import {
   ChevronDown,
   FileCode2,
@@ -15,6 +16,7 @@ import type { FlowCatalogController } from "../flowCatalog";
 import type { FlowDraftController } from "../flowDraft";
 import type { FlowAnalysisController } from "../useFlowAnalysis";
 import { useFlowSource } from "../flowSource";
+import { flowTitle, flowDescription, flowCatalogError } from "../metadata.ts";
 const FlowGraphView = React.lazy(() =>
   import("./FlowGraphView").then((module) => ({
     default: module.FlowGraphView,
@@ -35,6 +37,7 @@ function WorkflowPreview({
   onEdit(): void;
   analysis: FlowAnalysisController;
 }) {
+  const { t } = useWorkflowMessages();
   const { source, error, refresh } = useFlowSource(
     endpoint,
     flow.available ? flow.id : "",
@@ -48,23 +51,25 @@ function WorkflowPreview({
       className="workflow-card-preview"
       id={`preview-${flow.id}`}
       role="region"
-      aria-label={`${flow.title}的节点图`}
+      aria-label={t("graphLabel", { name: flowTitle(flow) })}
     >
       <div className="workflow-preview-heading">
-        <span>流程预览</span>
-        <span>滚轮缩放 · 双指平移 / 捏合</span>
+        <span>{t("preview")}</span>
+        <span>{t("graphGestureHint")}</span>
       </div>
       {source ? (
         <React.Suspense
-          fallback={<div className="flow-preview-empty">正在加载节点图…</div>}
+          fallback={
+            <div className="flow-preview-empty">{t("loadingGraph")}</div>
+          }
         >
           {diagram ? (
             <FlowGraphView diagram={diagram} embedded />
           ) : (
             <div className="flow-preview-empty">
-              <p>打开编辑器，让 Agent 分析并绘制 SVG 流程图。</p>
+              <p>{t("analyzeGraphHint")}</p>
               <button className="tool-button" onClick={onEdit}>
-                打开工作流
+                {t("openWorkflow")}
               </button>
             </div>
           )}
@@ -75,13 +80,13 @@ function WorkflowPreview({
           role={error || !flow.available ? "alert" : "status"}
         >
           <span>
-            {flow.error ||
+            {flowCatalogError(flow) ||
               error ||
-              (!flow.available ? "此工作流当前不可用。" : "正在加载节点图…")}
+              (!flow.available ? t("workflowUnavailable") : t("loadingGraph"))}
           </span>
           {error ? (
             <button className="tool-button" onClick={refresh}>
-              重试
+              {t("retry")}
             </button>
           ) : null}
         </div>
@@ -109,6 +114,7 @@ export function Workflows({
   onRun(flow: FlowCatalogEntry): void;
   onDetailChange(open: boolean): void;
 }) {
+  const { t } = useWorkflowMessages();
   const [editing, setEditing] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string>();
   const [query, setQuery] = useState("");
@@ -133,14 +139,14 @@ export function Workflows({
   };
   const flows = catalogState.catalog?.flows ?? [];
   const visible = flows.filter((flow) =>
-    `${flow.title} ${flow.description} ${flow.id}`
+    `${flowTitle(flow)} ${flowDescription(flow)} ${flow.title} ${flow.description} ${flow.id}`
       .toLowerCase()
       .includes(query.trim().toLowerCase()),
   );
   if (editing !== null)
     return (
       <React.Suspense
-        fallback={<div className="workspace-loading">正在加载编辑器…</div>}
+        fallback={<div className="workspace-loading">{t("loadingEditor")}</div>}
       >
         <FlowStudio
           key={editing}
@@ -158,30 +164,30 @@ export function Workflows({
       </React.Suspense>
     );
   return (
-    <section className="workflow-library-page" aria-label="工作流列表">
+    <section className="workflow-library-page" aria-label={t("library")}>
       <header className="workflow-page-heading">
         <div>
-          <h1>工作流</h1>
-          <p>底层能力目录。可在这里运行，也可在任何对话中输入 / 调用。</p>
+          <h1>{t("workflows")}</h1>
+          <p>{t("libraryHint")}</p>
         </div>
         <button className="tool-button" onClick={() => edit("")}>
           <Plus size={16} />
-          创建工作流
+          {t("createWorkflow")}
         </button>
       </header>
       <div className="workflow-page-tools">
         <label className="workflow-card-search">
           <Search size={16} />
           <input
-            aria-label="搜索工作流"
-            placeholder="搜索工作流…"
+            aria-label={t("searchWorkflows")}
+            placeholder={t("searchWorkflowsPlaceholder")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
           {query ? (
             <button
               className="icon-control"
-              aria-label="清空搜索"
+              aria-label={t("clearSearch")}
               onClick={() => setQuery("")}
             >
               <X size={14} />
@@ -189,11 +195,13 @@ export function Workflows({
           ) : null}
         </label>
         <span>
-          {catalogState.catalog ? `${visible.length} 个工作流` : "加载中"}
+          {catalogState.catalog
+            ? t("workflowCount", { count: visible.length })
+            : t("loading")}
         </span>
         <button
           className="icon-control"
-          aria-label="刷新工作流"
+          aria-label={t("refreshWorkflows")}
           disabled={catalogState.refreshing}
           onClick={() => void catalogState.refresh()}
         >
@@ -202,13 +210,13 @@ export function Workflows({
       </div>
       {catalogState.error ? (
         <div className="workspace-notice" role="alert">
-          暂时无法连接工作流服务，正在重试。
-          {catalogState.catalog ? "已保留上次列表。" : ""}
+          {t("serviceRetrying")}
+          {catalogState.catalog ? t("cachedList") : ""}
           <button
             className="text-control"
             onClick={() => void catalogState.refresh()}
           >
-            重新连接
+            {t("reconnect")}
           </button>
         </div>
       ) : null}
@@ -221,7 +229,10 @@ export function Workflows({
             <div className="workflow-card-summary" data-row-highlight>
               <button
                 className="workflow-card-open row-control"
-                aria-label={`${expanded === flow.id ? "收起" : "展开"}工作流：${flow.title}`}
+                aria-label={t(
+                  expanded === flow.id ? "collapseWorkflow" : "expandWorkflow",
+                  { name: flowTitle(flow) },
+                )}
                 aria-expanded={expanded === flow.id}
                 aria-controls={`preview-${flow.id}`}
                 onClick={() =>
@@ -232,23 +243,23 @@ export function Workflows({
                   <FlowIcon size={22} />
                 </span>
                 <span className="workflow-card-copy">
-                  <strong>{flow.title}</strong>
-                  <span>{flow.description || "暂无说明"}</span>
+                  <strong>{flowTitle(flow)}</strong>
+                  <span>{flowDescription(flow) || t("noDescription")}</span>
                 </span>
                 <ChevronDown className="workflow-expand-icon" size={15} />
               </button>
               <div className="workflow-card-actions">
                 <span
                   className={`workflow-card-status${flow.available ? "" : " unavailable"}`}
-                  title={flow.error}
+                  title={flowCatalogError(flow)}
                 >
                   <i />
-                  {flow.available ? "可运行" : "不可用"}
+                  {flow.available ? t("available") : t("unavailable")}
                 </span>
                 <button
                   className="icon-control row-control"
-                  aria-label={`编辑工作流：${flow.title}`}
-                  title="编辑工作流"
+                  aria-label={t("editWorkflowLabel", { name: flowTitle(flow) })}
+                  title={t("editWorkflow")}
                   onClick={() => edit(flow.id)}
                 >
                   <Pencil size={17} />
@@ -256,8 +267,8 @@ export function Workflows({
                 <button
                   className="icon-control workflow-run-icon row-control"
                   disabled={!flow.available}
-                  aria-label={`运行工作流：${flow.title}`}
-                  title="运行工作流"
+                  aria-label={t("runWorkflowLabel", { name: flowTitle(flow) })}
+                  title={t("runWorkflow")}
                   onClick={() => onRun(flow)}
                 >
                   <Play size={17} />
@@ -277,24 +288,20 @@ export function Workflows({
         {catalogState.catalog && !visible.length ? (
           <div className="workflow-empty">
             <FlowIcon size={28} />
-            <h2>{flows.length ? "没有匹配的工作流" : "从第一个工作流开始"}</h2>
-            <p>
-              {flows.length
-                ? "换个关键词试试。"
-                : "创建草稿，或导入已有的工作流代码。"}
-            </p>
+            <h2>{flows.length ? t("noMatches") : t("firstWorkflow")}</h2>
+            <p>{flows.length ? t("tryKeyword") : t("createOrImport")}</p>
             <button
               className="tool-button"
               onClick={() => (flows.length ? setQuery("") : edit(""))}
             >
-              {flows.length ? "清除搜索" : "创建工作流"}
+              {flows.length ? t("resetSearch") : t("createWorkflow")}
             </button>
           </div>
         ) : null}
       </div>
       <button className="workflow-draft-link" onClick={() => edit("")}>
         <FileCode2 size={16} />
-        <span>继续编辑本地草稿</span>
+        <span>{t("continueDraft")}</span>
       </button>
     </section>
   );

@@ -20,4 +20,6 @@
 
 `apps/web`、`apps/mobile`、`apps/desktop` 和 `apps/server` 只拥有运行、构建与平台生命周期。独立服务的 `src/launch.ts` 经过构建生成 `dist/launch.js`，先安装 TS loader，再加载安装包内的 `server.ts`；生成产物不进入 Git。
 
+`@aura/i18n` 是 frontend library，持有界面语言协商、本机语言偏好、i18next 资源生命周期与 React 订阅，不依赖 backend，不保存模型凭据或用户内容。宿主领域文案留在 workbench，插件文案留在插件；`@aura/plugin-ui` 提供对同一运行时的公开入口。
+
 非基础业务以独立插件发布（如 aura-studio），站点插件在 `plugins/site-launcher`。Tripo 的 HTTP、Actions、账本和供应商适配在 `plugins/tripo`。HTTP 路由负责解析与投影，library 负责项目/版本的存储规则，production 负责 Flow/Action 的业务协调；通用执行引擎不因某个页面需求新增领域状态。类型校验和现有领域测试验证兼容性，工作区检查验证包依赖方向。

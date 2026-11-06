@@ -5,8 +5,9 @@ import { runInThisContext } from "node:vm";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { startPluginHost } from "../src/pluginHost.ts";
+import { language, locales, pluginNamespace } from "@aura/i18n/runtime";
 
-test("built product bundle mounts its page through DSH and disposes its styles", async (t) => {
+test("built product bundles share six languages and dispose pages, styles and catalogs through DSH", async (t) => {
   const workspace = new URL("../../../../", import.meta.url);
   const require = createRequire(
     new URL("packages/backend/runtime/package.json", workspace),
@@ -18,17 +19,21 @@ test("built product bundle mounts its page through DSH and disposes its styles",
       await readFile(require.resolve(`${loaderId}/client`), "utf8"),
     ],
   ]);
-  for (const id of ["site-launcher"])
+  const products = [
+    { id: "site-launcher", directory: "site-launcher", message: "headline" },
+    { id: "aura.tripo", directory: "tripo", message: "loading" },
+  ];
+  for (const { id, directory } of products)
     sources.set(
       `http://fixture.invalid/${id}.js`,
       await readFile(
-        new URL(`plugins/${id}/client/dist/client.js`, workspace),
+        new URL(`plugins/${directory}/client/dist/client.js`, workspace),
         "utf8",
       ),
     );
   const entries = [
     { id: loaderId, url: "loader.js", rev: "loader1", immediately: true },
-    ...["site-launcher"].map((id) => ({
+    ...products.map(({ id }) => ({
       id,
       url: `${id}.js`,
       rev: "v1",
@@ -133,21 +138,48 @@ test("built product bundle mounts its page through DSH and disposes its styles",
   );
   t.after(() => host.close());
   assert.deepEqual(host.failures, []);
-  assert.deepEqual([...host.pages.keys()].sort(), ["site-launcher/sites"]);
-  assert.equal(styles.size, 1);
-  for (const [id, page] of host.pages) {
-    const html = renderToStaticMarkup(
-      page.definition.render({
-        endpoint: "http://fixture.invalid",
-        pluginId: page.pluginId,
-        invoke: async () => null,
-        onBack: () => undefined,
-        onDirtyChange: () => undefined,
-      }),
-    );
-    assert.ok(html.length > 100, id);
+  assert.deepEqual([...host.pages.keys()].sort(), [
+    "aura.tripo/settings",
+    "site-launcher/sites",
+  ]);
+  assert.equal(styles.size, 2);
+  for (const locale of locales) {
+    await language.systemChanged([locale]);
+    for (const [id, page] of host.pages) {
+      const product = products.find((item) => item.id === page.pluginId)!;
+      const catalog = JSON.parse(
+        await readFile(
+          new URL(
+            `plugins/${product.directory}/client/src/locales/${locale}.json`,
+            workspace,
+          ),
+          "utf8",
+        ),
+      ) as Record<string, string>;
+      assert.ok(
+        language.i18n.hasResourceBundle(locale, pluginNamespace(page.pluginId)),
+      );
+      const html = renderToStaticMarkup(
+        page.definition.render({
+          endpoint: "http://fixture.invalid",
+          pluginId: page.pluginId,
+          invoke: async () => {
+            throw new Error("Rendering must not invoke a backend");
+          },
+          onBack: () => undefined,
+          onDirtyChange: () => undefined,
+        }),
+      );
+      assert.ok(html.includes(catalog[product.message]), `${id} in ${locale}`);
+    }
   }
   await host.close();
   assert.equal(styles.size, 0);
   assert.equal(host.pages.size, 0);
+  for (const locale of locales)
+    for (const product of products)
+      assert.equal(
+        language.i18n.hasResourceBundle(locale, pluginNamespace(product.id)),
+        false,
+      );
 });

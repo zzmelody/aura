@@ -40,7 +40,7 @@ import type {
 } from "@aura/protocol/types";
 import { resolveChatModel } from "../chat-models.ts";
 import { agentFailure } from "@aura/dsh-auth/agent-failure";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError, FlowError } from "@aura/protocol/errors";
 import type {
   CodingFileDiff,
   CodingStreamEvent,
@@ -189,7 +189,9 @@ export function codingService(
         : children.includes(agent.session.header.agentPreset ?? "")
     ) {
       if (!parentId || !owned.has(parentId))
-        throw new FlowError("子 Agent 缺少有效的父对话。", 403);
+        throw new CodedFlowError("子 Agent 缺少有效的父对话。", 403, {
+          code: "subagent_parent_invalid",
+        });
       owned.add(agent.id);
       if (
         cwd &&
@@ -199,14 +201,19 @@ export function codingService(
         mountWorkspaceInstructions(agent, cwd);
       await refreshTools(agent, true);
       const nativeQuestion = agent.ctx.tools.get("ask_user_question");
-      if (!nativeQuestion) throw new FlowError("问答工具尚未就绪。", 503);
+      if (!nativeQuestion)
+        throw new CodedFlowError("问答工具尚未就绪。", 503, {
+          code: "question_tool_unavailable",
+        });
       agent.ctx.tools.register({
         ...nativeQuestion,
         async execute(args, exec) {
           const parent = ctx.agents.get(parentId);
           const stop = turnStops.get(parentId)?.signal;
           if (!parent || !stop || !emitters.has(parentId))
-            throw new FlowError("父对话已停止。", 409);
+            throw new CodedFlowError("父对话已停止。", 409, {
+              code: "conversation_parent_stopped",
+            });
           const input = args as { questions?: unknown };
           const items = codingQuestions(
             Array.isArray(input.questions) ? input.questions : [],
@@ -275,7 +282,9 @@ export function codingService(
           ctx.agentTeams.tryMembership(agent)?.role === "teammate" &&
           !integrations?.enabled("agentTeam")
         )
-          throw new FlowError("Agent 团队已停用。", 409);
+          throw new CodedFlowError("Agent 团队已停用。", 409, {
+            code: "agent_team_disabled",
+          });
         const id = await capabilities
           .reserve(kind, sessionId)
           .catch((error: unknown) => {
@@ -310,7 +319,9 @@ export function codingService(
           !owned.has(exec.agent.id) ||
           !integrations.enabled("agentTeam")
         )
-          throw new FlowError("当前对话未启用 Agent 团队。", 409);
+          throw new CodedFlowError("当前对话未启用 Agent 团队。", 409, {
+            code: "agent_team_disabled",
+          });
       }
       if (exec.name.startsWith("mcp__")) {
         const agent = exec.agent;
@@ -320,11 +331,14 @@ export function codingService(
           agent.session.header.origin === "subagent" ||
           !integrations?.mcpTools().includes(exec.name)
         )
-          throw new FlowError("当前对话未启用此 MCP 工具。", 403);
+          throw new CodedFlowError("当前对话未启用此 MCP 工具。", 403, {
+            code: "mcp_tool_disabled",
+          });
         if (!canUseMcp(agent))
-          throw new FlowError(
+          throw new CodedFlowError(
             "只读权限或计划模式下无法执行外部 MCP 工具。",
             403,
+            { code: "mcp_permission_denied" },
           );
         exec.signal.throwIfAborted();
         const secrets = integrations.mcpSecrets();
@@ -335,7 +349,9 @@ export function codingService(
           complete = !result.isError;
           return result;
         } catch {
-          throw new FlowError("MCP 工具调用未完成。", 502);
+          throw new CodedFlowError("MCP 工具调用未完成。", 502, {
+            code: "mcp_tool_failed",
+          });
         } finally {
           await capabilities.settle(reservation, complete);
         }
@@ -345,13 +361,17 @@ export function codingService(
         (exec.name === "get_goal" || exec.name === "update_goal") &&
         !goalRuns.has(exec.agent.id)
       )
-        throw new FlowError("请先从输入框启动或继续目标。", 409);
+        throw new CodedFlowError("请先从输入框启动或继续目标。", 409, {
+          code: "goal_input_required",
+        });
       if (exec.name === "subagent") {
         if (
           !capabilities.config().subagents ||
           integrations?.enabled("agentTeam")
         )
-          throw new FlowError("子 Agent 已停用。", 409);
+          throw new CodedFlowError("子 Agent 已停用。", 409, {
+            code: "subagent_disabled",
+          });
         const args = exec.arguments as { cwd?: unknown };
         if (
           args.cwd !== undefined &&
@@ -359,13 +379,17 @@ export function codingService(
             resolve(exec.agent.session.header.cwd ?? "", args.cwd) !==
               exec.agent.session.header.cwd)
         )
-          throw new FlowError("子 Agent 必须继承父对话目录。", 403);
+          throw new CodedFlowError("子 Agent 必须继承父对话目录。", 403, {
+            code: "subagent_directory_mismatch",
+          });
       }
       if (exec.name !== "web_search" && exec.name !== "web_fetch")
         return next();
       const state = await capabilities.snapshot();
       if (!state.web || !state.hasWebKey)
-        throw new FlowError("请先配置 DeepSeek Web 服务。", 409);
+        throw new CodedFlowError("请先配置 DeepSeek Web 服务。", 409, {
+          code: "web_configuration_required",
+        });
       exec.signal.throwIfAborted();
       const id = await capabilities.reserve("web", exec.agent.id);
       let complete = false;
@@ -390,7 +414,10 @@ export function codingService(
   function applyPermission(sessionId: string, permission: CodingPermission) {
     const presets = ctx.get("permissionPresets") as
       PermissionPresets | undefined;
-    if (!presets) throw new FlowError("DSH 对话权限服务不可用。", 503);
+    if (!presets)
+      throw new CodedFlowError("DSH 对话权限服务不可用。", 503, {
+        code: "permissions_unavailable",
+      });
     const id = SessionId(sessionId);
     const session = ctx.agents.get(id)?.session ?? ctx.sessions.get(id);
     if (!session || presets.current(session) === permission) return;
@@ -429,7 +456,10 @@ export function codingService(
     if (!permissions.has(agent)) agent.ctx.tools.presentAs("native");
     const missing = base.filter((name) => !agent.ctx.tools.get(name));
     if (missing.length)
-      throw new FlowError(`对话工具未注册：${missing.join("、")}。`);
+      throw new CodedFlowError(`对话工具未注册：${missing.join("、")}。`, 400, {
+        code: "conversation_tools_missing",
+        params: { tools: missing },
+      });
     const shell = child
       ? undefined
       : shellTools.find((name) => agent.ctx.tools.get(name));
@@ -478,7 +508,9 @@ export function codingService(
     action: CodingCollaborationAction,
   ): Promise<CodingCollaboration> {
     if (active.has(id) || maintenance.has(id))
-      throw new FlowError("请先等待本轮结束或停止生成。", 409);
+      throw new CodedFlowError("请先等待本轮结束或停止生成。", 409, {
+        code: "conversation_turn_busy",
+      });
     const abort = new AbortController();
     maintenance.set(id, abort);
     try {
@@ -489,9 +521,14 @@ export function codingService(
       ]);
       const agent = await existingAgent(id, signal);
       signal.throwIfAborted();
-      if (!agent) throw new FlowError("请在发送首条消息时选择协作模式。", 409);
+      if (!agent)
+        throw new CodedFlowError("请在发送首条消息时选择协作模式。", 409, {
+          code: "collaboration_initial_required",
+        });
       if (agent.status === "running")
-        throw new FlowError("请先等待本轮结束或停止生成。", 409);
+        throw new CodedFlowError("请先等待本轮结束或停止生成。", 409, {
+          code: "conversation_turn_busy",
+        });
       collaboration.change(agent, action);
       await ctx.sessions.flush(agent.session);
       return collaboration.current(agent);
@@ -502,7 +539,9 @@ export function codingService(
 
   async function compact(id: string): Promise<CodingCompactionResult> {
     if (active.has(id) || maintenance.has(id))
-      throw new FlowError("请先等待本轮结束或停止生成。", 409);
+      throw new CodedFlowError("请先等待本轮结束或停止生成。", 409, {
+        code: "conversation_turn_busy",
+      });
     const abort = new AbortController();
     maintenance.set(id, abort);
     try {
@@ -538,9 +577,10 @@ export function codingService(
           ]),
         );
         if (!command || command.result.kind === "error")
-          throw new FlowError(
+          throw new CodedFlowError(
             "压缩未完成；请检查额外请求额度和会话状态，结果未知时不要直接重试。",
             409,
+            { code: "compaction_incomplete" },
           );
         await ctx.sessions.flush(agent.session);
         return {
@@ -587,7 +627,9 @@ export function codingService(
     const agent =
       goalRuns.has(sessionId) && ctx.agents.get(SessionId(sessionId));
     if (agent) collaboration.pause(agent);
-    turn.abort(new FlowError("已停止生成。"));
+    turn.abort(
+      new CodedFlowError("已停止生成。", 400, { code: "generation_stopped" }),
+    );
     await settled.get(sessionId);
     return true;
   }
@@ -652,7 +694,10 @@ export function codingService(
     commit?: () => void,
   ): Promise<boolean> {
     const agent = ctx.agents.get(request.sessionId);
-    if (!agent) throw new FlowError("对话已结束，请重新发送。", 409);
+    if (!agent)
+      throw new CodedFlowError("对话已结束，请重新发送。", 409, {
+        code: "conversation_ended",
+      });
     if (request.content.some((part) => part.type === "image")) {
       const info = await ctx.llm.resolveModelInfo(
         config.provider,
@@ -660,9 +705,10 @@ export function codingService(
         signal,
       );
       if (info.inputModalities && !info.inputModalities.includes("image"))
-        throw new FlowError(
+        throw new CodedFlowError(
           "当前模型不支持图片输入，请更换支持图片的模型，或移除附件后重新发送。",
           422,
+          { code: "model_images_unsupported" },
         );
     }
     const content = await ctx.attachments.admitPromptContent(request.content);
@@ -706,14 +752,22 @@ export function codingService(
     permission: () => CodingPermission | undefined,
   ): Promise<{ model: string }> {
     if (active.has(turn.sessionId) || maintenance.has(turn.sessionId))
-      throw new FlowError("这段对话还有一轮在进行，请先等它结束或停止。", 409);
+      throw new CodedFlowError(
+        "这段对话还有一轮在进行，请先等它结束或停止。",
+        409,
+        { code: "conversation_turn_busy" },
+      );
     if (isGoalIntent(turn.intent)) {
       if (turn.images?.length)
-        throw new FlowError(
+        throw new CodedFlowError(
           "目标指令需要纯文本。请先在普通消息中发送参考图片。",
           400,
+          { code: "goal_text_required" },
         );
-      if (!capabilities) throw new FlowError("对话额度账本不可用。", 503);
+      if (!capabilities)
+        throw new CodedFlowError("对话额度账本不可用。", 503, {
+          code: "budget_service_unavailable",
+        });
       capabilities.assertBudgetAvailable();
       goalRuns.add(turn.sessionId);
     }
@@ -738,7 +792,11 @@ export function codingService(
       return await turnDone;
     } finally {
       // In-flight guidance must never spill into a later turn of this agent.
-      own.abort(new FlowError("这一轮已经结束了，请重新发送。", 409));
+      own.abort(
+        new CodedFlowError("这一轮已经结束了，请重新发送。", 409, {
+          code: "conversation_ended",
+        }),
+      );
       active.delete(turn.sessionId);
       goalRuns.delete(turn.sessionId);
       emitters.delete(turn.sessionId);
@@ -752,7 +810,9 @@ export function codingService(
   async function closeSession(sessionId: string): Promise<boolean> {
     const existed = stops.has(sessionId) || handles.has(sessionId);
     const stop = sessionStop(sessionId);
-    stop.abort(new FlowError("对话已关闭。"));
+    stop.abort(
+      new CodedFlowError("对话已关闭。", 400, { code: "conversation_closed" }),
+    );
     await settled.get(sessionId);
     const handle = handles.get(sessionId);
     handles.delete(sessionId);
@@ -789,7 +849,9 @@ export function codingService(
     const parent = await controller
       .inspect(SessionId(parentId), options.signal)
       .catch(() => {
-        throw new FlowError("来源对话没有可用的分叉记录。", 404);
+        throw new CodedFlowError("来源对话没有可用的分叉记录。", 404, {
+          code: "fork_source_unavailable",
+        });
       });
     const boundary = options.endSeq ?? forkBoundary(parent.events);
     if (
@@ -802,7 +864,9 @@ export function codingService(
           event.data.reason.kind === "completed",
       )
     )
-      throw new FlowError("找不到可以分叉的已完成轮次。", 409);
+      throw new CodedFlowError("找不到可以分叉的已完成轮次。", 409, {
+        code: "fork_turn_unavailable",
+      });
     return ctx.agents.create({
       sessionId: options.sessionId,
       agentOptions: options.agentOptions,
@@ -865,7 +929,11 @@ export function codingService(
       !live &&
       (await readSessionEvents(controller, sessionId, stop, 1)) !== undefined;
     if (goalIntent && !live && !stored && turn.history?.length)
-      throw new FlowError("请先发送一条普通消息导入旧对话，再启动目标。", 409);
+      throw new CodedFlowError(
+        "请先发送一条普通消息导入旧对话，再启动目标。",
+        409,
+        { code: "legacy_import_required" },
+      );
     let agent = live;
     if (!agent) {
       const handle = stored
@@ -950,9 +1018,10 @@ export function codingService(
           if (!active.has(turn.sessionId) || agent.status !== "running")
             return false;
           if (requested && requested.mode !== turn.mode)
-            throw new FlowError(
+            throw new CodedFlowError(
               "请在当前模型服务内选择模型；本轮结束后可切换服务。",
               409,
+              { code: "model_service_change_forbidden" },
             );
           const nextConfig = requested
             ? await resolveChatModel(
@@ -1019,7 +1088,10 @@ export function codingService(
       scoped.push(
         agent.ctx.on("user-questions/request", async (request) => {
           const items = codingQuestions(request.questions);
-          if (!items.length) throw new FlowError("模型发起了空的问题。");
+          if (!items.length)
+            throw new CodedFlowError("模型发起了空的问题。", 400, {
+              code: "model_question_empty",
+            });
           const asked = request.signal
             ? AbortSignal.any([stop, request.signal])
             : stop;
@@ -1251,9 +1323,10 @@ export function codingService(
         await agent.whenIdle();
         stop.throwIfAborted();
         if (goalIntent && matched === undefined)
-          throw new FlowError(
+          throw new CodedFlowError(
             "目标未能开始续跑，请检查目标状态和请求额度。",
             409,
+            { code: "goal_start_failed" },
           );
         if (followupFailure) throw followupFailure;
         if (usage) emit({ type: "usage", usage });
@@ -1320,9 +1393,13 @@ export function forkBoundary(
 /** Validates the project directory and returns the absolute session cwd. */
 export function codingCwd(project: string): string {
   if (typeof project !== "string" || !project.trim())
-    throw new FlowError("请先选择一个项目目录。", 400);
+    throw new CodedFlowError("请先选择一个项目目录。", 400, {
+      code: "workspace_directory_required",
+    });
   if (!isAbsolutePath(project))
-    throw new FlowError("项目目录必须是绝对路径。", 400);
+    throw new CodedFlowError("项目目录必须是绝对路径。", 400, {
+      code: "workspace_directory_absolute",
+    });
   return resolve(project);
 }
 

@@ -11,6 +11,7 @@ import type { Session } from "@aura/core/types";
 import type { WorkspaceController } from "./useWorkspace";
 import { WorkbenchMenu, type WorkbenchMenuItem } from "./WorkbenchMenu";
 import { sidebarSessionTitle } from "./sidebarSessions";
+import { sidebarMessage as t, useSidebarMessages } from "./sidebar-messages.ts";
 
 export type SessionDialogRequest = {
   sessionId: string;
@@ -84,6 +85,7 @@ export function SessionActions({
   /** View commands of the hosting page, listed above the session actions. */
   leadingItems?: WorkbenchMenuItem[];
 }) {
+  const { t } = useSidebarMessages();
   const items = [
     ...leadingItems,
     ...(leadingItems.length
@@ -94,7 +96,7 @@ export function SessionActions({
   return (
     <WorkbenchMenu
       className={className ?? "icon-control session-more"}
-      label={`会话操作：${sidebarSessionTitle(session)}`}
+      label={t("chatActions", { title: sidebarSessionTitle(session) })}
       items={items}
     >
       <MoreHorizontal size={16} />

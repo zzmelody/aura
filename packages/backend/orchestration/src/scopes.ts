@@ -1,3 +1,4 @@
+import { CodedFlowError, type ApiErrorDetails } from "@aura/protocol/errors";
 import type { FlowContext, FlowScope } from "./flow-api.ts";
 import { FlowError, flowIdSchema, parse } from "./schema.ts";
 
@@ -41,18 +42,39 @@ class Scope {
     this.path = path;
     this.inParallel = inParallel;
   }
-  private fail(message: string): never {
-    const error = new FlowError(`FLOW_SCOPE_ERROR: ${message}`);
+  private fail(
+    message: string,
+    code?:
+      | "flow_scope_closed"
+      | "flow_scope_serial"
+      | "flow_scope_unawaited"
+      | "flow_scope_checkpoint"
+      | ApiErrorDetails,
+  ): never {
+    const error = code
+      ? new CodedFlowError(
+          `FLOW_SCOPE_ERROR: ${message}`,
+          400,
+          typeof code === "string" ? { code } : code,
+        )
+      : new FlowError(`FLOW_SCOPE_ERROR: ${message}`);
     this.ops.fatal(error);
     throw error;
   }
   call<T>(id: string, execute: () => T | Promise<T>): Promise<T> {
-    if (this.closed) this.fail("作用域已经退出。");
+    if (this.closed) this.fail("作用域已经退出。", "flow_scope_closed");
     this.ops.boundary();
     if (this.pending)
-      this.fail("串行作用域必须 await 上一步；并发请使用 parallel。");
+      this.fail(
+        "串行作用域必须 await 上一步；并发请使用 parallel。",
+        "flow_scope_serial",
+      );
     parse(flowIdSchema, id);
-    if (this.used.has(id)) this.fail(`同级步骤 ID 不能重复：${id}`);
+    if (this.used.has(id))
+      this.fail(`同级步骤 ID 不能重复：${id}`, {
+        code: "flow_scope_duplicate",
+        params: { id },
+      });
     this.used.add(id);
     const record: NonNullable<Scope["pending"]> = { consumed: false };
     this.pending = record;
@@ -86,7 +108,7 @@ class Scope {
       this.closed = true;
       if (pending) {
         await pending.task?.catch(() => undefined);
-        this.fail("作用域退出时存在未 await 的步骤。");
+        this.fail("作用域退出时存在未 await 的步骤。", "flow_scope_unawaited");
       }
     }
   }
@@ -138,12 +160,15 @@ class Scope {
       checkpoint: (request: Parameters<FlowScope["checkpoint"]>[0]) =>
         this.call(request.id, () => {
           if (this.inParallel)
-            this.fail("V1 不允许在 parallel 分支中等待 checkpoint。");
+            this.fail(
+              "V1 不允许在 parallel 分支中等待 checkpoint。",
+              "flow_scope_checkpoint",
+            );
           return this.ops.checkpoint(this.path, request);
         }),
       // Not a durable step: last-wins progress, so replay may safely repeat it.
       report: async (value: unknown) => {
-        if (this.closed) this.fail("作用域已经退出。");
+        if (this.closed) this.fail("作用域已经退出。", "flow_scope_closed");
         this.ops.boundary();
         await this.ops.report(value);
       },
@@ -169,8 +194,10 @@ export async function runScoped<T>(
     ])
       Object.defineProperty(context, name, {
         get() {
-          const error = new FlowError(
+          const error = new CodedFlowError(
             "FLOW_SCOPE_ERROR: 根 ctx 只允许 sequence；请迁移旧 Flow 调用。",
+            400,
+            { code: "flow_scope_root" },
           );
           ops.fatal(error);
           throw error;

@@ -18,6 +18,7 @@ import { ActionDiscovery, FlowDiscovery } from "./discovery.ts";
 import { FlowEngine } from "./engine.ts";
 import { FlowRegistry } from "./registry.ts";
 import { actionRunSchema, FlowError, runSchema } from "./schema.ts";
+import { CodedFlowError } from "@aura/protocol/errors";
 import { dshSessions } from "./sessions.ts";
 import type {
   BackendRoot,
@@ -174,7 +175,9 @@ class ContributionDiscoveries {
   private add(root: ContributionRoot) {
     const key = rootKey(root);
     if (this.#discoveries.has(key))
-      throw new FlowError("插件贡献目录重复。", 400);
+      throw new CodedFlowError("插件贡献目录重复。", 400, {
+        code: "plugin_roots_duplicate",
+      });
     this.#discoveries.set(key, this.#create(root));
   }
 
@@ -198,7 +201,10 @@ class ContributionDiscoveries {
     const next = new Map<string, ContributionRoot>();
     for (const root of roots) {
       const key = rootKey(root);
-      if (next.has(key)) throw new FlowError("插件贡献目录重复。", 400);
+      if (next.has(key))
+        throw new CodedFlowError("插件贡献目录重复。", 400, {
+          code: "plugin_roots_duplicate",
+        });
       next.set(key, root);
     }
     for (const [key, discovery] of [...this.#discoveries]) {
@@ -236,7 +242,9 @@ async function extendHmrRoots(ctx: Context, roots: ContributionRoot[]) {
   };
   const hmr = (ctx as Context & { hmr: DynamicHmr }).hmr;
   if (!hmr.watcher)
-    throw new FlowError("插件热加载服务尚未就绪，请稍后重试。", 503);
+    throw new CodedFlowError("插件热加载服务尚未就绪，请稍后重试。", 503, {
+      code: "plugin_reload_unavailable",
+    });
   const normalize = (path: string) =>
     process.platform === "win32" ? path.toLowerCase() : path;
   const watched = new Set(hmr.config.root.map(normalize));
@@ -542,7 +550,11 @@ export async function createWorkflowService(
         discoveries.hasUnavailableContributions() ||
         actionDiscoveries.hasUnavailableContributions()
       )
-        throw new FlowError("插件贡献加载失败，当前运行配置保持不变。", 422);
+        throw new CodedFlowError(
+          "插件贡献加载失败，当前运行配置保持不变。",
+          422,
+          { code: "plugin_load_failed" },
+        );
       activePlugins = source.plugins;
       engine.setPlugins(activePlugins, changedPlugins);
     } catch (error) {
@@ -557,20 +569,25 @@ export async function createWorkflowService(
         activePlugins = previous.plugins;
         engine.setPlugins(activePlugins);
       } catch {
-        throw new FlowError(
+        throw new CodedFlowError(
           "插件贡献加载失败，且运行时回滚失败；请重新保存当前配置。",
           503,
+          { code: "plugin_rollback_failed" },
         );
       }
       throw error instanceof FlowError
         ? error
-        : new FlowError("插件贡献加载失败，当前运行配置保持不变。", 422);
+        : new CodedFlowError("插件贡献加载失败，当前运行配置保持不变。", 422, {
+            code: "plugin_load_failed",
+          });
     }
   };
   const configure = (source: unknown) => {
     const parsed = contributionConfigurationSchema.safeParse(source);
     if (!parsed.success)
-      throw new FlowError("插件运行配置不符合 Aura 规则。", 400);
+      throw new CodedFlowError("插件运行配置不符合 Aura 规则。", 400, {
+        code: "plugin_configuration_invalid",
+      });
     const task = reconfiguration.then(() => applyConfiguration(parsed.data));
     reconfiguration = task.catch(() => undefined);
     return task;
@@ -635,7 +652,7 @@ export async function createWorkflowService(
         );
         break;
       case "catalog":
-        data = await engine.catalog();
+        data = await engine.catalog(true);
         break;
       case "plugins/configure":
         await configure(params);
@@ -680,7 +697,9 @@ export async function createWorkflowService(
           ([, run]) => run.requestId === request.requestId && !run.parent,
         )?.[1];
         if (existing && existing.flow.id !== request.flowId)
-          throw new FlowError("同一请求 ID 不能用于不同 Flow。", 409);
+          throw new CodedFlowError("同一请求 ID 不能用于不同 Flow。", 409, {
+            code: "flow_request_conflict",
+          });
         const input = await pluginBackends
           .admit(
             request.flowId,
@@ -690,6 +709,11 @@ export async function createWorkflowService(
           )
           .catch((error: unknown) => {
             // Only a bounded snake_case code crosses to the client; never free text or paths.
+            if (
+              error instanceof CodedFlowError &&
+              error.details.code === "plugin_failure"
+            )
+              throw error;
             const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(
               String((error as Error)?.message ?? ""),
             )?.[0];
@@ -713,7 +737,10 @@ export async function createWorkflowService(
         const found = [...engine.runs.entries()].find(
           ([, run]) => run.requestId === requestId && !run.parent,
         )?.[1];
-        if (!found) throw new FlowError("Flow 运行不存在。", 404);
+        if (!found)
+          throw new CodedFlowError("Flow 运行不存在。", 404, {
+            code: "flow_run_missing",
+          });
         data = found;
         break;
       }
@@ -739,6 +766,11 @@ export async function createWorkflowService(
             AbortSignal.timeout(120_000),
           )
           .catch((error: unknown) => {
+            if (
+              error instanceof CodedFlowError &&
+              error.details.code === "plugin_failure"
+            )
+              throw error;
             const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(
               String((error as Error)?.message ?? ""),
             )?.[0];
@@ -766,6 +798,11 @@ export async function createWorkflowService(
               AbortSignal.timeout(60_000),
             )
             .catch((error: unknown) => {
+              if (
+                error instanceof CodedFlowError &&
+                error.details.code === "plugin_failure"
+              )
+                throw error;
               const code = /^[a-z][a-z0-9_]{2,63}$/u.exec(
                 String((error as Error)?.message ?? ""),
               )?.[0];
@@ -817,7 +854,9 @@ export async function createWorkflowService(
             !Number.isSafeInteger(beforeSeq) ||
             beforeSeq < 0)
         )
-          throw new FlowError("无效的历史游标。");
+          throw new CodedFlowError("无效的历史游标。", 400, {
+            code: "history_cursor_invalid",
+          });
         const attempt = params.attempt;
         if (
           attempt !== undefined &&
@@ -825,7 +864,9 @@ export async function createWorkflowService(
             !Number.isSafeInteger(attempt) ||
             attempt < 1)
         )
-          throw new FlowError("无效的 attempt。");
+          throw new CodedFlowError("无效的 attempt。", 400, {
+            code: "flow_attempt_invalid",
+          });
         data = await engine.history(id, stepId, beforeSeq, attempt);
         break;
       }
@@ -837,11 +878,33 @@ export async function createWorkflowService(
               error instanceof Error &&
               error.message === "plugin_request_unavailable"
             )
-              throw new FlowError("未知的编排操作。", 404);
+              throw new CodedFlowError("未知的编排操作。", 404, {
+                code: "flow_endpoint_not_found",
+              });
             throw error;
           });
         break;
     }
+    if (
+      [
+        "get",
+        "start",
+        "services/start",
+        "services/resume",
+        "wait",
+        "cancel",
+        "pause",
+        "resume",
+        "answer",
+        "resolve",
+      ].includes(method) &&
+      data &&
+      typeof data === "object" &&
+      "id" in data &&
+      typeof data.id === "string" &&
+      "steps" in data
+    )
+      return engine.view(data.id);
     return data;
   }
 }

@@ -1,4 +1,9 @@
 import type { JsonValue } from "@aura/protocol/types";
+import {
+  workflowText,
+  type WorkflowTranslate,
+  type WorkflowMessageKey,
+} from "./workflow-messages.ts";
 
 export type WorkflowFieldKind =
   | "boolean"
@@ -13,40 +18,40 @@ export type WorkflowFieldKind =
 
 type SchemaObject = Record<string, JsonValue>;
 
-const labels: Record<string, string> = {
-  assetName: "资源名称",
-  firstFrameAssetId: "首帧参考图",
-  firstFramePrompt: "首帧图片提示词",
-  faceLimit: "面数上限",
-  imageModel: "图像模型",
-  imagePath: "输入图片",
-  imageQuality: "图像质量",
-  lastFrameAssetId: "末帧参考图",
-  lastFramePrompt: "末帧图片提示词",
-  narration: "旁白",
-  outputDirectory: "输出目录",
-  prompt: "生成描述",
-  referenceImagePath: "参考图片",
-  task: "任务描述",
-  visualPrompt: "视频画面与运动提示词",
+const labels: Record<string, WorkflowMessageKey> = {
+  assetName: "fieldAssetName",
+  firstFrameAssetId: "fieldFirstFrameAsset",
+  firstFramePrompt: "fieldFirstFramePrompt",
+  faceLimit: "fieldFaceLimit",
+  imageModel: "fieldImageModel",
+  imagePath: "fieldImagePath",
+  imageQuality: "fieldImageQuality",
+  lastFrameAssetId: "fieldLastFrameAsset",
+  lastFramePrompt: "fieldLastFramePrompt",
+  narration: "fieldNarration",
+  outputDirectory: "fieldOutputDirectory",
+  prompt: "fieldPrompt",
+  referenceImagePath: "fieldReferenceImage",
+  task: "fieldTask",
+  visualPrompt: "fieldVisualPrompt",
 };
 
-const optionLabels: Record<string, string> = {
-  attack: "攻击",
-  high: "高",
-  humanoid: "人形",
-  idle: "待机",
-  interact: "交互",
-  jump: "跳跃",
-  low: "低",
-  max: "最高",
-  medium: "中",
-  quadruped: "四足",
-  run: "奔跑",
-  sit: "坐下",
-  sleep: "睡眠",
-  xhigh: "超高",
-  walk: "行走",
+const optionLabels: Record<string, WorkflowMessageKey> = {
+  attack: "optionAttack",
+  high: "optionHigh",
+  humanoid: "optionHumanoid",
+  idle: "optionIdle",
+  interact: "optionInteract",
+  jump: "optionJump",
+  low: "optionLow",
+  max: "optionMax",
+  medium: "optionMedium",
+  quadruped: "optionQuadruped",
+  run: "optionRun",
+  sit: "optionSit",
+  sleep: "optionSleep",
+  xhigh: "optionXhigh",
+  walk: "optionWalk",
 };
 
 export function workflowEnumArrayOptions(
@@ -114,9 +119,13 @@ export function workflowFieldKind(
   return "text";
 }
 
-export function workflowFieldLabel(key: string, spec: SchemaObject): string {
+export function workflowFieldLabel(
+  key: string,
+  spec: SchemaObject,
+  t: WorkflowTranslate = workflowText,
+): string {
   if (typeof spec.title === "string" && spec.title.trim()) return spec.title;
-  if (labels[key]) return labels[key];
+  if (labels[key]) return t(labels[key]);
   const spaced = key
     .replaceAll(/[_-]+/g, " ")
     .replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -129,25 +138,31 @@ export function workflowFieldPlaceholder(
   kind: WorkflowFieldKind,
   spec: SchemaObject,
   nativePathPicker = false,
+  t: WorkflowTranslate = workflowText,
 ): string {
-  if (kind === "image-asset") return "上传图片，或粘贴已有的图片资产 ID";
+  if (kind === "image-asset") return t("assetPlaceholder");
   if (kind === "image")
     return nativePathPicker
-      ? "选择图片，或粘贴路径"
-      : "粘贴 Aura 服务端可访问的图片路径";
+      ? t("pickImagePlaceholder")
+      : t("serverImagePlaceholder");
   if (kind === "directory")
     return nativePathPicker
-      ? "选择目录，或粘贴路径"
-      : "粘贴 Aura 服务端可访问的目录路径";
+      ? t("pickDirectoryPlaceholder")
+      : t("serverDirectoryPlaceholder");
   if (typeof spec.description === "string" && spec.description.trim())
     return spec.description;
-  if (key === "assetName") return "例如 observatory-robot";
-  if (kind === "long-text") return "描述希望工作流完成的任务…";
-  return `输入${workflowFieldLabel(key, spec)}`;
+  if (key === "assetName") return t("assetNamePlaceholder");
+  if (kind === "long-text") return t("taskPlaceholder");
+  return t("enterField", { label: workflowFieldLabel(key, spec, t) });
 }
 
-export function workflowOptionLabel(value: JsonValue): string {
+export function workflowOptionLabel(
+  value: JsonValue,
+  t: WorkflowTranslate = workflowText,
+): string {
   return typeof value === "string"
-    ? (optionLabels[value] ?? value)
+    ? optionLabels[value]
+      ? t(optionLabels[value])
+      : value
     : String(value);
 }

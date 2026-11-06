@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { MessageError } from "@aura/i18n/runtime";
 import {
   uploadWorkflowImage,
   WorkflowApiError,
@@ -37,7 +38,10 @@ test("workflow image upload sends bytes and keeps only the returned asset ID", a
       undefined,
       request,
     ),
-    /PNG、JPEG 或 WebP/,
+    (error: unknown) =>
+      error instanceof MessageError &&
+      typeof error.text !== "string" &&
+      error.text.key === "uploadType",
   );
   await assert.rejects(
     uploadWorkflowImage("http://localhost:4311", file, undefined, async () =>

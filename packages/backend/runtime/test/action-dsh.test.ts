@@ -41,11 +41,11 @@ export default defineAction({
   output: { schema: { type: "string" }, render: (_, value) => [{ type: "text", text: value }] },
   timeoutMs: 3000, isConcurrencySafe: () => true,
   async execute(ctx, input) {
-    if ("flow" in ctx || "agent" in ctx) throw new Error("Unexpected orchestration capability");
+    if ("flow" in ctx || "agent" in ctx || "onFailure" in ctx) throw new Error("Unexpected orchestration capability");
     if (ctx.stepId && !ctx.stepId.startsWith("main/")) throw new Error("Missing scoped step identity");
     if (ctx.stepId && !ctx.sessionId && !ctx.idempotencyKey) throw new Error("Missing durable Action key");
     await delay(input.delayMs ?? 1, undefined, { signal: ctx.signal });
-    if (input.value === "product-error") throw new ActionFailure("模型生成未完成 · 生成左视图：等待超过 90 秒，请勿立即重复提交。");
+    if (input.value === "product-error") throw new ActionFailure("模型生成未完成 · 生成左视图：等待超过 90 秒，请勿立即重复提交。", {translations:{en:"Generation timed out. Reconcile before retrying.","zh-CN":"生成超时，请先核对任务。",ja:"生成がタイムアウトしました。先にタスクを確認してください。",ko:"생성 시간이 초과되었습니다. 먼저 작업을 확인해 주세요.",ru:"Время генерации истекло. Сверьте задачу перед повтором.",fr:"La génération a expiré. Vérifiez la tâche avant de réessayer."}});
     if (input.value === "bad-schema") return 42;
     if (input.value === "oversize") return "x".repeat(300000);
     if (input.value === "cycle") { const cyclic = {}; cyclic.self = cyclic; return cyclic; }
@@ -264,6 +264,15 @@ test(
         mode: "demo",
       });
       assert.equal(productFailure.status, "failed");
+      assert.equal(productFailure.errorDetails?.failure.code, "plugin_failure");
+      assert.deepEqual(
+        productFailure.steps[0]?.errorDetails,
+        productFailure.errorDetails,
+      );
+      assert.deepEqual(
+        productFailure.steps[0]?.attempts?.[0]?.errorDetails,
+        productFailure.errorDetails,
+      );
       assert.equal(
         productFailure.error,
         "模型生成未完成 · 生成左视图：等待超过 90 秒，请勿立即重复提交。",

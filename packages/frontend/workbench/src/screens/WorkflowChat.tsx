@@ -1,5 +1,7 @@
 import { providerMode } from "@aura/core";
+import { flowTitle, flowDescription } from "../metadata.ts";
 import React, { useEffect, useId, useRef, useState } from "react";
+import { useWorkflowMessages } from "../workflow-messages.ts";
 import { MessageCircle, Play, Plus } from "lucide-react";
 import { FlowIcon } from "../FlowIcon";
 import type {
@@ -27,8 +29,11 @@ export function WorkflowChat({
   flow?: FlowCatalogEntry;
   onContinue?(): void;
 }) {
+  const { t } = useWorkflowMessages();
   const session = workspace.active!;
   const binding = session.workflow!;
+  const displayTitle =
+    flow && binding.title === flow.title ? flowTitle(flow) : binding.title;
   const schema =
     flow?.available && flow.inputSchema
       ? flow.inputSchema
@@ -103,16 +108,19 @@ export function WorkflowChat({
   }
   let executionIndex = 0;
   return (
-    <section className="chat-screen workflow-chat" aria-label="工作流会话">
+    <section
+      className="chat-screen workflow-chat"
+      aria-label={t("workflowConversation")}
+    >
       <header className="chat-title workflow-chat-title">
         <div className="workflow-chat-identity">
           <strong>{session.title}</strong>
           <span
             className="workflow-binding"
-            title={`绑定工作流：${binding.title}`}
+            title={t("boundWorkflow", { title: displayTitle })}
           >
             <FlowIcon size={13} />
-            <span>{binding.title}</span>
+            <span>{displayTitle}</span>
           </span>
         </div>
         {onContinue ? (
@@ -125,7 +133,7 @@ export function WorkflowChat({
             }
           >
             <MessageCircle size={14} />
-            继续对话
+            {t("continueConversation")}
           </button>
         ) : null}
         <button
@@ -138,7 +146,11 @@ export function WorkflowChat({
           aria-controls={composerId}
         >
           <Plus size={14} />
-          {pending ? "检查提交" : runCount ? "再次运行" : "运行工作流"}
+          {pending
+            ? t("checkSubmission")
+            : runCount
+              ? t("runAgain")
+              : t("runWorkflow")}
         </button>
       </header>
       <div
@@ -157,11 +169,8 @@ export function WorkflowChat({
               <span className="workflow-empty-icon">
                 <FlowIcon size={24} />
               </span>
-              <h2>{binding.title}</h2>
-              <p>
-                {flow?.description ||
-                  "每次执行的输入、进度和结果，都会完整保留在这里。"}
-              </p>
+              <h2>{displayTitle}</h2>
+              <p>{(flow && flowDescription(flow)) || t("conversationHint")}</p>
               <button
                 type="button"
                 className="primary-button"
@@ -169,7 +178,7 @@ export function WorkflowChat({
                 disabled={flow?.available === false}
               >
                 <Play size={14} />
-                填写输入，开始运行
+                {t("fillInputStart")}
               </button>
             </div>
           ) : null}
@@ -181,7 +190,7 @@ export function WorkflowChat({
                 message={message}
                 input={input}
                 index={++executionIndex}
-                title={binding.title}
+                title={displayTitle}
                 inputSchema={binding.inputSchema ?? schema}
                 cached={
                   workspace.workflows.runs[
@@ -199,7 +208,7 @@ export function WorkflowChat({
                     : "workflow-message-assistant"
                 }`}
                 key={message.id}
-                aria-label="保留的会话内容"
+                aria-label={t("retainedConversation")}
               >
                 <div
                   className={
@@ -214,7 +223,7 @@ export function WorkflowChat({
           {pending ? (
             <article
               className="workflow-turn workflow-pending-turn"
-              aria-label="待确认的执行"
+              aria-label={t("unconfirmedRun")}
             >
               <section className="workflow-message workflow-message-user">
                 <div className="workflow-user-bubble">
@@ -225,14 +234,16 @@ export function WorkflowChat({
                 <div className="workflow-pending-heading">
                   <FlowIcon size={17} />
                   <strong>
-                    {submitting ? "正在提交工作流" : "这次执行待确认"}
+                    {submitting ? t("submittingWorkflow") : t("runPending")}
                   </strong>
-                  <span role="status">{submitting ? "提交中" : "待确认"}</span>
+                  <span role="status">
+                    {submitting ? t("submitting") : t("pendingConfirmation")}
+                  </span>
                 </div>
                 <p className="muted">
                   {submitting
-                    ? "正在创建本次执行记录…"
-                    : "服务尚未确认提交结果。重试会继续确认同一次执行。"}
+                    ? t("creatingRecord")
+                    : t("submissionUnconfirmed")}
                 </p>
                 {error ? (
                   <p role="alert" className="error">
@@ -245,7 +256,7 @@ export function WorkflowChat({
                     className="tool-button"
                     onClick={() => void submit(pending.input, pending.mode)}
                   >
-                    重试提交
+                    {t("retrySubmission")}
                   </button>
                 ) : null}
               </section>
@@ -256,16 +267,14 @@ export function WorkflowChat({
             </p>
           ) : null}
           {flow?.available === false ? (
-            <p className="workflow-session-note">
-              此工作流当前不可运行，历史记录仍可查看。
-            </p>
+            <p className="workflow-session-note">{t("unavailableHistory")}</p>
           ) : null}
           {composerOpen ? (
             <WorkflowRunForm
               ref={composer}
               id={composerId}
-              title={runCount ? "再次运行工作流" : "运行工作流"}
-              subtitle={binding.title}
+              title={runCount ? t("runWorkflowAgain") : t("runWorkflow")}
+              subtitle={displayTitle}
               schema={schema}
               text={text}
               onTextChange={workspace.setDraft}
@@ -278,13 +287,13 @@ export function WorkflowChat({
               notice={
                 pending && !workspace.busy ? (
                   <div className="workflow-pending" role="status">
-                    上次提交尚未确认，重试会继续同一次运行。
+                    {t("previousUnconfirmed")}
                     <button
                       type="button"
                       className="text-control"
                       onClick={() => void submit(pending.input, pending.mode)}
                     >
-                      重试提交
+                      {t("retrySubmission")}
                     </button>
                   </div>
                 ) : null

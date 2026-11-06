@@ -7,6 +7,20 @@ import type {
 import type { WorkspaceController } from "./useWorkspace";
 import { openExternal, platform } from "./platform";
 import { startupFetch } from "./startup-fetch";
+import { isAuthMessageKey, useAuthMessages } from "./auth-messages.ts";
+import { apiErrorText } from "./api-error-messages.ts";
+import {
+  errorMessage,
+  messageText,
+  MessageError,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+
+type AuthViewStatus =
+  | Exclude<CodexAuthStatus, { state: "error" }>
+  | (Omit<Extract<CodexAuthStatus, { state: "error" }>, "message"> & {
+      message: string | MessageReference;
+    });
 
 const localRuntime = "http://127.0.0.1:4311";
 
@@ -22,13 +36,14 @@ async function responseError(response: Response, fallback: string) {
   const failure = (await response.json().catch(() => null)) as {
     message?: unknown;
   } | null;
-  return typeof failure?.message === "string" ? failure.message : fallback;
+  return apiErrorText(failure, fallback);
 }
 
 export function useCodexAuth(workspace: WorkspaceController) {
+  const { t, i18n } = useAuthMessages();
   const { setState } = workspace;
   const endpoint = workspace.state.endpoint || localRuntime;
-  const [status, setStatus] = useState<CodexAuthStatus>({
+  const [status, setStatus] = useState<AuthViewStatus>({
     state: "signed_out",
     model: "gpt-6.1-sol",
   });
@@ -56,7 +71,7 @@ export function useCodexAuth(workspace: WorkspaceController) {
         if (error instanceof Error && error.name === "AbortError") return;
         setStatus({
           state: "error",
-          message: "请先启动 Aura 工作台服务，再登录 Codex。",
+          message: "serviceUnavailable",
           model: "gpt-6.1-sol",
         });
       } finally {
@@ -117,11 +132,8 @@ export function useCodexAuth(workspace: WorkspaceController) {
           body: JSON.stringify({ method } satisfies CodexLoginRequest),
         });
         if (!response.ok) {
-          throw new Error(
-            await responseError(
-              response,
-              `DSH 登录服务返回了 ${response.status}。`,
-            ),
+          throw new MessageError(
+            await responseError(response, "loginStartFailed"),
           );
         }
         const next = (await response.json()) as CodexAuthStatus;
@@ -139,10 +151,8 @@ export function useCodexAuth(workspace: WorkspaceController) {
           state: "error",
           message:
             error instanceof TypeError
-              ? `无法连接 ${endpoint}。请通过 Aura 的 dev、preview 或 desktop 命令启动应用。`
-              : error instanceof Error
-                ? error.message
-                : "无法开始 Codex 登录。",
+              ? "serviceUnavailable"
+              : errorMessage(error, "loginStartFailed"),
           model: status.model,
         });
       } finally {
@@ -159,15 +169,16 @@ export function useCodexAuth(workspace: WorkspaceController) {
         method: "POST",
       });
       if (!response.ok)
-        throw new Error(await responseError(response, "无法取消 Codex 登录。"));
+        throw new MessageError(
+          await responseError(response, "loginCancelFailed"),
+        );
       const next = (await response.json()) as CodexAuthStatus;
       setStatus(next);
       return next;
     } catch (error) {
       setStatus({
         state: "error",
-        message:
-          error instanceof Error ? error.message : "无法取消 Codex 登录。",
+        message: errorMessage(error, "loginCancelFailed"),
         model: status.model,
       });
       return undefined;
@@ -186,17 +197,14 @@ export function useCodexAuth(workspace: WorkspaceController) {
           body: JSON.stringify({ input } satisfies CodexLoginInputRequest),
         });
         if (!response.ok)
-          throw new Error(
-            await responseError(response, "无法提交 Codex 授权结果。"),
+          throw new MessageError(
+            await responseError(response, "loginSubmitFailed"),
           );
         setStatus((await response.json()) as CodexAuthStatus);
       } catch (error) {
         setStatus({
           state: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : "无法提交 Codex 授权结果。",
+          message: errorMessage(error, "loginSubmitFailed"),
           model: status.model,
         });
       } finally {
@@ -214,7 +222,40 @@ export function useCodexAuth(workspace: WorkspaceController) {
     [cancel, start],
   );
 
-  return { status, loading, start, cancel, submit, restart, refresh, endpoint };
+  // Translate the UI projection only. A language change never restarts login,
+  // polling, or a pending authorization operation.
+  const displayedStatus: CodexAuthStatus =
+    status.state === "error"
+      ? {
+          ...status,
+          message:
+            typeof status.message === "string" &&
+            isAuthMessageKey(status.message)
+              ? t(status.message)
+              : messageText(
+                  apiErrorText(status.messageDetails, status.message),
+                  i18n,
+                ),
+        }
+      : status.state === "pending" && status.messageDetails
+        ? {
+            ...status,
+            message: messageText(
+              apiErrorText(status.messageDetails, status.message ?? ""),
+              i18n,
+            ),
+          }
+        : status;
+  return {
+    status: displayedStatus,
+    loading,
+    start,
+    cancel,
+    submit,
+    restart,
+    refresh,
+    endpoint,
+  };
 }
 
 export type CodexAuthController = ReturnType<typeof useCodexAuth>;

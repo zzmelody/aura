@@ -13,6 +13,7 @@ import { writeClipboard } from "./clipboard";
 import { useTheme } from "@aura/ui/components";
 import { fonts, type as textType } from "@aura/ui/theme";
 import type { CodexAuthController } from "./useCodexAuth";
+import { useAuthMessages } from "./auth-messages.ts";
 
 export function CodexLoginButton({
   auth,
@@ -21,6 +22,7 @@ export function CodexLoginButton({
   auth: CodexAuthController;
   compact: boolean;
 }) {
+  const { t } = useAuthMessages();
   const { colors } = useTheme();
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -46,7 +48,7 @@ export function CodexLoginButton({
     <>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={connected ? "Codex 已连接" : "登录 Codex"}
+        accessibilityLabel={connected ? t("codexConnected") : t("loginCodex")}
         onPress={open}
         style={({ pressed }) => [
           styles.trigger,
@@ -77,15 +79,15 @@ export function CodexLoginButton({
         >
           {compact
             ? connected
-              ? "已连接"
+              ? t("connected")
               : pending
-                ? "登录中"
+                ? t("signingIn")
                 : "Codex"
             : connected
-              ? "Codex 已连接"
+              ? t("codexConnected")
               : pending
-                ? "登录中"
-                : "登录 Codex"}
+                ? t("signingIn")
+                : t("loginCodex")}
         </Text>
       </Pressable>
       <Modal
@@ -96,7 +98,7 @@ export function CodexLoginButton({
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="关闭 Codex 登录窗口"
+          accessibilityLabel={t("closeLogin")}
           style={styles.backdrop}
           onPress={() => setVisible(false)}
         >
@@ -118,12 +120,12 @@ export function CodexLoginButton({
                     OPENAI / CODEX
                   </Text>
                   <Text style={[styles.title, { color: colors.text }]}>
-                    连接你的订阅
+                    {t("connectSubscription")}
                   </Text>
                 </View>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="关闭"
+                  accessibilityLabel={t("close")}
                   onPress={() => setVisible(false)}
                   style={styles.close}
                 >
@@ -144,7 +146,7 @@ export function CodexLoginButton({
                   <Check size={20} color={colors.success} />
                   <View style={{ flex: 1 }}>
                     <Text style={[textType.body, { color: colors.text }]}>
-                      已通过 ChatGPT 订阅连接
+                      {t("subscriptionConnected")}
                     </Text>
                     <Text
                       style={[
@@ -152,7 +154,7 @@ export function CodexLoginButton({
                         { color: colors.muted, marginTop: 3 },
                       ]}
                     >
-                      新对话将直接使用 {auth.status.model}
+                      {t("newChatModel", { model: auth.status.model })}
                     </Text>
                   </View>
                 </View>
@@ -164,8 +166,7 @@ export function CodexLoginButton({
                       { color: colors.secondary, marginTop: 18 },
                     ]}
                   >
-                    Aura 会通过 DSH 的授权流程登录，再由 DSH 的 pi-ai 适配器调用
-                    Codex。不会读取 Codex 应用缓存，也不需要 API Key。
+                    {t("loginExplanation")}
                   </Text>
                   {pendingStatus?.userCode ? (
                     <View
@@ -178,7 +179,7 @@ export function CodexLoginButton({
                       ]}
                     >
                       <Text style={[styles.eyebrow, { color: colors.muted }]}>
-                        DEVICE CODE
+                        {t("deviceCode")}
                       </Text>
                       <Text
                         selectable
@@ -202,7 +203,7 @@ export function CodexLoginButton({
                         <Text
                           style={[textType.small, { color: colors.accent }]}
                         >
-                          {copied ? "已复制" : "复制验证码"}
+                          {copied ? t("copied") : t("copyCode")}
                         </Text>
                       </Pressable>
                     </View>
@@ -222,21 +223,21 @@ export function CodexLoginButton({
                   >
                     {pending
                       ? pendingStatus?.userCode
-                        ? "浏览器已打开。输入上方验证码后，这里会自动完成连接。"
-                        : "浏览器已打开，完成 OpenAI 登录后会自动返回。"
+                        ? t("deviceBrowserOpened")
+                        : t("browserOpened")
                       : auth.status.state === "error"
                         ? auth.status.message
-                        : "点击下方按钮开始登录。"}
+                        : t("startHint")}
                   </Text>
                   {pendingStatus?.prompt ? (
                     <View style={styles.manualArea}>
                       <Text
                         style={[textType.small, { color: colors.secondary }]}
                       >
-                        如果浏览器没有自动返回，请复制浏览器最后停留的完整地址并粘贴到这里。
+                        {t("manualHint")}
                       </Text>
                       <TextInput
-                        accessibilityLabel="OpenAI 授权结果"
+                        accessibilityLabel={t("authorizationResult")}
                         autoCapitalize="none"
                         autoCorrect={false}
                         editable={!auth.loading}
@@ -246,7 +247,7 @@ export function CodexLoginButton({
                         }}
                         placeholder={
                           pendingStatus.prompt.placeholder ??
-                          "粘贴回调地址或授权码"
+                          t("callbackPlaceholder")
                         }
                         placeholderTextColor={colors.muted}
                         secureTextEntry={pendingStatus.prompt.kind === "secret"}
@@ -281,7 +282,7 @@ export function CodexLoginButton({
                         <Text
                           style={[textType.small, { color: colors.accent }]}
                         >
-                          提交授权结果
+                          {t("submitAuthorization")}
                         </Text>
                       </Pressable>
                     </View>
@@ -303,7 +304,7 @@ export function CodexLoginButton({
                         <Text
                           style={[textType.small, { color: colors.secondary }]}
                         >
-                          检查登录状态
+                          {t("checkLogin")}
                         </Text>
                       </Pressable>
                       {pendingStatus?.method === "browser" ? (
@@ -325,7 +326,7 @@ export function CodexLoginButton({
                               { color: colors.secondary },
                             ]}
                           >
-                            改用设备码
+                            {t("useDeviceCode")}
                           </Text>
                         </Pressable>
                       ) : null}
@@ -344,7 +345,7 @@ export function CodexLoginButton({
                         <Text
                           style={[textType.small, { color: colors.secondary }]}
                         >
-                          取消登录
+                          {t("cancelLogin")}
                         </Text>
                       </Pressable>
                     </View>
@@ -368,7 +369,7 @@ export function CodexLoginButton({
                           { color: colors.primaryText },
                         ]}
                       >
-                        {auth.loading ? "正在连接…" : "使用 ChatGPT 账号登录"}
+                        {auth.loading ? t("connecting") : t("signInChatGPT")}
                       </Text>
                       <ExternalLink size={17} color={colors.primaryText} />
                     </Pressable>
@@ -376,7 +377,7 @@ export function CodexLoginButton({
                 </>
               )}
               <Text style={[styles.footer, { color: colors.muted }]}>
-                登录页会在系统浏览器打开 · 凭据由 Aura 后端的 DSH 管理
+                {t("footer")}
               </Text>
             </ScrollView>
           </Pressable>

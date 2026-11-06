@@ -1,4 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
+import {
+  useConversationMessages,
+  conversationMessage as message,
+} from "../../conversation-messages.ts";
+import {
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
 import { CornerUpLeft } from "lucide-react";
 import type { Workspace } from "@aura/core/types";
 import type {
@@ -65,9 +74,10 @@ export function SideConversation({
   flows?: FlowCatalogEntry[];
   flowsLoading?: boolean;
 }) {
+  const { t, i18n } = useConversationMessages();
   const [turns, setTurns] = useState<readonly Turn[]>([]);
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
   const [mounted, setMounted] = useState(visible);
   const [attachments, setAttachments] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
@@ -101,11 +111,9 @@ export function SideConversation({
   // A closed side chat no longer keeps its parent running.
   useEffect(() => () => onRunning?.(sessionId, false), [onRunning, sessionId]);
 
-  const deliver = (summary: string, notice = "") => {
+  const deliver = (summary: string, notice: string | MessageReference = "") => {
     if (!onSendBack(parentId, sessionId, summary)) {
-      setError(
-        "主对话已切换或侧边对话正在关闭，结论保留在侧边对话中，可稍后再带回。",
-      );
+      setError(message("handoffRetained"));
       return;
     }
     setError(notice);
@@ -134,10 +142,10 @@ export function SideConversation({
       if (result.kind === "cancelled") return;
       deliver(
         result.text,
-        result.kind === "fallback" ? "总结失败，已改用简要结论。" : "",
+        result.kind === "fallback" ? message("handoffFallback") : "",
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorMessage(reason));
     } finally {
       setSummarizing(false);
     }
@@ -149,11 +157,11 @@ export function SideConversation({
       className="coding-side-handoff"
       disabled={!turns.length || running || summarizing || !visible}
       aria-busy={summarizing || undefined}
-      title="让侧边对话整理交接结论，放入主对话草稿，确认后再发送"
+      title={t("handoffHint")}
       onClick={() => void sendBack()}
     >
       <CornerUpLeft size={13} />
-      {summarizing ? "正在整理结论…" : "带回主对话"}
+      {summarizing ? t("summarizingHandoff") : t("returnMain")}
     </button>
   );
 
@@ -168,7 +176,7 @@ export function SideConversation({
     >
       {error ? (
         <p className="coding-notice" role="alert">
-          {error}
+          {messageText(error, i18n)}
         </p>
       ) : null}
       {mounted ? (
@@ -178,7 +186,7 @@ export function SideConversation({
           provider={provider}
           projectId={project.id}
           directory={project.directory}
-          label="侧边对话输入框"
+          label={t("sideInput")}
           sessionId={sessionId}
           forkFrom={parentId}
           onForkTurn={onForkTurn}
@@ -192,7 +200,7 @@ export function SideConversation({
               ? draftInsert
               : undefined
           }
-          placeholder="基于主对话继续问，不会打断它…"
+          placeholder={t("sidePlaceholder")}
           onProvider={onProvider}
           modelConfig={modelConfig}
           onModelConfig={onModelConfig}

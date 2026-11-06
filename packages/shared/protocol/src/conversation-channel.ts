@@ -1,3 +1,4 @@
+import type { ApiErrorDetails } from "./errors.ts";
 import type {
   ChatMessage,
   ChatModelSelection,
@@ -61,6 +62,8 @@ export interface ConversationExecution {
     | "interrupted";
   error?: string;
   errorStatus?: number;
+  /** Transient UI projection; never part of the command ledger or model context. */
+  errorDetails?: ApiErrorDetails;
   model?: string;
 }
 
@@ -70,6 +73,8 @@ export interface ConversationReceipt {
   executionId: string;
   status: "accepted" | "applied" | "rejected" | "uncertain";
   error?: string;
+  /** Transient UI projection; legacy receipts keep their original error text. */
+  errorDetails?: ApiErrorDetails;
   execution?: ConversationExecution;
 }
 

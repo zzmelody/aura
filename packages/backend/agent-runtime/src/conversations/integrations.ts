@@ -15,7 +15,7 @@ import type {
   IntegrationSettings,
   McpServerInput,
 } from "@aura/protocol/types";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { Table } from "../types.ts";
 import type { CodingConversationIndex } from "./index-record.ts";
 import { searchCodingSessions } from "./session-search.ts";
@@ -219,12 +219,16 @@ export class CodingIntegrations {
   update(source: unknown) {
     const parsed = update.safeParse(source);
     if (!parsed.success)
-      throw new FlowError("功能设置或 MCP 服务器配置无效。", 400);
+      throw new CodedFlowError("功能设置或 MCP 服务器配置无效。", 400, {
+        code: "integrations_invalid",
+      });
     const input = parsed.data;
     return this.serialize(async () => {
       const current = this.current();
       if (input.revision !== current.revision)
-        throw new FlowError("功能设置已变化，请刷新后保存。", 409);
+        throw new CodedFlowError("功能设置已变化，请刷新后保存。", 409, {
+          code: "settings_revision_conflict",
+        });
       const replacement = input.server;
       const servers = current.servers.filter(
         ({ name: serverName }) =>
@@ -232,7 +236,9 @@ export class CodingIntegrations {
       );
       if (replacement) servers.push(replacement);
       if (servers.length > 16)
-        throw new FlowError("最多可配置 16 个 MCP 服务器。", 400);
+        throw new CodedFlowError("最多可配置 16 个 MCP 服务器。", 400, {
+          code: "mcp_server_limit",
+        });
       await this.table.put("settings", {
         revision: current.revision + 1,
         flags: input.flags ?? current.flags,
@@ -286,9 +292,10 @@ export class CodingIntegrations {
       this.reconcileSearch(),
     ]);
     if (results.some(({ status }) => status === "rejected"))
-      throw new FlowError(
+      throw new CodedFlowError(
         "开关已保存，部分 DSH 服务未能应用。请刷新后重试。",
         503,
+        { code: "integrations_apply_failed" },
       );
   }
 
@@ -401,7 +408,9 @@ export class CodingIntegrations {
     const provider = this.enabled("voice") && this.voiceState();
     const service = this.ctx.get("speechToText");
     if (!provider || !service)
-      throw new FlowError("SenseVoice 语音输入未启用或不可用。", 409);
+      throw new CodedFlowError("SenseVoice 语音输入未启用或不可用。", 409, {
+        code: "voice_unavailable",
+      });
     if (cancel) return service.cancelPreparation(provider.id);
     service.prepare(provider.id);
   }
@@ -412,8 +421,13 @@ export class CodingIntegrations {
       !provider ||
       !["ready", "standby", "waking"].includes(provider.preparation.phase)
     )
-      throw new FlowError("请先准备 SenseVoice 模型。", 409);
-    if (this.recordings.has(id)) throw new FlowError("录音正在识别。", 409);
+      throw new CodedFlowError("请先准备 SenseVoice 模型。", 409, {
+        code: "voice_model_required",
+      });
+    if (this.recordings.has(id))
+      throw new CodedFlowError("录音正在识别。", 409, {
+        code: "voice_transcription_active",
+      });
     const abort = new AbortController();
     this.recordings.set(id, abort);
     try {
@@ -432,7 +446,9 @@ export class CodingIntegrations {
       );
       return { text };
     } catch {
-      throw new FlowError("语音识别未完成，请检查录音或模型状态。", 422);
+      throw new CodedFlowError("语音识别未完成，请检查录音或模型状态。", 422, {
+        code: "voice_transcription_failed",
+      });
     } finally {
       this.recordings.delete(id);
     }
@@ -470,7 +486,9 @@ export class CodingIntegrations {
   async teamView(id: string): Promise<AgentTeamView> {
     await this.ready();
     if (!this.enabled("agentTeam"))
-      throw new FlowError("Agent 团队未启用。", 409);
+      throw new CodedFlowError("Agent 团队未启用。", 409, {
+        code: "agent_team_disabled",
+      });
     const record = this.index.get(id);
     if (!record || record.closedAt !== undefined)
       return { members: [], tasks: [] };
@@ -519,7 +537,9 @@ export class CodingIntegrations {
   async search(projectId: string, query: string) {
     await this.ready();
     if (!this.enabled("sessionSearch") || !this.searchIndex)
-      throw new FlowError("会话全文搜索未启用或暂不可用。", 409);
+      throw new CodedFlowError("会话全文搜索未启用或暂不可用。", 409, {
+        code: "session_search_unavailable",
+      });
     const titles = new Map(
       this.index.list(projectId).map((item) => [item.id, item.title]),
     );

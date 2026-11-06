@@ -1,5 +1,11 @@
 import React, { memo, useEffect, useState } from "react";
 import {
+  useWorkflowMessages,
+  workflowText,
+  type WorkflowMessageKey,
+} from "../workflow-messages.ts";
+import { formatNumber } from "@aura/i18n/runtime";
+import {
   Check,
   Copy,
   FileAudio,
@@ -12,24 +18,29 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { JsonValue } from "@aura/protocol/types";
 import { asObject } from "./WorkflowInput";
+import { metadataText } from "../metadata.ts";
 
 const plugins = [remarkGfm];
+function WorkflowTable({ children }: { children?: React.ReactNode }) {
+  const { t } = useWorkflowMessages();
+  return (
+    <div
+      className="workflow-table-scroll"
+      tabIndex={0}
+      role="region"
+      aria-label={t("dataTable")}
+    >
+      <table>{children}</table>
+    </div>
+  );
+}
 const components: Components = {
   a: ({ children, href }) => (
     <a href={href} target="_blank" rel="noreferrer">
       {children}
     </a>
   ),
-  table: ({ children }) => (
-    <div
-      className="workflow-table-scroll"
-      tabIndex={0}
-      role="region"
-      aria-label="数据表格"
-    >
-      <table>{children}</table>
-    </div>
-  ),
+  table: WorkflowTable,
   img: ({ src, alt }) => <img src={src} alt={alt ?? ""} loading="lazy" />,
 };
 
@@ -47,43 +58,43 @@ export const WorkflowRichText = memo(function WorkflowRichText({
   );
 });
 
-const labels: Record<string, string> = {
-  task: "任务",
-  report: "报告",
-  text: "内容",
-  summary: "摘要",
-  result: "结果",
-  title: "标题",
-  description: "说明",
-  items: "条目",
-  count: "数量",
-  status: "状态",
-  success: "成功",
-  error: "错误",
-  message: "消息",
-  output: "输出",
-  input: "输入",
-  statistics: "统计",
-  characters: "字符数",
-  lines: "行数",
-  metrics: "指标",
-  audience: "适用人群",
-  duration: "时长",
-  durationSeconds: "时长（秒）",
-  audioPath: "音频文件",
-  videoPath: "视频文件",
-  imagePath: "图片文件",
-  imageAssetId: "图片资产 ID",
-  engine: "生成引擎",
-  model: "模型",
-  note: "说明",
-  seed: "随机种子",
-  modelPath: "模型文件",
-  files: "文件",
-  speaker: "音色",
-  language: "语言",
-  narration: "旁白",
-  visualPrompt: "画面提示词",
+const labels: Record<string, WorkflowMessageKey> = {
+  task: "valueTask",
+  report: "valueReport",
+  text: "valueText",
+  summary: "valueSummary",
+  result: "valueResult",
+  title: "valueTitle",
+  description: "valueDescription",
+  items: "valueItems",
+  count: "valueCount",
+  status: "valueStatus",
+  success: "valueSuccess",
+  error: "valueError",
+  message: "valueMessage",
+  output: "output",
+  input: "input",
+  statistics: "valueStatistics",
+  characters: "valueCharacters",
+  lines: "valueLines",
+  metrics: "valueMetrics",
+  audience: "valueAudience",
+  duration: "valueDuration",
+  durationSeconds: "valueDurationSeconds",
+  audioPath: "valueAudioPath",
+  videoPath: "valueVideoPath",
+  imagePath: "valueImagePath",
+  imageAssetId: "valueImageAssetId",
+  engine: "valueEngine",
+  model: "model",
+  note: "valueDescription",
+  seed: "valueSeed",
+  modelPath: "valueModelPath",
+  files: "valueFiles",
+  speaker: "valueSpeaker",
+  language: "valueLanguage",
+  narration: "fieldNarration",
+  visualPrompt: "valueVisualPrompt",
 };
 
 /** Absolute local file paths (Windows drive or POSIX) with a file extension. */
@@ -106,6 +117,7 @@ const fileIcon = (name: string) =>
 
 /** A path is a location, not content: show the name, keep the path copyable. */
 function FilePathChip({ path }: { path: string }) {
+  const { t } = useWorkflowMessages();
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -124,8 +136,8 @@ function FilePathChip({ path }: { path: string }) {
       <button
         type="button"
         className="icon-control"
-        aria-label={copied ? "已复制路径" : `复制 ${name} 的本地路径`}
-        title={copied ? "已复制" : "复制本地路径"}
+        aria-label={copied ? t("copiedPath") : t("copyNamedPath", { name })}
+        title={copied ? t("copied") : t("copyLocalPath")}
         onClick={() =>
           void writeClipboard(path)
             .then(() => setCopied(true))
@@ -137,9 +149,19 @@ function FilePathChip({ path }: { path: string }) {
     </span>
   );
 }
-function labelFor(key: string, schema?: JsonValue) {
+function labelFor(
+  key: string,
+  schema?: JsonValue,
+  runtime?: Parameters<typeof metadataText>[3],
+) {
   const spec = asObject(schema);
-  return typeof spec?.title === "string" ? spec.title : (labels[key] ?? key);
+  const fallback =
+    typeof spec?.title === "string"
+      ? spec.title
+      : labels[key]
+        ? workflowText(labels[key])
+        : key;
+  return metadataText(spec, "title", fallback, runtime);
 }
 
 /** Structured data stays readable; JSON remains available separately for inspection. */
@@ -152,8 +174,9 @@ export function WorkflowValue({
   schema?: JsonValue;
   depth?: number;
 }) {
+  const { t, i18n } = useWorkflowMessages();
   if (value === undefined || value === null || value === "")
-    return <span className="workflow-value-empty">未提供</span>;
+    return <span className="workflow-value-empty">{t("notProvided")}</span>;
   if (typeof value === "string")
     return isLocalFilePath(value) ? (
       <FilePathChip path={value.trim()} />
@@ -162,20 +185,26 @@ export function WorkflowValue({
     );
   if (typeof value === "boolean")
     return (
-      <span className="workflow-value-boolean">{value ? "是" : "否"}</span>
+      <span className="workflow-value-boolean">
+        {value ? t("yes") : t("no")}
+      </span>
     );
   if (typeof value === "number")
-    return <span className="workflow-value-number">{value}</span>;
+    return (
+      <span className="workflow-value-number">
+        {formatNumber(value, { maximumSignificantDigits: 21 })}
+      </span>
+    );
   if (depth >= 5)
     return (
       <details className="workflow-data-overflow">
-        <summary>展开嵌套数据</summary>
+        <summary>{t("expandNestedData")}</summary>
         <pre>{JSON.stringify(value, null, 2)}</pre>
       </details>
     );
   if (Array.isArray(value)) {
     if (!value.length)
-      return <span className="workflow-value-empty">暂无条目</span>;
+      return <span className="workflow-value-empty">{t("noItems")}</span>;
     const columns = [
       ...new Set(value.flatMap((row) => Object.keys(asObject(row) ?? {}))),
     ];
@@ -197,7 +226,7 @@ export function WorkflowValue({
           className="workflow-table-scroll"
           tabIndex={0}
           role="region"
-          aria-label="数据表格"
+          aria-label={t("dataTable")}
         >
           <table>
             <thead>
@@ -209,6 +238,7 @@ export function WorkflowValue({
                       asObject(asObject(asObject(schema)?.items)?.properties)?.[
                         key
                       ],
+                      i18n,
                     )}
                   </th>
                 ))}
@@ -247,7 +277,7 @@ export function WorkflowValue({
   }
   const fields = Object.entries(value);
   if (!fields.length)
-    return <span className="workflow-value-empty">暂无字段</span>;
+    return <span className="workflow-value-empty">{t("noFields")}</span>;
   const properties = asObject(asObject(schema)?.properties);
   const metrics = fields.every(
     ([, item]) => typeof item === "number" || typeof item === "boolean",
@@ -258,7 +288,7 @@ export function WorkflowValue({
     >
       {fields.map(([key, item]) => (
         <div className="workflow-value-field" key={key}>
-          <dt>{labelFor(key, properties?.[key])}</dt>
+          <dt>{labelFor(key, properties?.[key], i18n)}</dt>
           <dd>
             <WorkflowValue
               value={item}
@@ -288,6 +318,7 @@ export function WorkflowData({
 }
 
 export function WorkflowJson({ value }: { value: JsonValue }) {
+  const { t } = useWorkflowMessages();
   const [raw, setRaw] = React.useState(false);
   return (
     <>
@@ -297,7 +328,7 @@ export function WorkflowJson({ value }: { value: JsonValue }) {
         aria-expanded={raw}
         onClick={() => setRaw(!raw)}
       >
-        {raw ? "收起 JSON" : "查看 JSON"}
+        {raw ? t("collapseJson") : t("viewJson")}
       </button>
       {raw ? (
         <pre className="workflow-raw-output">

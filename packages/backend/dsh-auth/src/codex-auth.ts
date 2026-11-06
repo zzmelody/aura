@@ -1,3 +1,4 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import { Context } from "@deepseek-ai/cordis";
 import AuthorizationService, {
   type AuthorizationInteraction,
@@ -12,23 +13,43 @@ import { codexProviderProfile } from "./codex-profile.ts";
 const providerId = "openai-codex";
 
 /** Converts provider failures into useful messages without exposing OAuth data. */
-function loginErrorMessage(error: unknown): string {
+function loginErrorMessage(error: unknown): CodedFlowError {
   const message = error instanceof Error ? error.message : String(error);
   if (
     /device code login is not enabled|device code request failed[^\n]*404/i.test(
       message,
     )
   )
-    return "OpenAI 未启用设备码登录，请使用浏览器登录。";
+    return new CodedFlowError(
+      "OpenAI 未启用设备码登录，请使用浏览器登录。",
+      409,
+      { code: "auth_device_unavailable" },
+    );
   if (/EADDRINUSE|address already in use|1455.*use/i.test(message))
-    return "本机 1455 端口已被占用，无法接收 OpenAI 登录回调。";
+    return new CodedFlowError(
+      "本机 1455 端口已被占用，无法接收 OpenAI 登录回调。",
+      409,
+      { code: "auth_callback_port_busy" },
+    );
   if (/token exchange failed|token exchange error/i.test(message))
-    return "已收到登录回调，但 OpenAI 令牌交换失败；请检查网络或代理后重试。";
+    return new CodedFlowError(
+      "已收到登录回调，但 OpenAI 令牌交换失败；请检查网络或代理后重试。",
+      409,
+      { code: "auth_token_exchange_failed" },
+    );
   if (/state mismatch/i.test(message))
-    return "OpenAI 登录回调已过期，请重新开始登录。";
+    return new CodedFlowError("OpenAI 登录回调已过期，请重新开始登录。", 409, {
+      code: "auth_callback_expired",
+    });
   if (/missing authorization code/i.test(message))
-    return "没有收到 OpenAI 授权结果，请重新开始登录。";
-  return "DSH Codex 登录失败，请重新尝试。";
+    return new CodedFlowError(
+      "没有收到 OpenAI 授权结果，请重新开始登录。",
+      409,
+      { code: "auth_code_missing" },
+    );
+  return new CodedFlowError("DSH Codex 登录失败，请重新尝试。", 409, {
+    code: "auth_login_failed",
+  });
 }
 
 /** DSH-owned ChatGPT subscription authorization for the openai-codex route. */
@@ -100,6 +121,7 @@ export class CodexSubscriptionAuth {
       this.state = {
         state: "error",
         message: "无法读取 DSH 的 Codex 登录状态。",
+        messageDetails: { code: "auth_status_unavailable" },
         model: this.modelId,
       };
     }
@@ -133,8 +155,10 @@ export class CodexSubscriptionAuth {
       notify: (notice) => {
         const previous =
           this.state.state === "pending" ? this.state : undefined;
+        const { messageDetails: _messageDetails, ...previousStatus } =
+          previous ?? {};
         this.state = {
-          ...previous,
+          ...previousStatus,
           state: "pending",
           method,
           ...(notice.url === undefined
@@ -166,7 +190,11 @@ export class CodexSubscriptionAuth {
             this.pendingPrompt = null;
             if (this.state.state === "pending" && this.state.prompt) {
               const { prompt: _prompt, ...pending } = this.state;
-              this.state = { ...pending, message: "正在确认 OpenAI 登录结果…" };
+              this.state = {
+                ...pending,
+                message: "正在确认 OpenAI 登录结果…",
+                messageDetails: { code: "auth_login_confirming" },
+              };
             }
           };
           const finishResolve = (value: string) => {
@@ -230,12 +258,14 @@ export class CodexSubscriptionAuth {
             : { state: "signed_out", model: this.modelId };
       })
       .catch((error) => {
+        const failure = loginErrorMessage(error);
         if (error instanceof Error && error.name === "AbortError")
           this.state = { state: "signed_out", model: this.modelId };
         else
           this.state = {
             state: "error",
-            message: loginErrorMessage(error),
+            message: failure.message,
+            messageDetails: failure.details,
             model: this.modelId,
           };
       })
@@ -256,9 +286,15 @@ export class CodexSubscriptionAuth {
   submitLoginInput(input: unknown): CodexAuthStatus {
     const value = typeof input === "string" ? input.trim() : "";
     if (!value || value.length > 8192)
-      throw new Error("授权结果不能为空，且不能超过 8192 个字符。");
+      throw new CodedFlowError(
+        "授权结果不能为空，且不能超过 8192 个字符。",
+        409,
+        { code: "auth_result_invalid" },
+      );
     if (!this.pendingPrompt)
-      throw new Error("当前没有等待输入的 Codex 登录流程。");
+      throw new CodedFlowError("当前没有等待输入的 Codex 登录流程。", 409, {
+        code: "auth_no_pending_login",
+      });
     this.pendingPrompt.resolve(value);
     return this.state;
   }

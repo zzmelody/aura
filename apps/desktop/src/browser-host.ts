@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  ipcMain,
   session,
   shell,
   type BrowserWindow,
@@ -8,6 +7,7 @@ import {
   type WebContents,
 } from "electron";
 import type { BrowserReservation } from "@aura/protocol/browser";
+import { handleNative, NativeOperationError } from "./native-errors.ts";
 import {
   blocksBrowserRequest,
   browserTarget,
@@ -45,13 +45,13 @@ function ownerOf(event: IpcMainInvokeEvent): BrowserOwner {
     frame !== event.sender.mainFrame ||
     URL.parse(frame.url)?.origin !== owner.origin
   )
-    throw new Error("浏览器操作只能由 Aura 工作台发起。");
+    throw new NativeOperationError("browserOwnerRequired");
   return owner;
 }
 
 function workspacePartition(workspace: unknown): string {
   if (typeof workspace !== "string" || !workspace || workspace.length > 4096)
-    throw new Error("浏览器需要所属工作空间。");
+    throw new NativeOperationError("browserWorkspaceRequired");
   const existing = partitions.get(workspace);
   if (existing) return existing;
   const id = `aura-browser-${randomUUID()}`;
@@ -84,39 +84,51 @@ function guestOf(owner: BrowserOwner, id: unknown): WebContents | undefined {
 }
 
 export function installBrowserHost(): void {
-  ipcMain.handle(
+  handleNative(
     "aura:browser:acquire",
+    "browserOperationFailed",
     (event, workspace: unknown): BrowserReservation => {
       const owner = ownerOf(event);
-      if (owner.leases.size >= 12) throw new Error("浏览器标签数已达上限。");
+      if (owner.leases.size >= 12)
+        throw new NativeOperationError("browserTabLimit");
       const partition = workspacePartition(workspace);
       const lease = randomUUID();
       owner.leases.set(lease, { partition, attaching: false });
       return { lease, partition };
     },
   );
-  ipcMain.handle("aura:browser:release", async (event, id: unknown) => {
-    const owner = ownerOf(event);
-    if (typeof id === "string") await release(owner, id);
-  });
-  ipcMain.handle(
+  handleNative(
+    "aura:browser:release",
+    "browserOperationFailed",
+    async (event, id: unknown) => {
+      const owner = ownerOf(event);
+      if (typeof id === "string") await release(owner, id);
+    },
+  );
+  handleNative(
     "aura:browser:navigate",
+    "browserOperationFailed",
     async (event, id: unknown, value: unknown) => {
       const owner = ownerOf(event);
       const guest = guestOf(owner, id);
       const url = browserTarget(value, owner.reservedPorts);
-      if (!guest || !url) throw new Error("不能在 Aura 浏览器打开这个地址。");
+      if (!guest || !url)
+        throw new NativeOperationError("browserAddressBlocked");
       await guest.loadURL(url.href);
     },
   );
-  ipcMain.handle("aura:browser:external", async (event, id: unknown) => {
-    const owner = ownerOf(event);
-    const guest = guestOf(owner, id);
-    const url = guest
-      ? browserTarget(guest.getURL(), owner.reservedPorts)
-      : undefined;
-    if (url) await shell.openExternal(url.href);
-  });
+  handleNative(
+    "aura:browser:external",
+    "browserOperationFailed",
+    async (event, id: unknown) => {
+      const owner = ownerOf(event);
+      const guest = guestOf(owner, id);
+      const url = guest
+        ? browserTarget(guest.getURL(), owner.reservedPorts)
+        : undefined;
+      if (url) await shell.openExternal(url.href);
+    },
+  );
 }
 
 /** Only this window's one-use reservations can attach a guest. */

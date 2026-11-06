@@ -143,9 +143,11 @@ body,
 }
 
 .desktop-startup-wordmark {
+  box-sizing: border-box;
   position: absolute;
   top: calc(43% + 125px);
   width: 100%;
+  padding-inline: 24px;
   text-align: center;
   transition:
     opacity 250ms ease,
@@ -164,6 +166,7 @@ body,
   margin: 0;
   color: #81858c;
   font-size: 12px;
+  line-height: 1.6;
   letter-spacing: 0.22em;
 }
 
@@ -185,6 +188,7 @@ body,
 }
 
 .desktop-startup-status button {
+  max-width: 100%;
   margin-top: 14px;
   padding: 9px 16px;
   border: 1px solid rgba(var(--startup-accent-rgb), 0.4);

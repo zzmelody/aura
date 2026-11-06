@@ -1,8 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MetadataOwner } from "./metadata.ts";
 import type { FlowCatalog } from "@aura/protocol/types";
+import { apiErrorText } from "./api-error-messages.ts";
+import {
+  errorMessage,
+  MessageError,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import {
+  useWorkflowMessages,
+  workflowMessage as message,
+} from "./workflow-messages";
 
 const messageFor = (cause: unknown) =>
-  cause instanceof Error ? cause.message : "流程目录暂时不可用。";
+  errorMessage(cause, message("catalogUnavailable"));
 
 async function readCatalog(
   endpoint: string,
@@ -17,19 +29,20 @@ async function readCatalog(
   const result = (await response.json().catch(() => null)) as
     FlowCatalog | { message?: string } | null;
   if (!response.ok)
-    throw new Error(
-      (result &&
-        typeof result === "object" &&
-        "message" in result &&
-        result.message) ||
-        `Flow 目录读取失败（${response.status}）。`,
+    throw new MessageError(
+      apiErrorText(
+        result,
+        message("catalogReadFailed", { status: response.status }),
+      ),
     );
   return { catalog: result as FlowCatalog, etag: response.headers.get("ETag") };
 }
 
 export function useFlowCatalog(endpoint: string) {
+  const { i18n } = useWorkflowMessages();
+  const metadata = useMemo(() => new MetadataOwner(i18n), [i18n]);
   const [catalog, setCatalog] = useState<FlowCatalog>();
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
   const [refreshing, setRefreshing] = useState(false);
   const endpointRef = useRef(endpoint);
   endpointRef.current = endpoint;
@@ -39,15 +52,20 @@ export function useFlowCatalog(endpoint: string) {
       requestedEndpoint: string,
       next: Awaited<ReturnType<typeof readCatalog>>,
     ) => {
-      if (!next || endpointRef.current !== requestedEndpoint) return;
+      if (
+        !next ||
+        !metadata.active ||
+        endpointRef.current !== requestedEndpoint
+      )
+        return;
       validator.current = {
         endpoint: requestedEndpoint,
         etag: next.etag ?? undefined,
       };
-      setCatalog(next.catalog);
+      setCatalog(metadata.catalog(next.catalog));
       setError("");
     },
-    [],
+    [metadata],
   );
 
   const refresh = useCallback(async () => {
@@ -75,6 +93,7 @@ export function useFlowCatalog(endpoint: string) {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     setCatalog(undefined);
+    metadata.activate();
     setError("");
     validator.current = { endpoint };
     let polling = false;
@@ -108,13 +127,14 @@ export function useFlowCatalog(endpoint: string) {
     document.addEventListener("visibilitychange", wake);
     return () => {
       abort.abort();
+      metadata.dispose();
       if (timer) clearTimeout(timer);
       window.removeEventListener("focus", wake);
       document.removeEventListener("visibilitychange", wake);
     };
-  }, [endpoint, receive]);
+  }, [endpoint, receive, metadata]);
 
-  return { catalog, error, refreshing, refresh };
+  return { catalog, error: messageText(error, i18n), refreshing, refresh };
 }
 
 export type FlowCatalogController = ReturnType<typeof useFlowCatalog>;

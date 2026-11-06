@@ -22,8 +22,8 @@
     "check:style": "pnpm run format:check && pnpm run lint"
   },
   "peerDependencies": {
-    "@aura/plugin-sdk": "^2.0.0",
-    "@aura/plugin-ui": "^0.1.0",
+    "@aura/plugin-sdk": "^2.6.0",
+    "@aura/plugin-ui": "^0.3.0",
     "@aura/workbench": "^0.1.0",
     "@aura/protocol": "^0.1.0",
     "react": "19.2.3",

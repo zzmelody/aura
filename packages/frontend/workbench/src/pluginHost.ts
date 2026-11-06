@@ -4,8 +4,11 @@ import {
 } from "./features/coding/secret-mask.ts";
 import { Context, Service } from "@deepseek-ai/cordis";
 import {
+  errorMessage,
+  MessageError,
   pluginNamespace,
   registerCatalogs,
+  type MessageReference,
   type TranslationCatalogs,
 } from "@aura/i18n/runtime";
 import * as pluginUi from "@aura/plugin-ui";
@@ -25,6 +28,7 @@ import * as ReactDOMClient from "react-dom/client";
 import * as ReactJsxRuntime from "react/jsx-runtime";
 import * as workbenchTransport from "./plugin-transport.ts";
 import { PluginHostLifecycle } from "./pluginHostLifecycle.ts";
+import { pluginMessage } from "./plugin-messages.ts";
 import {
   invokePluginPage,
   LOADER_ID,
@@ -45,7 +49,7 @@ export interface RegisteredResult {
 
 export interface PluginFailure {
   id: string;
-  message: string;
+  message: string | MessageReference;
 }
 
 export interface HostHandle {
@@ -101,10 +105,6 @@ interface ClientPlugin {
   apply: (ctx: Context) => void | Promise<void>;
 }
 
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function runtimeHref(endpoint: string, url: string): string {
   return new URL(url, endpoint.endsWith("/") ? endpoint : `${endpoint}/`).href;
 }
@@ -118,7 +118,7 @@ function loadScript(href: string): Promise<void> {
     script.dataset.auraPluginBundle = "";
     const timeout = setTimeout(() => {
       script.remove();
-      reject(new Error("插件脚本加载超时。"));
+      reject(new MessageError(pluginMessage("scriptTimeout")));
     }, 20_000);
     script.onload = () => {
       clearTimeout(timeout);
@@ -128,7 +128,7 @@ function loadScript(href: string): Promise<void> {
     script.onerror = () => {
       clearTimeout(timeout);
       script.remove();
-      reject(new Error(`插件脚本加载失败：${href}`));
+      reject(new MessageError(pluginMessage("scriptLoadFailed")));
     };
     document.head.append(script);
   });
@@ -142,7 +142,7 @@ export function pluginExports(value: unknown): ClientPlugin {
       ? module
       : (module?.default as Partial<ClientPlugin> | undefined);
   if (!candidate || typeof candidate.apply !== "function")
-    throw new Error("插件浏览器入口没有导出 apply(ctx)。");
+    throw new MessageError(pluginMessage("missingApply"));
   return {
     ...(candidate.name ? { name: candidate.name } : {}),
     inject: [...new Set(["auraWorkbench", ...(candidate.inject ?? [])])],
@@ -173,7 +173,8 @@ function workbenchPages(
       const pluginId = pluginOwnerOf(this.ctx);
       const page = validatePageDefinition(definition);
       const id = `${pluginId}/${page.id}`;
-      if (pages.has(id)) throw new Error(`插件页面 ${id} 重复注册。`);
+      if (pages.has(id))
+        throw new MessageError(pluginMessage("duplicatePage", { id }));
       this.ctx.effect(() => {
         pages.set(id, { pluginId, definition: page });
         return () => {
@@ -186,7 +187,8 @@ function workbenchPages(
       const pluginId = pluginOwnerOf(this.ctx);
       const result = validateResultDefinition(definition);
       const id = `${pluginId}/${result.id}`;
-      if (results.has(id)) throw new Error(`插件结果视图 ${id} 重复注册。`);
+      if (results.has(id))
+        throw new MessageError(pluginMessage("duplicateResult", { id }));
       this.ctx.effect(() => {
         results.set(id, { pluginId, definition: result });
         return () => {
@@ -241,7 +243,7 @@ async function bootPluginHost(
   workbenchModule?: unknown,
 ): Promise<HostHandle> {
   if (window.__ModuleLoader__)
-    throw new Error("插件模块系统已在此页面启动，请刷新页面。");
+    throw new MessageError(pluginMessage("alreadyStarted"));
   const pages = new Map<string, RegisteredPage>();
   const results = new Map<string, RegisteredResult>();
   const failures: PluginFailure[] = [];
@@ -262,25 +264,51 @@ async function bootPluginHost(
   try {
     const graph = await readPluginGraph(endpoint, AbortSignal.timeout(20_000));
     const loaderRow = graph.entries.find((row) => row.id === LOADER_ID);
-    if (!loaderRow) throw new Error("Aura 服务没有提供 DSH 模块加载器。");
+    if (!loaderRow) throw new MessageError(pluginMessage("loaderUnavailable"));
     await loadScript(runtimeHref(endpoint, loaderRow.url));
     const index = facade.pendingQueue.findIndex(
       (registration) => registration.id === LOADER_ID,
     );
-    if (index < 0) throw new Error("DSH 模块加载器没有完成注册。");
+    if (index < 0) throw new MessageError(pluginMessage("loaderUnregistered"));
     const [bootstrap] = facade.pendingQueue.splice(index, 1);
     const loader = bootstrap!.factory((specifier) => {
-      throw new Error(`DSH 模块加载器在启动前请求了 ${specifier}。`);
+      throw new MessageError(
+        pluginMessage("loaderBeforeStartup", { specifier }),
+      );
     }) as ClientModulesBootstrap;
+    const bundleFailures = new Map<string, string | MessageReference>();
     const modules = loader.createClientModuleSystem(
       facade,
       { id: bootstrap!.id, exports: loader },
       {
         boot: graph,
         staticModules: staticModules(workbenchModule),
-        loadBundle: (url) => loadScript(runtimeHref(endpoint, url)),
+        loadBundle: async (url) => {
+          try {
+            await loadScript(runtimeHref(endpoint, url));
+            bundleFailures.delete(url);
+          } catch (error) {
+            bundleFailures.set(url, errorMessage(error));
+            throw error;
+          }
+        },
       },
     );
+    const loadCandidate = async (id: string) => {
+      bundleFailures.clear();
+      try {
+        await modules.prefetch(id);
+        return pluginExports(await modules.import(id));
+      } catch (error) {
+        // DSH aggregates load errors as strings. Preserve Aura's message identity
+        // at the bundle boundary, without interpreting that diagnostic string.
+        const failure = bundleFailures.values().next().value;
+        if (failure !== undefined) throw new MessageError(failure);
+        throw error;
+      } finally {
+        bundleFailures.clear();
+      }
+    };
     /**
      * Rows added after boot must reach the module table before import. DSH
      * performs this refresh inside its entry reconciliation; the method is not
@@ -293,7 +321,7 @@ async function bootPluginHost(
         }
       ).updateManifest;
       if (typeof update !== "function")
-        throw new Error("DSH 模块系统不支持运行时更新模块图。");
+        throw new MessageError(pluginMessage("graphUpdateUnsupported"));
       // Aura owns these fibers and stages their replacement below. DSH must
       // not remove the visible revision's styles while fetching its candidate.
       update.call(modules, loader.parseBootManifest(next), [...fibers.keys()]);
@@ -339,7 +367,7 @@ async function bootPluginHost(
       } catch (error) {
         failures.splice(0, failures.length, {
           id: "host",
-          message: errorText(error),
+          message: errorMessage(error),
         });
         onChange();
         return;
@@ -357,8 +385,7 @@ async function bootPluginHost(
         try {
           if (previousRev) modules.invalidate(id, rev);
           // Fetch/evaluate the candidate before disposing the visible page.
-          await modules.prefetch(id);
-          const candidate = pluginExports(await modules.import(id));
+          const candidate = await loadCandidate(id);
           await unmount(id);
           try {
             await mount(id, rev, candidate);
@@ -368,7 +395,7 @@ async function bootPluginHost(
           }
         } catch (error) {
           console.error(`[aura] plugin ${id} failed to mount`, error);
-          nextFailures.push({ id, message: errorText(error) });
+          nextFailures.push({ id, message: errorMessage(error) });
         }
       }
       failures.splice(0, failures.length, ...nextFailures);

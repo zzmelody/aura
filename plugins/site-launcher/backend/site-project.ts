@@ -2,6 +2,7 @@ import { access, readFile, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import type { SitePackageManager, SiteProject } from "@aura/protocol/types";
 import { localSiteUrl } from "./site-network.ts";
+import { SiteStatusError } from "../shared/status-messages.ts";
 
 const managers: SitePackageManager[] = ["pnpm", "npm", "yarn", "bun"];
 const scriptPattern = /^[a-zA-Z0-9:_-]+$/;
@@ -10,19 +11,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function manifestAt(directory: string) {
-  if (!isAbsolute(directory)) throw new Error("项目目录必须是本机绝对路径。");
+  if (!isAbsolute(directory))
+    throw new SiteStatusError("项目目录必须是本机绝对路径。", {
+      code: "directoryAbsolute",
+    });
   const normalized = resolve(directory);
   if (!(await stat(normalized).catch(() => null))?.isDirectory())
-    throw new Error("找不到这个项目目录。");
+    throw new SiteStatusError("找不到这个项目目录。", {
+      code: "directoryMissing",
+    });
   let manifest: unknown;
   try {
     manifest = JSON.parse(
       await readFile(join(normalized, "package.json"), "utf8"),
     );
   } catch {
-    throw new Error("这个目录里没有可读取的 package.json。");
+    throw new SiteStatusError("这个目录里没有可读取的 package.json。", {
+      code: "manifestUnavailable",
+    });
   }
-  if (!isRecord(manifest)) throw new Error("package.json 必须是一个对象。");
+  if (!isRecord(manifest))
+    throw new SiteStatusError("package.json 必须是一个对象。", {
+      code: "manifestInvalid",
+    });
   const scripts = Object.fromEntries(
     Object.entries(isRecord(manifest.scripts) ? manifest.scripts : {}).filter(
       ([name, command]) =>
@@ -32,7 +43,9 @@ async function manifestAt(directory: string) {
     ),
   ) as Record<string, string>;
   if (!Object.keys(scripts).length)
-    throw new Error("package.json 里没有可运行的 scripts。");
+    throw new SiteStatusError("package.json 里没有可运行的 scripts。", {
+      code: "scriptsMissing",
+    });
   return { normalized, manifest, scripts };
 }
 
@@ -110,13 +123,17 @@ export async function siteProjectInput(
   input: unknown,
 ): Promise<{ project: SiteProject; command: string }> {
   if (!isRecord(input) || typeof input.directory !== "string")
-    throw new Error("未选择项目目录。");
+    throw new SiteStatusError("未选择项目目录。", {
+      code: "directoryRequired",
+    });
   const project = await describeProject(input.directory);
   const { scripts } = await manifestAt(project.directory);
   const script =
     typeof input.script === "string" ? input.script : project.script;
   if (!Object.hasOwn(scripts, script))
-    throw new Error("所选启动脚本已不存在，请重新选择目录。");
+    throw new SiteStatusError("所选启动脚本已不存在，请重新选择目录。", {
+      code: "scriptMissing",
+    });
   const url = localSiteUrl(
     typeof input.url === "string" ? input.url : project.url,
   ).toString();

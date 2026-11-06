@@ -1,3 +1,4 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import { randomUUID } from "node:crypto";
 import type { ActionRun } from "@aura/protocol/types";
 import type { ActionRegistry, LoadedAction } from "./action-registry.ts";
@@ -52,7 +53,10 @@ export class ActionRuns {
 
   get(id: string) {
     const run = this.table.get(id);
-    if (!run) throw new FlowError("Action 运行不存在。", 404);
+    if (!run)
+      throw new CodedFlowError("Action 运行不存在。", 404, {
+        code: "action_run_missing",
+      });
     return run;
   }
 
@@ -74,11 +78,15 @@ export class ActionRuns {
         previous.mode !== request.mode ||
         JSON.stringify(previous.input) !== JSON.stringify(args)
       )
-        throw new FlowError("同一请求 ID 不能用于不同输入。", 409);
+        throw new CodedFlowError("同一请求 ID 不能用于不同输入。", 409, {
+          code: "flow_input_conflict",
+        });
       return previous;
     }
     if (this.closing || this.running.size >= 2)
-      throw new FlowError("已有两个 Action 在运行，请稍后再试。", 503);
+      throw new CodedFlowError("已有两个 Action 在运行，请稍后再试。", 503, {
+        code: "action_run_busy",
+      });
     await this.refresh();
     const action = this.registry.get(request.actionId);
     const run: ActionRun = {

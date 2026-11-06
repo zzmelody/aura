@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { CodedFlowError, flowErrorBody } from "@aura/protocol/errors";
 import type { Context } from "@deepseek-ai/cordis";
 import type { Table } from "../src/types.ts";
 import {
@@ -60,7 +61,15 @@ test("capabilities do not write defaults, expose credentials or accept stale con
   assert.equal(result.hasWebKey, true);
   assert.ok(!JSON.stringify(result).includes("synthetic-key"));
   assert.ok(!JSON.stringify(table.get("settings")).includes("synthetic-key"));
-  await assert.rejects(store.save(settings), /配置已变化/u);
+  const before = structuredClone(table.get("settings"));
+  await assert.rejects(store.save(settings), (error) => {
+    assert.ok(error instanceof CodedFlowError);
+    assert.equal(error.status, 409);
+    assert.match(error.message, /配置已变化/u);
+    assert.equal(flowErrorBody(error).code, "settings_revision_conflict");
+    return true;
+  });
+  assert.deepEqual(table.get("settings"), before);
 });
 
 test("concurrent reservations respect the allowance and uncertain results block further requests across restart", async () => {

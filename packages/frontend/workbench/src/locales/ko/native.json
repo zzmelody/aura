@@ -1,0 +1,18 @@
+{
+  "pickerKindUnsupported": "지원하지 않는 경로 선택 유형입니다.",
+  "pickerFailed": "경로 선택 창을 열지 못했습니다. 다시 시도하세요.",
+  "previewInvalid": "유효하지 않은 사이트 미리보기입니다.",
+  "previewLocalOnly": "미리보기 주소는 로컬 HTTP 사이트여야 합니다.",
+  "previewFailed": "사이트 미리보기를 열지 못했습니다. 다시 시도하세요.",
+  "browserOwnerRequired": "브라우저 작업은 Aura 워크스페이스에서 실행해야 합니다.",
+  "browserWorkspaceRequired": "브라우저에 워크스페이스가 필요합니다.",
+  "browserTabLimit": "브라우저 탭 수가 한도에 도달했습니다.",
+  "browserAddressBlocked": "Aura 브라우저에서 이 주소를 열 수 없습니다.",
+  "browserOperationFailed": "브라우저 작업에 실패했습니다. 다시 시도하세요.",
+  "fileMainWindowOnly": "메인 창에서만 파일 위치를 열 수 있습니다.",
+  "fileRevealFailed": "폴더에서 파일을 표시하지 못했습니다. 다시 시도하세요.",
+  "filePathInvalid": "유효하지 않은 파일 경로입니다.",
+  "fileRootRequired": "유효하지 않은 프로젝트 폴더입니다.",
+  "fileNotFound": "파일이 없거나 이동되었습니다.",
+  "operationFailed": "데스크톱 작업에 실패했습니다. 다시 시도하세요."
+}

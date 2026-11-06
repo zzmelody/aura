@@ -1,4 +1,5 @@
 import type { WorkflowArtifact } from "@aura/protocol/types";
+import { language } from "@aura/i18n/runtime";
 
 export function artifactUrl(
   endpoint: string,
@@ -27,8 +28,18 @@ export function visibleArtifacts(
   }
   return [...unique.values()];
 }
-export function artifactSize(bytes: number) {
-  return bytes >= 1024 * 1024
-    ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+export function artifactSize(
+  bytes: number,
+  locale: string = language.getSnapshot().locale,
+): string {
+  const large = bytes >= 1024 * 1024;
+  return new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit: large ? "megabyte" : "kilobyte",
+    unitDisplay: "short",
+    minimumFractionDigits: large ? 1 : 0,
+    maximumFractionDigits: large ? 1 : 0,
+  }).format(
+    large ? bytes / (1024 * 1024) : Math.max(1, Math.round(bytes / 1024)),
+  );
 }

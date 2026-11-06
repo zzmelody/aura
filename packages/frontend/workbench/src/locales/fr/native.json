@@ -1,0 +1,18 @@
+{
+  "pickerKindUnsupported": "Ce type de sélecteur de chemin n’est pas pris en charge.",
+  "pickerFailed": "Impossible d’ouvrir le sélecteur de chemin. Réessayez.",
+  "previewInvalid": "Aperçu du site non valide.",
+  "previewLocalOnly": "L’adresse de l’aperçu doit correspondre à un site HTTP local.",
+  "previewFailed": "Impossible d’ouvrir l’aperçu du site. Réessayez.",
+  "browserOwnerRequired": "Les opérations du navigateur doivent provenir de l’espace de travail Aura.",
+  "browserWorkspaceRequired": "Le navigateur nécessite un espace de travail.",
+  "browserTabLimit": "La limite d’onglets du navigateur est atteinte.",
+  "browserAddressBlocked": "Cette adresse ne peut pas être ouverte dans le navigateur Aura.",
+  "browserOperationFailed": "L’opération du navigateur a échoué. Réessayez.",
+  "fileMainWindowOnly": "Les fichiers ne peuvent être localisés que depuis la fenêtre principale.",
+  "fileRevealFailed": "Impossible d’afficher le fichier dans son dossier. Réessayez.",
+  "filePathInvalid": "Chemin de fichier non valide.",
+  "fileRootRequired": "Dossier de projet non valide.",
+  "fileNotFound": "Le fichier n’existe pas ou a été déplacé.",
+  "operationFailed": "L’opération de l’application a échoué. Réessayez."
+}

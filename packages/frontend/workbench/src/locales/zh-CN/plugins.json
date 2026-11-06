@@ -1,0 +1,21 @@
+{
+  "scriptTimeout": "插件脚本加载超时。",
+  "scriptLoadFailed": "插件脚本加载失败。",
+  "missingApply": "插件浏览器入口没有导出 apply(ctx)。",
+  "duplicatePage": "插件页面 {{id}} 重复注册。",
+  "duplicateResult": "插件结果视图 {{id}} 重复注册。",
+  "alreadyStarted": "插件模块系统已在此页面启动，请刷新页面。",
+  "loaderUnavailable": "Aura 服务没有提供 DSH 模块加载器。",
+  "loaderUnregistered": "DSH 模块加载器没有完成注册。",
+  "loaderBeforeStartup": "DSH 模块加载器在启动前请求了 {{specifier}}。",
+  "graphUpdateUnsupported": "DSH 模块系统不支持运行时更新模块图。",
+  "pagesReadFailed": "插件页面读取失败（{{status}}）。",
+  "graphReadFailed": "插件模块图读取失败（{{status}}）。",
+  "renderFailed": "插件页面渲染失败。",
+  "pageOpenFailed": "{{label}}无法打开：{{message}}",
+  "settingsReadFailed": "插件目录读取失败（{{status}}）。",
+  "settingsSaveFailed": "插件目录保存失败（{{status}}）。",
+  "invokeFailed": "插件页面调用失败（{{status, number}}）。",
+  "directoryDesktopOnly": "目录选择仅支持 Aura Desktop。",
+  "previewDesktopOnly": "站点预览仅支持 Aura Desktop。"
+}

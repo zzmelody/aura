@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useToolMessages } from "../../tool-messages.ts";
 import type { WorkspaceTerminalInfo } from "@aura/protocol/types";
 
 export function TerminalCloseDialog({
@@ -10,9 +11,10 @@ export function TerminalCloseDialog({
   onConfirm(): Promise<void>;
   onCancel(): void;
 }) {
+  const { t } = useToolMessages();
   const dialog = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     const node = dialog.current;
     node?.showModal();
@@ -32,28 +34,28 @@ export function TerminalCloseDialog({
         onSubmit={(event) => {
           event.preventDefault();
           setBusy(true);
-          setError("");
+          setFailed(false);
           void onConfirm().catch(() => {
-            setError("终端未能关闭，请检查服务连接后重试。");
+            setFailed(true);
             setBusy(false);
           });
         }}
       >
-        <h2 id="terminal-close-title">关闭 {terminal.title}？</h2>
-        <p>
-          终端可能仍有任务运行，关闭会结束其中的进程。收起工具面板可以保留任务。
-        </p>
-        {error ? (
+        <h2 id="terminal-close-title">
+          {t("closeTerminalTitle", { name: terminal.title })}
+        </h2>
+        <p>{t("closeTerminalHint")}</p>
+        {failed ? (
           <p role="alert" className="coding-notice">
-            {error}
+            {t("terminalCloseFailed")}
           </p>
         ) : null}
         <div className="session-dialog-actions">
           <button type="button" className="tool-button" onClick={onCancel}>
-            保留终端
+            {t("keepTerminal")}
           </button>
           <button type="submit" className="primary-button" disabled={busy}>
-            {busy ? "正在关闭…" : "关闭终端"}
+            {busy ? t("closingTerminal") : t("closeTerminal")}
           </button>
         </div>
       </form>

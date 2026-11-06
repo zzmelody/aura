@@ -1,3 +1,13 @@
+import {
+  useConversationMessages,
+  conversationMessage,
+  type ConversationMessageKey,
+} from "../../conversation-messages.ts";
+import {
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
 import React, { useEffect, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import type {
@@ -18,6 +28,7 @@ export function ConversationSearch({
   open: (id: string) => void;
   onClose?(): void;
 }) {
+  const { t, i18n } = useConversationMessages();
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
   const [query, setQuery] = useState("");
@@ -25,7 +36,7 @@ export function ConversationSearch({
   const [result, setResult] = useState<{
     request: typeof submitted;
     items?: ConversationSearchHit[];
-    error?: string;
+    error?: string | MessageReference;
   }>();
 
   useEffect(() => {
@@ -43,7 +54,7 @@ export function ConversationSearch({
         if (!abort.signal.aborted)
           setResult({
             request: submitted,
-            error: error instanceof Error ? error.message : "搜索未完成。",
+            error: errorMessage(error, conversationMessage("searchFailed")),
           });
       });
     return () => abort.abort();
@@ -53,7 +64,7 @@ export function ConversationSearch({
   return (
     <section
       className="conversation-integrations conversation-search"
-      aria-label="会话全文搜索"
+      aria-label={t("searchTitle")}
       onKeyDown={(event) => {
         if (event.key === "Escape" && onClose) {
           event.preventDefault();
@@ -75,8 +86,8 @@ export function ConversationSearch({
           <input
             ref={input}
             type="search"
-            aria-label="会话正文关键词"
-            placeholder="搜索当前工作空间的会话正文"
+            aria-label={t("searchKeywords")}
+            placeholder={t("searchPlaceholder")}
             maxLength={256}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -85,7 +96,7 @@ export function ConversationSearch({
             <button
               type="button"
               className="conversation-search-clear"
-              aria-label="清空搜索"
+              aria-label={t("clearSearch")}
               onClick={() => {
                 setQuery("");
                 setSubmitted(undefined);
@@ -101,22 +112,24 @@ export function ConversationSearch({
           className="conversation-search-submit"
           disabled={!query.trim()}
         >
-          搜索
+          {t("search")}
         </button>
         {onClose ? (
           <button
             type="button"
             className="icon-control conversation-search-close"
-            aria-label="关闭会话搜索"
+            aria-label={t("closeSearch")}
             onClick={onClose}
           >
             <X size={15} />
           </button>
         ) : null}
       </form>
-      {submitted && !current ? <p role="status">正在搜索…</p> : null}
-      {current?.error ? <p role="alert">{current.error}</p> : null}
-      {current?.items?.length === 0 ? <p>没有匹配的会话。</p> : null}
+      {submitted && !current ? <p role="status">{t("searching")}</p> : null}
+      {current?.error ? (
+        <p role="alert">{messageText(current.error, i18n)}</p>
+      ) : null}
+      {current?.items?.length === 0 ? <p>{t("noConversations")}</p> : null}
       <ul>
         {current?.items?.map(({ id, title, snippet }) => (
           <li key={id}>
@@ -135,14 +148,14 @@ export function ConversationSearch({
   );
 }
 
-const labels: Record<string, string> = {
-  running: "运行中",
-  inactive: "空闲",
-  provisioning: "正在创建",
-  failed: "失败",
-  pending: "待办",
-  in_progress: "进行中",
-  completed: "已完成",
+const labels: Record<string, ConversationMessageKey> = {
+  running: "running",
+  inactive: "idle",
+  provisioning: "provisioning",
+  failed: "failed",
+  pending: "pending",
+  in_progress: "inProgress",
+  completed: "completed",
 };
 
 export function AgentTeamPanel({
@@ -152,8 +165,9 @@ export function AgentTeamPanel({
   endpoint: string;
   id: string;
 }) {
+  const { t, i18n } = useConversationMessages();
   const [team, setTeam] = useState<AgentTeamView>();
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
   useEffect(() => {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -169,7 +183,7 @@ export function AgentTeamPanel({
         setError("");
       } catch (cause) {
         if (!abort.signal.aborted)
-          setError(cause instanceof Error ? cause.message : "读取团队失败。");
+          setError(errorMessage(cause, conversationMessage("teamFailed")));
       } finally {
         if (!abort.signal.aborted) timer = setTimeout(() => void read(), 3000);
       }
@@ -181,23 +195,23 @@ export function AgentTeamPanel({
     };
   }, [endpoint, id]);
   return (
-    <section className="conversation-integrations" aria-label="Agent 团队">
-      <p>在对话中让 Agent 创建具名队友并分配任务。</p>
-      {error ? <p role="alert">{error}</p> : null}
+    <section className="conversation-integrations" aria-label={t("team")}>
+      <p>{t("teamHint")}</p>
+      {error ? <p role="alert">{messageText(error, i18n)}</p> : null}
       {team?.members.length ? (
-        <ul aria-label="团队成员">
+        <ul aria-label={t("members")}>
           {team.members.map(({ name, status }) => (
             <li key={name}>
-              {name} · {labels[status] ?? status}
+              {name} · {labels[status] ? t(labels[status]) : status}
             </li>
           ))}
         </ul>
       ) : null}
       {team?.tasks.length ? (
-        <ul aria-label="共享任务">
+        <ul aria-label={t("sharedTasks")}>
           {team.tasks.map(({ id: task, subject, status, owner }) => (
             <li key={task}>
-              {subject} · {labels[status] ?? status}
+              {subject} · {labels[status] ? t(labels[status]) : status}
               {owner ? ` · ${owner}` : ""}
             </li>
           ))}

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useWorkflowMessages } from "../workflow-messages.ts";
 import { LoaderCircle, Play, X } from "lucide-react";
 import type { FlowMode, JsonValue } from "@aura/protocol/types";
 import { WorkflowInput } from "./WorkflowInput";
@@ -39,16 +40,17 @@ export const WorkflowRunForm = React.forwardRef<
     unavailable,
     error,
     notice,
-    submitLabel = "开始执行",
+    submitLabel,
     onSubmit,
     onClose,
   },
   ref,
 ) {
+  const { t } = useWorkflowMessages();
   const [mode, setMode] = useState<FlowMode>(initialMode);
   const [jsonMode, setJsonMode] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [inputError, setInputError] = useState("");
+  const [inputError, setInputError] = useState(false);
   const local = useRef<HTMLFormElement | null>(null);
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -82,10 +84,10 @@ export const WorkflowRunForm = React.forwardRef<
         try {
           input = JSON.parse(text) as JsonValue;
         } catch {
-          setInputError("请输入有效的 JSON。");
+          setInputError(true);
           return;
         }
-        setInputError("");
+        setInputError(false);
         onSubmit(input, mode);
       }}
     >
@@ -97,7 +99,7 @@ export const WorkflowRunForm = React.forwardRef<
         <button
           type="button"
           className="icon-control"
-          aria-label="关闭运行输入"
+          aria-label={t("closeRunInput")}
           onClick={onClose}
         >
           <X size={18} />
@@ -114,20 +116,20 @@ export const WorkflowRunForm = React.forwardRef<
       />
       {inputError || error ? (
         <p role="alert" className="error">
-          {inputError || error}
+          {inputError ? t("invalidJson") : error}
         </p>
       ) : null}
       <div className="workflow-compose-actions">
         <select
-          aria-label="运行模式"
+          aria-label={t("runMode")}
           value={mode}
           disabled={locked}
           onChange={(event) => setMode(event.target.value as FlowMode)}
         >
-          <option value="demo">本地演示</option>
+          <option value="demo">{t("demo")}</option>
           <option value="codex">Codex</option>
           <option value="lumina">Lumina</option>
-          <option value="custom">自定义 API</option>
+          <option value="custom">{t("customApi")}</option>
         </select>
         <button
           type="button"
@@ -135,7 +137,7 @@ export const WorkflowRunForm = React.forwardRef<
           aria-pressed={jsonMode}
           onClick={() => setJsonMode(!jsonMode)}
         >
-          {jsonMode ? "表单输入" : "JSON"}
+          {jsonMode ? t("formInput") : "JSON"}
         </button>
         <span className="workflow-compose-spacer" />
         <button
@@ -148,10 +150,10 @@ export const WorkflowRunForm = React.forwardRef<
           ) : (
             <Play size={14} />
           )}
-          {submitting ? "提交中…" : submitLabel}
+          {submitting ? t("submitting") : (submitLabel ?? t("startRun"))}
         </button>
       </div>
-      <p className="workflow-compose-note">输入与结果将保存在当前会话中。</p>
+      <p className="workflow-compose-note">{t("savedInConversation")}</p>
     </form>
   );
 });

@@ -1,3 +1,4 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import { compatibleRevision } from "./plugin-compatibility.ts";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -13,13 +14,7 @@ import type {
 import type { EngineOptions, Table } from "./types.ts";
 import type { LoadedFlow } from "./registry.ts";
 import type { LoadedAction } from "./action-registry.ts";
-import {
-  FlowError,
-  parse,
-  parseJson,
-  startSchema,
-  jsonValue,
-} from "./schema.ts";
+import { parse, parseJson, startSchema, jsonValue } from "./schema.ts";
 import {
   executable,
   fingerprint,
@@ -29,6 +24,7 @@ import {
   validateSaved,
 } from "./durable.ts";
 import { FlowExecution } from "./execution.ts";
+import { FlowDisplayErrors } from "./flow-display-errors.ts";
 import { FlowScheduler } from "./scheduler.ts";
 import { recoverRun } from "./recovery.ts";
 import { agentDefaults, agentConfig } from "@aura/dsh-auth/model-config";
@@ -63,6 +59,7 @@ type Revision = {
 
 /** Public engine facade; durable records own both queue admission and command receipts. */
 export class FlowEngine {
+  private readonly displayErrors = new FlowDisplayErrors();
   readonly runs: Table<FlowRun>;
   readonly running = new Map<string, FlowExecution>();
   private options: EngineOptions;
@@ -163,7 +160,36 @@ export class FlowEngine {
     for (const [id, run] of this.runs.entries()) {
       if (!executable(run.status)) continue;
       if (run.durableVersion && !(await this.revision(id))) continue;
-      const recovered = await recoverRun(run, this.options.sessions);
+      const recovered = await recoverRun(
+        run,
+        this.options.sessions,
+        (value, code, key) => {
+          const details = { failure: { code } };
+          if (value.error && (key !== undefined || code === "recovery_legacy"))
+            this.displayErrors.record(id, value.error, details, key);
+          if (key && "attempts" in value) {
+            const attempt = value.attempts?.at(-1);
+            if (attempt?.error)
+              this.displayErrors.record(
+                id,
+                attempt.error,
+                details,
+                key,
+                attempt.number,
+              );
+          }
+          const event = value.recoveryEvents?.at(-1);
+          if (event)
+            this.displayErrors.record(
+              id,
+              event.reason,
+              details,
+              key,
+              undefined,
+              event.at,
+            );
+        },
+      );
       await this.update(id, () => recovered);
     }
     for (const [id, run] of this.runs.entries()) {
@@ -176,16 +202,25 @@ export class FlowEngine {
         finishedAt: Date.now(),
         error: "父 Flow 已结束，子 Flow 已取消。",
       }));
+      this.displayErrors.record(id, this.get(id).error!, {
+        failure: { code: "recovery_parent_ended" },
+      });
     }
     for (const [, run] of this.runs.entries()) this.settleLater(run);
     this.initialized = true;
     this.scheduler.kick();
   }
-  async catalog(): Promise<FlowCatalog> {
+  async catalog(display = false): Promise<FlowCatalog> {
     // Discovery and HMR maintain the registry; reads must not rescan disk.
     return {
-      flows: this.options.registry.catalog(),
-      actions: this.options.actions?.registry.catalog() ?? [],
+      flows:
+        display && this.options.registry.displayCatalog
+          ? this.options.registry.displayCatalog()
+          : this.options.registry.catalog(),
+      actions:
+        (display && this.options.actions?.registry.displayCatalog
+          ? this.options.actions.registry.displayCatalog()
+          : this.options.actions?.registry.catalog()) ?? [],
       plugins: this.options.plugins ?? [],
       presets: await this.options.presets(),
     };
@@ -217,14 +252,23 @@ export class FlowEngine {
   }
   get(id: string) {
     const run = this.runs.get(id);
-    if (!run) throw new FlowError("Flow 运行不存在。", 404);
+    if (!run)
+      throw new CodedFlowError("Flow 运行不存在。", 404, {
+        code: "flow_run_missing",
+      });
     return run;
+  }
+  /** UI boundary only. Execution, plugin backends and storage always use get(). */
+  view(id: string): FlowRun {
+    return this.displayErrors.project(this.get(id));
   }
   associateConversation(id: string, conversationId: string) {
     return this.serialize(async () => {
       const run = this.get(id);
       if (run.conversationId && run.conversationId !== conversationId)
-        throw new FlowError("工作流已属于另一段对话。", 409);
+        throw new CodedFlowError("工作流已属于另一段对话。", 409, {
+          code: "flow_conversation_conflict",
+        });
       if (!run.conversationId)
         await this.runs.update(id, (current) => ({
           ...current,
@@ -234,18 +278,24 @@ export class FlowEngine {
   }
   start(input: unknown, conversationId?: string) {
     return this.serialize(async () => {
-      if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
+      if (this.closed)
+        throw new CodedFlowError("编排服务正在关闭。", 503, {
+          code: "service_closing",
+        });
       const request = parse(startSchema, input);
       if (request.useConfiguredModel && !request.serviceOnly)
-        throw new FlowError("模型默认选择仅供受控服务使用。", 403);
+        throw new CodedFlowError("模型默认选择仅供受控服务使用。", 403, {
+          code: "flow_configured_model_forbidden",
+        });
       let publishedFlow: LoadedFlow | undefined;
       if (request.serviceOnly) {
         await this.options.refreshFlows();
         publishedFlow = this.options.registry.get(request.flowId);
         if (!publishedFlow.service)
-          throw new FlowError(
+          throw new CodedFlowError(
             `Flow 未发布为 HTTP 服务：${request.flowId}`,
             404,
+            { code: "flow_service_missing", params: { id: request.flowId } },
           );
       }
       const previous = [...this.runs.entries()].find(
@@ -261,7 +311,9 @@ export class FlowEngine {
           (previous.requestInputHash ?? fingerprint(previous.input)) !==
             fingerprint(jsonValue(request.input, "Flow 入参"))
         )
-          throw new FlowError("同一请求 ID 不能用于不同输入。", 409);
+          throw new CodedFlowError("同一请求 ID 不能用于不同输入。", 409, {
+            code: "flow_input_conflict",
+          });
         return previous;
       }
       if (!publishedFlow) await this.options.refreshFlows();
@@ -327,7 +379,11 @@ export class FlowEngine {
     const parent = this.get(parentRunId);
     const caller = this.revisions.get(parentRunId)?.flow;
     if (!caller)
-      throw new FlowError("父 Flow 的固定版本不可用，无法启动子 Flow。", 409);
+      throw new CodedFlowError(
+        "父 Flow 的固定版本不可用，无法启动子 Flow。",
+        409,
+        { code: "flow_parent_revision_unavailable" },
+      );
     const flow = this.options.registry.get(flowId);
     const callerPlugin = caller.ownerPlugin ?? caller.plugin;
     const sameOwner =
@@ -337,18 +393,24 @@ export class FlowEngine {
       !sameOwner &&
       !caller.permissions.includes("aura.flow.invoke")
     )
-      throw new FlowError(
+      throw new CodedFlowError(
         `插件 Flow ${caller.id} 缺少跨插件调用能力 aura.flow.invoke。`,
         403,
+        { code: "flow_permission_missing", params: { id: caller.id } },
       );
     const ancestry = [...(parent.ancestry ?? []), parent.flow.id];
     if (ancestry.includes(flow.id))
-      throw new FlowError(
+      throw new CodedFlowError(
         `检测到 Flow 循环调用：${[...ancestry, flow.id].join(" -> ")}`,
         409,
+        { code: "flow_cycle", params: { ids: [...ancestry, flow.id] } },
       );
     if (ancestry.length > MAX_NESTED_FLOW_DEPTH)
-      throw new FlowError(`Flow 嵌套最多 ${MAX_NESTED_FLOW_DEPTH} 层。`, 409);
+      throw new CodedFlowError(
+        `Flow 嵌套最多 ${MAX_NESTED_FLOW_DEPTH} 层。`,
+        409,
+        { code: "flow_depth_limit", params: { limit: MAX_NESTED_FLOW_DEPTH } },
+      );
     return {
       id: flow.id,
       title: flow.title,
@@ -362,10 +424,15 @@ export class FlowEngine {
   }
   private startChild(parentRunId: string, step: FlowChildStep) {
     return this.serialize(async () => {
-      if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
+      if (this.closed)
+        throw new CodedFlowError("编排服务正在关闭。", 503, {
+          code: "service_closing",
+        });
       const parent = this.get(parentRunId);
       if (terminal(parent.status))
-        throw new FlowError("父 Flow 已结束，不能再启动子 Flow。", 409);
+        throw new CodedFlowError("父 Flow 已结束，不能再启动子 Flow。", 409, {
+          code: "flow_parent_ended",
+        });
       const saved = parent.steps.find(
         (candidate) => candidate.stepKey === step.stepKey,
       );
@@ -373,7 +440,11 @@ export class FlowEngine {
         saved?.kind !== "flow" ||
         saved.childRequestId !== step.childRequestId
       )
-        throw new FlowError("父 Flow 步骤与子 Flow 启动请求不一致。", 409);
+        throw new CodedFlowError(
+          "父 Flow 步骤与子 Flow 启动请求不一致。",
+          409,
+          { code: "flow_child_request_mismatch" },
+        );
       const previous = [...this.runs.entries()].find(
         ([, run]) => run.requestId === step.childRequestId,
       )?.[1];
@@ -384,7 +455,9 @@ export class FlowEngine {
           previous.flow.id !== step.flowId ||
           previous.requestInputHash !== step.requestInputHash
         )
-          throw new FlowError("子 Flow 请求 ID 已用于不同调用。", 409);
+          throw new CodedFlowError("子 Flow 请求 ID 已用于不同调用。", 409, {
+            code: "flow_child_request_conflict",
+          });
         if (saved.childRunId !== previous.id)
           await this.update(parentRunId, (current) => ({
             ...current,
@@ -402,9 +475,10 @@ export class FlowEngine {
         step,
       );
       if (!samePlugin(flow.plugin, step.plugin))
-        throw new FlowError(
+        throw new CodedFlowError(
           `子 Flow ${step.flowId} 的固定版本已不可用，请新建运行。`,
           409,
+          { code: "flow_child_revision_missing", params: { id: step.flowId } },
         );
       const actions = new Map(this.options.actions?.registry.snapshot() ?? []);
       for (const ref of parent.actionVersions ?? []) {
@@ -464,7 +538,11 @@ export class FlowEngine {
   private async runChild(id: string): Promise<FlowRun> {
     let run = this.get(id);
     if (!run.parent)
-      throw new FlowError("只有嵌套 Flow Run 可以由父 Flow 内联执行。", 409);
+      throw new CodedFlowError(
+        "只有嵌套 Flow Run 可以由父 Flow 内联执行。",
+        409,
+        { code: "flow_inline_forbidden" },
+      );
     if (run.status === "paused") {
       run = await this.update(id, (current) => ({
         ...current,
@@ -593,6 +671,11 @@ export class FlowEngine {
             ]
           : current.commands,
       }));
+      this.displayErrors.record(id, this.get(id).error!, {
+        failure: {
+          code: missingConfig ? "recovery_agent_config" : "recovery_revision",
+        },
+      });
       return undefined;
     }
   }
@@ -611,8 +694,11 @@ export class FlowEngine {
           this.resolveChild(parentRunId, flowId, input),
         start: (parentRunId, step) => this.startChild(parentRunId, step),
         run: (runId) => this.runChild(runId),
+        failure: (runId) => this.view(runId).errorDetails,
       },
       get: () => this.get(id),
+      feedback: (message, details, key, attempt) =>
+        this.displayErrors.record(id, message, details, key, attempt),
       update: (change) => this.update(id, change),
       report: (value) => this.report(id, value),
     });
@@ -640,7 +726,10 @@ export class FlowEngine {
   async wait(id: string) {
     while (executable(this.get(id).status)) {
       const issue = this.storageIssue(id);
-      if (issue) throw new FlowError(issue, 503);
+      if (issue)
+        throw new CodedFlowError(issue, 503, {
+          code: "flow_storage_unavailable",
+        });
       if (this.closed) break;
       if (this.get(id).parent && this.get(id).status === "queued") {
         await this.runChild(id);
@@ -706,29 +795,44 @@ export class FlowEngine {
   ) {
     const request = parse(mutationSchema, input);
     if ((operation === "answer" || operation === "resolve") && !key)
-      throw new FlowError("缺少 stepKey。");
+      throw new CodedFlowError("缺少 stepKey。", 400, {
+        code: "flow_step_key_required",
+      });
     if (operation === "resolve" && !request.action)
-      throw new FlowError("缺少处理方式。");
+      throw new CodedFlowError("缺少处理方式。", 400, {
+        code: "flow_resolution_required",
+      });
     if (request.action && operation !== "resolve")
-      throw new FlowError("此操作不接受 action。");
+      throw new CodedFlowError("此操作不接受 action。", 400, {
+        code: "flow_action_unexpected",
+      });
     const bodyHash = fingerprint({ operation, key, ...request });
     let stateChanged = false;
     const result = await this.serialize(async () => {
-      if (this.closed) throw new FlowError("编排服务正在关闭。", 503);
+      if (this.closed)
+        throw new CodedFlowError("编排服务正在关闭。", 503, {
+          code: "service_closing",
+        });
       const current = this.get(id);
       const receipt = current.commands?.find(
         (item) => item.requestId === request.requestId,
       );
       if (receipt) {
         if (receipt.fingerprint !== bodyHash)
-          throw new FlowError("同一请求 ID 不能用于不同操作。", 409);
+          throw new CodedFlowError("同一请求 ID 不能用于不同操作。", 409, {
+            code: "flow_command_conflict",
+          });
         return current;
       }
       if (terminal(current.status) && operation !== "cancel")
-        throw new FlowError("此运行已结束，请新建运行。", 409);
+        throw new CodedFlowError("此运行已结束，请新建运行。", 409, {
+          code: "flow_ended",
+        });
       if (operation === "resume") {
         if (current.status !== "paused")
-          throw new FlowError("仅 paused 运行可以恢复。", 409);
+          throw new CodedFlowError("仅 paused 运行可以恢复。", 409, {
+            code: "flow_resume_invalid",
+          });
         await this.options.refreshFlows();
         if (
           !(await this.revision(id, {
@@ -745,7 +849,9 @@ export class FlowEngine {
         if (
           !["queued", "running", "pausing", "paused"].includes(current.status)
         )
-          throw new FlowError("当前状态不能暂停。", 409);
+          throw new CodedFlowError("当前状态不能暂停。", 409, {
+            code: "flow_pause_invalid",
+          });
         next = {
           ...current,
           status:
@@ -772,11 +878,15 @@ export class FlowEngine {
       }
       if (operation === "answer" || operation === "resolve") {
         const step = current.steps.find((step) => stepKey(step) === key);
-        if (!step) throw new FlowError("Flow 步骤不存在。", 404);
+        if (!step)
+          throw new CodedFlowError("Flow 步骤不存在。", 404, {
+            code: "flow_step_missing",
+          });
         if (step.kind === "flow")
-          throw new FlowError(
+          throw new CodedFlowError(
             "请在 childRunId 对应的子 Flow Run 上处理输入或未知结果。",
             409,
+            { code: "flow_child_resolution_required" },
           );
         if (
           operation === "answer" &&
@@ -784,12 +894,16 @@ export class FlowEngine {
             step.kind !== "checkpoint" ||
             step.status !== "waiting_input")
         )
-          throw new FlowError("该 checkpoint 当前不等待输入。", 409);
+          throw new CodedFlowError("该 checkpoint 当前不等待输入。", 409, {
+            code: "flow_checkpoint_not_waiting",
+          });
         if (
           operation === "resolve" &&
           (current.status !== "needs_attention" || step.status !== "unknown")
         )
-          throw new FlowError("该步骤当前不等待人工处理。", 409);
+          throw new CodedFlowError("该步骤当前不等待人工处理。", 409, {
+            code: "flow_resolution_not_waiting",
+          });
         let changed: FlowStep = step;
         if (operation === "answer" || request.action === "submit_output") {
           const output =
@@ -899,6 +1013,10 @@ export class FlowEngine {
       );
     }
     const settled = this.get(id);
+    if (stateChanged && operation === "cancel" && settled.error)
+      this.displayErrors.record(id, settled.error, {
+        failure: { code: "flow_cancelled" },
+      });
     if (stateChanged && settled.parent)
       await this.wakeAncestors(settled, operation === "pause");
     if (operation === "cancel") {
@@ -931,11 +1049,15 @@ export class FlowEngine {
         stepKey(candidate) === key ||
         (!candidate.stepKey && candidate.id === key),
     );
-    if (!step) throw new FlowError("Flow 步骤不存在。", 404);
+    if (!step)
+      throw new CodedFlowError("Flow 步骤不存在。", 404, {
+        code: "flow_step_missing",
+      });
     if (step.kind && step.kind !== "agent")
-      throw new FlowError(
+      throw new CodedFlowError(
         "该步骤没有 DSH session，请读取结构化输入和输出。",
         400,
+        { code: "flow_step_session_unavailable" },
       );
     let agent = step as FlowAgentStep;
     if (attemptNumber !== undefined) {
@@ -943,7 +1065,9 @@ export class FlowEngine {
         (value) => value.number === attemptNumber,
       );
       if (!attempt?.sessionId)
-        throw new FlowError("Agent attempt 不存在。", 404);
+        throw new CodedFlowError("Agent attempt 不存在。", 404, {
+          code: "flow_attempt_missing",
+        });
       agent = {
         ...agent,
         sessionId: attempt.sessionId,

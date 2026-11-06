@@ -1,3 +1,5 @@
+import { readErrorDetails, type ApiErrorDetails } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import type {
@@ -72,12 +74,24 @@ export class FlowRegistry {
   private sources = new Map<string, FlowSource>();
   private problems = new Map<string, string>();
   private warnings = new Map<string, string>();
+  private problemDetails = new Map<string, ApiErrorDetails>();
+  private warningDetails = new Map<string, ApiErrorDetails>();
   private revision = 0;
   private readonly loadId = randomUUID();
 
   async register(config: FlowRegistrationConfig, input: FlowDefinition) {
     const id = parse(contributionIdSchema, config.flowId);
-    const definition = parse(definitionSchema, input);
+    const definition = (() => {
+      try {
+        return parse(definitionSchema, input);
+      } catch (error) {
+        if (error instanceof FlowError && !(error instanceof CodedFlowError))
+          throw new CodedFlowError(error.message, error.status, {
+            code: "flow_definition_invalid",
+          });
+        throw error;
+      }
+    })();
     const code = await readFile(config.entry, "utf8");
     validateFlowSource(code, {
       allowRootOperations: Boolean(config.plugin),
@@ -89,7 +103,10 @@ export class FlowRegistry {
       this.loaded.has(id) &&
       this.loaded.get(id)?.plugin?.id !== config.plugin?.id
     )
-      throw new FlowError(`Contribution ID already owned: ${id}`, 409);
+      throw new CodedFlowError(`Contribution ID already owned: ${id}`, 409, {
+        code: "contribution_conflict",
+        params: { id },
+      });
     this.loaded.set(id, {
       id,
       title: definition.title,
@@ -108,7 +125,9 @@ export class FlowRegistry {
       run: definition.run,
     });
     this.problems.delete(id);
+    this.problemDetails.delete(id);
     this.warnings.delete(id);
+    this.warningDetails.delete(id);
     this.sources.set(id, {
       id,
       code,
@@ -125,6 +144,15 @@ export class FlowRegistry {
     const flow = this.loaded.get(id);
     if (!flow) {
       const problem = this.problems.get(id);
+      const details = problem
+        ? this.problemDetails.get(id)
+        : { code: "flow_missing" as const, params: { id } };
+      if (details)
+        throw new CodedFlowError(
+          problem ?? `Flow 不存在：${id}`,
+          problem ? 422 : 404,
+          details,
+        );
       throw new FlowError(problem ?? `Flow 不存在：${id}`, problem ? 422 : 404);
     }
     return flow;
@@ -138,10 +166,15 @@ export class FlowRegistry {
     this.loaded.delete(id);
     this.sources.delete(id);
     this.problems.delete(id);
+    this.problemDetails.delete(id);
     this.warnings.delete(id);
+    this.warningDetails.delete(id);
   }
 
-  problem(id: string, message: string) {
+  problem(id: string, message: string, details?: ApiErrorDetails) {
+    this.setDetails(this.problemDetails, id, details);
+    this.warnings.delete(id);
+    this.warningDetails.delete(id);
     this.loaded.delete(id);
     this.sources.delete(id);
     this.problems.set(id, message);
@@ -149,16 +182,41 @@ export class FlowRegistry {
 
   clearProblem(id: string) {
     this.problems.delete(id);
+    this.problemDetails.delete(id);
   }
 
-  reloadProblem(id: string, message: string) {
-    if (this.loaded.has(id)) this.warnings.set(id, message);
+  reloadProblem(id: string, message: string, details?: ApiErrorDetails) {
+    if (this.loaded.has(id)) {
+      this.warnings.set(id, message);
+      this.setDetails(this.warningDetails, id, details);
+    }
   }
 
   clearReloadProblem(id: string) {
     this.warnings.delete(id);
+    this.warningDetails.delete(id);
   }
 
+  private setDetails(
+    map: Map<string, ApiErrorDetails>,
+    id: string,
+    details?: ApiErrorDetails,
+  ) {
+    map.delete(id);
+    const safe = readErrorDetails(details);
+    if (safe) map.set(id, safe);
+  }
+  /** Read-only UI projection. Execution and model catalogs retain their original fields. */
+  displayCatalog(): FlowCatalogEntry[] {
+    return this.catalog().map((entry) => {
+      const details = (
+        entry.available ? this.warningDetails : this.problemDetails
+      ).get(entry.id);
+      return details && entry.error
+        ? { ...entry, errorDetails: structuredClone(details) }
+        : entry;
+    });
+  }
   catalog(): FlowCatalogEntry[] {
     const valid = [...this.loaded.values()].map((flow) => ({
       id: flow.id,

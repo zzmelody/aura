@@ -12,7 +12,10 @@ import {
   readAuraPluginConfiguration,
   writeAuraPluginConfiguration,
 } from "./configuration.ts";
-import { resolveAuraPluginConfiguration } from "./discovery.ts";
+import {
+  readPluginDisplay,
+  resolveAuraPluginConfiguration,
+} from "./discovery.ts";
 import { resolveAuraPluginEntries } from "./directories.ts";
 import { settingsUpdateSchema } from "./schemas.ts";
 function signature(value: unknown): string {
@@ -72,22 +75,32 @@ export class AuraPluginManager {
     );
     return {
       configPath: resolve(this.#options.configPath),
-      plugins: effective.plugins.map((entry, index) => ({
-        ...entry,
-        builtin: Boolean(
-          this.#options.defaultPluginsDirectory &&
-          isInside(
-            resolve(this.#options.defaultPluginsDirectory),
-            resolve(entry.path),
+      plugins: await Promise.all(
+        effective.plugins.map(async (entry, index) => ({
+          ...entry,
+          builtin: Boolean(
+            this.#options.defaultPluginsDirectory &&
+            isInside(
+              resolve(this.#options.defaultPluginsDirectory),
+              resolve(entry.path),
+            ),
           ),
-        ),
-        status: preview.plugins[index] ?? {
-          name: "本地 Aura 插件",
-          enabled: entry.enabled,
-          available: false,
-          error: "插件状态不可用。",
-        },
-      })),
+          status: {
+            ...(preview.plugins[index] ?? {
+              name: "本地 Aura 插件",
+              enabled: entry.enabled,
+              available: false,
+              error: "插件状态不可用。",
+              errorDetails: { code: "plugin_status_unavailable" },
+            }),
+            ...(!entry.enabled
+              ? await readPluginDisplay(
+                  resolve(dirname(this.#options.configPath), entry.path),
+                )
+              : {}),
+          },
+        })),
+      ),
       active: this.resolution.plugins,
       applyRequired:
         signature(configuration) !== signature(this.#activeConfiguration) ||
@@ -143,6 +156,7 @@ export class AuraPluginManager {
     } catch {
       throw new AuraPluginConfigurationError(
         "插件加载失败，当前运行配置保持不变。",
+        { code: "plugin_load_failed" },
       );
     }
     try {
@@ -157,6 +171,7 @@ export class AuraPluginManager {
         } catch {
           throw new AuraPluginConfigurationError(
             "插件配置保存失败，且运行时回滚失败，请重新保存当前配置。",
+            { code: "plugin_rollback_failed" },
           );
         }
       }

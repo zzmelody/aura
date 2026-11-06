@@ -5,10 +5,19 @@ import { useMessages } from "@aura/i18n";
 import { pluginNamespace, type TranslationCatalogs } from "@aura/i18n/runtime";
 
 export type { TranslationCatalogs } from "@aura/i18n/runtime";
+export {
+  MessageError,
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+export type { CatalogKey } from "@aura/i18n/catalogs";
 
 /** Uses the host's language and runtime; do not bundle a second i18next. */
-export function usePluginTranslation(pluginId: string) {
-  return useMessages(pluginNamespace(pluginId));
+export function usePluginTranslation<Key extends string = string>(
+  pluginId: string,
+) {
+  return useMessages<Key>(pluginNamespace(pluginId));
 }
 
 declare module "@deepseek-ai/cordis" {

@@ -1,0 +1,23 @@
+{
+  "startupTitle": "Aura · Espace de travail personnel",
+  "startupOpening": "Ouverture d’Aura",
+  "tagline": "Votre assistant IA personnel",
+  "startupLoading": "Ouverture de votre espace de travail",
+  "reload": "Recharger",
+  "startupSlow": "Le chargement prend plus de temps que prévu. Vous pouvez patienter ou recharger.",
+  "startupReady": "Espace de travail prêt",
+  "startupFailed": "Impossible de charger l’interface. Veuillez recharger.",
+  "runtimeStartFailed": "Impossible de démarrer le service Aura",
+  "runtimeStartDetail": "L’espace de travail est ouvert. Vérifiez le service local et réessayez.",
+  "quitFailed": "Impossible de terminer la fermeture d’Aura",
+  "quitRetry": "Veuillez réessayer de quitter.",
+  "startFailed": "Impossible de démarrer Aura",
+  "startDetail": "Impossible de démarrer le service de l’application.",
+  "outputDirectory": "Choisir le dossier de sortie du workflow",
+  "selectDirectory": "Sélectionner ce dossier",
+  "inputImage": "Choisir l’image d’entrée du workflow",
+  "useImage": "Utiliser cette image",
+  "images": "Images",
+  "projectDirectory": "Choisir le dossier du projet frontend",
+  "useDirectory": "Utiliser ce dossier"
+}

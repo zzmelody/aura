@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { AiConfigurationError } from "@aura/dsh-auth";
+import { readErrorDetails } from "@aura/protocol/errors";
 import type { AiServicesPort } from "./ai-services.ts";
 
 /**
@@ -18,7 +19,10 @@ export function createAiServicesApp(
   app.use("*", async (context, next) => {
     context.header("Cache-Control", "no-store");
     if (!accessible)
-      return context.json({ message: "AI 配置仅供本机客户端使用。" }, 403);
+      return context.json(
+        { message: "AI 配置仅供本机客户端使用。", code: "ai_local_only" },
+        403,
+      );
     const header = context.req.header("authorization");
     if (header !== undefined) {
       const actual = Buffer.from(header.replace(/^Bearer /u, ""));
@@ -29,7 +33,10 @@ export function createAiServicesApp(
         !timingSafeEqual(actual, expected)
       )
         return context.json(
-          { message: "客户端授权已失效，请重新连接创作服务。" },
+          {
+            message: "客户端授权已失效，请重新连接创作服务。",
+            code: "client_auth_expired",
+          },
           401,
         );
     }
@@ -39,7 +46,11 @@ export function createAiServicesApp(
     "*",
     bodyLimit({
       maxSize: 16 * 1024,
-      onError: (context) => context.json({ message: "AI 设置请求过大。" }, 413),
+      onError: (context) =>
+        context.json(
+          { message: "AI 设置请求过大。", code: "ai_request_too_large" },
+          413,
+        ),
     }),
   );
   app.get("/", async (context) => context.json(await services.settings()));
@@ -80,6 +91,9 @@ export function createAiServicesApp(
           error instanceof AiConfigurationError
             ? error.message
             : "AI 配置操作失败，请检查服务连接后重试。",
+        ...(error instanceof AiConfigurationError
+          ? readErrorDetails(error.details)
+          : { code: "ai_configuration_failed" }),
       },
       400,
     ),

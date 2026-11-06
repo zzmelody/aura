@@ -1,4 +1,7 @@
 import type { Message, Session, Workspace } from "@aura/core/types";
+import { MessageError, type MessageReference } from "@aura/i18n/runtime";
+import { workflowMessage as message } from "./workflow-messages.ts";
+import { apiErrorText } from "./api-error-messages.ts";
 import type {
   FlowPhase,
   FlowStepPhase,
@@ -191,10 +194,12 @@ export function applyWorkflowRun(
   return changed ? { ...state, sessions } : state;
 }
 
-export class WorkflowApiError extends Error {
+export class WorkflowApiError extends MessageError {
   status: number;
-  constructor(message: string, status: number) {
+  constructor(message: string | MessageReference, status: number) {
     super(message);
+    // Preserve the existing SDK Error.name and numeric HTTP status.
+    this.name = "Error";
     this.status = status;
   }
 }
@@ -207,7 +212,7 @@ export async function uploadWorkflowImage(
   request: typeof fetch = fetch,
 ): Promise<string> {
   if (file.size < 1 || file.size > 32 * 1024 * 1024)
-    throw new Error("图片必须小于 32 MiB。");
+    throw new MessageError(message("uploadSize"));
   const mimeType = {
     png: "image/png",
     jpg: "image/jpeg",
@@ -217,7 +222,7 @@ export async function uploadWorkflowImage(
   const type = ["image/png", "image/jpeg", "image/webp"].includes(file.type)
     ? file.type
     : mimeType;
-  if (!type) throw new Error("请选择 PNG、JPEG 或 WebP 图片。");
+  if (!type) throw new MessageError(message("uploadType"));
   const response = await request(
     `${endpoint.replace(/\/$/, "")}/flows/assets/images`,
     {
@@ -230,7 +235,10 @@ export async function uploadWorkflowImage(
   const value = await response.json().catch(() => null);
   if (!response.ok)
     throw new WorkflowApiError(
-      value?.message || `图片上传失败（${response.status}）。`,
+      apiErrorText(
+        value,
+        message("uploadHttpFailed", { status: response.status }),
+      ),
       response.status,
     );
   if (
@@ -238,7 +246,7 @@ export async function uploadWorkflowImage(
     typeof value.assetId !== "string" ||
     !/^[a-f0-9]{64}$/u.test(value.assetId)
   )
-    throw new Error("图片上传没有返回有效的资产 ID。");
+    throw new MessageError(message("uploadInvalidAsset"));
   return value.assetId;
 }
 
@@ -261,7 +269,10 @@ export async function workflowApi<T>(
   const value = await response.json().catch(() => null);
   if (!response.ok)
     throw new WorkflowApiError(
-      value?.message || `工作流服务暂不可用（${response.status}）。`,
+      apiErrorText(
+        value,
+        message("serviceHttpUnavailable", { status: response.status }),
+      ),
       response.status,
     );
   return value as T;

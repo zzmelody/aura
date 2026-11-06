@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import {
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import {
+  useWorkflowMessages,
+  workflowMessage as message,
+} from "./workflow-messages";
 import { workflowRuns } from "./workflow-run-store";
 import { retainConversations } from "./features/coding/conversation-cache";
 import type { Workspace, Message, Session } from "@aura/core/types";
@@ -25,12 +34,15 @@ export function useWorkflowSessions(
   setState: Dispatch<SetStateAction<Workspace>>,
   ready: boolean,
 ) {
+  const { i18n } = useWorkflowMessages();
   const stateRef = useRef(state);
   stateRef.current = state;
   const endpoint = state.endpoint || "http://127.0.0.1:4311";
   const [runs, setRuns] = useState<Record<string, FlowRun>>({});
   const [submitting, setSubmitting] = useState<string[]>([]);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<
+    Record<string, string | MessageReference>
+  >({});
   const submittingRef = useRef(new Set<string>());
   const receive = useCallback(
     (source: string, run: FlowRun) => {
@@ -257,8 +269,7 @@ export function useWorkflowSessions(
       }
       setErrors((current) => ({
         ...current,
-        [sessionId]:
-          cause instanceof Error ? cause.message : "提交失败，请重试。",
+        [sessionId]: errorMessage(cause, message("submissionFailed")),
       }));
     } finally {
       submittingRef.current.delete(sessionId);
@@ -300,7 +311,7 @@ export function useWorkflowSessions(
     } catch (cause) {
       setErrors((current) => ({
         ...current,
-        [sessionId]: cause instanceof Error ? cause.message : "取消失败。",
+        [sessionId]: errorMessage(cause, message("cancelFailed")),
       }));
     }
   }
@@ -322,7 +333,12 @@ export function useWorkflowSessions(
     discardPending,
     hasOpenRun,
     receive,
-    errors,
+    errors: Object.fromEntries(
+      Object.entries(errors).map(([id, problem]) => [
+        id,
+        messageText(problem, i18n),
+      ]),
+    ),
     submitting,
   };
 }

@@ -6,6 +6,12 @@ import {
   workflowFilePickerAvailable,
 } from "../../file-picker";
 import { createProject, relocateProject, renameProject } from "./api";
+import {
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import { useSidebarMessages } from "../../sidebar-messages.ts";
 
 /**
  * Creates a workspace, or edits the name and directory of an existing one.
@@ -24,10 +30,11 @@ export function WorkspaceDialog({
   onSaved(saved: CodingProjectInfo): void;
   onClose(): void;
 }) {
+  const { t, i18n } = useSidebarMessages();
   const dialog = useRef<HTMLDialogElement>(null);
   const [title, setTitle] = useState(workspace?.title ?? "");
   const [directory, setDirectory] = useState(workspace?.directory ?? "");
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
   const [saving, setSaving] = useState(false);
   /** The in-flight save; closing the dialog aborts it. */
   const pending = useRef<AbortController | undefined>(undefined);
@@ -49,7 +56,7 @@ export function WorkspaceDialog({
       const chosen = await chooseWorkflowPath("directory");
       if (chosen) setDirectory(chosen);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(errorMessage(reason));
     }
   };
 
@@ -84,10 +91,8 @@ export function WorkspaceDialog({
       if (abort.signal.aborted) return;
       setError(
         signal.aborted
-          ? "Aura 服务长时间没有响应，请确认服务已启动后重试。"
-          : reason instanceof Error
-            ? reason.message
-            : String(reason),
+          ? { namespace: "sidebar", key: "serviceTimeout" }
+          : errorMessage(reason),
       );
     } finally {
       if (pending.current === abort) pending.current = undefined;
@@ -113,34 +118,34 @@ export function WorkspaceDialog({
       >
         <div className="session-dialog-heading">
           <h2 id="workspace-dialog-title">
-            {editing ? "配置工作空间" : "新建工作空间"}
+            {editing ? t("configureSpace") : t("createSpace")}
           </h2>
           <button
             type="button"
             className="icon-control"
-            aria-label="关闭"
+            aria-label={t("close")}
             onClick={onClose}
           >
             <X size={17} />
           </button>
         </div>
         <label className="session-title-field">
-          名称
+          {t("name")}
           <input
             maxLength={100}
-            placeholder="默认使用目录名"
+            placeholder={t("defaultDirectoryName")}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
           />
         </label>
         <label className="session-title-field">
-          工作目录
+          {t("workingDirectory")}
           <span className="workspace-directory-field">
             <input
               required
               autoFocus
               maxLength={4096}
-              placeholder="Aura 服务端可访问的绝对路径，例如 D:\projects\demo"
+              placeholder={t("absoluteDirectory")}
               value={directory}
               onChange={(event) => setDirectory(event.target.value)}
             />
@@ -151,15 +156,13 @@ export function WorkspaceDialog({
                 onClick={() => void pick()}
               >
                 <FolderOpen size={15} />
-                浏览
+                {t("browse")}
               </button>
             ) : null}
           </span>
         </label>
         {editing ? (
-          <p className="workspace-dialog-hint">
-            更换目录后，新对话会在新目录中进行；原目录下的文件和对话记录不会被删除。
-          </p>
+          <p className="workspace-dialog-hint">{t("relocateHint")}</p>
         ) : null}
         {saving ? (
           <p className="workspace-dialog-hint" role="status">
@@ -168,24 +171,24 @@ export function WorkspaceDialog({
               className="workspace-dialog-spin"
               aria-hidden="true"
             />
-            正在保存，首次使用需要等待 Aura 服务启动…
+            {t("savingSpace")}
           </p>
         ) : null}
         {error ? (
           <p className="workspace-dialog-error" role="alert">
-            {error}
+            {messageText(error, i18n)}
           </p>
         ) : null}
         <div className="session-dialog-actions">
           <button type="button" className="tool-button" onClick={onClose}>
-            取消
+            {t("cancel")}
           </button>
           <button
             type="submit"
             className="primary-button"
             disabled={saving || !directory.trim()}
           >
-            {saving ? "保存中…" : editing ? "保存" : "创建"}
+            {saving ? t("saving") : editing ? t("save") : t("create")}
           </button>
         </div>
       </form>

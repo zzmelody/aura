@@ -141,11 +141,13 @@ test("a failed DSH login remains visible after status polling", async (t) => {
   assert.deepEqual(await authorization.status(), {
     state: "error",
     message: "已收到登录回调，但 OpenAI 令牌交换失败；请检查网络或代理后重试。",
+    messageDetails: { code: "auth_token_exchange_failed" },
     model: "gpt-6.1-sol",
   });
   assert.deepEqual(await authorization.status(), {
     state: "error",
     message: "已收到登录回调，但 OpenAI 令牌交换失败；请检查网络或代理后重试。",
+    messageDetails: { code: "auth_token_exchange_failed" },
     model: "gpt-6.1-sol",
   });
 });

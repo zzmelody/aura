@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { runInThisContext } from "node:vm";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { errorMessage, language, messageText } from "@aura/i18n/runtime";
 import { startPluginHost } from "../src/pluginHost.ts";
 
 test("real DSH browser bundle mounts a React page, cleans styles and recovers from failed startup without network", async (t) => {
@@ -201,6 +202,26 @@ test("real DSH browser bundle mounts a React page, cleans styles and recovers fr
     "failed downloads keep the existing style and page",
   );
   assert.equal(first.failures[0]?.id, "site-launcher");
+  const failure = first.failures[0];
+  assert.deepEqual(failure.message, {
+    namespace: "plugins",
+    key: "scriptLoadFailed",
+  });
+  const failedRevision = revisions;
+  const failureTexts = new Set<string>();
+  for (const locale of ["zh-CN", "en", "ja", "ko", "ru", "fr"]) {
+    await language.systemChanged([locale]);
+    failureTexts.add(messageText(failure.message));
+    assert.equal(first.failures[0], failure);
+    assert.equal(
+      first.pages.get("site-launcher/sites")?.definition,
+      updated.definition,
+    );
+    assert.equal(watchers, 1);
+    assert.equal(revisions, failedRevision);
+  }
+  assert.equal(failureTexts.size, 6);
+  await language.systemChanged(["zh-CN"]);
   const failedApply = client.replace(
     "return module.exports;",
     `module.exports.apply = (ctx) => { throw new Error("fixture apply failure"); }; return module.exports;`,
@@ -216,6 +237,7 @@ test("real DSH browser bundle mounts a React page, cleans styles and recovers fr
     1,
     "failed apply restores the previous plugin fiber",
   );
+  assert.equal(first.failures[0]?.message, "fixture apply failure");
   sources.set(`${endpoint}/site3.js?rev=page5`, client);
   await update("site3.js", "page5");
   assert.equal(first.failures.length, 0);
@@ -230,7 +252,13 @@ test("real DSH browser bundle mounts a React page, cleans styles and recovers fr
   sources.delete(`${endpoint}/loader.js?rev=loader1`);
   await assert.rejects(
     startPluginHost(endpoint, () => undefined),
-    /插件脚本加载失败/u,
+    (error: unknown) => {
+      assert.deepEqual(errorMessage(error), {
+        namespace: "plugins",
+        key: "scriptLoadFailed",
+      });
+      return true;
+    },
   );
   assert.equal(
     Reflect.has(fakeWindow, "__ModuleLoader__"),

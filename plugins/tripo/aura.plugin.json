@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "engines": {
     "aura": "^0.1.0",
-    "pluginSdk": "^2.4.0"
+    "pluginSdk": "^2.6.0"
   },
   "contributes": {
     "backend": "./backend/dist/index.js",
@@ -14,6 +14,86 @@
     "http": {
       "entry": "./backend/dist/http.js",
       "mounts": ["/tripo"]
+    }
+  },
+  "localization": {
+    "nameKey": "tripoName",
+    "descriptionKey": "tripoDescription",
+    "catalogs": {
+      "zh-CN": {
+        "tripoName": "Tripo 3D",
+        "tripoDescription": "配置 Tripo 服务与 3D 模型生成。",
+        "gameTitle": "生成 Tripo 游戏模型",
+        "gameDescription": "用四张一致视图生成可用于游戏的 GLB 模型。付费阶段使用 Tripo 插件账本。",
+        "imageTitle": "生成 Tripo 图片",
+        "imageDescription": "生成一张图片并返回受管资产 ID。付费阶段使用 Tripo 插件账本。",
+        "ledgerTitle": "读取 Tripo 付费账本",
+        "ledgerDescription": "查看一个 scope 的付费阶段与待结算状态。"
+      },
+      "en": {
+        "tripoName": "Tripo 3D",
+        "tripoDescription": "Configure Tripo and 3D model generation.",
+        "gameTitle": "Generate a Tripo game model",
+        "gameDescription": "Generate a game-ready GLB model from four consistent views. Paid stages use the Tripo plugin ledger.",
+        "imageTitle": "Generate a Tripo image",
+        "imageDescription": "Generate an image and return its managed asset ID. Paid stages use the Tripo plugin ledger.",
+        "ledgerTitle": "Read the Tripo payment ledger",
+        "ledgerDescription": "View paid stages and pending settlement for a scope."
+      },
+      "ja": {
+        "tripoName": "Tripo 3D",
+        "tripoDescription": "Tripo サービスと 3D モデル生成を設定します。",
+        "gameTitle": "Tripo でゲーム用モデルを生成",
+        "gameDescription": "一貫した 4 方向の画像からゲーム用 GLB モデルを生成します。有料処理は Tripo プラグインの台帳で管理します。",
+        "imageTitle": "Tripo で画像を生成",
+        "imageDescription": "画像を生成し、管理対象アセットの ID を返します。有料処理は Tripo プラグインの台帳で管理します。",
+        "ledgerTitle": "Tripo の課金台帳を参照",
+        "ledgerDescription": "スコープの有料処理と精算待ち状態を確認します。"
+      },
+      "ko": {
+        "tripoName": "Tripo 3D",
+        "tripoDescription": "Tripo 서비스와 3D 모델 생성을 설정합니다.",
+        "gameTitle": "Tripo 게임 모델 생성",
+        "gameDescription": "일관된 네 방향 이미지로 게임용 GLB 모델을 생성합니다. 유료 단계는 Tripo 플러그인 원장을 사용합니다.",
+        "imageTitle": "Tripo 이미지 생성",
+        "imageDescription": "이미지를 생성하고 관리되는 에셋 ID를 반환합니다. 유료 단계는 Tripo 플러그인 원장을 사용합니다.",
+        "ledgerTitle": "Tripo 결제 원장 조회",
+        "ledgerDescription": "범위의 유료 단계와 정산 대기 상태를 확인합니다."
+      },
+      "ru": {
+        "tripoName": "Tripo 3D",
+        "tripoDescription": "Настройте Tripo и генерацию 3D-моделей.",
+        "gameTitle": "Создать игровую модель Tripo",
+        "gameDescription": "Создайте игровую GLB-модель по четырём согласованным видам. Платные этапы учитываются в журнале плагина Tripo.",
+        "imageTitle": "Создать изображение Tripo",
+        "imageDescription": "Создайте изображение и получите ID управляемого ресурса. Платные этапы учитываются в журнале плагина Tripo.",
+        "ledgerTitle": "Просмотреть журнал платежей Tripo",
+        "ledgerDescription": "Просмотрите платные этапы и ожидающие расчёта операции в рамках scope."
+      },
+      "fr": {
+        "tripoName": "Tripo 3D",
+        "tripoDescription": "Configurez Tripo et la génération de modèles 3D.",
+        "gameTitle": "Générer un modèle de jeu Tripo",
+        "gameDescription": "Générez un modèle GLB pour le jeu à partir de quatre vues cohérentes. Les étapes payantes utilisent le registre du plugin Tripo.",
+        "imageTitle": "Générer une image Tripo",
+        "imageDescription": "Générez une image et obtenez son identifiant de ressource gérée. Les étapes payantes utilisent le registre du plugin Tripo.",
+        "ledgerTitle": "Consulter le registre des paiements Tripo",
+        "ledgerDescription": "Consultez les étapes payantes et les règlements en attente pour un périmètre."
+      }
+    },
+    "actions": {
+      "game-asset": {
+        "titleKey": "gameTitle",
+        "descriptionKey": "gameDescription"
+      },
+      "image": {
+        "titleKey": "imageTitle",
+        "descriptionKey": "imageDescription"
+      },
+      "ledger": {
+        "titleKey": "ledgerTitle",
+        "descriptionKey": "ledgerDescription"
+      }
     }
   }
 }

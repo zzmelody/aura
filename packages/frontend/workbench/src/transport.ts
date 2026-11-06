@@ -7,6 +7,9 @@ import { streamDemo } from "@aura/demo";
 import type { Message } from "@aura/core/types";
 import type { Workspace } from "@aura/core/types";
 import { providerMode } from "@aura/core";
+import { MessageError } from "@aura/i18n/runtime";
+import { conversationMessage as message } from "./conversation-messages.ts";
+import { apiErrorText } from "./api-error-messages.ts";
 
 const chatPaths = {
   demo: "/chat",
@@ -52,8 +55,15 @@ export async function* reply(
       signal,
     },
   );
-  if (!response.ok || !response.body)
-    throw new Error(`工作台连接失败（${response.status}）。请检查服务地址。`);
+  if (!response.ok || !response.body) {
+    const body: unknown = await response.json().catch(() => null);
+    throw new MessageError(
+      apiErrorText(
+        body ?? { code: response.headers.get("X-Aura-Error-Code") },
+        message("chatConnectionFailed", { status: response.status }),
+      ),
+    );
+  }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let pending = "";
@@ -85,11 +95,13 @@ export async function* reply(
               typeof event.inputPreview === "string" ? event.inputPreview : "",
           };
         if (event.type === "error")
-          throw new Error(event.message || "对话服务暂时不可用");
+          throw new MessageError(
+            apiErrorText(event, message("chatUnavailable")),
+          );
         if (event.type === "done") completed = true;
       }
     }
-    if (!completed) throw new Error("连接已中断，可以重新发送这条消息。");
+    if (!completed) throw new MessageError(message("chatStreamInterrupted"));
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();

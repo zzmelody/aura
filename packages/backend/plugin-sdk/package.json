@@ -1,6 +1,6 @@
 {
   "name": "@aura/plugin-sdk",
-  "version": "2.4.0",
+  "version": "2.6.0",
   "private": true,
   "type": "module",
   "aura": {
@@ -15,6 +15,7 @@
     "./media": "./src/media.ts",
     "./storage": "./src/storage.ts",
     "./errors": "./src/errors.ts",
+    "./metadata": "./src/metadata.ts",
     "./browser": "./src/browser.ts"
   },
   "scripts": {
@@ -22,6 +23,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@aura/protocol": "workspace:*",
     "@aura/orchestration": "workspace:*",
     "playwright-core": "1.58.2"
   },

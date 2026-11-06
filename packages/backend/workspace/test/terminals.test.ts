@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { CodedFlowError } from "@aura/protocol/errors";
 import { PassThrough } from "node:stream";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -82,7 +83,13 @@ test("workspace terminals isolate output, fence unknown ids and wait for owned c
     !(await service.read(first.id, 0)).data.includes("\u001b[c"),
     "reattaching must not resend old device responses into the shell input",
   );
-  await assert.rejects(service.closeTerminal(first.id, false), /任务运行/u);
+  await assert.rejects(service.closeTerminal(first.id, false), (error) => {
+    assert.ok(error instanceof CodedFlowError);
+    assert.equal(error.status, 409);
+    assert.deepEqual(error.details, { code: "terminal_close_confirmation" });
+    assert.match(error.message, /任务运行/u);
+    return true;
+  });
   assert.equal(stopped, 0);
   await service.closeTerminal(first.id, true);
   assert.equal(stopped, 1);

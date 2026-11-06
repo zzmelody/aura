@@ -1,3 +1,4 @@
+import { useToolMessages } from "./tool-messages.ts";
 import React, { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Image as ImageIcon, X } from "lucide-react";
 import { ImagePreview } from "./screens/WorkflowArtifacts";
@@ -19,6 +20,7 @@ export function ImageThumbnails({
   className: string;
   lazy?: boolean;
 }) {
+  const { t } = useToolMessages();
   const [open, setOpen] = useState<string>();
   if (!images.length) return null;
   return (
@@ -29,7 +31,7 @@ export function ImageThumbnails({
           type="button"
           className="image-thumbnail"
           title={image.name}
-          aria-label={`查看大图 ${image.name}`}
+          aria-label={t("viewLarge", { name: image.name })}
           onClick={() => setOpen(image.key)}
         >
           <img
@@ -63,6 +65,7 @@ export function ImageLightbox({
   initial: string;
   close(): void;
 }) {
+  const { t } = useToolMessages();
   const dialog = useRef<HTMLDialogElement>(null);
   const [index, setIndex] = useState(() =>
     Math.max(
@@ -87,7 +90,7 @@ export function ImageLightbox({
     <dialog
       ref={dialog}
       className="artifact-dialog"
-      aria-label={`查看图片 ${image.name}`}
+      aria-label={t("viewImage", { name: image.name })}
       onCancel={(event) => {
         event.preventDefault();
         close();
@@ -113,7 +116,7 @@ export function ImageLightbox({
             <button
               type="button"
               className="icon-control"
-              aria-label="关闭预览"
+              aria-label={t("closePreview")}
               onClick={close}
               autoFocus
             >
@@ -125,24 +128,24 @@ export function ImageLightbox({
           <ImagePreview key={image.key} src={image.src} name={image.name} />
         </div>
         <footer className="artifact-dialog-footer">
-          <span>滚轮或双指缩放 · 拖动查看细节</span>
+          <span>{t("zoomHint")}</span>
           {images.length > 1 ? (
             <div>
               <button
                 type="button"
                 className="icon-control"
-                aria-label="上一张"
+                aria-label={t("previousImage")}
                 onClick={() => move(-1)}
               >
                 <ChevronLeft size={18} />
               </button>
               <span>
-                {index + 1} / {images.length}
+                {t("imagePosition", { index: index + 1, total: images.length })}
               </span>
               <button
                 type="button"
                 className="icon-control"
-                aria-label="下一张"
+                aria-label={t("nextImage")}
                 onClick={() => move(1)}
               >
                 <ChevronRight size={18} />

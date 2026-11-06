@@ -12,7 +12,7 @@ import type {
 } from "@aura/protocol/types";
 import { modelVendor } from "@aura/protocol/models";
 import { agentDefaults } from "@aura/dsh-auth/model-config";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 
 type ModelRuntime = Pick<
   Context["llm"],
@@ -116,9 +116,15 @@ export async function resolveChatModel(
       error instanceof LlmError && /^[A-Z0-9_]+$/u.test(error.code)
         ? error.code
         : "MODEL_CONFIG_UNAVAILABLE";
-    throw new FlowError(
+    throw new CodedFlowError(
       `对话模型或思考强度不可用（${code}），请重新选择。`,
       422,
+      {
+        code: "model_selection_unavailable",
+        params: {
+          reason: code.length <= 100 ? code : "MODEL_CONFIG_UNAVAILABLE",
+        },
+      },
     );
   }
 }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { CodedFlowError } from "@aura/protocol/errors";
 import {
   mkdtemp,
   mkdir,
@@ -153,7 +154,15 @@ test("GLB IDs remain compatible; malformed and external-resource models cannot p
         new Request("http://aura/content"),
         false,
       ),
-      /不支持/,
+      (error) => {
+        assert.ok(error instanceof CodedFlowError);
+        assert.equal(error.status, 415);
+        assert.deepEqual(error.details, {
+          code: "artifact_preview_unsupported",
+        });
+        assert.match(error.message, /不支持/u);
+        return true;
+      },
     );
     assert.equal(
       (

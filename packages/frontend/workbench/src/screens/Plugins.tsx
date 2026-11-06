@@ -1,4 +1,21 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { MetadataOwner, metadataText } from "../metadata.ts";
+import { apiErrorText } from "../api-error-messages.ts";
+import {
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import {
+  detailMessage,
+  useSettingsDetailsMessages,
+} from "./settings-details-messages.ts";
 import type {
   AuraPluginSettingsEntry,
   AuraPluginSettingsState,
@@ -11,20 +28,25 @@ import {
 } from "../pluginSettings.ts";
 import "./plugins.css";
 
-function problemMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : "插件列表暂时不可用。";
+function problemMessage(cause: unknown): string | MessageReference {
+  return errorMessage(cause, detailMessage("pluginListUnavailable"));
 }
 
-function pluginTitle(entry: AuraPluginSettingsEntry): string {
+function pluginTitle(
+  entry: AuraPluginSettingsEntry,
+  runtime: Parameters<typeof metadataText>[3],
+): string {
   return entry.status.available || entry.status.id
-    ? entry.status.name
+    ? metadataText(entry.status, "name", entry.status.name, runtime)
     : (entry.path.split(/[\\/]/u).at(-1) ?? entry.path);
 }
 
-function pluginTags(entry: AuraPluginSettingsEntry): string[] {
-  const tags: string[] = [];
-  if (entry.status.version) tags.push(`v${entry.status.version}`);
-  if (entry.enabled && !entry.status.available) tags.push("异常");
+function pluginTags(entry: AuraPluginSettingsEntry, problem: string) {
+  const tags: Array<{ id: string; label: string; problem?: boolean }> = [];
+  if (entry.status.version)
+    tags.push({ id: "version", label: `v${entry.status.version}` });
+  if (entry.enabled && !entry.status.available)
+    tags.push({ id: "problem", label: problem, problem: true });
   return tags;
 }
 
@@ -43,10 +65,14 @@ export function PluginList({
   settingsPages: ReadonlyMap<string, `plugin:${string}`>;
   onOpenSettings(tab: `plugin:${string}`): void;
 }) {
+  const { t, i18n } = useSettingsDetailsMessages();
+  const metadata = useMemo(() => new MetadataOwner(i18n), [i18n]);
+  const endpointRef = useRef(endpoint);
+  endpointRef.current = endpoint;
   const [state, setState] = useState<AuraPluginSettingsState>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string>();
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
 
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
@@ -54,34 +80,43 @@ export function PluginList({
       setError("");
       try {
         const next = await readPluginSettings(endpoint, signal);
-        if (!signal?.aborted) setState(next);
+        if (
+          !signal?.aborted &&
+          metadata.active &&
+          endpointRef.current === endpoint
+        )
+          setState(metadata.settings(next));
       } catch (cause) {
         if (!signal?.aborted) setError(problemMessage(cause));
       } finally {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [endpoint],
+    [endpoint, metadata],
   );
 
   useEffect(() => {
     const abort = new AbortController();
+    metadata.activate();
     void refresh(abort.signal);
-    return () => abort.abort();
-  }, [refresh]);
+    return () => {
+      abort.abort();
+      metadata.dispose();
+    };
+  }, [refresh, metadata]);
 
   async function toggle(path: string, enabled: boolean) {
     if (!state) return;
     setSaving(path);
     setError("");
     try {
-      setState(
-        await savePluginSettings(endpoint, {
-          plugins: editablePluginEntries(state).map((entry) =>
-            entry.path === path ? { ...entry, enabled } : entry,
-          ),
-        }),
-      );
+      const next = await savePluginSettings(endpoint, {
+        plugins: editablePluginEntries(state).map((entry) =>
+          entry.path === path ? { ...entry, enabled } : entry,
+        ),
+      });
+      if (metadata.active && endpointRef.current === endpoint)
+        setState(metadata.settings(next));
     } catch (cause) {
       setError(problemMessage(cause));
     } finally {
@@ -93,12 +128,12 @@ export function PluginList({
     ? [
         {
           id: "builtin",
-          title: "内置插件",
+          title: t("builtinPlugins"),
           items: state.plugins.filter(({ builtin }) => builtin),
         },
         {
           id: "installed",
-          title: "已添加的插件",
+          title: t("addedPlugins"),
           items: state.plugins.filter(({ builtin }) => !builtin),
         },
       ].filter(({ items }) => items.length)
@@ -107,7 +142,7 @@ export function PluginList({
   return (
     <div className="plugins-manager">
       <div className="plugins-manager-head">
-        <span>已安装的插件</span>
+        <span>{t("installedPlugins")}</span>
         <button
           type="button"
           className="dsh-button"
@@ -115,24 +150,22 @@ export function PluginList({
           onClick={() => void refresh()}
         >
           <RefreshCw size={13} />
-          刷新
+          {t("refresh")}
         </button>
       </div>
       {error ? (
         <p className="dsh-page-notice" role="alert">
-          {error}
+          {messageText(error, i18n)}
         </p>
       ) : null}
       {state?.applyRequired ? (
-        <p className="dsh-page-notice">
-          配置文件在 Aura 外部发生了变化，切换任一插件即可应用。
-        </p>
+        <p className="dsh-page-notice">{t("toggleToApply")}</p>
       ) : null}
       {loading && !state ? (
-        <p className="dsh-page-empty">正在读取插件…</p>
+        <p className="dsh-page-empty">{t("loadingPlugins")}</p>
       ) : null}
       {state && !state.plugins.length ? (
-        <p className="dsh-page-empty">还没有插件</p>
+        <p className="dsh-page-empty">{t("noPlugins")}</p>
       ) : null}
       {groups.map((group) => (
         <section
@@ -143,8 +176,15 @@ export function PluginList({
           <h3 id={`plugins-${group.id}`}>{group.title}</h3>
           <ul className="plugins-list">
             {group.items.map((entry) => {
-              const title = pluginTitle(entry);
+              const title = pluginTitle(entry, i18n);
               const failed = entry.enabled && !entry.status.available;
+              const problem = messageText(
+                apiErrorText(
+                  entry.status.errorDetails,
+                  entry.status.error ?? t("pluginUnavailable"),
+                ),
+                i18n,
+              );
               const settingsPage =
                 entry.enabled && entry.status.available && entry.status.id
                   ? settingsPages.get(entry.status.id)
@@ -157,39 +197,44 @@ export function PluginList({
                   <span className="plugins-text">
                     <span className="plugins-title">
                       <strong>{title}</strong>
-                      {pluginTags(entry).map((tag) => (
+                      {pluginTags(entry, t("problem")).map((tag) => (
                         <span
-                          key={tag}
-                          className={`plugins-tag${failed && tag === "异常" ? " problem" : ""}`}
+                          key={tag.id}
+                          className={`plugins-tag${tag.problem ? " problem" : ""}`}
                         >
-                          {tag}
+                          {tag.label}
                         </span>
                       ))}
                     </span>
                     <span
                       className="plugins-description"
-                      title={failed ? entry.status.error : entry.path}
+                      title={failed ? problem : entry.path}
                     >
                       {failed
-                        ? (entry.status.error ?? "插件不可用")
-                        : (entry.status.description ?? entry.path)}
+                        ? problem
+                        : metadataText(
+                            entry.status,
+                            "description",
+                            entry.status.description ?? entry.path,
+                            i18n,
+                          )}
                     </span>
                   </span>
                   {settingsPage ? (
                     <button
                       type="button"
                       className="tool-button"
-                      aria-label={`打开 ${title} 设置`}
+                      aria-label={t("openPluginSettings", { title })}
                       onClick={() => onOpenSettings(settingsPage)}
                     >
-                      设置
+                      {t("settings")}
                     </button>
                   ) : null}
                   <label className="dsh-switch">
                     <input
                       type="checkbox"
                       role="switch"
-                      aria-label={`启用 ${title}`}
+                      aria-label={t("enablePlugin", { title })}
                       checked={entry.enabled}
                       disabled={saving !== undefined}
                       onChange={(event) =>

@@ -3,6 +3,19 @@ import React, { useCallback, useEffect, useState } from "react";
 import { KeyRound, RefreshCw, Save, Trash2 } from "lucide-react";
 import type { AiCustomProvider } from "@aura/protocol/types";
 import {
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import {
+  modelServiceFeedback,
+  type ModelServiceFeedback,
+} from "../model-service-messages.ts";
+import {
+  detailMessage,
+  useSettingsDetailsMessages,
+} from "./settings-details-messages.ts";
+import {
   checkCustomService,
   checkLumina,
   readModelServices,
@@ -11,7 +24,7 @@ import {
   type ModelServicesState,
 } from "../modelServices";
 
-type Feedback = { tone: "ok" | "error" | "info"; text: string } | undefined;
+type Feedback = ModelServiceFeedback | undefined;
 
 const protocols: Array<{ id: AiCustomProvider["api"]; label: string }> = [
   { id: "openai-completions", label: "OpenAI Chat Completions" },
@@ -21,7 +34,7 @@ const protocols: Array<{ id: AiCustomProvider["api"]; label: string }> = [
 const efforts = ["off", "low", "medium", "high", "xhigh", "max"];
 
 const message = (cause: unknown) =>
-  cause instanceof Error ? cause.message : "模型服务设置暂时不可用。";
+  errorMessage(cause, detailMessage("modelSettingsUnavailable"));
 
 /**
  * Lumina and custom gateway settings. Keys go to the backend DSH credential
@@ -34,8 +47,9 @@ export function ModelServiceSettings({
   endpoint: string;
   onUse(provider: "lumina" | "custom"): void;
 }) {
+  const { t, i18n } = useSettingsDetailsMessages();
   const [state, setState] = useState<ModelServicesState>();
-  const [loadError, setLoadError] = useState("");
+  const [loadError, setLoadError] = useState<string | MessageReference>("");
   const [busy, setBusy] = useState<"" | "lumina" | "custom">("");
   const [luminaKey, setLuminaKey] = useState("");
   const [luminaFeedback, setLuminaFeedback] = useState<Feedback>();
@@ -111,9 +125,6 @@ export function ModelServiceSettings({
     modelCount: 0,
   };
   const customSaved = state?.customModel;
-  const tone = (text: string): NonNullable<Feedback>["tone"] =>
-    text.startsWith("连接成功") ? "ok" : text === "未检查" ? "info" : "error";
-
   return (
     <>
       <ConversationCapabilitySettings endpoint={endpoint} />
@@ -121,11 +132,11 @@ export function ModelServiceSettings({
         <div className="settings-group">
           <div className="settings-row">
             <span className="settings-row-copy">
-              <strong>读取模型服务状态</strong>
+              <strong>{t("readModelStatus")}</strong>
               <span>
                 {loadError
-                  ? `${loadError} 下方仍可直接填写保存；若一直失败，请重启 Aura 工作台服务。`
-                  : "正在读取后端配置…"}
+                  ? t("modelLoadError", { error: messageText(loadError, i18n) })
+                  : t("readingConfig")}
               </span>
             </span>
             {loadError ? (
@@ -135,7 +146,7 @@ export function ModelServiceSettings({
                 onClick={() => void load()}
               >
                 <RefreshCw size={14} />
-                重试
+                {t("retry")}
               </button>
             ) : null}
           </div>
@@ -149,16 +160,16 @@ export function ModelServiceSettings({
               <span
                 className={`settings-state ${lumina.hasKey ? "authenticated" : ""}`}
               >
-                {lumina.hasKey ? "已配置 Key" : "未配置 Key"}
+                {lumina.hasKey ? t("keyConfigured") : t("keyMissing")}
               </span>
-              {` · ${lumina.modelCount} 个对话模型 · `}
+              {" · "}
+              {t("modelCount", { count: lumina.modelCount })}
+              {" · "}
               <code>{lumina.baseURL}</code>
             </span>
           </div>
           {lumina.readOnly ? (
-            <p className="settings-feedback info">
-              Key 由启动环境变量 AURA_LUMINA_API_KEY 提供，此处只读。
-            </p>
+            <p className="settings-feedback info">{t("environmentKey")}</p>
           ) : (
             <form
               className="settings-endpoint"
@@ -170,10 +181,10 @@ export function ModelServiceSettings({
                   () => saveLumina(endpoint, { key: luminaKey.trim() }, lumina),
                   (next) => {
                     setLuminaKey("");
-                    return {
-                      tone: tone(next.checks.lumina),
-                      text: next.checks.lumina,
-                    };
+                    return modelServiceFeedback(
+                      next.checkDetails?.lumina,
+                      next.checks.lumina,
+                    );
                   },
                 );
               }}
@@ -184,9 +195,7 @@ export function ModelServiceSettings({
                 value={luminaKey}
                 onChange={(event) => setLuminaKey(event.target.value)}
                 placeholder={
-                  lumina.hasKey
-                    ? "已保存，输入新 Key 可替换"
-                    : "粘贴 Lumina API Key"
+                  lumina.hasKey ? t("replaceKey") : t("pasteLuminaKey")
                 }
                 autoComplete="off"
                 spellCheck={false}
@@ -197,7 +206,7 @@ export function ModelServiceSettings({
                 disabled={busy !== "" || !luminaKey.trim()}
               >
                 <KeyRound size={14} />
-                保存并同步
+                {t("saveSync")}
               </button>
             </form>
           )}
@@ -210,15 +219,16 @@ export function ModelServiceSettings({
                 void run(
                   "lumina",
                   () => checkLumina(endpoint),
-                  (next) => ({
-                    tone: tone(next.checks.lumina),
-                    text: next.checks.lumina,
-                  }),
+                  (next) =>
+                    modelServiceFeedback(
+                      next.checkDetails?.lumina,
+                      next.checks.lumina,
+                    ),
                 )
               }
             >
               <RefreshCw size={14} />
-              {busy === "lumina" ? "同步中…" : "同步模型列表"}
+              {busy === "lumina" ? t("syncing") : t("syncModels")}
             </button>
             <button
               type="button"
@@ -228,11 +238,11 @@ export function ModelServiceSettings({
                 onUse("lumina");
                 setLuminaFeedback({
                   tone: "ok",
-                  text: "新对话将使用 Lumina。",
+                  text: detailMessage("useLuminaNotice"),
                 });
               }}
             >
-              用于对话
+              {t("useForChats")}
             </button>
             {lumina.hasKey && !lumina.readOnly ? (
               <button
@@ -243,12 +253,15 @@ export function ModelServiceSettings({
                   void run(
                     "lumina",
                     () => saveLumina(endpoint, { clearKey: true }, lumina),
-                    () => ({ tone: "info", text: "已清除 Lumina Key。" }),
+                    () => ({
+                      tone: "info",
+                      text: detailMessage("luminaKeyCleared"),
+                    }),
                   )
                 }
               >
                 <Trash2 size={14} />
-                清除 Key
+                {t("clearKey")}
               </button>
             ) : null}
           </div>
@@ -257,7 +270,7 @@ export function ModelServiceSettings({
               className={`settings-feedback ${luminaFeedback.tone}`}
               aria-live="polite"
             >
-              {luminaFeedback.text}
+              {messageText(luminaFeedback.text, i18n)}
             </p>
           ) : null}
         </div>
@@ -277,6 +290,7 @@ export function ModelServiceSettings({
                   reasoningEffort: custom.reasoningEffort,
                   key: custom.key.trim() || undefined,
                   custom: {
+                    // Keep the existing persisted default; the display label is localized separately.
                     name: custom.name.trim() || "自定义 API",
                     api: custom.api,
                     baseURL: custom.baseURL.trim(),
@@ -289,26 +303,31 @@ export function ModelServiceSettings({
               },
               (next) => {
                 setCustom((draft) => ({ ...draft, key: "" }));
+                const result = modelServiceFeedback(
+                  next.checkDetails?.model,
+                  next.checks.model,
+                );
                 return {
-                  tone: tone(next.checks.model),
-                  text: `已保存。${next.checks.model}`,
+                  tone: result.tone,
+                  text: detailMessage("savedCheck", {
+                    result: result.text,
+                  }),
                 };
               },
             );
           }}
         >
           <div className="settings-row-copy">
-            <strong>自定义 API</strong>
+            <strong>{t("customApi")}</strong>
             <span>
-              OpenAI 或 Anthropic 兼容的服务。保存后会同步该服务的模型列表；Key
-              只保存在后端。
+              {t("customHint")}
               {customSaved ? (
                 <>
                   {" · "}
                   <span
                     className={`settings-state ${customSaved.hasKey ? "authenticated" : ""}`}
                   >
-                    {customSaved.hasKey ? "已配置 Key" : "未配置 Key"}
+                    {customSaved.hasKey ? t("keyConfigured") : t("keyMissing")}
                   </span>
                 </>
               ) : null}
@@ -316,18 +335,18 @@ export function ModelServiceSettings({
           </div>
           <div className="settings-form-grid">
             <label>
-              <span>名称</span>
+              <span>{t("name")}</span>
               <input
                 value={custom.name}
                 onChange={(event) =>
                   setCustom({ ...custom, name: event.target.value })
                 }
-                placeholder="我的 API"
+                placeholder={t("myApi")}
                 maxLength={80}
               />
             </label>
             <label>
-              <span>协议</span>
+              <span>{t("protocol")}</span>
               <select
                 value={custom.api}
                 onChange={(event) =>
@@ -345,7 +364,7 @@ export function ModelServiceSettings({
               </select>
             </label>
             <label className="wide">
-              <span>服务地址</span>
+              <span>{t("serviceUrl")}</span>
               <input
                 value={custom.baseURL}
                 onChange={(event) =>
@@ -358,19 +377,19 @@ export function ModelServiceSettings({
               />
             </label>
             <label>
-              <span>默认模型 ID</span>
+              <span>{t("modelId")}</span>
               <input
                 value={custom.model}
                 onChange={(event) =>
                   setCustom({ ...custom, model: event.target.value })
                 }
-                placeholder="例如 deepseek-v4-flash"
+                placeholder={t("modelExample")}
                 spellCheck={false}
                 required
               />
             </label>
             <label>
-              <span>思考强度</span>
+              <span>{t("reasoning")}</span>
               <select
                 value={custom.reasoningEffort}
                 onChange={(event) =>
@@ -379,13 +398,13 @@ export function ModelServiceSettings({
               >
                 {efforts.map((effort) => (
                   <option key={effort} value={effort}>
-                    {effort === "off" ? "关闭" : effort}
+                    {effort === "off" ? t("off") : effort}
                   </option>
                 ))}
               </select>
             </label>
             <label>
-              <span>上下文长度</span>
+              <span>{t("contextWindow")}</span>
               <input
                 type="number"
                 min={1024}
@@ -405,7 +424,7 @@ export function ModelServiceSettings({
                   setCustom({ ...custom, images: event.target.checked })
                 }
               />
-              <span>支持图片输入</span>
+              <span>{t("images")}</span>
             </label>
             <label className="wide">
               <span>API Key</span>
@@ -415,11 +434,7 @@ export function ModelServiceSettings({
                 onChange={(event) =>
                   setCustom({ ...custom, key: event.target.value })
                 }
-                placeholder={
-                  customSaved?.hasKey
-                    ? "留空沿用同一地址已保存的 Key"
-                    : "粘贴 API Key"
-                }
+                placeholder={customSaved?.hasKey ? t("keepKey") : t("pasteKey")}
                 autoComplete="off"
                 spellCheck={false}
               />
@@ -432,7 +447,7 @@ export function ModelServiceSettings({
               disabled={busy !== ""}
             >
               <Save size={14} />
-              {busy === "custom" ? "保存中…" : "保存并测试"}
+              {busy === "custom" ? t("saving") : t("saveTest")}
             </button>
             <button
               type="button"
@@ -442,11 +457,11 @@ export function ModelServiceSettings({
                 onUse("custom");
                 setCustomFeedback({
                   tone: "ok",
-                  text: "新对话将使用自定义 API。",
+                  text: detailMessage("useCustomNotice"),
                 });
               }}
             >
-              用于对话
+              {t("useForChats")}
             </button>
           </div>
           {customFeedback ? (
@@ -454,7 +469,7 @@ export function ModelServiceSettings({
               className={`settings-feedback ${customFeedback.tone}`}
               aria-live="polite"
             >
-              {customFeedback.text}
+              {messageText(customFeedback.text, i18n)}
             </p>
           ) : null}
         </form>

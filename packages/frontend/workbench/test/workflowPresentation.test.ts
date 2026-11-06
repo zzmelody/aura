@@ -93,9 +93,21 @@ test("progress keeps concurrent active steps and does not count failures as comp
     total: 0,
     current: [],
   });
-  assert.equal(workflowDuration(2000, 1000), "0 秒");
-  assert.equal(workflowDuration(0, 65000), "1 分 5 秒");
-  assert.equal(workflowDuration(0, 3660000), "1 小时 1 分");
+});
+
+test("run durations use localized units while retaining truncation and elapsed time", () => {
+  const short = {
+    "zh-CN": "1分钟5秒",
+    en: "1 min, 5 sec",
+    ja: "1 分 5 秒",
+    ko: "1분 5초",
+    ru: "1 мин 5 с",
+    fr: "1 min et 5 s",
+  };
+  for (const [locale, expected] of Object.entries(short))
+    assert.equal(workflowDuration(0, 65_999, locale), expected, locale);
+  assert.equal(workflowDuration(2000, 1000, "en"), "0 sec");
+  assert.equal(workflowDuration(0, 3660999, "en"), "1 hr, 1 min");
 });
 
 test("outputs made only of local file paths can fold behind their media", async () => {

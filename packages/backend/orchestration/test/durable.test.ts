@@ -11,7 +11,7 @@ import type { LoadedAction } from "../src/action-registry.ts";
 import { FlowEngine } from "../src/engine.ts";
 import { DEFAULT_TOP_LEVEL_RUN_CONCURRENCY } from "../src/scheduler.ts";
 import { runSchema } from "../src/schema.ts";
-import { recoverStep } from "../src/recovery.ts";
+import { recoverStep, type RecoveryFeedback } from "../src/recovery.ts";
 import { validateFlowSource } from "../src/flow-diagnostics.ts";
 import {
   savedSchema,
@@ -940,6 +940,10 @@ test("checkpoint is prohibited in parallel and suspension cannot be swallowed to
   );
   const first = await parallel.engine.start(req());
   assert.match((await parallel.engine.wait(first.id)).error!, /parallel 分支/);
+  assert.deepEqual(parallel.engine.view(first.id).errorDetails, {
+    failure: { code: "flow_scope_checkpoint" },
+  });
+  assert.equal(parallel.engine.get(first.id).errorDetails, undefined);
   let calls = 0;
   const swallowed = await setup(
     async (flow) => {
@@ -1209,33 +1213,59 @@ test("reconciliation distinguishes known completion, exhausted budget, and any s
       entries: [],
     }),
   };
+  const before = JSON.stringify(step);
+  const notices: string[] = [];
+  const feedback: RecoveryFeedback = (value, code, key) => {
+    notices.push(code);
+    assert.equal(key, "x");
+    assert.equal(JSON.stringify(value).includes("reasonDetails"), false);
+    assert.equal(JSON.stringify(value).includes("errorDetails"), false);
+  };
   assert.equal(
     (
-      await recoverStep(step, {
-        ...ports,
-        reconcile: async () => ({ actionStarted: false }),
-      })
+      await recoverStep(
+        step,
+        {
+          ...ports,
+          reconcile: async () => ({ actionStarted: false }),
+        },
+        feedback,
+      )
     ).status,
     "failed",
   );
   assert.equal(
     (
-      await recoverStep(step, {
-        ...ports,
-        reconcile: async () => ({ actionStarted: true }),
-      })
+      await recoverStep(
+        step,
+        {
+          ...ports,
+          reconcile: async () => ({ actionStarted: true }),
+        },
+        feedback,
+      )
     ).status,
     "unknown",
   );
   assert.equal(
     (
-      await recoverStep(step, {
-        ...ports,
-        reconcile: async () => ({ actionStarted: true, output: "done" }),
-      })
+      await recoverStep(
+        step,
+        {
+          ...ports,
+          reconcile: async () => ({ actionStarted: true, output: "done" }),
+        },
+        feedback,
+      )
     ).status,
     "completed",
   );
+  assert.deepEqual(notices, [
+    "recovery_exhausted",
+    "recovery_agent_unknown",
+    "recovery_output",
+  ]);
+  assert.equal(JSON.stringify(step), before);
 });
 
 test("code changes resume while replay request mismatches still stop changed effects", async () => {

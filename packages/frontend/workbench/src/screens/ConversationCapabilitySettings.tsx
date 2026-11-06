@@ -2,11 +2,22 @@ import React, { useEffect, useState } from "react";
 import { Save } from "lucide-react";
 import type { CodingCapabilities } from "@aura/protocol/types";
 import {
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import {
+  detailMessage,
+  useSettingsDetailsMessages,
+} from "./settings-details-messages.ts";
+import {
   readCodingCapabilities,
   saveCodingCapabilities,
 } from "../features/coding/api.ts";
 
-type Feedback = { tone: "ok" | "error" | "info"; text: string } | undefined;
+type Feedback =
+  | { tone: "ok" | "error" | "info"; text: string | MessageReference }
+  | undefined;
 
 /** One settings row with a trailing DSH switch, matching the plugin list. */
 function SwitchRow({
@@ -48,6 +59,7 @@ export function ConversationCapabilitySettings({
 }: {
   endpoint: string;
 }) {
+  const { t, i18n } = useSettingsDetailsMessages();
   const [state, setState] = useState<CodingCapabilities>();
   const [key, setKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
@@ -62,7 +74,10 @@ export function ConversationCapabilitySettings({
       })
       .catch(() => {
         if (current)
-          setFeedback({ tone: "error", text: "无法读取对话能力设置。" });
+          setFeedback({
+            tone: "error",
+            text: detailMessage("capabilitiesUnavailable"),
+          });
       });
     return () => {
       current = false;
@@ -88,11 +103,11 @@ export function ConversationCapabilitySettings({
       setKey("");
       setClearKey(false);
       setAcknowledgeUnknown(false);
-      setFeedback({ tone: "ok", text: "已保存，下次发送消息时使用新设置。" });
+      setFeedback({ tone: "ok", text: detailMessage("capabilitiesSaved") });
     } catch (cause) {
       setFeedback({
         tone: "error",
-        text: cause instanceof Error ? cause.message : "保存失败。",
+        text: errorMessage(cause, detailMessage("saveFailed")),
       });
     } finally {
       setBusy(false);
@@ -100,27 +115,27 @@ export function ConversationCapabilitySettings({
   }
   return (
     <>
-      <h3 className="settings-subhead">对话能力</h3>
+      <h3 className="settings-subhead">{t("capabilities")}</h3>
       <div className="settings-group">
         {state ? (
           <>
             <SwitchRow
-              title="自动压缩较早上下文"
-              hint="上下文接近上限时由 DSH 摘要较早的轮次。"
+              title={t("autoCompact")}
+              hint={t("autoCompactHint")}
               checked={state.autoCompact}
               disabled={busy}
               onChange={(autoCompact) => setState({ ...state, autoCompact })}
             />
             <SwitchRow
-              title="调研与审查子 Agent"
-              hint="只读子 Agent，最多同时 2 个。"
+              title={t("subagents")}
+              hint={t("subagentsHint")}
               checked={state.subagents}
               disabled={busy}
               onChange={(subagents) => setState({ ...state, subagents })}
             />
             <SwitchRow
               title="DeepSeek Search / Fetch"
-              hint="仅访问 DeepSeek 官方 Search / Fetch API，不发送原始问题。"
+              hint={t("webHint")}
               checked={state.web}
               disabled={busy}
               onChange={(web) => setState({ ...state, web })}
@@ -133,14 +148,17 @@ export function ConversationCapabilitySettings({
               }}
             >
               <div className="settings-row-copy">
-                <strong>Web Key 与请求额度</strong>
+                <strong>{t("webKeyBudget")}</strong>
                 <span>
                   <span
                     className={`settings-state ${state.hasWebKey ? "authenticated" : ""}`}
                   >
-                    {state.hasWebKey ? "已配置 Web Key" : "未配置 Web Key"}
+                    {state.hasWebKey
+                      ? t("webKeyConfigured")
+                      : t("webKeyMissing")}
                   </span>
-                  {` · 已预留 ${state.usedRequests} 次`}
+                  {" · "}
+                  {t("reservedRequests", { count: state.usedRequests })}
                 </span>
               </div>
               <div className="settings-form-grid">
@@ -153,15 +171,13 @@ export function ConversationCapabilitySettings({
                     value={key}
                     disabled={clearKey}
                     placeholder={
-                      state.hasWebKey
-                        ? "已保存，输入新 Key 可替换"
-                        : "粘贴 DeepSeek Web API Key"
+                      state.hasWebKey ? t("replaceKey") : t("pasteWebKey")
                     }
                     onChange={(event) => setKey(event.target.value)}
                   />
                 </label>
                 <label>
-                  <span>累计额外请求额度</span>
+                  <span>{t("requestBudget")}</span>
                   <input
                     type="number"
                     min="0"
@@ -182,7 +198,7 @@ export function ConversationCapabilitySettings({
                       checked={clearKey}
                       onChange={(event) => setClearKey(event.target.checked)}
                     />
-                    <span>删除保存的 Web Key</span>
+                    <span>{t("deleteWebKey")}</span>
                   </label>
                 ) : null}
                 {state.unknownRequests > 0 ? (
@@ -195,20 +211,18 @@ export function ConversationCapabilitySettings({
                       }
                     />
                     <span>
-                      我已核对 {state.unknownRequests}{" "}
-                      次未知结果，允许后续新请求（不会重发旧请求）
+                      {t("acknowledgeUnknown", {
+                        count: state.unknownRequests,
+                      })}
                     </span>
                   </label>
                 ) : null}
               </div>
-              <p className="settings-feedback info">
-                每次标题提炼、压缩摘要、子 Agent 模型调用、Search 或 Fetch
-                预留一次；这是次数上限，不是金额上限，失败或取消不退回。密钥只保存在后端。
-              </p>
+              <p className="settings-feedback info">{t("requestBudgetHint")}</p>
               <div className="settings-actions">
                 <button type="submit" className="tool-button" disabled={busy}>
                   <Save size={14} />
-                  {busy ? "保存中…" : "保存对话能力"}
+                  {busy ? t("saving") : t("saveCapabilities")}
                 </button>
               </div>
               {feedback ? (
@@ -216,7 +230,7 @@ export function ConversationCapabilitySettings({
                   className={`settings-feedback ${feedback.tone}`}
                   aria-live="polite"
                 >
-                  {feedback.text}
+                  {messageText(feedback.text, i18n)}
                 </p>
               ) : null}
             </form>
@@ -224,8 +238,12 @@ export function ConversationCapabilitySettings({
         ) : (
           <div className="settings-row">
             <div className="settings-row-copy">
-              <strong>读取对话能力</strong>
-              <span>{feedback?.text ?? "正在读取后端配置…"}</span>
+              <strong>{t("readCapabilities")}</strong>
+              <span>
+                {feedback
+                  ? messageText(feedback.text, i18n)
+                  : t("readingConfig")}
+              </span>
             </div>
           </div>
         )}

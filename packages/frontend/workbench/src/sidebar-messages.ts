@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { useMessages } from "@aura/i18n";
+import type { CatalogKey } from "@aura/i18n/catalogs";
 import { language, registerCatalogs } from "@aura/i18n/runtime";
 import type { FlowPhase, FlowStepPhase } from "@aura/protocol/types";
 import zh from "./locales/zh-CN/sidebar.json" with { type: "json" };
@@ -9,10 +10,17 @@ import ko from "./locales/ko/sidebar.json" with { type: "json" };
 import ru from "./locales/ru/sidebar.json" with { type: "json" };
 import fr from "./locales/fr/sidebar.json" with { type: "json" };
 
-const dispose = registerCatalogs("sidebar", { "zh-CN": zh, en, ja, ko, ru, fr });
+const dispose = registerCatalogs("sidebar", {
+  "zh-CN": zh,
+  en,
+  ja,
+  ko,
+  ru,
+  fr,
+});
 if (import.meta.hot) import.meta.hot.dispose(dispose);
 
-export type SidebarMessageKey = keyof typeof en;
+export type SidebarMessageKey = CatalogKey<typeof en>;
 
 export function useSidebarMessages() {
   return useMessages<SidebarMessageKey>("sidebar");

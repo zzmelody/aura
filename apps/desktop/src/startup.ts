@@ -1,4 +1,9 @@
 import { startStartupField } from "./startup-field.ts";
+import { language } from "@aura/i18n/runtime";
+import {
+  desktopText as t,
+  type DesktopMessageKey,
+} from "./desktop-messages.ts";
 
 export interface DesktopStartup {
   ready(state: { reduced: boolean }): void;
@@ -37,6 +42,7 @@ export function startDesktopStartup(): DesktopStartup {
   const scene = startupElement("desktop-startup-scene");
   const message = startupElement("desktop-startup-message");
   const reload = startupElement("desktop-startup-reload");
+  const tagline = startupElement("desktop-startup-tagline");
   const canvas = document.getElementById("desktop-startup-field");
   const media = matchMedia("(prefers-reduced-motion: reduce)");
   let userReduced = storedReducedMotion();
@@ -47,14 +53,34 @@ export function startDesktopStartup(): DesktopStartup {
   let state: "loading" | "leaving" | "closed" | "failed" = "loading";
   let ending: ReturnType<typeof setTimeout> | undefined;
   let movement: Animation | undefined;
+  let messageKey: DesktopMessageKey = "startupLoading";
+  let unsubscribe: (() => void) | undefined;
+  function translate() {
+    document.documentElement.lang = language.getSnapshot().locale;
+    document.documentElement.dir = "ltr";
+    // Once committed, the workbench owns the page/conversation title.
+    if (messageKey !== "startupReady") document.title = t("startupTitle");
+    surface.setAttribute("aria-label", t("startupOpening"));
+    tagline.textContent = t("tagline");
+    reload.textContent = t("reload");
+    message.textContent = t(messageKey);
+  }
+  function watchLanguage() {
+    unsubscribe ??= language.subscribe(translate);
+    translate();
+  }
+  watchLanguage();
   const retry = () => location.reload();
   const slow = setTimeout(() => {
     if (state !== "loading") return;
-    message.textContent = "界面加载较慢，你可以继续等待或重新加载。";
+    messageKey = "startupSlow";
+    translate();
     reload.hidden = false;
   }, 10_000);
 
   function release() {
+    unsubscribe?.();
+    unsubscribe = undefined;
     clearTimeout(slow);
     clearTimeout(ending);
     movement?.cancel();
@@ -95,7 +121,8 @@ export function startDesktopStartup(): DesktopStartup {
       root.removeAttribute("aria-hidden");
       surface.inert = true;
       surface.setAttribute("aria-hidden", "true");
-      message.textContent = "工作台已就绪";
+      messageKey = "startupReady";
+      translate();
       if (userReduced || media.matches || document.hidden) {
         dispose();
         return;
@@ -143,7 +170,9 @@ export function startDesktopStartup(): DesktopStartup {
       surface.removeAttribute("aria-hidden");
       surface.dataset.state = "failed";
       surface.dataset.reduced = "true";
-      message.textContent = "界面加载失败，请重新加载。";
+      messageKey = "startupFailed";
+      watchLanguage();
+      window.addEventListener("pagehide", dispose, { once: true });
       reload.hidden = false;
       reload.addEventListener("click", retry);
     },

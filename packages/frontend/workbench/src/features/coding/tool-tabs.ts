@@ -13,14 +13,15 @@ export interface WorkspaceToolTab {
 export function workspaceToolTabs(
   sides: CodingSideConversationInfo[],
   terminals: WorkspaceTerminalInfo[],
-  browsers: ReadonlyArray<{ id: string; title: string }> = [],
+  browsers: ReadonlyArray<{ id: string; title: string; url?: string }> = [],
+  translate?: (key: "newSideChat" | "browser") => string,
 ): WorkspaceToolTab[] {
   return [
     ...sides.map((side): WorkspaceToolTab => ({
       id: side.id,
       kind: "chat",
-      title: ["旁支对话", "新旁支对话"].includes(side.title)
-        ? "新侧边对话"
+      title: ["旁支对话", "新旁支对话", "新侧边对话"].includes(side.title)
+        ? (translate?.("newSideChat") ?? "新侧边对话")
         : side.title,
     })),
     ...terminals.map((terminal, index): WorkspaceToolTab => ({
@@ -29,10 +30,12 @@ export function workspaceToolTabs(
       title: `${terminal.title}${terminals.length > 1 ? ` ${index + 1}` : ""}`,
       status: terminal.status,
     })),
-    ...browsers.map(({ id, title }): WorkspaceToolTab => ({
+    ...browsers.map(({ id, title, url }): WorkspaceToolTab => ({
       id,
       kind: "browser",
-      title,
+      // Only the blank browser's host-generated default is localized.
+      title:
+        !url && title === "浏览器" ? (translate?.("browser") ?? title) : title,
     })),
   ];
 }

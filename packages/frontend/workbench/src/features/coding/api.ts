@@ -1,4 +1,7 @@
 import { isCodingSteerRequestId } from "@aura/protocol";
+import { MessageError } from "@aura/i18n/runtime";
+import { readErrorDetails } from "@aura/protocol/errors";
+import { conversationMessage as message } from "../../conversation-messages.ts";
 import type {
   CodingSubagent,
   CodingCapabilities,
@@ -30,6 +33,7 @@ import type {
 } from "@aura/protocol/types";
 import { WorkflowApiError } from "../../workflowSessions.ts";
 import { startupFetch } from "../../startup-fetch.ts";
+import { apiErrorText } from "../../api-error-messages.ts";
 
 const base = (endpoint: string) => `${endpoint.replace(/\/$/, "")}/coding`;
 
@@ -98,7 +102,10 @@ async function codingApi<T>(
   const value = await response.json().catch(() => null);
   if (!response.ok)
     throw new WorkflowApiError(
-      value?.message || `编码服务暂不可用（${response.status}）。`,
+      apiErrorText(
+        value,
+        message("codingServiceUnavailable", { status: response.status }),
+      ),
       response.status,
     );
   return value as T;
@@ -226,7 +233,7 @@ export async function prepareCodingTurn(
   } catch (error) {
     signal.throwIfAborted();
     if (waiting.aborted)
-      throw new Error("服务仍未就绪，已停止等待；请在连接恢复后重新发送。", {
+      throw new MessageError(message("admissionTimedOut"), {
         cause: error,
       });
     throw error;
@@ -234,7 +241,7 @@ export async function prepareCodingTurn(
   signal.throwIfAborted();
   const project = projects.find((item) => item.id === projectId);
   if (!project || project.status === "missing-dir")
-    throw new Error("工作空间已不可用，请重新选择工作空间后发送。");
+    throw new MessageError(message("workspaceUnavailable"));
 }
 
 export async function* codingTurn(
@@ -266,9 +273,12 @@ export async function* codingTurn(
     signal,
   });
   if (!response.ok || !response.body)
-    throw new Error(
-      (await response.text().catch(() => "")) ||
-        `编码服务连接失败（${response.status}）。`,
+    throw new MessageError(
+      apiErrorText(
+        { code: response.headers.get("X-Aura-Error-Code") },
+        (await response.text().catch(() => "")) ||
+          message("codingConnectFailed", { status: response.status }),
+      ),
     );
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -292,15 +302,13 @@ export async function* codingTurn(
         const parsed = parseCodingEvent(event);
         if (parsed) yield parsed;
         else if (event.type === "error")
-          throw new Error(
-            typeof event.message === "string"
-              ? event.message
-              : "编码服务暂时不可用。",
+          throw new MessageError(
+            apiErrorText(event, message("codingUnavailable")),
           );
         else if (event.type === "done") completed = true;
       }
     }
-    if (!completed) throw new Error("连接已中断，可以重新发送这条消息。");
+    if (!completed) throw new MessageError(message("codingStreamInterrupted"));
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();
@@ -538,7 +546,7 @@ export async function changeCodingCollaboration(
       { action },
     ),
   );
-  if (!state) throw new Error("无法读取更新后的协作模式。");
+  if (!state) throw new MessageError(message("collaborationReadFailed"));
   return state;
 }
 
@@ -703,7 +711,7 @@ export async function conversationHistory(
   } catch (error) {
     signal?.throwIfAborted();
     if (timeout.aborted)
-      throw new Error("会话历史读取超时，请重试。", { cause: error });
+      throw new MessageError(message("historyReadTimeout"), { cause: error });
     throw error;
   }
   return parseConversationHistory(value);
@@ -719,7 +727,7 @@ export function parseConversationHistory(value: unknown) {
     throughSeq?: unknown;
   } | null;
   if (typeof body?.running !== "boolean")
-    throw new Error("无法确认会话运行状态。");
+    throw new MessageError(message("historyStateUnknown"));
   const turns = Array.isArray(body?.turns) ? body.turns : [];
   return {
     running: body.running,
@@ -741,6 +749,7 @@ export function parseConversationHistory(value: unknown) {
       )
         ? (turn.status as CodingHistoryTurn["status"])
         : "stopped";
+      const errorDetails = readErrorDetails(turn.errorDetails);
       return [
         {
           ...(typeof turn.turnId === "string" ? { turnId: turn.turnId } : {}),
@@ -752,6 +761,7 @@ export function parseConversationHistory(value: unknown) {
             : {}),
           ...(validCount(turn.endSeq) ? { endSeq: turn.endSeq } : {}),
           ...(typeof turn.error === "string" ? { error: turn.error } : {}),
+          ...(errorDetails ? { errorDetails } : {}),
           events: turn.events.flatMap((event) => {
             const parsed = parseCodingEvent(event as Record<string, unknown>);
             return parsed ? [parsed] : [];

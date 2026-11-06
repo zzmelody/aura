@@ -1,35 +1,35 @@
 import {
   BrowserWindow,
   dialog,
-  ipcMain,
   type IpcMainInvokeEvent,
   type OpenDialogOptions,
 } from "electron";
-import type { WorkflowPathKind } from "@aura/workbench/file-picker";
+import { desktopText as t } from "./desktop-messages.ts";
+import { handleNative, NativeOperationError } from "./native-errors.ts";
 
 const CHANNEL = "aura:workflow-files:choose";
 
 async function choosePath(
   event: IpcMainInvokeEvent,
-  kind: WorkflowPathKind,
+  kind: unknown,
 ): Promise<string | null> {
   if (kind !== "image" && kind !== "directory")
-    throw new Error("不支持的路径选择类型。");
+    throw new NativeOperationError("pickerKindUnsupported");
   const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined;
   const options: OpenDialogOptions =
     kind === "directory"
       ? {
-          title: "选择工作流输出目录",
-          buttonLabel: "选择此目录",
+          title: t("outputDirectory"),
+          buttonLabel: t("selectDirectory"),
           properties: ["openDirectory", "createDirectory"],
         }
       : {
-          title: "选择工作流输入图片",
-          buttonLabel: "使用此图片",
+          title: t("inputImage"),
+          buttonLabel: t("useImage"),
           properties: ["openFile"],
           filters: [
             {
-              name: "图片",
+              name: t("images"),
               extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"],
             },
           ],
@@ -41,7 +41,7 @@ async function choosePath(
 }
 
 export function installWorkflowFileHost(): void {
-  ipcMain.handle(CHANNEL, choosePath);
+  handleNative(CHANNEL, "pickerFailed", choosePath);
 }
 
 export { CHANNEL as WORKFLOW_FILE_CHANNEL };

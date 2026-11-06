@@ -1,3 +1,4 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import { readFile, realpath } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import type {
@@ -8,7 +9,6 @@ import type {
 import type { GeneratedArtifacts } from "./generated.ts";
 import { publishBytes } from "./generated.ts";
 import { artifactHash, validArtifactId } from "./media.ts";
-import { FlowError } from "../schema.ts";
 
 export interface ArtifactOwner {
   runId: string;
@@ -356,7 +356,10 @@ export class WorkflowArtifactIndex {
     fileId: string;
     format: WorkflowArtifact["format"];
   }> {
-    if (!validArtifactId(artifactId)) throw new FlowError("产物不存在。", 404);
+    if (!validArtifactId(artifactId))
+      throw new CodedFlowError("产物不存在。", 404, {
+        code: "artifact_not_found",
+      });
     for (const run of this.runs(id)) {
       const entry = Object.values((await this.read(run.id)).records).find(
         ({ artifact }) =>
@@ -365,13 +368,17 @@ export class WorkflowArtifactIndex {
       );
       if (!entry) continue;
       if (thumbnail && !entry.artifact.thumbnailId)
-        throw new FlowError("预览图不可用。", 404);
+        throw new CodedFlowError("预览图不可用。", 404, {
+          code: "artifact_thumbnail_unavailable",
+        });
       return {
         artifact: entry.artifact,
         fileId: thumbnail ? entry.artifact.thumbnailId! : artifactId,
         format: thumbnail ? "webp" : entry.artifact.format,
       };
     }
-    throw new FlowError("产物不存在或文件不可用。", 404);
+    throw new CodedFlowError("产物不存在或文件不可用。", 404, {
+      code: "artifact_file_unavailable",
+    });
   }
 }

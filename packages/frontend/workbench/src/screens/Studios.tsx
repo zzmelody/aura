@@ -3,6 +3,7 @@ import { ChevronRight, PlugZap } from "lucide-react";
 import type { PluginStudio } from "../usePluginPages";
 import type { Tab } from "../types";
 import { studioIcon } from "../studioIcons";
+import { useSidebarMessages } from "../sidebar-messages.ts";
 import "./studios.css";
 
 /**
@@ -22,6 +23,7 @@ export function StudiosScreen({
   navigate(tab: Tab): void;
   onManagePlugins(): void;
 }) {
+  const { t } = useSidebarMessages();
   return (
     <section className="dsh-page studios-page" aria-labelledby="studios-title">
       <header className="dsh-page-head">
@@ -35,7 +37,9 @@ export function StudiosScreen({
             className="dsh-button"
             onClick={onManagePlugins}
           >
-            <PlugZap size={13} />{t("managePlugins")}</button>
+            <PlugZap size={13} />
+            {t("managePlugins")}
+          </button>
         </div>
       </header>
       {failures.length ? (

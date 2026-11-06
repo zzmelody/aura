@@ -1,48 +1,73 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { WorkflowPathKind } from "@aura/workbench/file-picker";
 import type { BrowserHost, BrowserReservation } from "@aura/protocol/browser";
+import type { Locale } from "@aura/i18n/runtime";
+import type {
+  NativeFailure,
+  NativeFailureCode,
+  NativeHost,
+} from "@aura/protocol/native-ui";
+
+/** No runtime imports beyond Electron are available in the sandboxed preload. */
+async function invokeNative<Value>(
+  channel: string,
+  fallback: NativeFailureCode,
+  ...args: unknown[]
+): Promise<Value | NativeFailure> {
+  try {
+    return await ipcRenderer.invoke(channel, ...args);
+  } catch {
+    // Never expose Electron's wrapper, OS paths or raw exception details.
+    return { type: "aura.native.failure", code: fallback };
+  }
+}
 
 contextBridge.exposeInMainWorld("auraHost", {
   platform: "desktop" as const,
   os: process.platform,
   chrome: {
+    setLanguage: (locale: Locale) =>
+      ipcRenderer.invoke("aura:window:language", locale) as Promise<void>,
     setTheme: (dark: boolean, mode?: "system" | "light" | "dark") =>
       ipcRenderer.invoke("aura:window:theme", dark, mode) as Promise<void>,
   },
   files: {
-    reveal: async (root: string, path: string): Promise<void> => {
-      const result: unknown = await ipcRenderer
-        .invoke("aura:files:reveal", root, path)
-        .catch(() => ({ error: "无法在文件夹中显示，请重试。" }));
-      if (typeof result === "object" && result !== null && "error" in result) {
-        if (result.error === null) return;
-        if (typeof result.error === "string") throw new Error(result.error);
-      }
-      throw new Error("无法在文件夹中显示，请重试。");
-    },
+    reveal: (root: string, path: string) =>
+      invokeNative<void>("aura:files:reveal", "fileRevealFailed", root, path),
   },
   workflowFiles: {
     choose: (kind: WorkflowPathKind) =>
-      ipcRenderer.invoke("aura:workflow-files:choose", kind) as Promise<
-        string | null
-      >,
+      invokeNative<string | null>(
+        "aura:workflow-files:choose",
+        "pickerFailed",
+        kind,
+      ),
   },
   directories: {
     choose: () =>
-      ipcRenderer.invoke("aura:directories:choose") as Promise<string | null>,
+      invokeNative<string | null>("aura:directories:choose", "pickerFailed"),
   },
   previews: {
     open: (url: string, id: string, title: string) =>
-      ipcRenderer.invoke("aura:previews:open", url, id, title) as Promise<void>,
+      invokeNative<void>("aura:previews:open", "previewFailed", url, id, title),
   },
   browser: {
-    acquire: (workspace: string): Promise<BrowserReservation> =>
-      ipcRenderer.invoke("aura:browser:acquire", workspace),
-    release: (id: string): Promise<void> =>
-      ipcRenderer.invoke("aura:browser:release", id),
-    navigate: (id: string, url: string): Promise<void> =>
-      ipcRenderer.invoke("aura:browser:navigate", id, url),
-    openExternal: (id: string): Promise<void> =>
-      ipcRenderer.invoke("aura:browser:external", id),
-  } satisfies BrowserHost,
+    acquire: (workspace: string) =>
+      invokeNative<BrowserReservation>(
+        "aura:browser:acquire",
+        "browserOperationFailed",
+        workspace,
+      ),
+    release: (id: string) =>
+      invokeNative<void>("aura:browser:release", "browserOperationFailed", id),
+    navigate: (id: string, url: string) =>
+      invokeNative<void>(
+        "aura:browser:navigate",
+        "browserOperationFailed",
+        id,
+        url,
+      ),
+    openExternal: (id: string) =>
+      invokeNative<void>("aura:browser:external", "browserOperationFailed", id),
+  } satisfies NativeHost<BrowserHost>,
 });

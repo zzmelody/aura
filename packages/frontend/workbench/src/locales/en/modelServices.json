@@ -1,0 +1,21 @@
+{
+  "unchecked": "Not checked",
+  "key_required": "Save your Lumina key first.",
+  "discovery_failed": "Connection failed. Check your key and network.",
+  "catalog_failed": "Could not fetch models. Enter a model ID to test the connection.",
+  "models_synced_one": "Connected. Synced {{count, number}} chat model.",
+  "models_synced_other": "Connected. Synced {{count, number}} chat models.",
+  "models_listed_one": "Fetched {{count, number}} model. A model request has not been tested yet.",
+  "models_listed_other": "Fetched {{count, number}} models. A model request has not been tested yet.",
+  "probe_succeeded": "Test passed · {{model}} · {{elapsedMs, number}} ms · Reply: {{reply}}",
+  "probe_failed": "Test failed · {{model}} · {{reason}}",
+  "timeout": "The request timed out or was cancelled. Check your network and try again.",
+  "authentication": "Authentication failed. Check your model key or sign in again.",
+  "permission": "You do not have permission to use the selected model.",
+  "not_found": "Model or API address not found. Check the address, protocol and model ID.",
+  "rate_limit": "Rate or quota limit reached. Check your account before trying again.",
+  "empty_response": "The service returned no valid text. Check the model and protocol.",
+  "unsupported": "The selected model or parameters are unsupported. Check the model and reasoning effort.",
+  "request_failed": "Model request failed. Check the protocol, address, network and service status.",
+  "settingsUnavailable": "Model service settings are unavailable ({{status}})."
+}

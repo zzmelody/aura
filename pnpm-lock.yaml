@@ -170,6 +170,9 @@ importers:
 
   .:
     devDependencies:
+      '@aura/i18n':
+        specifier: workspace:*
+        version: link:packages/frontend/i18n
       '@aura/plugin-manager':
         specifier: workspace:*
         version: link:packages/backend/plugin-manager
@@ -236,6 +239,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@aura/i18n':
+        specifier: workspace:*
+        version: link:../../packages/frontend/i18n
       '@aura/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/backend/plugin-sdk
@@ -685,6 +691,9 @@ importers:
       '@aura/orchestration':
         specifier: workspace:*
         version: link:../orchestration
+      '@aura/protocol':
+        specifier: workspace:*
+        version: link:../../shared/protocol
       playwright-core:
         specifier: 1.58.2
         version: 1.58.2

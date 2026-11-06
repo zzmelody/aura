@@ -1,3 +1,4 @@
+import { language } from "@aura/i18n/runtime";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Session } from "@aura/core/types";
@@ -8,6 +9,8 @@ import {
   sidebarSessionStatus,
   sidebarSessionTime,
 } from "../src/sidebarSessions.ts";
+
+await language.systemChanged(["zh-CN"]);
 
 const session: Session = {
   id: "one",
@@ -33,32 +36,32 @@ test("sidebar time stays compact at unit boundaries and tolerates future clocks"
     sidebarSessionTime(now - seconds * 1000, now);
   assert.equal(ago(0), "刚刚");
   assert.equal(ago(59), "刚刚");
-  assert.equal(ago(60), "1分钟");
-  assert.equal(ago(3599), "59分钟");
-  assert.equal(ago(3600), "1小时");
-  assert.equal(ago(86400), "1天");
-  assert.equal(ago(30 * 86400), "1个月");
-  assert.equal(ago(365 * 86400), "1年");
+  assert.equal(ago(60), "1分钟前");
+  assert.equal(ago(3599), "59分钟前");
+  assert.equal(ago(3600), "1小时前");
+  assert.equal(ago(86400), "1天前");
+  assert.equal(ago(30 * 86400), "1个月前");
+  assert.equal(ago(365 * 86400), "1年前");
   assert.equal(ago(-60), "刚刚");
   assert.equal(sidebarSessionTime(Number.NaN, now), "—");
 });
 test("a row shows a status icon only when it needs notice, otherwise its time", () => {
   assert.equal(sidebarRowStatus(undefined), undefined);
   assert.equal(
-    sidebarRowStatus({ kind: "completed", label: "已完成" }),
+    sidebarRowStatus({ kind: "completed", messageKey: "completed" }),
     undefined,
   );
   assert.equal(
-    sidebarRowStatus({ kind: "idle", label: "尚未开始" }),
+    sidebarRowStatus({ kind: "idle", messageKey: "idle" }),
     undefined,
   );
   // A turn the user stopped is settled, so the row shows its time.
   assert.equal(
-    sidebarRowStatus({ kind: "stopped", label: "已停止" }),
+    sidebarRowStatus({ kind: "stopped", messageKey: "stopped" }),
     undefined,
   );
   for (const kind of ["running", "waiting", "failed", "attention"] as const)
-    assert.equal(sidebarRowStatus({ kind, label: kind })?.kind, kind);
+    assert.equal(sidebarRowStatus({ kind, messageKey: "running" })?.kind, kind);
 });
 test("workflow rows identify their task while preserving custom conversation names", () => {
   assert.equal(sidebarSessionTitle(session), "Compare options for launch");
@@ -114,15 +117,15 @@ test("sidebar distinguishes Flow waits, pauses, failures and ordinary chat state
         },
       ],
     });
-  assert.deepEqual(state("queued"), { kind: "queued", label: "等待执行" });
+  assert.deepEqual(state("queued"), { kind: "queued", messageKey: "queued" });
   assert.equal(state("running").kind, "running");
-  assert.equal(state("waiting_input").label, "等待输入");
+  assert.equal(state("waiting_input").messageKey, "waitingInput");
   assert.equal(state("needs_attention").kind, "attention");
   assert.equal(state("paused").kind, "paused");
   assert.equal(state("failed").kind, "failed");
   assert.equal(state("completed").kind, "completed");
   assert.equal(state("cancelled").kind, "stopped");
-  assert.equal(state("interrupted").label, "已中断");
+  assert.equal(state("interrupted").messageKey, "interrupted");
   const chat = {
     ...session,
     workflow: undefined,
@@ -137,7 +140,7 @@ test("sidebar distinguishes Flow waits, pauses, failures and ordinary chat state
   };
   assert.deepEqual(sidebarSessionStatus(chat), {
     kind: "running",
-    label: "正在生成",
+    messageKey: "generating",
   });
   assert.equal(
     sidebarSessionStatus({ ...chat, archivedAt: 1 }).kind,

@@ -1,4 +1,18 @@
 import React, { useEffect, useId, useState } from "react";
+import { apiErrorText, flowFailureText } from "../api-error-messages.ts";
+import {
+  useWorkflowMessages,
+  workflowMessage as localMessage,
+  workflowModeText,
+  workflowPhaseText,
+} from "../workflow-messages.ts";
+import {
+  errorMessage,
+  messageText,
+  formatDate,
+  formatNumber,
+  type MessageReference,
+} from "@aura/i18n/runtime";
 import {
   CheckCircle2,
   Circle,
@@ -14,7 +28,6 @@ import { workflowRuns } from "../workflow-run-store";
 import { AuraMark } from "@aura/ui/components";
 import type {
   FlowHistory,
-  FlowMode,
   FlowRun,
   FlowStep,
   JsonValue,
@@ -45,23 +58,17 @@ import {
   workflowPhaseLabels,
 } from "../workflowSessions";
 
-const modeLabels: Record<FlowMode, string> = {
-  demo: "本地演示",
-  codex: "Codex",
-  lumina: "Lumina",
-  custom: "自定义 API",
-};
-
 /**
  * When the run produced playable or viewable files, those are the result; an
  * output that only restates their local paths folds into a details row.
  */
 function RunOutput({ value }: { value: JsonValue }) {
+  const { t } = useWorkflowMessages();
   const hasArtifacts = useHasArtifacts();
   if (hasArtifacts && onlyFileReferences(value))
     return (
       <details className="workflow-output-details">
-        <summary>文件位置与原始数据</summary>
+        <summary>{t("fileLocations")}</summary>
         <WorkflowData value={value} />
       </details>
     );
@@ -77,8 +84,9 @@ export function NestedFlowRun({
   runId: string;
   onRepeat?(run: FlowRun): void;
 }) {
+  const { t, i18n } = useWorkflowMessages();
   const { run, error } = useWorkflowRun(endpoint, runId);
-  const [actionError, setActionError] = useState("");
+  const [actionError, setActionError] = useState<string | MessageReference>("");
   const [cancelRequestId] = useState(() => crypto.randomUUID());
   if (error)
     return (
@@ -86,12 +94,12 @@ export function NestedFlowRun({
         {error}
       </p>
     );
-  if (!run) return <p className="muted">正在读取工作流…</p>;
+  if (!run) return <p className="muted">{t("loadingRun")}</p>;
   return (
     <>
       {actionError ? (
         <p className="error" role="alert">
-          {actionError}
+          {messageText(actionError, i18n)}
         </p>
       ) : null}
       <WorkflowRunResult
@@ -116,9 +124,7 @@ export function NestedFlowRun({
           )
             .then((next) => workflowRuns.publish(endpoint, next))
             .catch((cause: unknown) =>
-              setActionError(
-                cause instanceof Error ? cause.message : "停止工作流失败。",
-              ),
+              setActionError(errorMessage(cause, localMessage("cancelFailed"))),
             );
         }}
       />
@@ -135,8 +141,9 @@ function StepHistory({
   runId: string;
   step: FlowStep;
 }) {
+  const { t, i18n } = useWorkflowMessages();
   const [history, setHistory] = useState<FlowHistory>();
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | MessageReference>("");
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [attempt, setAttempt] = useState(step.attempts?.at(-1)?.number);
@@ -149,7 +156,8 @@ function StepHistory({
     workflowApi<FlowHistory>(endpoint, path, undefined, abort.signal)
       .then(setHistory)
       .catch((cause) => {
-        if (!abort.signal.aborted) setError(String(cause.message));
+        if (!abort.signal.aborted)
+          setError(errorMessage(cause, localMessage("historyFailed")));
       })
       .finally(() => {
         if (!abort.signal.aborted) setBusy(false);
@@ -178,11 +186,14 @@ function StepHistory({
         ],
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "读取失败");
+      setError(errorMessage(cause, localMessage("historyFailed")));
     } finally {
       setBusy(false);
     }
   }
+  const selectedAttempt = step.attempts?.find(
+    (value) => value.number === attempt,
+  );
   return (
     <div className="workflow-step-detail">
       <WorkflowArtifactGallery
@@ -192,19 +203,19 @@ function StepHistory({
       />
       {step.error ? (
         <p className="workflow-step-error" role="alert">
-          {step.error}
+          {messageText(flowFailureText(step.error, step.errorDetails), i18n)}
         </p>
       ) : null}
       {step.scopePath?.length || (step.attempts?.length ?? 0) > 1 ? (
         <div className="workflow-step-meta">
           {step.scopePath?.length ? (
-            <code title="执行路径">{step.stepKey}</code>
+            <code title={t("executionPath")}>{step.stepKey}</code>
           ) : null}
           {(step.attempts?.length ?? 0) > 1 ? (
             <div
               className="workflow-step-attempts"
               role="radiogroup"
-              aria-label="执行尝试"
+              aria-label={t("attempts")}
             >
               {step.attempts!.map((value) => (
                 <button
@@ -213,13 +224,13 @@ function StepHistory({
                   role="radio"
                   aria-checked={attempt === value.number}
                   className={`phase-${value.status}${attempt === value.number ? " selected" : ""}`}
-                  title={workflowPhaseLabels[value.status]}
+                  title={workflowPhaseText(value.status, t)}
                   onClick={() => {
                     setHistory(undefined);
                     setAttempt(value.number);
                   }}
                 >
-                  第 {value.number} 次
+                  {t("attemptNumber", { number: value.number })}
                 </button>
               ))}
             </div>
@@ -228,49 +239,57 @@ function StepHistory({
       ) : null}
       {!step.kind || step.kind === "agent" ? (
         step.config ? (
-          <section aria-label="Agent 生效配置">
-            <h4>Agent 生效配置</h4>
+          <section aria-label={t("agentConfiguration")}>
+            <h4>{t("agentConfiguration")}</h4>
             <WorkflowData
               value={{
-                Provider: step.config.provider,
-                模型: step.config.model,
-                思考强度: step.config.reasoningEffort,
-                "输出 token 上限":
-                  step.config.maxTokens ?? "供应商默认（未设置硬上限）",
-                温度: step.config.temperature ?? "供应商默认",
-                "超时（毫秒）": step.config.timeoutMs,
+                [t("provider")]: step.config.provider,
+                [t("model")]: step.config.model,
+                [t("reasoningEffort")]: step.config.reasoningEffort,
+                [t("maxOutputTokens")]:
+                  step.config.maxTokens ?? t("providerDefaultUnlimited"),
+                [t("temperature")]:
+                  step.config.temperature ?? t("providerDefault"),
+                [t("timeoutMs")]: step.config.timeoutMs,
               }}
             />
-            <p className="muted">已存档；本步骤的重试和恢复均使用此配置。</p>
+            <p className="muted">{t("archivedConfig")}</p>
           </section>
         ) : (
-          <p className="muted">旧记录未存档模型配置。</p>
+          <p className="muted">{t("legacyNoConfig")}</p>
         )
       ) : null}
-      {step.attempts?.find((value) => value.number === attempt)?.error ? (
+      {selectedAttempt?.error ? (
         <p className="workflow-step-error">
-          {step.attempts.find((value) => value.number === attempt)?.error}
+          {messageText(
+            flowFailureText(
+              selectedAttempt.error,
+              selectedAttempt.errorDetails,
+            ),
+            i18n,
+          )}
         </p>
       ) : null}
       {step.recoveryEvents?.map((event, index) => (
-        <p className="muted" key={index}>
-          {new Date(event.at).toLocaleString()} · {event.reason}
+        <p className="muted workflow-recovery-event" key={index}>
+          {formatDate(event.at, { dateStyle: "short", timeStyle: "medium" })} ·{" "}
+          {messageText(apiErrorText(event.reasonDetails, event.reason), i18n)}
         </p>
       ))}
       {step.kind && step.kind !== "agent" ? (
         step.kind === "flow" ? (
           <>
-            <h4>子工作流输入</h4>
+            <h4>{t("childInput")}</h4>
             <WorkflowData value={step.input} />
-            <p className="muted">子工作流 · {step.flowId}</p>
+            <p className="muted">{t("childWorkflow", { id: step.flowId })}</p>
             {step.childRunId ? (
               <NestedFlowRun endpoint={endpoint} runId={step.childRunId} />
             ) : (
-              <p className="muted">正在创建子工作流运行…</p>
+              <p className="muted">{t("creatingChild")}</p>
             )}
             {step.output !== undefined ? (
               <>
-                <h4>子工作流输出</h4>
+                <h4>{t("childOutput")}</h4>
                 <WorkflowData value={step.output} />
               </>
             ) : null}
@@ -280,20 +299,29 @@ function StepHistory({
             className={`workflow-step-io${step.kind === "action" ? "" : " single"}`}
           >
             {step.kind === "action" ? (
-              <section className="workflow-step-panel" aria-label="工具输入">
-                <h4>输入</h4>
+              <section
+                className="workflow-step-panel"
+                aria-label={t("toolInput")}
+              >
+                <h4>{t("input")}</h4>
                 <WorkflowData value={step.input} />
               </section>
             ) : null}
             <section
               className="workflow-step-panel"
               aria-label={
-                step.kind === "checkpoint" ? "已提交答案" : "步骤输出"
+                step.kind === "checkpoint"
+                  ? t("submittedAnswer")
+                  : t("stepOutput")
               }
             >
-              <h4>{step.kind === "checkpoint" ? "已提交答案" : "输出"}</h4>
+              <h4>
+                {step.kind === "checkpoint"
+                  ? t("submittedAnswer")
+                  : t("output")}
+              </h4>
               {step.output === undefined ? (
-                <p className="muted">等待输出</p>
+                <p className="muted">{t("waitingOutput")}</p>
               ) : (
                 <WorkflowData value={step.output} />
               )}
@@ -303,10 +331,10 @@ function StepHistory({
       ) : (
         <>
           <div className="workflow-history-actions">
-            <span>Agent 对话记录</span>
+            <span>{t("agentHistory")}</span>
             <button
               className="icon-control"
-              aria-label="刷新步骤记录"
+              aria-label={t("refreshStepHistory")}
               disabled={busy}
               onClick={() => setRevision((value) => value + 1)}
             >
@@ -319,7 +347,7 @@ function StepHistory({
               disabled={busy}
               onClick={() => void older()}
             >
-              加载更早记录
+              {t("loadOlderHistory")}
             </button>
           ) : null}
           {history?.entries.map((entry) => (
@@ -327,10 +355,10 @@ function StepHistory({
               <small>
                 {
                   {
-                    user: "输入",
-                    assistant: "Agent 回复",
-                    tool: "工具结果",
-                    event: "执行事件",
+                    user: t("input"),
+                    assistant: t("agentReply"),
+                    tool: t("toolResult"),
+                    event: t("executionEvent"),
                   }[entry.kind]
                 }
               </small>
@@ -338,13 +366,13 @@ function StepHistory({
             </div>
           ))}
           {!history?.entries.length ? (
-            <p className="muted">{busy ? "正在读取…" : "暂无对话记录"}</p>
+            <p className="muted">{busy ? t("reading") : t("noHistory")}</p>
           ) : null}
         </>
       )}
       {error ? (
         <p role="alert" className="error">
-          {error}
+          {messageText(error, i18n)}
         </p>
       ) : null}
     </div>
@@ -384,6 +412,7 @@ export function WorkflowRunResult({
   onCancel(): void;
   onRepeat?(run: FlowRun): void;
 }) {
+  const { t, i18n } = useWorkflowMessages();
   const [stepId, setStepId] = useState<string>();
   const results = usePluginResults();
   const id = message.workflowRunId!;
@@ -401,6 +430,7 @@ export function WorkflowRunResult({
     : input
       ? storedWorkflowValue(input.text)
       : undefined;
+  // Legacy records contain these exact status strings; UI language must not change the match.
   const savedOutput =
     message.text &&
     !Object.values(workflowPhaseLabels).includes(message.text) &&
@@ -424,12 +454,15 @@ export function WorkflowRunResult({
           output,
         })
       : undefined;
-  const problem =
-    cached?.error ?? (phase === "failed" && !cached ? message.text : undefined);
+  const problem = cached?.error
+    ? messageText(flowFailureText(cached.error, cached.errorDetails), i18n)
+    : phase === "failed" && !cached
+      ? message.text
+      : undefined;
   const PhaseIcon =
     phase === "completed" ? CheckCircle2 : active ? LoaderCircle : CircleAlert;
   const steps = cached?.steps.length ? (
-    <ol className="workflow-stream-steps" aria-label="执行步骤">
+    <ol className="workflow-stream-steps" aria-label={t("executionSteps")}>
       {cached.steps.map((step) => {
         const key = step.stepKey ?? step.id;
         const expanded = key === stepId;
@@ -445,7 +478,7 @@ export function WorkflowRunResult({
               </span>
               <span className="workflow-step-copy">
                 <strong>{step.label}</strong>
-                <small>{workflowPhaseLabels[step.status]}</small>
+                <small>{workflowPhaseText(step.status, t)}</small>
               </span>
             </button>
             {expanded ? (
@@ -463,7 +496,7 @@ export function WorkflowRunResult({
   ) : active ? (
     <div className="workflow-stream-starting">
       <LoaderCircle size={15} className="workflow-spinner" />
-      正在准备执行步骤…
+      {t("preparingSteps")}
     </div>
   ) : null;
   return (
@@ -481,11 +514,11 @@ export function WorkflowRunResult({
       >
         <section
           className="workflow-message workflow-message-user"
-          aria-label="本次输入"
+          aria-label={t("runInput")}
         >
           <div className="workflow-user-bubble">
             {inputValue === undefined ? (
-              <p className="workflow-value-empty">正在读取本次输入…</p>
+              <p className="workflow-value-empty">{t("loadingRunInput")}</p>
             ) : (
               <WorkflowData value={inputValue} schema={inputSchema} />
             )}
@@ -498,15 +531,17 @@ export function WorkflowRunResult({
             </span>
             <div className="workflow-response-identity">
               <div>
-                <strong id={titleId}>{title ?? "工作流"}</strong>
+                <strong id={titleId}>{title ?? t("workflow")}</strong>
                 {index ? (
-                  <span className="workflow-run-number">第 {index} 次执行</span>
+                  <span className="workflow-run-number">
+                    {t("runNumber", { number: index })}
+                  </span>
                 ) : null}
               </div>
               <div className="workflow-run-meta">
                 {cached ? (
                   <time dateTime={new Date(cached.createdAt).toISOString()}>
-                    {new Date(cached.createdAt).toLocaleString("zh-CN", {
+                    {formatDate(cached.createdAt, {
                       month: "2-digit",
                       day: "2-digit",
                       hour: "2-digit",
@@ -514,9 +549,11 @@ export function WorkflowRunResult({
                     })}
                   </time>
                 ) : (
-                  <span>正在同步记录</span>
+                  <span>{t("syncingRecord")}</span>
                 )}
-                {cached ? <span>{modeLabels[cached.mode]}</span> : null}
+                {cached ? (
+                  <span>{workflowModeText(cached.mode, t)}</span>
+                ) : null}
               </div>
             </div>
             <span
@@ -527,14 +564,18 @@ export function WorkflowRunResult({
                 size={14}
                 className={active ? "workflow-spinner" : undefined}
               />
-              {workflowPhaseLabels[phase]}
+              {workflowPhaseText(phase, t)}
             </span>
             {active ? (
               <button
                 type="button"
                 className="icon-control workflow-stop"
-                aria-label={index ? `停止第 ${index} 次执行` : "停止工作流"}
-                title="停止运行"
+                aria-label={
+                  index
+                    ? t("stopNumberedRun", { number: index })
+                    : t("stopWorkflow")
+                }
+                title={t("stopRun")}
                 onClick={onCancel}
               >
                 <Square size={14} />
@@ -545,7 +586,7 @@ export function WorkflowRunResult({
             <div className="workflow-fetch-error" role="alert">
               {error}
               <button className="text-control" onClick={refresh}>
-                重试
+                {t("retry")}
               </button>
             </div>
           ) : null}
@@ -561,7 +602,10 @@ export function WorkflowRunResult({
             aria-live={active ? "polite" : "off"}
           >
             {steps}
-            <section className="workflow-stream-output" aria-label="本次输出">
+            <section
+              className="workflow-stream-output"
+              aria-label={t("runOutput")}
+            >
               <WorkflowArtifactGallery />
               {problem ? (
                 <div className="workflow-run-problem" role="alert">
@@ -594,12 +638,12 @@ export function WorkflowRunResult({
                       )}
                       <span>
                         {!cached && !savedOutput && !error
-                          ? "正在读取执行内容…"
+                          ? t("loadingRunContent")
                           : active
-                            ? "步骤正在执行，结果会继续显示在这里。"
+                            ? t("stepsRunning")
                             : phase === "completed"
-                              ? "工作流已完成，但未返回输出内容。"
-                              : "本次执行未生成输出。"}
+                              ? t("completedNoOutput")
+                              : t("runNoOutput")}
                       </span>
                     </div>
                   )}
@@ -610,7 +654,10 @@ export function WorkflowRunResult({
               )}
             </section>
           </div>
-          <footer className="workflow-response-meta" aria-label="执行进度">
+          <footer
+            className="workflow-response-meta"
+            aria-label={t("executionProgress")}
+          >
             {onRepeat && cached ? (
               <button
                 type="button"
@@ -619,7 +666,7 @@ export function WorkflowRunResult({
                 onClick={() => onRepeat(cached)}
               >
                 <RefreshCw size={14} />
-                再次运行
+                {t("runAgain")}
               </button>
             ) : null}
             <span className="workflow-current-step">
@@ -627,19 +674,25 @@ export function WorkflowRunResult({
                 <>
                   <span className="workflow-live-dot" />
                   {progress.current.length
-                    ? `正在执行 · ${progress.current.join("、")}`
-                    : "等待下一步执行"}
+                    ? t("runningSteps", {
+                        steps: new Intl.ListFormat(i18n.language, {
+                          style: "short",
+                          type: "conjunction",
+                        }).format(progress.current),
+                      })
+                    : t("waitingNextStep")}
                 </>
               ) : (
                 <>
                   <CheckCircle2 size={13} />
-                  {progress.completed} 个步骤完成
+                  {t("completedSteps", { count: progress.completed })}
                 </>
               )}
             </span>
             {progress.total ? (
               <span className="workflow-progress-count">
-                {progress.completed} / {progress.total}
+                {formatNumber(progress.completed)} /{" "}
+                {formatNumber(progress.total)}
               </span>
             ) : null}
             {cached ? (

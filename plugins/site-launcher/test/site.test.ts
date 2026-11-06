@@ -200,6 +200,10 @@ test("custom command with an occupied port is refused before spawn; foreign serv
   const result = await site.start({ ...project, url: occupied.url });
   assert.equal(result.state, "error");
   assert.match(result.message!, /已被占用/);
+  assert.deepEqual(result.messageDetails, {
+    code: "portOccupied",
+    params: { port: occupied.port },
+  });
   assert.equal(result.pid, undefined);
   assert.equal(result.project?.directory, project.directory);
   await assert.rejects(access(join(project.directory, "started.txt")));
@@ -239,8 +243,19 @@ test("custom server announcing an alternate port synchronizes URL and is owned b
     true,
   );
   assert.match(status.portMessage!, /实际地址/);
+  assert.deepEqual(status.messageDetails, { code: "previewOpened" });
+  assert.deepEqual(status.portDetails, [
+    {
+      code: "addressChanged",
+      params: {
+        url: status.project!.url,
+        previous: `http://127.0.0.1:${preferred}/`,
+      },
+    },
+  ]);
   await site.open(status.project!.url);
   await site.stop();
+  assert.deepEqual(site.getStatus().messageDetails, { code: "projectStopped" });
   assert.equal(
     await portAvailable(Number(new URL(status.project!.url).port)),
     true,
@@ -262,6 +277,7 @@ test("a foreign listener announced by the child is never adopted; timeout retain
   await until(() => site.getStatus().state === "error");
   assert.ok(site.getStatus().pid);
   assert.equal(site.getStatus().previewReady, false);
+  assert.deepEqual(site.getStatus().messageDetails, { code: "previewTimeout" });
   assert.deepEqual(opened, []);
   await site.stop();
   assert.equal(site.getStatus().pid, undefined);
@@ -277,6 +293,10 @@ test("a child that exits during startup reports an error promptly", async (t) =>
   await until(() => site.getStatus().state === "error", 15000);
   const status = site.getStatus();
   assert.match(status.message!, /代码 7/);
+  assert.deepEqual(status.messageDetails, {
+    code: "processExitCode",
+    params: { exitCode: 7 },
+  });
   assert.equal(status.pid, undefined);
   assert.equal(status.previewReady, false);
   assert.deepEqual(opened, []);

@@ -1,3 +1,4 @@
+import { CodedFlowError } from "@aura/protocol/errors";
 import { cp, lstat, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -15,7 +16,6 @@ import {
   storedHistoryPage,
   type HistoryCursor,
 } from "./stored-history-page.ts";
-import { FlowError } from "@aura/protocol/errors";
 
 /**
  * Read only settled coding logs before the execution host is ready. All format,
@@ -80,7 +80,10 @@ export async function coldCodingHistory(
     const index = new CodingConversationIndex(domain.table("conversations"));
     const record = index.get(sessionId);
     const side = index.sideParent(sessionId);
-    if (!record && !side) throw new FlowError("对话不存在或已移除。", 404);
+    if (!record && !side)
+      throw new CodedFlowError("对话不存在或已移除。", 404, {
+        code: "conversation_missing",
+      });
     signal.throwIfAborted();
     await context.plugin(JsonlSessionPersistence, {
       root: join(dshHome, "aura-flow-sessions"),

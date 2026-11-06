@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useToolMessages, type ToolMessageKey } from "../../tool-messages.ts";
+import { formatDate, formatNumber, messageText } from "@aura/i18n/runtime";
 import type { Turn } from "./turns";
 import {
   buildTrajectory,
@@ -8,10 +10,10 @@ import {
 } from "./trajectory";
 import "./trajectory.css";
 
-const lanes: Array<{ id: TrajectoryLane; label: string }> = [
-  { id: "input", label: "输入" },
-  { id: "model", label: "模型" },
-  { id: "tool", label: "工具" },
+const lanes: Array<{ id: TrajectoryLane; label: ToolMessageKey }> = [
+  { id: "input", label: "laneInput" },
+  { id: "model", label: "laneModel" },
+  { id: "tool", label: "laneTool" },
 ];
 
 /**
@@ -20,6 +22,8 @@ const lanes: Array<{ id: TrajectoryLane; label: string }> = [
  * range that also filters the step table below.
  */
 export function TrajectoryView({ turns }: { turns: readonly Turn[] }) {
+  const { t, i18n } = useToolMessages();
+  const locale = i18n.resolvedLanguage ?? "en";
   const running = turns.some((turn) => turn.status === "running");
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -47,18 +51,17 @@ export function TrajectoryView({ turns }: { turns: readonly Turn[] }) {
   const steps = visible.filter((item) => item.lane !== "input");
 
   if (!turns.length)
-    return (
-      <div className="trajectory-empty">
-        发送第一条消息后，这里会按时间展示每一轮的模型请求与工具调用。
-      </div>
-    );
+    return <div className="trajectory-empty">{t("trajectoryEmpty")}</div>;
 
   return (
-    <section className="trajectory" aria-label="对话轨迹">
+    <section className="trajectory" aria-label={t("trajectory")}>
       <div className="trajectory-toolbar">
         <span>
-          {turns.length} 轮 · {steps.length} 个步骤 · 共{" "}
-          {formatSpan(trajectory.end - trajectory.start)}
+          {t("trajectorySummary", {
+            turns: turns.length,
+            steps: steps.length,
+            duration: formatSpan(trajectory.end - trajectory.start, locale),
+          })}
         </span>
         {range ? (
           <button
@@ -66,23 +69,23 @@ export function TrajectoryView({ turns }: { turns: readonly Turn[] }) {
             className="dsh-button"
             onClick={() => setRange(undefined)}
           >
-            显示全部
+            {t("showAll")}
           </button>
         ) : (
-          <span className="trajectory-hint">拖动选择时间段可放大</span>
+          <span className="trajectory-hint">{t("zoomTimeHint")}</span>
         )}
       </div>
       <div className="trajectory-chart">
         <div className="trajectory-labels" aria-hidden="true">
           {lanes.map((lane) => (
-            <span key={lane.id}>{lane.label}</span>
+            <span key={lane.id}>{t(lane.label)}</span>
           ))}
         </div>
         <div
           ref={plot}
           className="trajectory-plot"
           role="img"
-          aria-label="按时间排列的输入、模型与工具步骤"
+          aria-label={t("timelinePlot")}
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -109,7 +112,7 @@ export function TrajectoryView({ turns }: { turns: readonly Turn[] }) {
                 className="trajectory-turn"
                 style={{ left: `${percent(bound.start)}%` }}
               >
-                <small>#{bound.turn}</small>
+                <small>#{formatNumber(bound.turn)}</small>
               </span>
             ) : null,
           )}
@@ -163,50 +166,62 @@ export function TrajectoryView({ turns }: { turns: readonly Turn[] }) {
                 left: `clamp(140px, ${hover.x}px, calc(100% - 140px))`,
               }}
             >
-              <strong>{hover.span.label}</strong>
+              <strong>{messageText(hover.span.label, i18n)}</strong>
               {hover.span.detail ? <span>{hover.span.detail}</span> : null}
               <small>
-                第 {hover.span.turn} 轮 ·{" "}
-                {hover.span.lane === "input"
-                  ? new Date(hover.span.start).toLocaleTimeString("zh-CN")
-                  : formatSpan(hover.span.end - hover.span.start)}
-                {hover.span.open ? " · 进行中" : ""}
+                {t("turnTime", {
+                  turn: hover.span.turn,
+                  time:
+                    hover.span.lane === "input"
+                      ? formatDate(hover.span.start, { timeStyle: "medium" })
+                      : formatSpan(hover.span.end - hover.span.start, locale),
+                })}
+                {hover.span.open ? ` · ${t("agentRunning")}` : ""}
               </small>
             </span>
           ) : null}
         </div>
       </div>
-      <table className="trajectory-table">
-        <thead>
-          <tr>
-            <th scope="col">轮次</th>
-            <th scope="col">步骤</th>
-            <th scope="col">内容</th>
-            <th scope="col">开始</th>
-            <th scope="col">耗时</th>
-          </tr>
-        </thead>
-        <tbody>
-          {steps.map((item) => (
-            <tr key={item.id} className={item.state}>
-              <td>#{item.turn}</td>
-              <td>
-                <span className={`trajectory-dot ${item.lane}`} />
-                {item.label}
-              </td>
-              <td className="trajectory-detail" title={item.detail}>
-                {item.detail ?? ""}
-              </td>
-              <td>{new Date(item.start).toLocaleTimeString("zh-CN")}</td>
-              <td>
-                {item.open ? "进行中" : formatSpan(item.end - item.start)}
-                {item.state === "failed" ? " · 失败" : ""}
-                {item.state === "stopped" ? " · 已停止" : ""}
-              </td>
+      <div
+        className="trajectory-steps"
+        role="region"
+        aria-label={t("trajectory")}
+        tabIndex={0}
+      >
+        <table className="trajectory-table">
+          <thead>
+            <tr>
+              <th scope="col">{t("turnColumn")}</th>
+              <th scope="col">{t("stepColumn")}</th>
+              <th scope="col">{t("contentColumn")}</th>
+              <th scope="col">{t("startColumn")}</th>
+              <th scope="col">{t("durationColumn")}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {steps.map((item) => (
+              <tr key={item.id} className={item.state}>
+                <td>#{formatNumber(item.turn)}</td>
+                <td>
+                  <span className={`trajectory-dot ${item.lane}`} />
+                  {messageText(item.label, i18n)}
+                </td>
+                <td className="trajectory-detail" title={item.detail}>
+                  {item.detail ?? ""}
+                </td>
+                <td>{formatDate(item.start, { timeStyle: "medium" })}</td>
+                <td>
+                  {item.open
+                    ? t("agentRunning")
+                    : formatSpan(item.end - item.start, locale)}
+                  {item.state === "failed" ? ` · ${t("agentFailed")}` : ""}
+                  {item.state === "stopped" ? ` · ${t("agentStopped")}` : ""}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

@@ -9,6 +9,7 @@ import { CodexSubscriptionAuth } from "@aura/dsh-auth";
 import { AiServices } from "../src/ai-services.ts";
 import { createAiServicesApp } from "../src/ai-services-routes.ts";
 import { resolveRuntimeConfig } from "../src/runtime-config.ts";
+import { modelProbeFailureCode } from "../src/model-probe.ts";
 
 test("model discovery and a real inference have separate results; denied/empty responses cannot pass", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "aura-model-probe-"));
@@ -99,7 +100,12 @@ test("model discovery and a real inference have separate results; denied/empty r
   await services.saveModel({ ...settings, key: "fixture-secret" });
   const catalog = await call("/models");
   assert.deepEqual(catalog.catalog.custom, ["fixture-chat", "fixture-other"]);
+  assert.deepEqual(catalog.checkDetails.model, {
+    code: "models_listed",
+    count: 2,
+  });
   const savedAgain = await services.saveModel(settings);
+  assert.deepEqual(savedAgain.checkDetails.model, { code: "unchecked" });
   assert.deepEqual(
     savedAgain.catalog.custom,
     catalog.catalog.custom,
@@ -114,12 +120,52 @@ test("model discovery and a real inference have separate results; denied/empty r
   assert.equal(inference, 1);
   assert.match(success.checks.model, /测试成功.*fixture-chat.*回复：OK/u);
   assert.equal(success.checkRuns.model, 1);
+  assert.equal(success.checkDetails.model.code, "probe_succeeded");
+  if (success.checkDetails.model.code === "probe_succeeded") {
+    assert.equal(success.checkDetails.model.reply, "OK");
+    assert.equal(success.checkDetails.model.model, "fixture-chat");
+    assert.ok(success.checkDetails.model.elapsedMs >= 0);
+  }
   mode = "denied";
   const failed = await call("/check/model");
   assert.match(failed.checks.model, /测试失败.*认证失败/u);
   assert.ok(!JSON.stringify(failed).includes("fixture-secret"));
   assert.equal(failed.checkRuns.model, 2);
+  assert.deepEqual(failed.checkDetails.model, {
+    code: "probe_failed",
+    model: "fixture-chat",
+    reason: "authentication",
+  });
   mode = "empty";
   const empty = await call("/check/model");
   assert.match(empty.checks.model, /测试失败.*没有返回有效文本/u);
+  assert.deepEqual(empty.checkDetails.model, {
+    code: "probe_failed",
+    model: "fixture-chat",
+    reason: "empty_response",
+  });
+  assert.equal(
+    inference,
+    3,
+    "only the three explicit checks invoke the synthetic model",
+  );
+});
+
+test("model probe failures classify safe reasons without returning provider diagnostics", () => {
+  const signal = new AbortController().signal;
+  for (const [error, expected] of [
+    [{ status: 401, message: "private" }, "authentication"],
+    [{ message: "HTTP 403 private" }, "permission"],
+    [{ status: 404 }, "not_found"],
+    [{ status: 429 }, "rate_limit"],
+    [{ code: "timeout" }, "timeout"],
+    [{ code: "empty_response" }, "empty_response"],
+    [{ code: "unsupported" }, "unsupported"],
+    [{ message: "private" }, "request_failed"],
+  ] as const)
+    assert.equal(modelProbeFailureCode(error, signal), expected);
+  assert.equal(
+    modelProbeFailureCode(new Error("private"), AbortSignal.abort()),
+    "timeout",
+  );
 });

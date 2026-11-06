@@ -1,5 +1,9 @@
 import type { AiCustomProvider, AiModelSettings } from "@aura/protocol/types";
 import { modelCatalogs } from "./model-catalog-store.ts";
+import type { ModelServiceCheck } from "@aura/protocol/model-checks";
+import { MessageError } from "@aura/i18n/runtime";
+import { apiErrorText } from "./api-error-messages.ts";
+import { modelServiceMessage } from "./model-service-messages.ts";
 
 /** Redacted backend view of `/ai/services`; keys never appear here. */
 export interface ModelServicesState {
@@ -14,6 +18,7 @@ export interface ModelServicesState {
     modelCount: number;
   };
   checks: { model: string; lumina: string };
+  checkDetails?: Partial<Record<"model" | "lumina", ModelServiceCheck>>;
 }
 
 export type CustomServiceDraft = {
@@ -43,9 +48,11 @@ async function request(
   const result = (await response.json().catch(() => null)) as
     ModelServicesState | { message?: string } | null;
   if (!response.ok)
-    throw new Error(
-      (result && "message" in result && result.message) ||
-        `模型服务设置不可用（${response.status}）。`,
+    throw new MessageError(
+      apiErrorText(
+        result,
+        modelServiceMessage("settingsUnavailable", { status: response.status }),
+      ),
     );
   if (body !== undefined) modelCatalogs.invalidate(endpoint);
   return result as ModelServicesState;

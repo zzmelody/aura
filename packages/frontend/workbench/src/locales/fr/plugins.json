@@ -1,0 +1,21 @@
+{
+  "scriptTimeout": "Le chargement du script du plugin a expiré.",
+  "scriptLoadFailed": "Impossible de charger le script du plugin.",
+  "missingApply": "Le point d’entrée du plugin pour le navigateur n’exporte pas apply(ctx).",
+  "duplicatePage": "La page de plugin {{id}} est déjà enregistrée.",
+  "duplicateResult": "La vue de résultats du plugin {{id}} est déjà enregistrée.",
+  "alreadyStarted": "Le système de modules des plugins fonctionne déjà sur cette page. Rechargez la page.",
+  "loaderUnavailable": "Le service Aura n’a pas fourni le chargeur de modules DSH.",
+  "loaderUnregistered": "L’enregistrement du chargeur de modules DSH n’est pas terminé.",
+  "loaderBeforeStartup": "Le chargeur de modules DSH a demandé {{specifier}} avant son démarrage.",
+  "graphUpdateUnsupported": "Le système de modules DSH ne permet pas de mettre à jour le graphe des modules pendant l’exécution.",
+  "pagesReadFailed": "Impossible de lire les pages des plugins ({{status}}).",
+  "graphReadFailed": "Impossible de lire le graphe des modules des plugins ({{status}}).",
+  "renderFailed": "Impossible d’afficher la page du plugin.",
+  "pageOpenFailed": "Impossible d’ouvrir {{label}} : {{message}}",
+  "settingsReadFailed": "Impossible de lire les dossiers de plugins ({{status}}).",
+  "settingsSaveFailed": "Impossible d’enregistrer les dossiers de plugins ({{status}}).",
+  "invokeFailed": "La requête de la page du plugin a échoué ({{status, number}}).",
+  "directoryDesktopOnly": "La sélection d’un dossier nécessite Aura Desktop.",
+  "previewDesktopOnly": "L’aperçu du site nécessite Aura Desktop."
+}

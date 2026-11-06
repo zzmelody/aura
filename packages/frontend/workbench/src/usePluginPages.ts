@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMessages } from "@aura/i18n";
-import { pluginNamespace } from "@aura/i18n/runtime";
+import { errorMessage, messageText, pluginNamespace } from "@aura/i18n/runtime";
+import "./plugin-messages";
 import {
   pluginPageInvoke,
   startPluginHost,
   type RegisteredPage,
   type RegisteredResult,
+  type PluginFailure,
 } from "./pluginHost";
 import { pluginTab } from "./pluginPages";
 import * as workbenchModule from "./plugin-api.ts";
@@ -20,12 +22,10 @@ export interface PluginStudio {
 }
 
 export function usePluginPages(endpoint: string, enabled: boolean) {
-  const { t } = useMessages("plugins");
+  const { t, i18n } = useMessages("plugins");
   const [pages, setPages] = useState<RegisteredPage[]>([]);
   const [results, setResults] = useState<RegisteredResult[]>([]);
-  const [failures, setFailures] = useState<
-    Array<{ id: string; message: string }>
-  >([]);
+  const [failures, setFailures] = useState<PluginFailure[]>([]);
 
   useEffect(() => {
     if (!enabled) {
@@ -58,7 +58,7 @@ export function usePluginPages(endpoint: string, enabled: boolean) {
           setFailures([
             {
               id: "host",
-              message: error instanceof Error ? error.message : String(error),
+              message: errorMessage(error),
             },
           ]);
           timer = setTimeout(start, 3000);
@@ -95,5 +95,13 @@ export function usePluginPages(endpoint: string, enabled: boolean) {
     [pages, t],
   );
 
-  return { studios, results, failures, invoke: pluginPageInvoke };
+  return {
+    studios,
+    results,
+    failures: failures.map(({ id, message }) => ({
+      id,
+      message: messageText(message, i18n),
+    })),
+    invoke: pluginPageInvoke,
+  };
 }

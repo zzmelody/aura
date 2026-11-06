@@ -4,6 +4,17 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import type { DesktopStartup } from "../apps/desktop/src/startup.ts";
+import {
+  createLanguageController,
+  languageStorageKey,
+  locales,
+  registerCatalogs,
+} from "@aura/i18n/runtime";
+import {
+  desktopCatalogs,
+  desktopText,
+  type DesktopMessageKey,
+} from "../apps/desktop/src/desktop-messages.ts";
 
 const source = ts.transpileModule(
   await readFile(
@@ -19,8 +30,26 @@ const source = ts.transpileModule(
 ).outputText;
 
 function browser(
-  options: { reduced?: boolean; icon?: boolean; saved?: string } = {},
+  options: {
+    reduced?: boolean;
+    icon?: boolean;
+    saved?: string;
+    languageSaved?: string;
+    languages?: string[];
+  } = {},
 ) {
+  let writes = 0;
+  const controller = createLanguageController({
+    languages: options.languages ?? ["zh-CN"],
+    storage: {
+      getItem: (key) =>
+        key === languageStorageKey ? (options.languageSaved ?? null) : null,
+      setItem: () => {
+        writes++;
+      },
+    },
+  });
+  registerCatalogs("desktop", desktopCatalogs, controller.i18n);
   const events = new Map<string, () => void>();
   const mediaEvents = new Map<string, () => void>();
   const timers = new Map<number, { callback: () => void; delay: number }>();
@@ -71,6 +100,7 @@ function browser(
       "desktop-startup-message",
       "desktop-startup-reload",
       "desktop-startup-field",
+      "desktop-startup-tagline",
     ].map((id) => [id, new Element()]),
   );
   const root = elements.get("root")!;
@@ -88,6 +118,8 @@ function browser(
   };
   const exports: { startDesktopStartup?: () => DesktopStartup } = {};
   const document = {
+    title: "",
+    documentElement: { lang: "", dir: "" },
     hidden: false,
     getElementById: (id: string) => elements.get(id),
     body: { append: (element: Element) => (element.isConnected = true) },
@@ -95,6 +127,12 @@ function browser(
   runInNewContext(source, {
     exports,
     require: (name: string) => {
+      if (name === "@aura/i18n/runtime") return { language: controller };
+      if (name === "./desktop-messages.ts")
+        return {
+          desktopText: (key: DesktopMessageKey) =>
+            desktopText(key, controller.i18n),
+        };
       assert.equal(name, "./startup-field.ts");
       return {
         startStartupField: () => ({
@@ -141,6 +179,9 @@ function browser(
     field,
     timers,
     animations,
+    controller,
+    writes: () => writes,
+    tagline: elements.get("desktop-startup-tagline")!,
     tick,
     reloads: () => reloads,
   };
@@ -150,7 +191,9 @@ test("startup waits for the committed workbench and repeated ready notifications
   const page = browser();
   assert.equal(page.root.inert, true);
   assert.equal(page.animations.length, 0);
+  page.document.title = "Aura · My conversation";
   page.startup.ready({ reduced: false });
+  assert.equal(page.document.title, "Aura · My conversation");
   assert.equal(page.root.inert, false);
   assert.equal(page.root.attributes.has("aria-hidden"), false);
   assert.equal(page.surface.inert, true);
@@ -213,9 +256,70 @@ test("a renderer failure interrupts exit and keeps an actionable error surface",
   page.tick(520);
   assert.equal(page.surface.isConnected, true);
   assert.equal(page.animations[0].canceled, true);
-  assert.equal(page.timers.size + page.mediaEvents.size + page.events.size, 0);
+  assert.equal(page.timers.size + page.mediaEvents.size, 0);
+  assert.equal(page.events.size, 1);
   page.reload.listeners.get("click")!();
   assert.equal(page.reloads(), 1);
+});
+
+test("startup reads the saved language before rendering and language changes retain slow and failed states", async () => {
+  const page = browser({
+    languageSaved: '{"language":"fr"}',
+    languages: ["ja"],
+  });
+  assert.equal(page.document.documentElement.lang, "fr");
+  assert.equal(page.message.textContent, desktopCatalogs.fr.startupLoading);
+  assert.equal(page.writes(), 0);
+  page.tick(10_000);
+  const field = page.field;
+  const surface = page.surface;
+  for (const locale of locales) {
+    await page.controller.select(locale);
+    const expected = desktopCatalogs[locale];
+    assert.equal(page.document.documentElement.lang, locale);
+    assert.equal(page.document.documentElement.dir, "ltr");
+    assert.equal(page.document.title, expected.startupTitle);
+    assert.equal(
+      page.surface.attributes.get("aria-label"),
+      expected.startupOpening,
+    );
+    assert.equal(page.message.textContent, expected.startupSlow);
+    assert.equal(page.tagline.textContent, expected.tagline);
+    assert.equal(page.reload.textContent, expected.reload);
+    assert.equal(page.reload.hidden, false);
+    assert.equal(page.surface, surface);
+    assert.equal(page.field, field);
+    assert.equal(page.field.disposals, 0);
+    assert.equal(page.animations.length + page.reloads(), 0);
+  }
+  page.startup.fail();
+  for (const locale of locales) {
+    await page.controller.select(locale);
+    assert.equal(
+      page.message.textContent,
+      desktopCatalogs[locale].startupFailed,
+    );
+    assert.equal(page.root.inert, true);
+    assert.equal(page.surface, surface);
+  }
+  assert.equal(page.writes(), locales.length * 2);
+  page.events.get("pagehide")!();
+  const last = page.message.textContent;
+  await page.controller.select("en");
+  assert.equal(page.message.textContent, last);
+  assert.equal(page.events.size, 0);
+});
+
+test("unsupported or damaged startup preferences follow the system without repairing storage", () => {
+  for (const languageSaved of ["{", '{"language":"invalid"}', "null"]) {
+    const page = browser({ languageSaved, languages: ["de-DE", "ko-KR"] });
+    assert.equal(page.document.documentElement.lang, "ko");
+    assert.equal(page.writes(), 0);
+    page.startup.dispose();
+  }
+  const fallback = browser({ languages: ["de-DE"] });
+  assert.equal(fallback.document.documentElement.lang, "en");
+  fallback.startup.dispose();
 });
 
 test("late renderer errors can restore the error surface after successful startup", () => {

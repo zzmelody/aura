@@ -1,4 +1,5 @@
 import { createFlowApp } from "./flow-routes.ts";
+import { flowErrorBody, type ApiErrorDetails } from "@aura/protocol/errors";
 import { isTopLevelPluginHttpRequest } from "./plugin-http-mounts.ts";
 import {
   FlowError,
@@ -13,7 +14,7 @@ import {
   isCodingRunIntent,
 } from "@aura/protocol";
 import type { ChatEvent } from "@aura/protocol/types";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { ChatMessage } from "@aura/protocol/types";
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
@@ -94,6 +95,17 @@ interface ApiLifecycle {
   admittedRequests: number;
 }
 
+/** Keep legacy text responses while making their meaning available to new clients. */
+function chatResponseError(
+  context: Context,
+  message: string,
+  status: 400 | 413 | 503,
+  code: ApiErrorDetails["code"],
+) {
+  context.header("X-Aura-Error-Code", code);
+  return context.text(message, status);
+}
+
 function registerChatRoute(
   app: Hono,
   path: string,
@@ -105,11 +117,22 @@ function registerChatRoute(
     path,
     bodyLimit({
       maxSize: 256 * 1_024,
-      onError: (context) => context.text("无效的对话请求。", 413),
+      onError: (context) =>
+        chatResponseError(
+          context,
+          "无效的对话请求。",
+          413,
+          "conversation_request_invalid",
+        ),
     }),
     async (context) => {
       if (lifecycle.shuttingDown || lifecycle.admittedRequests >= 2)
-        return context.text("服务忙，请稍后再试。", 503);
+        return chatResponseError(
+          context,
+          "服务忙，请稍后再试。",
+          503,
+          "conversation_service_busy",
+        );
 
       try {
         const body = (await context.req.json()) as unknown;
@@ -172,10 +195,13 @@ function registerChatRoute(
           } catch (error) {
             emit({
               type: "error",
-              message:
-                error instanceof FlowError && error.status === 422
-                  ? error.message
-                  : "DSH 请求暂时不可用，请检查服务终端和登录状态后重试。",
+              ...(error instanceof FlowError && error.status === 422
+                ? flowErrorBody(error)
+                : {
+                    message:
+                      "DSH 请求暂时不可用，请检查服务终端和登录状态后重试。",
+                    code: "chat_request_unavailable",
+                  }),
             });
             await pendingWrite;
           } finally {
@@ -183,7 +209,12 @@ function registerChatRoute(
           }
         });
       } catch {
-        return context.text("无效的对话请求。", 400);
+        return chatResponseError(
+          context,
+          "无效的对话请求。",
+          400,
+          "conversation_request_invalid",
+        );
       }
     },
   );
@@ -282,10 +313,19 @@ export function createApiApp({
   app.get("/chat/models", async (context) => {
     const mode = context.req.query("mode") ?? "codex";
     if (!["codex", "demo", "lumina", "custom"].includes(mode))
-      return context.json({ message: "无效的对话模式。" }, 400);
+      return context.json(
+        { message: "无效的对话模式。", code: "conversation_mode_invalid" },
+        400,
+      );
     const host = chat ?? flows;
     if (!host || lifecycle.shuttingDown)
-      return context.json({ message: "对话模型目录暂时不可用。" }, 503);
+      return context.json(
+        {
+          message: "对话模型目录暂时不可用。",
+          code: "model_catalog_unavailable",
+        },
+        503,
+      );
     try {
       context.header("Cache-Control", "no-store");
       return context.json(
@@ -297,7 +337,13 @@ export function createApiApp({
         ),
       );
     } catch {
-      return context.json({ message: "无法读取 DSH 模型目录，请重试。" }, 503);
+      return context.json(
+        {
+          message: "无法读取 DSH 模型目录，请重试。",
+          code: "model_catalog_unavailable",
+        },
+        503,
+      );
     }
   });
 
@@ -335,11 +381,22 @@ export function createApiApp({
     "/coding/turn",
     bodyLimit({
       maxSize: 256 * 1_024,
-      onError: (context) => context.text("无效的编码请求。", 413),
+      onError: (context) =>
+        chatResponseError(
+          context,
+          "无效的编码请求。",
+          413,
+          "conversation_request_invalid",
+        ),
     }),
     async (context) => {
       if (lifecycle.shuttingDown)
-        return context.text("服务忙，请稍后再试。", 503);
+        return chatResponseError(
+          context,
+          "服务忙，请稍后再试。",
+          503,
+          "conversation_service_busy",
+        );
       const body = (await context.req.json().catch(() => undefined)) as
         Record<string, unknown> | undefined;
       if (
@@ -378,11 +435,28 @@ export function createApiApp({
         ((body.intent === "goal" || body.intent === "resume-goal") &&
           !!(body.images as string[] | undefined)?.length)
       )
-        return context.text("无效的编码请求。", 400);
-      if (!chat && !flows) return context.text("编码服务不可用。", 503);
+        return chatResponseError(
+          context,
+          "无效的编码请求。",
+          400,
+          "conversation_request_invalid",
+        );
+      if (!chat && !flows)
+        return chatResponseError(
+          context,
+          "编码服务不可用。",
+          503,
+          "coding_request_unavailable",
+        );
       const host = chat ?? flows;
       const coding = host?.coding?.bind(host);
-      if (!coding) return context.text("编码服务不可用。", 503);
+      if (!coding)
+        return chatResponseError(
+          context,
+          "编码服务不可用。",
+          503,
+          "coding_request_unavailable",
+        );
 
       const mode = body.mode as ChatRoute["mode"];
       const selection = body.modelConfig as
@@ -452,12 +526,14 @@ export function createApiApp({
         } catch (error) {
           emit({
             type: "error",
-            message:
-              // Validation failures (removed project, wrong project, missing
-              // tools) are written for the user; anything else stays generic.
-              error instanceof FlowError && error.status < 500
-                ? error.message
-                : "编码请求暂时不可用，请检查服务终端和登录状态后重试。",
+            // Validation failures are safe; anything else stays generic.
+            ...(error instanceof FlowError && error.status < 500
+              ? flowErrorBody(error)
+              : {
+                  message:
+                    "编码请求暂时不可用，请检查服务终端和登录状态后重试。",
+                  code: "coding_request_unavailable",
+                }),
           });
           await pendingWrite;
         }
@@ -468,13 +544,19 @@ export function createApiApp({
   app.notFound((context) => context.body(null, 404));
   app.onError(
     () =>
-      new Response(JSON.stringify({ message: "Aura runtime 请求处理失败。" }), {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          "Cache-Control": "no-store",
+      new Response(
+        JSON.stringify({
+          message: "Aura runtime 请求处理失败。",
+          code: "runtime_request_failed",
+        }),
+        {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Cache-Control": "no-store",
+          },
         },
-      }),
+      ),
   );
   return app;
 }

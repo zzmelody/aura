@@ -54,7 +54,7 @@ import { conversationList } from "./conversations/conversation-list.ts";
 import { codingSkills } from "./conversations/skills.ts";
 import { CodingQuestions } from "./conversations/questions.ts";
 import { chatModelCatalog, RejectedChatModels } from "./chat-models.ts";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError, FlowError } from "@aura/protocol/errors";
 import {
   CHAT_IMAGE_LIMIT,
   type FlowAgentConfig,
@@ -144,7 +144,9 @@ export async function createAgentService(
     {
       assertSession(id) {
         if (!codingConversations.get(id) && !codingConversations.sideParent(id))
-          throw new FlowError("对话不存在或已移除。", 404);
+          throw new CodedFlowError("对话不存在或已移除。", 404, {
+            code: "conversation_missing",
+          });
       },
       async start(sessionId, command, emit, signal) {
         const { modelConfig, ...input } = command.input;
@@ -169,7 +171,9 @@ export async function createAgentService(
             ? await resolveModeDefaults(command.modelConfig.mode)
             : undefined;
           if (executions.execution(sessionId)?.id !== command.executionId)
-            throw new FlowError("目标执行已经结束。", 409);
+            throw new CodedFlowError("目标执行已经结束。", 409, {
+              code: "conversation_execution_ended",
+            });
           const steered = await coding.steer(
             sessionId,
             command.prompt,
@@ -180,7 +184,9 @@ export async function createAgentService(
             command.commandId,
           );
           if (!steered)
-            throw new FlowError("目标执行已经停止接收追加消息。", 409);
+            throw new CodedFlowError("目标执行已经停止接收追加消息。", 409, {
+              code: "conversation_steer_closed",
+            });
           if (command.modelConfig)
             await conversations.selectModel(
               sessionId,
@@ -222,7 +228,9 @@ export async function createAgentService(
           !params.sessionId ||
           params.sessionId.length > 200
         )
-          throw new FlowError("无效的对话。", 400);
+          throw new CodedFlowError("无效的对话。", 400, {
+            code: "conversation_request_invalid",
+          });
         data = await executions.submit(
           params.sessionId,
           parseConversationCommand(params.command),
@@ -234,13 +242,17 @@ export async function createAgentService(
           typeof params.sessionId !== "string" ||
           typeof params.commandId !== "string"
         )
-          throw new FlowError("无效的命令查询。", 400);
+          throw new CodedFlowError("无效的命令查询。", 400, {
+            code: "conversation_command_query_invalid",
+          });
         data = executions.receipt(params.sessionId, params.commandId);
         break;
       }
       case "coding/snapshot": {
         if (typeof params.sessionId !== "string")
-          throw new FlowError("无效的对话。", 400);
+          throw new CodedFlowError("无效的对话。", 400, {
+            code: "conversation_request_invalid",
+          });
         data = await executions.snapshot(params.sessionId);
         break;
       }
@@ -249,7 +261,9 @@ export async function createAgentService(
           typeof params.sessionId !== "string" ||
           (params.cursor !== undefined && !isConversationCursor(params.cursor))
         )
-          throw new FlowError("无效的事件游标。", 400);
+          throw new CodedFlowError("无效的事件游标。", 400, {
+            code: "conversation_cursor_invalid",
+          });
         executions.assertReadable(params.sessionId);
         data = executions.events.read(
           params.sessionId,
@@ -277,7 +291,10 @@ export async function createAgentService(
             audio: z.base64().max(Math.ceil(MAX_VOICE_BYTES / 3) * 4),
           })
           .safeParse(params);
-        if (!input.success) throw new FlowError("录音格式无效。", 400);
+        if (!input.success)
+          throw new CodedFlowError("录音格式无效。", 400, {
+            code: "voice_format_invalid",
+          });
         data = await integrations.transcribe(input.data.id, input.data.audio);
         break;
       }
@@ -288,7 +305,10 @@ export async function createAgentService(
             query: z.string().trim().min(1).max(256),
           })
           .safeParse(params);
-        if (!input.success) throw new FlowError("请输入有效的搜索词。", 400);
+        if (!input.success)
+          throw new CodedFlowError("请输入有效的搜索词。", 400, {
+            code: "search_query_invalid",
+          });
         data = await integrations.search(
           input.data.projectId,
           input.data.query,
@@ -300,7 +320,9 @@ export async function createAgentService(
         break;
       case "integrations/market":
         if (!integrations.enabled("market"))
-          throw new FlowError("插件市场未启用。", 409);
+          throw new CodedFlowError("插件市场未启用。", 409, {
+            code: "plugin_market_disabled",
+          });
         data = await pluginMarket(
           typeof params.query === "string"
             ? params.query.trim().slice(0, 256)
@@ -309,7 +331,10 @@ export async function createAgentService(
         break;
       case "chat/models": {
         const mode = chatModeSchema.safeParse(params.mode);
-        if (!mode.success) throw new FlowError("无效的对话模式。", 400);
+        if (!mode.success)
+          throw new CodedFlowError("无效的对话模式。", 400, {
+            code: "conversation_mode_invalid",
+          });
         data = await chatModelCatalog(
           ctx.llm,
           mode.data,
@@ -343,13 +368,17 @@ export async function createAgentService(
           })
           .safeParse(params);
         if (!chatId || chatId.length > 200 || !turn.success)
-          throw new FlowError("无效的对话请求。", 400);
+          throw new CodedFlowError("无效的对话请求。", 400, {
+            code: "conversation_request_invalid",
+          });
         const abort = new AbortController();
         chats.set(chatId, abort);
         try {
           const last = turn.data.messages.at(-1)!;
           if (last.role !== "user")
-            throw new FlowError("对话需要以用户消息结束。", 400);
+            throw new CodedFlowError("对话需要以用户消息结束。", 400, {
+              code: "conversation_last_user_required",
+            });
           data = await executions.stream(
             turn.data.sessionId ?? `chat-${randomUUID()}`,
             {
@@ -419,7 +448,9 @@ export async function createAgentService(
           (!turn.data.prompt.trim() && !turn.data.images?.length) ||
           (isGoalIntent(turn.data.intent) && !!turn.data.images?.length)
         )
-          throw new FlowError("无效的编码请求。", 400);
+          throw new CodedFlowError("无效的编码请求。", 400, {
+            code: "conversation_request_invalid",
+          });
         const abort = new AbortController();
         chats.set(chatId, abort);
         try {
@@ -454,15 +485,21 @@ export async function createAgentService(
       case "coding/agents":
       case "coding/agents/stop": {
         if (typeof params.sessionId !== "string")
-          throw new FlowError("无效的对话。", 400);
+          throw new CodedFlowError("无效的对话。", 400, {
+            code: "conversation_request_invalid",
+          });
         const parent =
           codingConversations.get(params.sessionId) ??
           codingConversations.sideParent(params.sessionId);
         if (!parent || parent.archivedAt !== undefined)
-          throw new FlowError("对话不存在或已归档。", 404);
+          throw new CodedFlowError("对话不存在或已归档。", 404, {
+            code: "conversation_missing",
+          });
         if (method === "coding/agents/stop") {
           if (typeof params.childId !== "string")
-            throw new FlowError("无效的子 Agent。", 400);
+            throw new CodedFlowError("无效的子 Agent。", 400, {
+              code: "subagent_invalid",
+            });
           data = ctx.subagents.interruptByParent(
             SessionId(params.childId),
             SessionId(params.sessionId),
@@ -473,12 +510,16 @@ export async function createAgentService(
       }
       case "coding/compact": {
         if (typeof params.sessionId !== "string")
-          throw new FlowError("无效的对话。", 400);
+          throw new CodedFlowError("无效的对话。", 400, {
+            code: "conversation_request_invalid",
+          });
         const parent =
           codingConversations.get(params.sessionId) ??
           codingConversations.sideParent(params.sessionId);
         if (!parent || parent.archivedAt !== undefined)
-          throw new FlowError("对话不存在或已归档。", 404);
+          throw new CodedFlowError("对话不存在或已归档。", 404, {
+            code: "conversation_missing",
+          });
         data = await coding.compact(params.sessionId);
         break;
       }
@@ -490,13 +531,18 @@ export async function createAgentService(
           })
           .strict()
           .safeParse(params);
-        if (!request.success) throw new FlowError("无效的协作模式请求。", 400);
+        if (!request.success)
+          throw new CodedFlowError("无效的协作模式请求。", 400, {
+            code: "collaboration_request_invalid",
+          });
         const { sessionId, action } = request.data;
         const parent =
           codingConversations.get(sessionId) ??
           codingConversations.sideParent(sessionId);
         if (!parent || (action && parent.archivedAt !== undefined))
-          throw new FlowError("对话不存在或已归档。", 404);
+          throw new CodedFlowError("对话不存在或已归档。", 404, {
+            code: "conversation_missing",
+          });
         data = action
           ? await coding.changeCollaboration(sessionId, action)
           : await coding.collaborationState(
@@ -507,7 +553,9 @@ export async function createAgentService(
       }
       case "coding/stop": {
         if (typeof params.sessionId !== "string")
-          throw new FlowError("无效的对话。", 400);
+          throw new CodedFlowError("无效的对话。", 400, {
+            code: "conversation_request_invalid",
+          });
         // Only coding turns are registered here, so another DSH session
         // (for example a Flow agent) cannot be stopped by its id.
         data = {
@@ -541,7 +589,9 @@ export async function createAgentService(
           // An image-only message is fine; an empty one is not.
           (!steer.data.prompt.trim() && !steer.data.images?.length)
         )
-          throw new FlowError("无效的引导内容。", 400);
+          throw new CodedFlowError("无效的引导内容。", 400, {
+            code: "conversation_steer_invalid",
+          });
         // Like stop, this reaches only conversations with a coding turn
         // running in this process, never an arbitrary DSH session.
         const steered = await coding.steer(
@@ -569,7 +619,9 @@ export async function createAgentService(
       }
       case "coding/side/open": {
         if (typeof params.sessionId !== "string")
-          throw new FlowError("无效的主对话。", 400);
+          throw new CodedFlowError("无效的主对话。", 400, {
+            code: "conversation_request_invalid",
+          });
         data = {
           sessionId: await codingConversations.openSide(params.sessionId),
         };
@@ -577,9 +629,13 @@ export async function createAgentService(
       }
       case "coding/side/close": {
         if (typeof params.sessionId !== "string")
-          throw new FlowError("无效的旁支对话。", 400);
+          throw new CodedFlowError("无效的旁支对话。", 400, {
+            code: "conversation_request_invalid",
+          });
         if (codingConversations.get(params.sessionId))
-          throw new FlowError("只能关闭旁支对话。", 400);
+          throw new CodedFlowError("只能关闭旁支对话。", 400, {
+            code: "conversation_side_required",
+          });
         const closed = await codingConversations.closeSide(params.sessionId);
         if (closed) {
           await executions.stop(params.sessionId);
@@ -595,9 +651,14 @@ export async function createAgentService(
           (method === "coding/conversation/archive" &&
             typeof params.archived !== "boolean")
         )
-          throw new FlowError("无效的对话操作。", 400);
+          throw new CodedFlowError("无效的对话操作。", 400, {
+            code: "conversation_request_invalid",
+          });
         const parent = codingConversations.get(params.sessionId);
-        if (!parent) throw new FlowError("对话不存在或已关闭。", 404);
+        if (!parent)
+          throw new CodedFlowError("对话不存在或已关闭。", 404, {
+            code: "conversation_missing",
+          });
         const closing = method === "coding/conversation/close";
         if (closing) await codingConversations.close(parent.id);
         else
@@ -643,7 +704,10 @@ export async function createAgentService(
           })
           .strict()
           .safeParse(params);
-        if (!request.success) throw new FlowError("无效的权限设置。", 400);
+        if (!request.success)
+          throw new CodedFlowError("无效的权限设置。", 400, {
+            code: "permission_invalid",
+          });
         await conversations.selectPermission(
           request.data.sessionId,
           request.data.permission,
@@ -659,7 +723,9 @@ export async function createAgentService(
         break;
       case "automation/update": {
         if (typeof params.id !== "string")
-          throw new FlowError("无效的任务。", 400);
+          throw new CodedFlowError("无效的任务。", 400, {
+            code: "automation_input_invalid",
+          });
         data = await automation.update(params.id, automationInput(params));
         break;
       }
@@ -680,7 +746,10 @@ export async function createAgentService(
           .object({ projectId: z.string().min(1).max(256) })
           .strict()
           .safeParse(params);
-        if (!input.success) throw new FlowError("无效的工作空间。", 400);
+        if (!input.success)
+          throw new CodedFlowError("无效的工作空间。", 400, {
+            code: "workspace_invalid",
+          });
         data = await codingSkills(
           ctx.skills,
           codingProjects.directory(input.data.projectId),
@@ -692,7 +761,10 @@ export async function createAgentService(
           .object({ create: z.boolean().default(false) })
           .strict()
           .safeParse(params);
-        if (!input.success) throw new FlowError("无效的助手请求。", 400);
+        if (!input.success)
+          throw new CodedFlowError("无效的助手请求。", 400, {
+            code: "assistant_request_invalid",
+          });
         const existing = codingConversations.getAssistant();
         const assistant =
           existing ??
@@ -709,23 +781,28 @@ export async function createAgentService(
           .list()
           .find((item) => item.id === assistant.projectId);
         if (!project)
-          throw new FlowError(
+          throw new CodedFlowError(
             "Aura 助手所属工作空间不可用，请恢复该工作空间。",
             409,
+            { code: "assistant_workspace_unavailable" },
           );
         data = { conversation: assistant, project };
         break;
       }
       case "coding/conversations": {
         if (typeof params.projectId !== "string")
-          throw new FlowError("无效的项目。", 400);
+          throw new CodedFlowError("无效的项目。", 400, {
+            code: "workspace_invalid",
+          });
         codingProjects.directory(params.projectId);
         const list = codingConversations.list(params.projectId);
         if (
           params.includeStatus !== undefined &&
           typeof params.includeStatus !== "boolean"
         )
-          throw new FlowError("无效的对话状态选项。", 400);
+          throw new CodedFlowError("无效的对话状态选项。", 400, {
+            code: "conversation_options_invalid",
+          });
         const signal = AbortSignal.timeout(10_000);
         data = await conversationList(list, {
           includeStatus: params.includeStatus !== false,
@@ -741,7 +818,9 @@ export async function createAgentService(
           typeof params.sessionId !== "string" ||
           typeof params.questionId !== "string"
         )
-          throw new FlowError("无效的回答。", 400);
+          throw new CodedFlowError("无效的回答。", 400, {
+            code: "question_answer_invalid",
+          });
         const answers = codingAnswers.answer(
           params.sessionId,
           params.questionId,
@@ -765,12 +844,16 @@ export async function createAgentService(
       }
       case "coding/history": {
         if (typeof params.sessionId !== "string")
-          throw new FlowError("无效的对话。", 400);
+          throw new CodedFlowError("无效的对话。", 400, {
+            code: "conversation_request_invalid",
+          });
         // A retained side grants access only while its parent is open.
         // Arbitrary DSH sessions (Flow agents, ordinary chats) stay private.
         const side = codingConversations.sideParent(params.sessionId);
         if (!codingConversations.get(params.sessionId) && !side)
-          throw new FlowError("对话不存在或已移除。", 404);
+          throw new CodedFlowError("对话不存在或已移除。", 404, {
+            code: "conversation_missing",
+          });
         const sessionId = SessionId(params.sessionId);
         const signal = AbortSignal.timeout(30_000);
         const record = codingConversations.get(params.sessionId);
@@ -785,7 +868,9 @@ export async function createAgentService(
               (throughSeq as number) < 0)) ||
           (beforeSeq === undefined) !== (throughSeq === undefined)
         )
-          throw new FlowError("无效的历史分页游标。", 400);
+          throw new CodedFlowError("无效的历史分页游标。", 400, {
+            code: "history_cursor_invalid",
+          });
         const inherited =
           paged && (side || record?.sourceSessionId)
             ? (ctx.sessions.get(sessionId)?.inheritedEventCount ??
@@ -904,12 +989,17 @@ function automationInput(params: Record<string, unknown>) {
       timing: automationTimingSchema,
     })
     .safeParse(params);
-  if (!input.success) throw new FlowError("任务内容不完整。", 400);
+  if (!input.success)
+    throw new CodedFlowError("任务内容不完整。", 400, {
+      code: "automation_input_invalid",
+    });
   return input.data;
 }
 
 function automationRef(params: Record<string, unknown>) {
   if (typeof params.sessionId !== "string" || typeof params.id !== "string")
-    throw new FlowError("无效的任务。", 400);
+    throw new CodedFlowError("无效的任务。", 400, {
+      code: "automation_input_invalid",
+    });
   return { sessionId: params.sessionId, id: params.id };
 }

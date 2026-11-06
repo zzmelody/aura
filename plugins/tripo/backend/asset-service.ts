@@ -1,3 +1,7 @@
+import {
+  tripoErrorMessages,
+  tripoErrorTranslations,
+} from '../shared/error-messages.ts';
 import { isAbsolute, join } from 'node:path';
 import type { BackendHost } from '@aura/plugin-sdk/backend';
 import { ActionFailure, type ActionContext } from '@aura/plugin-sdk/action';
@@ -138,6 +142,7 @@ export class TripoAssetService {
         if (!parsed.success)
           throw new ActionFailure(
             'invalid_tripo_request: ledger needs a scope.',
+            { translations: tripoErrorMessages('invalidInput') },
           );
         return await TripoBudgetJournal.scopeLedger(
           this.#ledger,
@@ -146,20 +151,26 @@ export class TripoAssetService {
       }
       throw new ActionFailure(
         `unsupported_operation: Tripo has no ${operation}.`,
+        { translations: tripoErrorMessages('unsupportedOperation') },
       );
     } catch (error) {
       signal.throwIfAborted();
       if (error instanceof ActionFailure) throw error;
       if (error instanceof TripoNotConfiguredError)
-        throw new ActionFailure('Tripo 尚未配置 API Key。');
+        throw new ActionFailure('Tripo 尚未配置 API Key。', {
+          translations: tripoErrorMessages('keyMissing'),
+        });
       if (
         error instanceof TripoBudgetError ||
         error instanceof TripoGameAssetError
       )
-        throw new ActionFailure(error.message, { cause: error });
+        throw new ActionFailure(error.message, {
+          cause: error,
+          translations: tripoErrorTranslations(error),
+        });
       throw new ActionFailure(
         '模型生成未完成 · 调用生成服务：服务发生未预期异常，请查看 Aura 后端日志后重试。',
-        { cause: error },
+        { cause: error, translations: tripoErrorMessages('unexpected') },
       );
     }
   }
@@ -173,11 +184,13 @@ export class TripoAssetService {
     if (!parsed.success)
       throw new ActionFailure(
         'invalid_tripo_request: Tripo model input is invalid.',
+        { translations: tripoErrorMessages('invalidInput') },
       );
     const { referenceImage, generationKey, scope, ...fields } = parsed.data;
     if (referenceImage && fields.referenceImagePath)
       throw new ActionFailure(
         'invalid_tripo_request: Choose one reference image source.',
+        { translations: tripoErrorMessages('referenceConflict') },
       );
     const request: TripoGameAssetRequest = {
       ...fields,
@@ -187,6 +200,7 @@ export class TripoAssetService {
       if (!this.#attachments?.readImage)
         throw new ActionFailure(
           'invalid_tripo_request: Managed reference images are unavailable.',
+          { translations: tripoErrorMessages('referenceUnavailable') },
         );
       const stored = await this.#attachments.readImage(referenceImage, signal);
       request.referenceImage = {
@@ -260,10 +274,12 @@ export class TripoAssetService {
     if (!parsed.success)
       throw new ActionFailure(
         'invalid_tripo_request: Prompt/model/quality is invalid.',
+        { translations: tripoErrorMessages('invalidInput') },
       );
     if (!this.#tripo.generateCloudImage || !this.#artifacts)
       throw new ActionFailure(
         'tripo_image_unavailable: Tripo image generation is not configured.',
+        { translations: tripoErrorMessages('imageUnavailable') },
       );
     const { generationKey, scope, attach, ...request } = parsed.data;
     const journal = new TripoBudgetJournal(
@@ -285,7 +301,10 @@ export class TripoAssetService {
         signal.throwIfAborted();
         throw new ActionFailure(
           'tripo_image_result_unknown: A paid request may have started. Stop and reconcile; do not retry automatically.',
-          { cause: error },
+          {
+            cause: error,
+            translations: tripoErrorMessages('resultUnknown'),
+          },
         );
       }
       await journal.submitted('cloud', generated.taskId);
@@ -305,6 +324,7 @@ export class TripoAssetService {
     if (generated.creditsConsumed === null)
       throw new ActionFailure(
         'tripo_image_cost_unknown: Paid image retained; reconcile its actual cost before continuing.',
+        { translations: tripoErrorMessages('costUnknown') },
       );
     try {
       const stored = await this.#artifacts.put(generated.bytes, signal);

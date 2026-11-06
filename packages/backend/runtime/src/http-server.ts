@@ -70,6 +70,7 @@ const honoCors = cors({
     "Last-Event-ID",
   ],
   exposeHeaders: [
+    "X-Aura-Error-Code",
     "Content-Length",
     "Content-Range",
     "Content-Disposition",

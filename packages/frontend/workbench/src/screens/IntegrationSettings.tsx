@@ -1,4 +1,14 @@
 import React, { useEffect, useState } from "react";
+import {
+  errorMessage,
+  messageText,
+  type MessageReference,
+} from "@aura/i18n/runtime";
+import {
+  useIntegrationMessages,
+  integrationMessage,
+  type IntegrationMessageKey,
+} from "./integration-messages.ts";
 import { Switch } from "@aura/ui/web";
 import type {
   IntegrationFlags,
@@ -12,64 +22,49 @@ import { openExternal } from "../platform.ts";
 import "./integration-settings.css";
 
 const features = [
-  [
-    "mcp",
-    "MCP 服务器",
-    "在对话中使用已连接服务器的工具。工具调用占用对话能力中的额外请求额度。",
-  ],
-  [
-    "market",
-    "DSH 插件市场",
-    "按名称搜索 DSH 插件并查看来源。Aura 插件目录仍在「插件」中管理。",
-  ],
-  [
-    "voice",
-    "语音输入",
-    "使用 SenseVoice 在 Aura 服务所在设备识别语音，并将文字放入草稿。",
-  ],
-  [
-    "agentTeam",
-    "Agent 团队",
-    "允许对话创建具名队友和共享任务。队友的模型请求占用额外请求额度。",
-  ],
-  [
-    "sessionSearch",
-    "会话全文搜索",
-    "按对话正文搜索当前工作空间内已保存的会话。",
-  ],
+  ["mcp", "mcp", "mcpHint"],
+  ["market", "market", "marketHint"],
+  ["voice", "voice", "voiceHint"],
+  ["agentTeam", "agentTeam", "agentTeamHint"],
+  ["sessionSearch", "sessionSearch", "sessionSearchHint"],
 ] as const satisfies ReadonlyArray<
-  readonly [keyof IntegrationFlags, string, string]
+  readonly [
+    keyof IntegrationFlags,
+    IntegrationMessageKey,
+    IntegrationMessageKey,
+  ]
 >;
 
-const voiceLabels: Record<string, string> = {
-  unavailable: "服务不可用",
-  unprepared: "待准备",
-  checking: "正在检查文件",
-  downloading: "正在下载模型",
-  loading: "正在加载模型",
-  waking: "正在唤醒模型",
-  cancelling: "正在取消",
-  ready: "已就绪",
-  standby: "已就绪",
-  failed: "准备失败",
-  cancelled: "准备已取消",
+const voiceLabels: Record<string, IntegrationMessageKey> = {
+  unavailable: "unavailable",
+  unprepared: "unprepared",
+  checking: "checking",
+  downloading: "downloading",
+  loading: "loading",
+  waking: "waking",
+  cancelling: "cancelling",
+  ready: "ready",
+  standby: "ready",
+  failed: "failed",
+  cancelled: "cancelled",
 };
 const mcpLabels = {
-  disabled: "已停用",
-  connecting: "连接中",
-  connected: "已连接",
-  unavailable: "连接失败",
-};
+  disabled: "disabled",
+  connecting: "connecting",
+  connected: "connected",
+  unavailable: "connectionFailed",
+} as const satisfies Record<string, IntegrationMessageKey>;
 const voiceBusy = new Set(["checking", "downloading", "loading", "cancelling"]);
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : "操作未完成。";
+  return errorMessage(error, integrationMessage("operationFailed"));
 }
 
 export function IntegrationSettingsPanel({ endpoint }: { endpoint: string }) {
   const [state, setState] = useState<IntegrationSettings>();
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const { t, i18n } = useIntegrationMessages();
+  const [error, setError] = useState<string | MessageReference>("");
   const { apply } = useIntegrations();
 
   useEffect(() => {
@@ -172,7 +167,7 @@ export function IntegrationSettingsPanel({ endpoint }: { endpoint: string }) {
     <>
       {error ? (
         <p className="dsh-page-notice" role="alert">
-          {error}
+          {messageText(error, i18n)}
         </p>
       ) : null}
       {!state ? (
@@ -184,7 +179,7 @@ export function IntegrationSettingsPanel({ endpoint }: { endpoint: string }) {
             void refresh();
           }}
         >
-          重新读取功能设置
+          {t("reloadSettings")}
         </button>
       ) : (
         <>
@@ -192,11 +187,11 @@ export function IntegrationSettingsPanel({ endpoint }: { endpoint: string }) {
             {features.map(([key, title, description]) => (
               <div className="settings-row" key={key}>
                 <span className="settings-row-copy">
-                  <strong>{title}</strong>
-                  <span>{description}</span>
+                  <strong>{t(title)}</strong>
+                  <span>{t(description)}</span>
                 </span>
                 <Switch
-                  accessibilityLabel={title}
+                  accessibilityLabel={t(title)}
                   value={state.flags[key]}
                   disabled={saving}
                   trackColor={{ false: "var(--border)", true: "var(--accent)" }}
@@ -220,10 +215,13 @@ export function IntegrationSettingsPanel({ endpoint }: { endpoint: string }) {
               <div className="settings-row">
                 <span className="settings-row-copy">
                   <strong>
-                    SenseVoice 本地模型 ·{" "}
-                    {voiceLabels[state.voicePhase] ?? state.voicePhase}
+                    {t("voiceStatus", {
+                      status: voiceLabels[state.voicePhase]
+                        ? t(voiceLabels[state.voicePhase])
+                        : state.voicePhase,
+                    })}
                   </strong>
-                  <span>首次准备约需下载 239 MB 模型和附加文件。</span>
+                  <span>{t("voiceDownloadHint")}</span>
                 </span>
                 <button
                   type="button"
@@ -240,7 +238,9 @@ export function IntegrationSettingsPanel({ endpoint }: { endpoint: string }) {
                   }
                   onClick={() => void prepareVoice()}
                 >
-                  {voiceBusy.has(state.voicePhase) ? "取消准备" : "准备模型"}
+                  {voiceBusy.has(state.voicePhase)
+                    ? t("cancelPreparation")
+                    : t("prepareModel")}
                 </button>
               </div>
             </div>
@@ -264,7 +264,8 @@ function McpServers({
 }) {
   const [transport, setTransport] =
     useState<McpServerInput["transport"]>("streamable-http");
-  const [error, setError] = useState("");
+  const { t, i18n } = useIntegrationMessages();
+  const [error, setError] = useState<string | MessageReference>("");
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -284,7 +285,7 @@ function McpServers({
         !Array.isArray(args) ||
         !args.every((item) => typeof item === "string")
       ) {
-        setError("启动参数必须是 JSON 字符串数组。");
+        setError(integrationMessage("invalidArguments"));
         return;
       }
       let env: unknown;
@@ -299,7 +300,7 @@ function McpServers({
         Array.isArray(env) ||
         !Object.values(env).every((item) => typeof item === "string")
       ) {
-        setError("环境变量映射必须是 JSON 对象，值为后端环境变量名。");
+        setError(integrationMessage("invalidEnvironment"));
         return;
       }
       server = {
@@ -321,11 +322,11 @@ function McpServers({
   }
 
   return (
-    <section className="integration-section" aria-label="MCP 服务器">
+    <section className="integration-section" aria-label={t("mcp")}>
       <div className="integration-toolbar">
-        <h3 className="settings-subhead">MCP 服务器</h3>
+        <h3 className="settings-subhead">{t("mcp")}</h3>
         <button className="dsh-button" type="button" onClick={refresh}>
-          刷新状态
+          {t("refreshStatus")}
         </button>
       </div>
       {state.mcpServers.length ? (
@@ -335,18 +336,18 @@ function McpServers({
               <div>
                 <strong>{server.name}</strong>
                 <p>
-                  {server.transport} · {mcpLabels[server.status]} ·{" "}
-                  {server.tools.length} 个工具
+                  {server.transport} · {t(mcpLabels[server.status])} ·{" "}
+                  {t("toolCount", { count: server.tools.length })}
                 </p>
               </div>
               <button
                 type="button"
                 className="dsh-button"
                 disabled={saving}
-                aria-label={`移除 ${server.name}`}
+                aria-label={t("removeServer", { name: server.name })}
                 onClick={() => void save({ removeServer: server.name })}
               >
-                移除
+                {t("remove")}
               </button>
             </li>
           ))}
@@ -356,16 +357,13 @@ function McpServers({
         className="integration-form settings-group"
         onSubmit={(event) => void submit(event)}
       >
-        <p>
-          使用可信服务器。STDIO 会在 Aura
-          服务所在设备执行命令。用同名配置可更新服务器。
-        </p>
+        <p>{t("trustedServerHint")}</p>
         <label>
-          服务器名
+          {t("serverName")}
           <input required name="name" maxLength={32} placeholder="github" />
         </label>
         <label>
-          连接方式
+          {t("transport")}
           <select
             value={transport}
             onChange={(event) =>
@@ -381,15 +379,15 @@ function McpServers({
         {transport === "stdio" ? (
           <>
             <label>
-              启动命令
+              {t("command")}
               <input required name="command" placeholder="node" />
             </label>
             <label>
-              启动参数
+              {t("arguments")}
               <input name="args" placeholder='["server.js"]' />
             </label>
             <label>
-              环境变量映射
+              {t("environment")}
               <input
                 name="env"
                 placeholder='{"GITHUB_TOKEN":"AURA_MCP_GITHUB_TOKEN"}'
@@ -399,7 +397,7 @@ function McpServers({
         ) : (
           <>
             <label>
-              服务器地址
+              {t("serverUrl")}
               <input
                 required
                 name="url"
@@ -408,18 +406,18 @@ function McpServers({
               />
             </label>
             <label>
-              Bearer 环境变量名
+              {t("bearerVariable")}
               <input name="bearerEnv" placeholder="AURA_MCP_GITHUB_TOKEN" />
             </label>
           </>
         )}
         {error ? (
           <p role="alert" className="dsh-page-notice">
-            {error}
+            {messageText(error, i18n)}
           </p>
         ) : null}
         <button type="submit" className="dsh-button" disabled={saving}>
-          保存服务器
+          {t("saveServer")}
         </button>
       </form>
     </section>
@@ -430,7 +428,8 @@ export function PluginMarket({ endpoint }: { endpoint: string }) {
   const { flags } = useIntegrations();
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<MarketListing[]>();
-  const [error, setError] = useState("");
+  const { t, i18n } = useIntegrationMessages();
+  const [error, setError] = useState<string | MessageReference>("");
   const [loading, setLoading] = useState(false);
   async function search(event: React.FormEvent) {
     event.preventDefault();
@@ -456,30 +455,30 @@ export function PluginMarket({ endpoint }: { endpoint: string }) {
       aria-labelledby="integration-market-title"
     >
       <h3 className="settings-subhead" id="integration-market-title">
-        DSH 插件市场
+        {t("market")}
       </h3>
       <form
         className="integration-toolbar"
         onSubmit={(event) => void search(event)}
       >
         <input
-          aria-label="搜索 DSH 插件"
-          placeholder="插件名或关键词"
+          aria-label={t("searchPlugins")}
+          placeholder={t("searchPlaceholder")}
           value={query}
           maxLength={256}
           onChange={(event) => setQuery(event.target.value)}
         />
         <button className="dsh-button" type="submit" disabled={loading}>
-          {loading ? "正在搜索…" : "搜索市场"}
+          {loading ? t("searching") : t("searchMarket")}
         </button>
       </form>
       {error ? (
         <p className="dsh-page-notice" role="alert">
-          {error}
+          {messageText(error, i18n)}
         </p>
       ) : null}
       {items?.length === 0 ? (
-        <p className="dsh-page-empty">没有匹配的插件。</p>
+        <p className="dsh-page-empty">{t("noPlugins")}</p>
       ) : null}
       <ul className="integration-list">
         {items?.map((entry) => (
@@ -504,7 +503,7 @@ export function PluginMarket({ endpoint }: { endpoint: string }) {
                   );
                 }}
               >
-                查看来源
+                {t("viewSource")}
               </a>
             ) : null}
           </li>

@@ -2,6 +2,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Loader } from "@deepseek-ai/cordis-plugin-loader";
+import { CodedFlowError } from "@aura/protocol/errors";
 import { flowIdSchema } from "./schema.ts";
 import type { FlowRegistry } from "./registry.ts";
 import type { ContributionRoot } from "./types.ts";
@@ -138,7 +139,12 @@ export class CodeDiscovery {
       ) {
         issues.add(flowId);
         await this.unmount(flowId);
-        this.registry.problem(flowId, `无效的 ${title} 目录名：${flowId}`);
+        this.registry.problem(flowId, `无效的 ${title} 目录名：${flowId}`, {
+          code:
+            this.kind === "flow"
+              ? "flow_directory_invalid"
+              : "action_directory_invalid",
+        });
         continue;
       }
 
@@ -156,6 +162,12 @@ export class CodeDiscovery {
         this.registry.problem(
           flowId,
           `目录 ${localId} 必须且只能包含入口 ${localId}.${this.kind}.js${this.plugin ? "" : " 或 .ts"}。`,
+          {
+            code:
+              this.kind === "flow"
+                ? "flow_entry_invalid"
+                : "action_entry_invalid",
+          },
         );
         continue;
       }
@@ -191,6 +203,14 @@ export class CodeDiscovery {
           missing
             ? `${title} 加载失败：依赖 ${missing} 不可解析。`
             : `${title} 加载失败，请检查入口及本地依赖。`,
+          error instanceof CodedFlowError
+            ? error.details
+            : {
+                code:
+                  this.kind === "flow"
+                    ? "flow_definition_load_failed"
+                    : "action_definition_load_failed",
+              },
         );
       }
     }

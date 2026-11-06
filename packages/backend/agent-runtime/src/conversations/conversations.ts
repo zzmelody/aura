@@ -8,7 +8,7 @@ import {
   PERSONAL_ASSISTANT_SESSION_ID,
 } from "@aura/protocol/conversations";
 import type { CodingStreamEvent, CodingTurn } from "../types.ts";
-import { FlowError } from "@aura/protocol/errors";
+import { CodedFlowError } from "@aura/protocol/errors";
 import type { CodingConversationIndex } from "./index-record.ts";
 import type { ConversationWorkspaces } from "../ports.ts";
 import type { codingService } from "./session.ts";
@@ -51,7 +51,10 @@ export function conversationService(
     signal: AbortSignal,
   ) {
     const id = request.sessionId;
-    if (admitted.has(id)) throw new FlowError("这段对话还有一轮在进行。", 409);
+    if (admitted.has(id))
+      throw new CodedFlowError("这段对话还有一轮在进行。", 409, {
+        code: "conversation_execution_active",
+      });
     admitted.add(id);
     try {
       const projectId =
@@ -63,21 +66,29 @@ export function conversationService(
           (request.branchFrom ? index.sideParent(parentId) : undefined))
         : undefined;
       if (request.forkFrom && request.branchFrom)
-        throw new FlowError("不能同时创建旁支和跨项目延续。", 400);
+        throw new CodedFlowError("不能同时创建旁支和跨项目延续。", 400, {
+          code: "conversation_branch_conflict",
+        });
       if (request.branchAt !== undefined && !request.branchFrom)
-        throw new FlowError("分叉轮次缺少来源对话。", 400);
+        throw new CodedFlowError("分叉轮次缺少来源对话。", 400, {
+          code: "conversation_branch_source_required",
+        });
       if (
         parentId &&
         (!parent || parent.archivedAt !== undefined || parentId === id)
       )
-        throw new FlowError("来源对话不存在或已归档。", 404);
+        throw new CodedFlowError("来源对话不存在或已归档。", 404, {
+          code: "conversation_source_missing",
+        });
       if (
         request.forkFrom &&
         (parent?.projectId !== projectId ||
           index.sideParent(id)?.id !== parentId ||
           !id.startsWith("side-"))
       )
-        throw new FlowError("旁支已关闭或不属于当前项目。", 404);
+        throw new CodedFlowError("旁支已关闭或不属于当前项目。", 404, {
+          code: "conversation_side_mismatch",
+        });
       const existing = index.get(id);
       if (
         request.branchFrom &&
@@ -85,7 +96,9 @@ export function conversationService(
         (existing.sourceSessionId !== request.branchFrom ||
           existing.sourceEndSeq !== request.branchAt)
       )
-        throw new FlowError("对话来源不匹配。", 409);
+        throw new CodedFlowError("对话来源不匹配。", 409, {
+          code: "conversation_source_mismatch",
+        });
       if (!request.forkFrom) {
         const initialPermission =
           request.permission ??

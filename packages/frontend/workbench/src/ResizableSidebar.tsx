@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useRef } from "react";
+import { useSidebarMessages } from "./sidebar-messages";
 
 export const DEFAULT_SIDEBAR_WIDTH = 280;
 
@@ -16,6 +17,7 @@ export function ResizableSidebar({
   onResize(width: number): void;
   children: React.ReactNode;
 }) {
+  const { t, i18n } = useSidebarMessages();
   const min = 240;
   const max = Math.min(480, Math.max(min, viewport - 560));
   const actual = Math.round(Math.max(min, Math.min(max, width)));
@@ -30,8 +32,19 @@ export function ResizableSidebar({
   const paint = (value: number) => {
     root.current?.style.setProperty("--sidebar-width", `${value}px`);
     handle.current?.setAttribute("aria-valuenow", String(value));
-    handle.current?.setAttribute("aria-valuetext", `${value} 像素`);
+    handle.current?.setAttribute(
+      "aria-valuetext",
+      // A queued frame may run after the locale changed.
+      i18n.t("sidebarWidthValue", { ns: "sidebar", width: value }),
+    );
   };
+  useLayoutEffect(() => {
+    // A language render must describe the in-progress drag, not the saved width.
+    handle.current?.setAttribute(
+      "aria-valuetext",
+      t("sidebarWidthValue", { width: drag.current?.current ?? actual }),
+    );
+  }, [actual, t]);
   useEffect(
     () => () => {
       cancelAnimationFrame(frame.current);
@@ -60,13 +73,13 @@ export function ResizableSidebar({
         className="sidebar-resize-handle"
         role="separator"
         tabIndex={0}
-        aria-label="调整侧栏宽度"
+        aria-label={t("resizeSidebar")}
         aria-orientation="vertical"
         aria-valuemin={min}
         aria-valuemax={max}
         aria-valuenow={actual}
-        aria-valuetext={`${actual} 像素`}
-        title="拖拽调整宽度 · 双击恢复默认"
+        aria-valuetext={t("sidebarWidthValue", { width: actual })}
+        title={t("resizeHint")}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           event.preventDefault();

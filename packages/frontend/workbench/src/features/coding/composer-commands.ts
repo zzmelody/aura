@@ -1,4 +1,9 @@
+import {
+  conversationText,
+  type ConversationMessageKey,
+} from "../../conversation-messages.ts";
 import type { CodingSkillInfo, FlowCatalogEntry } from "@aura/protocol/types";
+import { flowTitle, flowDescription } from "../../metadata.ts";
 
 export type ComposerGroup = "commands" | "skills" | "flows";
 export type ComposerCommand =
@@ -30,10 +35,13 @@ export function collaborationCommand(
 }
 
 export const composerGroups = {
-  commands: { title: "内置命令", description: "模型、生成与输入操作" },
-  skills: { title: "Skills", description: "为当前任务加载技能指引" },
-  flows: { title: "Flows", description: "选择工作流并填写运行参数" },
-} satisfies Record<ComposerGroup, { title: string; description: string }>;
+  commands: { title: "commands", description: "commandsHint" },
+  skills: { title: "skills", description: "skillsHint" },
+  flows: { title: "flows", description: "flowsHint" },
+} satisfies Record<
+  ComposerGroup,
+  { title: ConversationMessageKey; description: ConversationMessageKey }
+>;
 
 interface MenuRow {
   id: string;
@@ -58,8 +66,8 @@ const BUILT_IN_COMMANDS = [
     command: "plan",
     id: "command:plan",
     name: "plan",
-    title: "计划模式",
-    description: "先规划，再通过审阅卡批准执行",
+    title: "planMode",
+    description: "planHint",
     group: "commands",
   },
   {
@@ -67,8 +75,8 @@ const BUILT_IN_COMMANDS = [
     command: "goal",
     id: "command:goal",
     name: "goal",
-    title: "目标模式",
-    description: "将下一条消息设为目标，按额度自动续跑",
+    title: "goalMode",
+    description: "goalHint",
     group: "commands",
   },
   {
@@ -76,8 +84,8 @@ const BUILT_IN_COMMANDS = [
     command: "compact",
     id: "command:compact",
     name: "compact",
-    title: "压缩上下文",
-    description: "用当前模型概括较早记录，保留原始聊天历史",
+    title: "compact",
+    description: "compactHint",
     group: "commands",
   },
   {
@@ -85,8 +93,8 @@ const BUILT_IN_COMMANDS = [
     command: "model",
     id: "command:model",
     name: "model",
-    title: "选择模型",
-    description: "切换当前会话的模型和思考强度",
+    title: "selectModel",
+    description: "selectModelHint",
     group: "commands",
   },
   {
@@ -94,8 +102,8 @@ const BUILT_IN_COMMANDS = [
     command: "stop",
     id: "command:stop",
     name: "stop",
-    title: "停止生成",
-    description: "停止当前正在进行的回复",
+    title: "stop",
+    description: "stopHint",
     group: "commands",
   },
   {
@@ -103,11 +111,16 @@ const BUILT_IN_COMMANDS = [
     command: "clear",
     id: "command:clear",
     name: "clear",
-    title: "清空输入",
-    description: "清除当前草稿，保留会话记录",
+    title: "clearDraft",
+    description: "clearDraftHint",
     group: "commands",
   },
-] satisfies ComposerEntry[];
+] satisfies Array<
+  ComposerEntry & {
+    title: ConversationMessageKey;
+    description: ConversationMessageKey;
+  }
+>;
 
 const RESERVED_NAMES = new Set([
   ...BUILT_IN_COMMANDS.map((entry) => entry.name),
@@ -123,6 +136,7 @@ export function composerEntries({
   running,
   canRunFlow,
   leading = true,
+  translate = conversationText,
 }: {
   flows: FlowCatalogEntry[];
   skills: CodingSkillInfo[];
@@ -131,12 +145,15 @@ export function composerEntries({
   running: boolean;
   canRunFlow: boolean;
   leading?: boolean;
+  translate?: (key: ConversationMessageKey) => string;
 }): ComposerEntry[] {
   const entries: ComposerEntry[] = [
     ...BUILT_IN_COMMANDS.filter(
       ({ command }) => leading || (command !== "plan" && command !== "goal"),
     ).map((entry) => ({
       ...entry,
+      title: translate(entry.title),
+      description: translate(entry.description),
       disabled:
         entry.command === "stop"
           ? !running
@@ -159,8 +176,8 @@ export function composerEntries({
         kind: "flow",
         id: `flow:${flow.id}`,
         name: flow.id,
-        title: flow.title,
-        description: flow.error || flow.description || flow.id,
+        title: flowTitle(flow),
+        description: flow.error || flowDescription(flow) || flow.id,
         group: "flows",
         disabled: !flow.available || !canRunFlow,
         flow,
@@ -169,7 +186,8 @@ export function composerEntries({
   const needle = query.trim().toLowerCase();
   if (!group && !needle)
     return (Object.keys(composerGroups) as ComposerGroup[]).map((key) => ({
-      ...composerGroups[key],
+      title: translate(composerGroups[key].title),
+      description: translate(composerGroups[key].description),
       kind: "group",
       id: `group:${key}`,
       name: key,
@@ -184,6 +202,7 @@ export function composerEntries({
       running,
       canRunFlow,
       leading,
+      translate,
     }).filter((entry) => entry.name === needle);
   return entries
     .filter((entry) => !group || entry.group === group)

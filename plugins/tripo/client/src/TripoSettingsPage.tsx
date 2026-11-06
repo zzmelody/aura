@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { AuraPluginPageProps } from '@aura/plugin-ui';
+import {
+  messageText,
+  type AuraPluginPageProps,
+  type MessageReference,
+} from '@aura/plugin-ui';
 import type {
   BudgetSettings,
   ConnectionSettings,
@@ -20,7 +24,7 @@ type BudgetDraft = {
   mode: 'limited' | 'unlimited';
   values: Record<(typeof budgetFields)[number]['id'], string>;
 };
-type Notice = { kind: 'success' | 'error'; text: string };
+type Notice = { kind: 'success' | 'error'; text: string | MessageReference };
 type Operation = 'load' | 'connection' | 'check' | 'budget';
 
 function toDraft(budget: TripoBudget | null | undefined): BudgetDraft {
@@ -54,14 +58,16 @@ function toBudget({ mode, values }: BudgetDraft): TripoBudget {
 }
 
 function Feedback({ notice }: { notice?: Notice }) {
-  const { t } = useTripoMessages();
+  const { t, i18n } = useTripoMessages();
   return notice ? (
     <p
       className="tripo-settings-feedback"
       data-tone={notice.kind}
       role={notice.kind === 'error' ? 'alert' : 'status'}
     >
-      {t(notice.text, { defaultValue: notice.text })}
+      {typeof notice.text === 'string'
+        ? t(notice.text, { defaultValue: notice.text })
+        : messageText(notice.text, i18n)}
     </p>
   ) : null;
 }

@@ -1,4 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useWorkflowMessages } from "../workflow-messages.ts";
+import { formatNumber } from "@aura/i18n/runtime";
 import { Download, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { readFlowSvg, type FlowDiagram } from "../flow-analysis";
 import { useFlowViewport } from "../useFlowViewport";
@@ -16,11 +18,14 @@ export function FlowGraphView({
   diagram: FlowDiagram;
   embedded?: boolean;
 }) {
+  const { t } = useWorkflowMessages();
   const id = useId().replace(/[^\w-]/g, "");
   const safe = useMemo(
     () => readFlowSvg(diagram.svg, `diagram-${id}`),
     [diagram.svg, id],
   );
+  // A new innerHTML object replaces the SVG DOM even when the source is unchanged.
+  const markup = useMemo(() => ({ __html: safe?.svg ?? "" }), [safe]);
   const canvas = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
   useEffect(() => {
@@ -77,12 +82,12 @@ export function FlowGraphView({
     );
   }
   return (
-    <div className="graph-panel" role="region" aria-label="Agent 生成的流程图">
+    <div className="graph-panel" role="region" aria-label={t("graphRegion")}>
       <div
         className="graph-canvas-shell flow-svg-shell"
         ref={canvas}
         tabIndex={0}
-        aria-label="流程图画布"
+        aria-label={t("graphCanvas")}
         aria-describedby={`svg-help-${id}`}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget) return;
@@ -160,30 +165,29 @@ export function FlowGraphView({
         }}
       >
         <span className="sr-only" id={`svg-help-${id}`}>
-          滚轮缩放，双指平移或捏合，拖动平移。键盘加减号缩放，方向键平移，0
-          适应画布。
+          {t("graphAccessibleHelp")}
         </span>
-        <div className="graph-tools" aria-label="流程图视图">
-          <span className="graph-zoom-value" aria-label="当前缩放">
-            {Math.round(zoom * 100)}%
+        <div className="graph-tools" aria-label={t("graphView")}>
+          <span className="graph-zoom-value" aria-label={t("currentZoom")}>
+            {formatNumber(zoom, { style: "percent", maximumFractionDigits: 0 })}
           </span>
           <button
             className="icon-control"
-            aria-label="缩小流程图"
+            aria-label={t("zoomOutGraph")}
             onClick={() => zoomBy(0.85)}
           >
             <ZoomOut size={14} />
           </button>
           <button
             className="icon-control"
-            aria-label="放大流程图"
+            aria-label={t("zoomInGraph")}
             onClick={() => zoomBy(1.15)}
           >
             <ZoomIn size={14} />
           </button>
           <button
             className="icon-control"
-            aria-label="适应画布"
+            aria-label={t("fitCanvas")}
             onClick={viewport.reset}
           >
             <Maximize2 size={14} />
@@ -191,7 +195,7 @@ export function FlowGraphView({
           {!embedded && safe ? (
             <button
               className="icon-control"
-              aria-label="导出 SVG"
+              aria-label={t("exportSvg")}
               onClick={() => {
                 const url = URL.createObjectURL(
                   new Blob(
@@ -228,16 +232,16 @@ export function FlowGraphView({
               height: diagram.height,
               transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             }}
-            dangerouslySetInnerHTML={{ __html: safe.svg }}
+            dangerouslySetInnerHTML={markup}
           />
         ) : (
           <div className="flow-preview-empty" role="alert">
-            流程图无法显示，请让 Agent 重新生成 SVG。
+            {t("invalidGraph")}
           </div>
         )}
         <div className="graph-caption">
-          <span>Agent 分析 · SVG 流程图</span>
-          <span>拖动平移 · 滚轮缩放</span>
+          <span>{t("graphCaption")}</span>
+          <span>{t("graphPanHint")}</span>
         </div>
       </div>
     </div>

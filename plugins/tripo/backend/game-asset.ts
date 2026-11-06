@@ -22,6 +22,11 @@ import {
   type WaitForTaskOptions,
 } from '@vastai/tripo-sdk';
 
+import {
+  retainErrorTranslations,
+  tripoStageMessages,
+} from '../shared/error-messages.ts';
+
 const MAX_REFERENCE_BYTES = 20 * 1_024 * 1_024;
 const MAX_IMAGE_BYTES = 32 * 1_024 * 1_024;
 const MAX_MODEL_BYTES = 200 * 1_024 * 1_024;
@@ -95,12 +100,18 @@ export class TripoGameAssetError extends Error {
     stage: TripoGameAssetStage,
     reason: TripoGameAssetFailureReason,
     detail: string,
-    options?: ErrorOptions,
+    options?: ErrorOptions & {
+      display?: Parameters<typeof tripoStageMessages>[2];
+    },
   ) {
     super(`模型生成未完成 · ${stageLabels[stage]}：${detail}`, options);
     this.name = 'TripoGameAssetError';
     this.stage = stage;
     this.reason = reason;
+    retainErrorTranslations(
+      this,
+      tripoStageMessages(stage, reason, options?.display),
+    );
   }
 }
 
@@ -115,7 +126,7 @@ function productStageError(
       stage,
       'timeout',
       `等待超过 ${seconds} 秒，任务可能仍在 Tripo 后台处理。请勿立即重复提交，以免重复计费。`,
-      { cause: error },
+      { cause: error, display: { seconds } },
     );
   }
   if (error instanceof TripoTaskError) {
@@ -147,7 +158,7 @@ function productStageError(
       error.indeterminate
         ? '与 Tripo 的连接中断，服务端可能已经接收任务。请先确认任务状态，不要立即重复提交。'
         : '无法连接 Tripo 服务，请检查网络或代理后重试。',
-      { cause: error },
+      { cause: error, display: { indeterminate: error.indeterminate } },
     );
   if (error instanceof TripoAPIError)
     return new TripoGameAssetError(
@@ -156,7 +167,13 @@ function productStageError(
       error.code === 2
         ? 'Tripo 凭据无效，请更新 Aura 的 Tripo 配置后重试。'
         : `Tripo 拒绝了请求（错误码 ${error.code}），请检查输入或服务配置。`,
-      { cause: error },
+      {
+        cause: error,
+        display: {
+          credentialInvalid: error.code === 2,
+          providerCode: error.code,
+        },
+      },
     );
   const localGuidance = localStageGuidance[stage];
   return new TripoGameAssetError(
@@ -513,6 +530,7 @@ export async function generateTripoGameAsset(
           'publish-output',
           'local-io',
           '已付费产物的本地文件缺失；不会重新提交生成任务。请恢复产物或人工核对账本。',
+          { display: { retainedMissing: true } },
         );
     }
     return previous;
@@ -556,6 +574,7 @@ export async function generateTripoGameAsset(
           'read-reference',
           'local-io',
           '参考图格式无效或超过 20 MiB。',
+          { display: { referenceInvalid: true } },
         );
       const referenceType = image.type;
       const uploaded = await atStage('upload-reference', signal, () =>
