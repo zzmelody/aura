@@ -170,3 +170,29 @@ test("output limits are execution failures while canceled turns stay stopped", a
   assert.equal(stopped.executionError, undefined);
   assert.equal(stopped.recordError, undefined);
 });
+
+test("ledger refusals keep their recovery code instead of a generic failure", async () => {
+  const child = (
+    await fixture([
+      start(),
+      {
+        type: "turn/end",
+        time: 3000,
+        data: {
+          turn: 1,
+          reason: {
+            kind: "error",
+            error: {
+              message: "额外请求额度不足，请在对话能力设置中增加额度。",
+              code: "UNKNOWN",
+            },
+          },
+        },
+      },
+    ]).read()
+  )[0]!;
+  assert.equal(child.status, "error");
+  assert.deepEqual(child.executionErrorDetails, {
+    code: "extra_request_budget_exhausted",
+  });
+});

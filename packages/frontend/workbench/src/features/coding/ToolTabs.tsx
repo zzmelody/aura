@@ -7,6 +7,7 @@ import {
   MessageSquare,
   PanelRightClose,
   Plus,
+  SquareDashed,
   SquareTerminal,
   X,
 } from "lucide-react";
@@ -116,8 +117,33 @@ export function ToolTabs({
             </button>
           </div>
         ))}
+        {/* With no tools open, a blank tab owns the tool picker below,
+            like a browser's new tab page. */}
         {!tabs.length ? (
-          <span className="coding-tools-label">{t("tools")}</span>
+          <div className="coding-tool-tab active" data-row-highlight>
+            <button
+              type="button"
+              role="tab"
+              className="row-control"
+              aria-selected
+              title={t("blankTab")}
+              aria-controls="tool-panel-blank"
+              id="tool-tab-blank"
+            >
+              <SquareDashed size={13} />
+              <span>{t("blankTab")}</span>
+            </button>
+            {/* Closing the last (blank) tab leaves nothing to show: fold the panel. */}
+            <button
+              type="button"
+              className="icon-control row-control"
+              aria-label={t("closeTool", { name: t("blankTab") })}
+              title={t("closeTool", { name: t("blankTab") })}
+              onClick={onHide}
+            >
+              <X size={12} />
+            </button>
+          </div>
         ) : null}
       </div>
       <WorkbenchMenu

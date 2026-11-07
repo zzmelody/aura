@@ -16,6 +16,22 @@
   color: var(--danger);
   font-size: 13px;
 }
+/* Notices sit below the latest message, inside the transcript column. */
+.coding-notices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.coding-notices:empty {
+  display: none;
+}
+.coding-notices .coding-notice {
+  padding: 0;
+}
+/* Progress and status notices are informational, not errors. */
+.coding-notice[role="status"] {
+  color: var(--muted);
+}
 
 /*
  * Layout: the panes fill the studio below its toolbar, and each pane is a
@@ -321,6 +337,16 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   min-width: 0;
+  scroll-margin-top: 16px;
+  border-radius: calc(10px * var(--radius-scale, 1));
+  transition: background-color 600ms ease;
+}
+/* The turn a search result opened is marked briefly. */
+.coding-turn[data-search-focus] {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+.aura-root[data-reduced="true"] .coding-turn {
+  transition: none;
 }
 .coding-prompt {
   justify-self: end;

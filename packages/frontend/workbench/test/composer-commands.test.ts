@@ -110,16 +110,23 @@ test("plan and goal commands distinguish objectives from session controls", () =
 
 test("plan and goal picks preserve draft arguments and stay inert without a prompt", () => {
   assert.deepEqual(
-    insertCollaborationCommand("  /pla\n检查\n方案", 6, "plan"),
+    insertCollaborationCommand(
+      "  /pla\n检查\n方案",
+      { start: 0, end: 6 },
+      "plan",
+    ),
     {
       draft: "/plan\n检查\n方案",
       caret: 5,
     },
   );
-  assert.deepEqual(insertCollaborationCommand("  检查方案", 0, "goal"), {
-    draft: "/goal  检查方案",
-    caret: 6,
-  });
+  assert.deepEqual(
+    insertCollaborationCommand("  检查方案", { start: 0, end: 0 }, "goal"),
+    {
+      draft: "/goal  检查方案",
+      caret: 6,
+    },
+  );
   assert.deepEqual(collaborationCommand("/plan\n检查\n方案"), {
     action: "plan",
     prompt: "检查\n方案",
@@ -127,10 +134,31 @@ test("plan and goal picks preserve draft arguments and stay inert without a prom
   assert.equal(collaborationCommand("/goal "), undefined);
   assert.equal(collaborationPrefix("正文 /plan 检查"), undefined);
   assert.equal(collaborationPrefix("/planet"), undefined);
-  assert.ok(
-    composerEntries({ ...catalog, group: "commands", leading: false }).every(
-      ({ name }) => name !== "plan" && name !== "goal",
-    ),
+});
+
+test("plan and goal picked after typed text move to the front and keep the text as the prompt", () => {
+  const names = composerEntries({ ...catalog, group: "commands" }).map(
+    ({ name }) => name,
+  );
+  assert.ok(names.includes("plan") && names.includes("goal"));
+  const typed = "检查方案 /pl";
+  const slash = slashAtCaret(typed, { start: typed.length, end: typed.length });
+  assert.ok(slash);
+  const edit = insertCollaborationCommand(typed, slash, "plan");
+  assert.deepEqual(edit, { draft: "/plan 检查方案 ", caret: 11 });
+  assert.deepEqual(collaborationCommand(edit.draft), {
+    action: "plan",
+    prompt: "检查方案",
+  });
+  // Text after the slash token stays in place behind the caret.
+  assert.deepEqual(
+    insertCollaborationCommand("检查 /go 方案", { start: 3, end: 6 }, "goal"),
+    { draft: "/goal 检查  方案", caret: 9 },
+  );
+  // Switching modes replaces the earlier prefix instead of stacking it.
+  assert.deepEqual(
+    insertCollaborationCommand("/goal 检查 /pl", { start: 9, end: 12 }, "plan"),
+    { draft: "/plan 检查 ", caret: 9 },
   );
 });
 

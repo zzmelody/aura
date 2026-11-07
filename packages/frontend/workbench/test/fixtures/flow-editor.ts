@@ -5,6 +5,8 @@ import { useFlowAnalysis } from "../../src/useFlowAnalysis";
 import { useFlowDraft, starterFlow } from "../../src/flowDraft";
 import { readFlowSvg } from "../../src/flow-analysis";
 import { FlowStudio } from "../../src/screens/FlowStudio";
+import { useContainerWidth, usePaneSplit } from "../../src/usePaneSplit.ts";
+import { WORKFLOW_SPLIT_BOUNDS } from "../../src/workflow-split.ts";
 import { LanguageProvider } from "@aura/i18n";
 import { language } from "@aura/i18n/runtime";
 import { workflowText } from "../../src/workflow-messages.ts";
@@ -22,6 +24,19 @@ function check(value: unknown, message: string) {
   checks.push(message);
 }
 const settle = () => new Promise((resolve) => setTimeout(resolve, 40));
+const drag = (element: HTMLElement, type: string, clientX: number) =>
+  flushSync(() =>
+    element.dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        pointerId: 1,
+        button: 0,
+        buttons: 1,
+        pointerType: "mouse",
+        clientX,
+      }),
+    ),
+  );
 let analysis: ReturnType<typeof useFlowAnalysis>;
 let draft: ReturnType<typeof useFlowDraft>;
 let layout: React.Dispatch<React.SetStateAction<string>>;
@@ -34,51 +49,114 @@ const svg = (
 <g fill="var(--surface)" stroke="var(--border)"><rect x="40" y="80" width="200" height="80" rx="12" /><rect x="350" y="80" width="200" height="80" rx="12" /><rect x="660" y="80" width="200" height="80" rx="12" /></g>
 <g fill="none" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow)"><path d="M240 120H340" /><path d="M550 120H650" /></g>
 <g fill="var(--text)" font-size="20" text-anchor="middle"><text x="140" y="128">接收任务</text><text x="450" y="128">分析处理</text><text x="760" y="128">输出结论</text></g></svg>`;
+/**
+ * The real deck is a child of a Suspense whose lazy screens suspend, while the
+ * measuring hook lives in the component above that boundary. So the parent
+ * commits — and runs its layout effects — at a moment when the deck itself is
+ * not in the DOM. Reproduce exactly that: a descendant of the deck suspends
+ * once, so the hook must attach when the node finally arrives.
+ */
+let released = false;
+const mounted = new Promise<void>((resolve) =>
+  setTimeout(() => {
+    released = true;
+    resolve();
+  }, 20),
+);
+function SuspendOnce({ children }: { children: React.ReactNode }) {
+  if (!released) throw mounted;
+  return children;
+}
 function Harness() {
   analysis = useFlowAnalysis();
   draft = useFlowDraft();
   const [mode, setMode] = React.useState("split");
   layout = setMode;
+  const { ref: deck, width } = useContainerWidth<HTMLDivElement>();
+  const split = usePaneSplit({
+    storageKey: "aura.workflow.assistant-width",
+    bounds: WORKFLOW_SPLIT_BOUNDS,
+    containerWidth: width,
+    active: true,
+    labels: {
+      label: workflowText("workflow"),
+      hint: workflowText("workflow"),
+      valueText: (value) => `${value}`,
+    },
+  });
+  // The hook stays above the boundary while the deck renders inside it, so
+  // this component's layout effects run while the deck is still unmounted.
   return React.createElement(
-    "div",
-    { className: "workspace-deck", "data-workflow-layout": mode },
-    React.createElement(
-      "div",
-      { className: "flow-area" },
-      React.createElement(FlowStudio, {
-        endpoint: "https://synthetic.example",
-        flowId: "",
-        draft,
-        analysis,
-        catalogState: {
-          catalog: { flows: [], actions: [], presets: [] },
-          refreshing: false,
-          error: "",
-          refresh: async () => {},
-        },
-        onBack() {},
-        onRun() {},
-      }),
-    ),
-    React.createElement(
-      "aside",
-      { className: "assistant-area" },
-      React.createElement(
+    React.Suspense,
+    {
+      fallback: React.createElement(
         "div",
-        { className: "assistant-heading" },
-        "生成助手",
+        { className: "workspace-loading" },
+        "正在加载内容…",
       ),
+    },
+    React.createElement(
+      SuspendOnce,
+      null,
       React.createElement(
         "div",
         {
-          className: "chat-screen",
-          style: { justifyContent: "flex-end", padding: "16px" },
+          ref: deck,
+          className: "workspace-deck",
+          "data-workflow-layout": mode,
+          "data-resizing": split.resizing || undefined,
+          // Mirror App.tsx: leave the width to the stylesheet until measured.
+          style: width
+            ? ({
+                "--workflow-assistant-width": `${split.width}px`,
+              } as React.CSSProperties)
+            : undefined,
         },
-        React.createElement("p", null, "已分析流程，并在画布绘制 SVG。"),
-        React.createElement("textarea", {
-          "aria-label": "对话输入框",
-          defaultValue: "把分析步骤改成并行执行",
-        }),
+        React.createElement(
+          "div",
+          { className: "flow-area" },
+          React.createElement(FlowStudio, {
+            endpoint: "https://synthetic.example",
+            flowId: "",
+            draft,
+            analysis,
+            catalogState: {
+              catalog: { flows: [], actions: [], presets: [] },
+              refreshing: false,
+              error: "",
+              refresh: async () => {},
+            },
+            onBack() {},
+            onRun() {},
+          }),
+        ),
+        mode === "split" && !split.stacked
+          ? React.createElement("div", {
+              className: "workflow-split-handle",
+              ...split.handle,
+            })
+          : null,
+        React.createElement(
+          "aside",
+          { className: "assistant-area" },
+          React.createElement(
+            "div",
+            { className: "assistant-heading" },
+            "生成助手",
+          ),
+          React.createElement(
+            "div",
+            {
+              className: "chat-screen",
+              style: { justifyContent: "flex-end", padding: "16px" },
+            },
+            React.createElement("p", null, "已分析流程，并在画布绘制 SVG。"),
+            React.createElement("textarea", {
+              "aria-label": "对话输入框",
+              defaultValue: "把分析步骤改成并行执行",
+            }),
+          ),
+        ),
       ),
     ),
   );
@@ -136,14 +214,33 @@ async function inspect() {
       React.createElement(LanguageProvider, null, React.createElement(Harness)),
     );
   flushSync(render);
-  await settle();
+  check(
+    !document.querySelector(".assistant-area") &&
+      !!document.querySelector(".workspace-loading"),
+    "the deck starts behind a Suspense fallback, as in the real workbench",
+  );
+  for (let i = 0; i < 30 && !document.querySelector(".assistant-area"); i++)
+    await settle();
+  // The deck mounted after the parent's first layout effect. A measuring hook
+  // that only observes on that first run reports 0 forever, which collapsed
+  // the assistant to nothing; it must stay usable here.
+  const revealed = document
+    .querySelector(".assistant-area")!
+    .getBoundingClientRect().width;
+  check(
+    revealed >= WORKFLOW_SPLIT_BOUNDS.side,
+    `assistant is usable after mounting behind a fallback (${revealed}px)`,
+  );
   check(
     !document.querySelector('[role="tab"], .flow-code'),
     "editor has no code tab or code editor",
   );
+  const measured = document
+    .querySelector(".assistant-area")!
+    .getBoundingClientRect().width;
   check(
-    document.querySelector(".assistant-area")?.getBoundingClientRect().width,
-    "assistant is visible by default",
+    measured >= WORKFLOW_SPLIT_BOUNDS.side,
+    `assistant keeps a usable width once measured (${measured}px)`,
   );
   const initialId = analysis.target!.id;
   const reply =
@@ -266,6 +363,73 @@ async function inspect() {
   check(
     !!document.querySelector(".flow-svg-position svg"),
     "undo restores the matching cached SVG",
+  );
+  // The canvas/assistant divider drags like the conversation split: a gesture
+  // only previews the width, and only the finished gesture is persisted. This
+  // runs before the responsive loop below, so the split width still comes from
+  // the hook's synchronous first measurement: ResizeObserver callbacks are
+  // tied to the rendering loop, which headless virtual time does not drive
+  // reliably, so a resize here would make the drag checks flaky.
+  const handle = document.querySelector<HTMLElement>(".workflow-split-handle")!;
+  handle.setPointerCapture = () => {};
+  const edge = () =>
+    document.querySelector(".assistant-area")!.getBoundingClientRect().left;
+  const graphBefore = document.querySelector(".flow-svg-position svg");
+  const restingEdge = edge();
+  drag(handle, "pointerdown", restingEdge);
+  drag(handle, "pointermove", restingEdge - 120);
+  await settle();
+  const draggedEdge = edge();
+  check(
+    draggedEdge < restingEdge - 100,
+    `dragging the divider widens the assistant (${restingEdge} -> ${draggedEdge})`,
+  );
+  check(
+    document.querySelector(".flow-svg-position svg") === graphBefore &&
+      draft.code === source,
+    "resizing never remounts the canvas or touches the draft",
+  );
+  check(
+    localStorage.getItem("aura.workflow.assistant-width") === null,
+    "an in-progress drag is not persisted",
+  );
+  for (const locale of locales) {
+    await language.select(locale);
+    await settle();
+    check(
+      document.querySelector(".workflow-split-handle") === handle &&
+        Math.abs(edge() - draggedEdge) <= 1,
+      `the active drag survives ${locale}`,
+    );
+  }
+  drag(handle, "pointerup", restingEdge - 120);
+  await settle();
+  const committed = handle.getAttribute("aria-valuenow");
+  check(
+    localStorage.getItem("aura.workflow.assistant-width") === committed,
+    `releasing commits the width once (${committed})`,
+  );
+  drag(handle, "pointerdown", edge());
+  drag(handle, "pointermove", edge() - 80);
+  flushSync(() =>
+    handle.dispatchEvent(
+      new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }),
+    ),
+  );
+  await settle();
+  check(
+    handle.getAttribute("aria-valuenow") === committed &&
+      localStorage.getItem("aura.workflow.assistant-width") === committed,
+    "Escape abandons a drag and keeps the committed width",
+  );
+  flushSync(() =>
+    handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })),
+  );
+  await settle();
+  check(
+    localStorage.getItem("aura.workflow.assistant-width") === null &&
+      handle.getAttribute("aria-valuenow") !== committed,
+    "double-click restores the default width",
   );
   const host = document.getElementById("root")!;
   for (const width of [1120, 760, 360, 320, 1120]) {

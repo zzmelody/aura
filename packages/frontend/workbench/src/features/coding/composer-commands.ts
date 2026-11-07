@@ -135,7 +135,6 @@ export function composerEntries({
   group,
   running,
   canRunFlow,
-  leading = true,
   translate = conversationText,
 }: {
   flows: FlowCatalogEntry[];
@@ -144,13 +143,10 @@ export function composerEntries({
   group?: ComposerGroup;
   running: boolean;
   canRunFlow: boolean;
-  leading?: boolean;
   translate?: (key: ConversationMessageKey) => string;
 }): ComposerEntry[] {
   const entries: ComposerEntry[] = [
-    ...BUILT_IN_COMMANDS.filter(
-      ({ command }) => leading || (command !== "plan" && command !== "goal"),
-    ).map((entry) => ({
+    ...BUILT_IN_COMMANDS.map((entry) => ({
       ...entry,
       title: translate(entry.title),
       description: translate(entry.description),
@@ -201,7 +197,6 @@ export function composerEntries({
       query: "",
       running,
       canRunFlow,
-      leading,
       translate,
     }).filter((entry) => entry.name === needle);
   return entries
@@ -271,13 +266,29 @@ export function insertSkill(
   return result;
 }
 
+/**
+ * Plan and goal only take effect as the draft's prefix, so a pick moves the
+ * command to the front: `range` is the text it replaces (the typed slash token,
+ * or the existing prefix), and text already typed before it becomes the prompt.
+ */
 export function insertCollaborationCommand(
   draft: string,
-  end: number,
+  range: DraftRange,
   command: CollaborationCommand,
 ): { draft: string; caret: number } {
   const token = `/${command}`;
-  const suffix = draft.slice(end);
+  let before = draft.slice(0, range.start);
+  const suffix = draft.slice(range.end);
+  if (before.trim()) {
+    // A pick replaces any earlier plan/goal prefix instead of stacking them.
+    const prefix = collaborationPrefix(before);
+    if (prefix) before = before.slice(prefix.end);
+    before = before.trimStart();
+    return {
+      draft: `${token} ${before}${suffix}`,
+      caret: token.length + 1 + before.length,
+    };
+  }
   const next = suffix.charAt(0);
   if (/\s/u.test(next))
     return {

@@ -27,7 +27,7 @@ import {
 } from "./conversations/conversation-commands.ts";
 import type { CodingHistoryPage } from "@aura/protocol/types";
 import { isConversationCursor } from "@aura/protocol/conversation-channel";
-import { codingService } from "./conversations/session.ts";
+import { codingService, forkBoundary } from "./conversations/session.ts";
 import { isGoalIntent } from "./conversations/collaboration.ts";
 import { conversationService } from "./conversations/conversations.ts";
 import { conversationTitleGenerator } from "./conversations/conversation-title.ts";
@@ -301,7 +301,8 @@ export async function createAgentService(
       case "integrations/search": {
         const input = z
           .object({
-            projectId: z.string().min(1),
+            // Omitted searches every workspace.
+            projectId: z.string().min(1).optional(),
             query: z.string().trim().min(1).max(256),
           })
           .safeParse(params);
@@ -310,7 +311,9 @@ export async function createAgentService(
             code: "search_query_invalid",
           });
         data = await integrations.search(
-          input.data.projectId,
+          input.data.projectId
+            ? [input.data.projectId]
+            : codingProjects.list().map((project) => project.id),
           input.data.query,
         );
         break;
@@ -617,6 +620,31 @@ export async function createAgentService(
         data = { steered };
         break;
       }
+      case "coding/fork": {
+        const request = z
+          .object({
+            sessionId: z.string().min(1).max(200),
+            endSeq: z.number().int().nonnegative().optional(),
+          })
+          .parse(params);
+        // An unseeded fork has no log yet; its visible turns are its source's.
+        const record = codingConversations.get(request.sessionId);
+        const unseeded =
+          record?.sourceSessionId !== undefined &&
+          (await readSessionEvents(
+            ctx.sessionController,
+            SessionId(request.sessionId),
+            AbortSignal.timeout(10_000),
+            1,
+          )) === undefined;
+        data = {
+          conversation: await codingConversations.openFork(
+            unseeded ? record.sourceSessionId! : request.sessionId,
+            request.endSeq,
+          ),
+        };
+        break;
+      }
       case "coding/side/open": {
         if (typeof params.sessionId !== "string")
           throw new CodedFlowError("无效的主对话。", 400, {
@@ -871,8 +899,39 @@ export async function createAgentService(
           throw new CodedFlowError("无效的历史分页游标。", 400, {
             code: "history_cursor_invalid",
           });
+        // A fork shows its inherited turns as its own history. Before its first
+        // turn seeds a log, the source is shown through the selected turn.
+        if (
+          !side &&
+          record?.sourceSessionId &&
+          beforeSeq === undefined &&
+          (await readSessionEvents(
+            ctx.sessionController,
+            sessionId,
+            signal,
+            1,
+          )) === undefined
+        ) {
+          const sourceEvents =
+            (await readSessionEvents(
+              ctx.sessionController,
+              SessionId(record.sourceSessionId),
+              signal,
+            )) ?? [];
+          const through =
+            record.sourceEndSeq ?? forkBoundary(sourceEvents) ?? -1;
+          data = {
+            turns: sessionHistoryTurns(
+              sourceEvents.filter((event) => event.seq <= through),
+              false,
+            ),
+            running: coding.running(params.sessionId),
+            ...(paged ? { hasMore: false } : {}),
+          };
+          break;
+        }
         const inherited =
-          paged && (side || record?.sourceSessionId)
+          paged && side
             ? (ctx.sessions.get(sessionId)?.inheritedEventCount ??
               (
                 await ctx.sessionController
@@ -898,7 +957,7 @@ export async function createAgentService(
           (await readSessionEvents(ctx.sessionController, sessionId, signal));
         // The inherited context is for the model, not duplicate UI history.
         const own =
-          !paged && (side || record?.sourceSessionId) && events
+          !paged && side && events
             ? await ctx.sessionController.inspect(sessionId, signal)
             : undefined;
         const running = coding.running(params.sessionId);

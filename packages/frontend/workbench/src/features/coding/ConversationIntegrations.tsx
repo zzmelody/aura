@@ -17,22 +17,41 @@ import type {
 import { integrationRequest } from "../../integrations.tsx";
 import "./conversation-integrations.css";
 
+/** A match the search dialog opens: its conversation and the matching message. */
+export type ConversationSearchTarget = {
+  id: string;
+  projectId?: string;
+  seq?: number;
+};
+
+/**
+ * Global conversation search in a centered dialog. Conversation names match
+ * instantly from the loaded list; message text is searched after a short
+ * pause, across every workspace.
+ */
 export function ConversationSearch({
   endpoint,
-  projectId,
+  titles = [],
   open,
   onClose,
 }: {
   endpoint: string;
-  projectId: string;
-  open: (id: string) => void;
-  onClose?(): void;
+  /** Loaded conversations, matched by name before the text search returns. */
+  titles?: ReadonlyArray<{
+    id: string;
+    projectId: string;
+    title: string;
+    place?: string;
+  }>;
+  open: (target: ConversationSearchTarget) => void;
+  onClose(): void;
 }) {
   const { t, i18n } = useConversationMessages();
+  const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => input.current?.focus(), []);
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState<{ query: string }>();
+  const [active, setActive] = useState(0);
   const [result, setResult] = useState<{
     request: typeof submitted;
     items?: ConversationSearchHit[];
@@ -40,11 +59,27 @@ export function ConversationSearch({
   }>();
 
   useEffect(() => {
+    const element = dialog.current;
+    if (element && !element.open) element.showModal?.();
+    input.current?.focus();
+    return () => element?.close?.();
+  }, []);
+  // Text search follows typing after a pause; Enter runs it at once.
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setSubmitted(undefined);
+      return;
+    }
+    const timer = setTimeout(() => setSubmitted({ query: trimmed }), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+  useEffect(() => {
     if (!submitted) return;
     const abort = new AbortController();
     void integrationRequest<ConversationSearchHit[]>(
       endpoint,
-      `/search?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(submitted.query)}`,
+      `/search?q=${encodeURIComponent(submitted.query)}`,
       { signal: abort.signal },
     )
       .then((items) => {
@@ -58,19 +93,66 @@ export function ConversationSearch({
           });
       });
     return () => abort.abort();
-  }, [endpoint, projectId, submitted]);
+  }, [endpoint, submitted]);
   const current = result?.request === submitted ? result : undefined;
-
+  const needle = query.trim().toLowerCase();
+  const named = needle
+    ? titles
+        .filter((item) => item.title.toLowerCase().includes(needle))
+        .slice(0, 8)
+    : [];
+  const places = new Map(titles.map((item) => [item.id, item.place]));
+  const items: Array<{
+    key: string;
+    target: ConversationSearchTarget;
+    title: string;
+    detail?: string;
+    place?: string;
+  }> = [
+    ...named.map((item) => ({
+      key: `name:${item.id}`,
+      target: { id: item.id, projectId: item.projectId },
+      title: item.title,
+      ...(item.place ? { place: item.place } : {}),
+    })),
+    ...(current?.items ?? []).map((item) => ({
+      key: `text:${item.id}:${item.seq ?? ""}`,
+      target: {
+        id: item.id,
+        ...(item.projectId ? { projectId: item.projectId } : {}),
+        ...(item.seq === undefined ? {} : { seq: item.seq }),
+      },
+      title: item.title,
+      detail: item.snippet,
+      ...(places.get(item.id) ? { place: places.get(item.id) } : {}),
+    })),
+  ];
+  const selected = Math.min(active, Math.max(0, items.length - 1));
+  const choose = (index: number) => {
+    const item = items[index];
+    if (!item) return;
+    onClose();
+    open(item.target);
+  };
+  const textCount = current?.items?.length ?? 0;
   return (
-    <section
-      className="conversation-integrations conversation-search"
+    <dialog
+      ref={dialog}
+      className="conversation-search-dialog"
       aria-label={t("searchTitle")}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && onClose) {
+        if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
           onClose();
         }
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
       }}
     >
       <form
@@ -78,19 +160,36 @@ export function ConversationSearch({
         className="conversation-search-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (query.trim()) setSubmitted({ query: query.trim() });
+          if (items.length) choose(selected);
+          else if (query.trim()) setSubmitted({ query: query.trim() });
         }}
       >
         <div className="conversation-search-field">
-          <Search size={15} aria-hidden="true" />
+          <Search size={16} aria-hidden="true" />
           <input
             ref={input}
             type="search"
+            role="combobox"
+            aria-expanded={items.length > 0}
+            aria-controls="conversation-search-results"
+            aria-activedescendant={
+              items.length ? `conversation-search-${selected}` : undefined
+            }
             aria-label={t("searchKeywords")}
             placeholder={t("searchPlaceholder")}
             maxLength={256}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActive(0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+              event.preventDefault();
+              if (!items.length) return;
+              const step = event.key === "ArrowDown" ? 1 : -1;
+              setActive((selected + step + items.length) % items.length);
+            }}
           />
           {query ? (
             <button
@@ -108,43 +207,61 @@ export function ConversationSearch({
           ) : null}
         </div>
         <button
-          type="submit"
-          className="conversation-search-submit"
-          disabled={!query.trim()}
+          type="button"
+          className="icon-control conversation-search-close"
+          aria-label={t("closeSearch")}
+          onClick={onClose}
         >
-          {t("search")}
+          <X size={15} />
         </button>
-        {onClose ? (
-          <button
-            type="button"
-            className="icon-control conversation-search-close"
-            aria-label={t("closeSearch")}
-            onClick={onClose}
-          >
-            <X size={15} />
-          </button>
-        ) : null}
       </form>
-      {submitted && !current ? <p role="status">{t("searching")}</p> : null}
-      {current?.error ? (
-        <p role="alert">{messageText(current.error, i18n)}</p>
-      ) : null}
-      {current?.items?.length === 0 ? <p>{t("noConversations")}</p> : null}
-      <ul>
-        {current?.items?.map(({ id, title, snippet }) => (
-          <li key={id}>
-            <button
-              type="button"
-              className="conversation-search-hit"
-              onClick={() => open(id)}
-            >
-              <strong>{title}</strong>
-              <span>{snippet}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
+      <div className="conversation-search-body">
+        {submitted && !current ? <p role="status">{t("searching")}</p> : null}
+        {current?.error ? (
+          <p role="alert">{messageText(current.error, i18n)}</p>
+        ) : null}
+        {needle && current && !current.error && !items.length ? (
+          <p>{t("noConversations")}</p>
+        ) : null}
+        {!needle ? <p>{t("searchHint")}</p> : null}
+        <ul
+          id="conversation-search-results"
+          role="listbox"
+          aria-label={t("searchTitle")}
+        >
+          {items.map((item, index) => (
+            <React.Fragment key={item.key}>
+              {index === 0 && named.length ? (
+                <li role="presentation" className="conversation-search-group">
+                  {t("searchNamesGroup")}
+                </li>
+              ) : null}
+              {index === named.length && textCount ? (
+                <li role="presentation" className="conversation-search-group">
+                  {t("searchTextGroup")}
+                </li>
+              ) : null}
+              <li
+                id={`conversation-search-${index}`}
+                role="option"
+                aria-selected={index === selected}
+                className="conversation-search-hit"
+                onMouseMove={() => {
+                  if (index !== selected) setActive(index);
+                }}
+                onClick={() => choose(index)}
+              >
+                <span className="conversation-search-hit-head">
+                  <strong>{item.title}</strong>
+                  {item.place ? <small>{item.place}</small> : null}
+                </span>
+                {item.detail ? <span>{item.detail}</span> : null}
+              </li>
+            </React.Fragment>
+          ))}
+        </ul>
+      </div>
+    </dialog>
   );
 }
 

@@ -90,6 +90,10 @@ export function conversationService(
           code: "conversation_side_mismatch",
         });
       const existing = index.get(id);
+      // A saved fork keeps its source title until its first turn names it.
+      const unseededFork =
+        existing?.sourceSessionId !== undefined &&
+        existing.updatedAt === existing.createdAt;
       if (
         request.branchFrom &&
         existing &&
@@ -135,7 +139,7 @@ export function conversationService(
       await index.selectModel(id, request.mode, selection);
       const firstTurn = request.forkFrom
         ? await index.nameSide(id, request.prompt)
-        : !existing;
+        : !existing || unseededFork;
       const sideParent = request.forkFrom ? index.sideParent(id) : undefined;
       const provisionalTitle = sideParent
         ? conversationSides(sideParent).find((side) => side.id === id)?.title

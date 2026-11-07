@@ -170,7 +170,8 @@ test(
         projectId: workspace.id,
         query: "haystack",
       });
-    await assert.rejects(search(), { status: 409 });
+    // Conversation search no longer depends on the integration switch.
+    assert.deepEqual(await search(), []);
     const run = (sessionId: string, prompt: string) =>
       host.coding(
         {
@@ -234,6 +235,15 @@ test(
     const hits = await search();
     assert.equal(hits[0]?.id, "integration-history");
     assert.match(hits[0]?.snippet ?? "", /haystack/u);
+    assert.equal(hits[0]?.projectId, workspace.id);
+    assert.equal(typeof hits[0]?.seq, "number");
+    // Omitting the workspace searches every workspace.
+    const global = await host.request<ConversationSearchHit[]>(
+      "integrations/search",
+      { query: "haystack" },
+    );
+    assert.equal(global[0]?.id, "integration-history");
+    assert.equal(global[0]?.projectId, workspace.id);
     const chinese = await host.request<ConversationSearchHit[]>(
       "integrations/search",
       {

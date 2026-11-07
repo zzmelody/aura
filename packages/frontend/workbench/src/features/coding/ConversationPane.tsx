@@ -924,6 +924,7 @@ function PromptImages({
 const TurnView = memo(function TurnView({
   turn,
   latest,
+  highlighted = false,
   visible,
   directory,
   endpoint,
@@ -936,6 +937,8 @@ const TurnView = memo(function TurnView({
 }: {
   turn: Turn;
   latest: boolean;
+  /** Briefly marks the turn a search result jumped to. */
+  highlighted?: boolean;
   visible: boolean;
   /** Runtime endpoint; sent images are served from it. */
   endpoint: string;
@@ -1004,6 +1007,8 @@ const TurnView = memo(function TurnView({
   return (
     <article
       className="coding-turn"
+      data-turn-id={turn.id}
+      data-search-focus={highlighted ? "" : undefined}
       data-actions-reveal={latest ? "always" : "hover"}
       onFocusCapture={(event) => {
         setProcessFocused(
@@ -1540,6 +1545,22 @@ function ChangedFilesView({
 /** Stable empty list so an idle transcript does not re-run its effects. */
 const noTurns: Turn[] = [];
 
+/**
+ * The turn containing a DSH log position: the last turn whose `turn/start`
+ * seq (encoded in its id as `turn-<seq>`) is at or before it.
+ */
+export function focusTurnIndex(
+  turns: readonly Turn[],
+  seq: number,
+): number | undefined {
+  let found: number | undefined;
+  turns.forEach((turn, index) => {
+    const start = /:turn-(\d+)$/u.exec(turn.id)?.[1];
+    if (start !== undefined && Number(start) <= seq) found = index;
+  });
+  return found;
+}
+
 const newId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -1602,6 +1623,7 @@ export function ConversationPane({
   forkFrom,
   branchFrom,
   branchAt,
+  focus,
   onForkTurn,
   history,
   historyTime = 0,
@@ -1653,6 +1675,8 @@ export function ConversationPane({
   forkFrom?: string;
   branchFrom?: string;
   branchAt?: number;
+  /** A log position to scroll to once, e.g. a search match. */
+  focus?: { conversationId: string; seq: number; key: number };
   onForkTurn?(endSeq: number): void;
   history?: ChatMessage[];
   historyTime?: number;
@@ -1703,6 +1727,14 @@ export function ConversationPane({
     endpoint,
     provider === "offline" ? undefined : sessionId,
   );
+  // A normal send confirms within moments; only a slow confirmation is shown.
+  const pendingCommand = remote.pending?.commandId;
+  const [slowPending, setSlowPending] = useState<string>();
+  useEffect(() => {
+    if (!pendingCommand) return;
+    const timer = setTimeout(() => setSlowPending(pendingCommand), 1_500);
+    return () => clearTimeout(timer);
+  }, [pendingCommand]);
   const draftKey =
     sessionId ??
     (branchFrom ? `fork:${branchFrom}:${branchAt ?? "latest"}` : "draft");
@@ -2200,10 +2232,19 @@ export function ConversationPane({
     }
   };
 
+  const noticeKey = [
+    error,
+    historyError,
+    guidanceState?.phase,
+    slowPending === pendingCommand ? pendingCommand : undefined,
+    remote.connection,
+  ]
+    .map((value) => (typeof value === "string" ? value : JSON.stringify(value)))
+    .join("|");
   useEffect(() => {
     if (nearBottom.current && windowEnd === shown.length)
       transcript.current?.scrollTo({ top: transcript.current.scrollHeight });
-  }, [shown, windowEnd]);
+  }, [shown, windowEnd, noticeKey]);
 
   const older = async () => {
     if (!sessionId || olderLoading) return;
@@ -2256,6 +2297,54 @@ export function ConversationPane({
       if (!abort.signal.aborted) setOlderLoading(false);
     }
   };
+
+  // A search match scrolls to its turn once, loading older pages as needed.
+  const focusDone = useRef<number | undefined>(undefined);
+  const [focusedTurn, setFocusedTurn] = useState<string>();
+  useEffect(() => {
+    if (
+      !focus ||
+      focus.conversationId !== sessionId ||
+      focusDone.current === focus.key ||
+      loadingHistory ||
+      olderLoading
+    )
+      return;
+    const index = focusTurnIndex(shown, focus.seq);
+    if (index === undefined) {
+      if (historyPages[sessionId]?.hasMore) void older();
+      else focusDone.current = focus.key;
+      return;
+    }
+    if (index < windowStart || index >= windowEnd) {
+      setHistoryWindow({
+        id: sessionId,
+        end: Math.min(shown.length, index + 20),
+      });
+      return;
+    }
+    focusDone.current = focus.key;
+    const id = shown[index]!.id;
+    nearBottom.current = false;
+    const node = transcript.current?.querySelector<HTMLElement>(
+      `[data-turn-id="${CSS.escape(id)}"]`,
+    );
+    node?.scrollIntoView({ block: "start" });
+    setFocusedTurn(id);
+    const timer = setTimeout(() => setFocusedTurn(undefined), 2_000);
+    return () => clearTimeout(timer);
+    // `older` changes every render; the guards above keep this single-shot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    focus,
+    sessionId,
+    shown,
+    loadingHistory,
+    olderLoading,
+    historyPages,
+    windowStart,
+    windowEnd,
+  ]);
 
   const updateTurn = useCallback(
     (id: string, turnId: string, change: (turn: Turn) => Turn) =>
@@ -2700,89 +2789,6 @@ export function ConversationPane({
       className="coding-pane"
       data-phase={!shown.length && !loadingHistory ? "hero" : "active"}
     >
-      {compactNotice ? (
-        <p role="status" className="coding-notice">
-          {messageText(compactNotice, i18n)}
-          {compacting ? (
-            <button type="button" onClick={() => void stop()}>
-              {t("stopCompacting")}
-            </button>
-          ) : null}
-        </p>
-      ) : null}
-
-      {sessionId &&
-      !offline &&
-      remote.connection !== "online" &&
-      remote.connection !== "waiting" ? (
-        <p className="coding-notice" role="status">
-          {remote.connection === "unsupported"
-            ? t("updateRequired")
-            : remote.connection === "connecting"
-              ? t("connectingConversation")
-              : t("recoveringConversation")}
-          {remote.connection === "unsupported" ? (
-            <button
-              type="button"
-              onClick={() => conversations.reconnect(endpoint, sessionId)}
-            >
-              {t("reconnect")}
-            </button>
-          ) : null}
-        </p>
-      ) : null}
-      {remote.snapshot?.execution?.status === "interrupted" ? (
-        <p className="coding-notice" role="status">
-          {t("hostRestarted")}
-        </p>
-      ) : null}
-      {remote.pending && sessionId ? (
-        <p className="coding-notice" role="status">
-          {t("checkingCommand")}
-          <button
-            type="button"
-            onClick={() =>
-              void conversations
-                .retryPending(endpoint, sessionId)
-                .catch((reason: unknown) =>
-                  setError(errorMessage(reason, message("queryFailed"))),
-                )
-            }
-          >
-            {t("retryOriginal")}
-          </button>
-        </p>
-      ) : null}
-      {error ? (
-        <p className="coding-notice" role="alert">
-          {messageText(error, i18n)}
-        </p>
-      ) : null}
-      {guidanceState?.phase === "checking" ? (
-        <p className="coding-notice" role="status">
-          {t("steerChecking")}
-        </p>
-      ) : guidanceState?.phase === "retry" ? (
-        <p className="coding-notice" role="alert">
-          {t("steerRetry")}
-        </p>
-      ) : guidanceState?.phase === "ready" ? (
-        <p className="coding-notice" role="status">
-          {t("steerReady")}
-        </p>
-      ) : null}
-      {historyError ? (
-        <div className="coding-notice" role="alert">
-          <span>{messageText(historyError, i18n)}</span>{" "}
-          <button
-            type="button"
-            className="tool-button"
-            onClick={() => setHistoryRetry((value) => value + 1)}
-          >
-            {t("retryRead")}
-          </button>
-        </div>
-      ) : null}
       <div
         className="studio-scroll coding-transcript"
         ref={transcript}
@@ -2814,6 +2820,7 @@ export function ConversationPane({
               key={turn.id}
               turn={turn}
               latest={turn.id === shown.at(-1)?.id}
+              highlighted={turn.id === focusedTurn}
               visible={visible}
               directory={directory}
               endpoint={endpoint}
@@ -2830,6 +2837,92 @@ export function ConversationPane({
             />
           ))
         )}
+        {/* Notices follow the latest message instead of covering the pane top. */}
+        <div className="coding-notices">
+          {compactNotice ? (
+            <p role="status" className="coding-notice">
+              {messageText(compactNotice, i18n)}
+              {compacting ? (
+                <button type="button" onClick={() => void stop()}>
+                  {t("stopCompacting")}
+                </button>
+              ) : null}
+            </p>
+          ) : null}
+
+          {sessionId &&
+          !offline &&
+          remote.connection !== "online" &&
+          remote.connection !== "waiting" ? (
+            <p className="coding-notice" role="status">
+              {remote.connection === "unsupported"
+                ? t("updateRequired")
+                : remote.connection === "connecting"
+                  ? t("connectingConversation")
+                  : t("recoveringConversation")}
+              {remote.connection === "unsupported" ? (
+                <button
+                  type="button"
+                  onClick={() => conversations.reconnect(endpoint, sessionId)}
+                >
+                  {t("reconnect")}
+                </button>
+              ) : null}
+            </p>
+          ) : null}
+          {remote.snapshot?.execution?.status === "interrupted" ? (
+            <p className="coding-notice" role="status">
+              {t("hostRestarted")}
+            </p>
+          ) : null}
+          {pendingCommand && slowPending === pendingCommand && sessionId ? (
+            <p className="coding-notice" role="status">
+              {t("checkingCommand")}
+              <button
+                type="button"
+                onClick={() =>
+                  void conversations
+                    .retryPending(endpoint, sessionId)
+                    .catch((reason: unknown) =>
+                      setError(errorMessage(reason, message("queryFailed"))),
+                    )
+                }
+              >
+                {t("retryOriginal")}
+              </button>
+            </p>
+          ) : null}
+          {error ? (
+            <p className="coding-notice" role="alert">
+              {messageText(error, i18n)}
+            </p>
+          ) : null}
+          {guidanceState?.phase === "checking" ? (
+            <p className="coding-notice" role="status">
+              {t("steerChecking")}
+            </p>
+          ) : guidanceState?.phase === "retry" ? (
+            <p className="coding-notice" role="alert">
+              {t("steerRetry")}
+            </p>
+          ) : guidanceState?.phase === "ready" ? (
+            <p className="coding-notice" role="status">
+              {t("steerReady")}
+            </p>
+          ) : null}
+          {historyError ? (
+            <div className="coding-notice" role="alert">
+              <span>{messageText(historyError, i18n)}</span>{" "}
+              <button
+                type="button"
+                className="tool-button"
+                onClick={() => setHistoryRetry((value) => value + 1)}
+              >
+                {t("retryRead")}
+              </button>
+            </div>
+          ) : null}
+        </div>
         {windowEnd < shown.length && sessionId ? (
           <div className="coding-history-navigation">
             <button

@@ -5,6 +5,7 @@ import type { CodingSubagent } from "@aura/protocol/types";
 import { agentFailure } from "@aura/dsh-auth/agent-failure";
 import type { ApiErrorDetails } from "@aura/protocol/errors";
 import { messageText } from "./activity.ts";
+import { budgetFailure } from "./capabilities.ts";
 
 /** Native catalog and durable logs, without resuming or re-submitting any child. */
 export async function codingSubagents(
@@ -56,7 +57,8 @@ export async function codingSubagents(
           );
         const failure =
           end?.type === "turn/end" && end.data.reason.kind === "error"
-            ? agentFailure(end.data.reason.error.message)
+            ? (budgetFailure(end.data.reason.error.message) ??
+              agentFailure(end.data.reason.error.message))
             : undefined;
         const limited =
           end?.type === "turn/end" && end.data.reason.kind === "max-tokens";

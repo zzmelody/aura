@@ -30,6 +30,7 @@
   "opened": "Open tools",
   "closeTool": "Close tool: {{name}}",
   "tools": "Tools",
+  "blankTab": "Blank tab",
   "openTool": "Open tool",
   "newSideChat": "New side conversation",
   "newTerminal": "New terminal",

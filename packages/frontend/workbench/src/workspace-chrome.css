@@ -175,7 +175,9 @@
     var(--window-navigation-width) - var(--titlebar-main-start)
   );
 }
-[data-titlebar-layout] .workspace-header :is(button, a, input, nav) {
+[data-titlebar-layout]
+  :is(.workspace-header, .flow-content-heading)
+  :is(button, a, input, nav, summary) {
   -webkit-app-region: no-drag;
 }
 [data-titlebar-layout="page"] .workspace-header {
@@ -184,7 +186,12 @@
 [data-titlebar-layout="conversation"] .coding-tools-header {
   --titlebar-leading-padding: 5px;
 }
+/* The workflow editor has no page header: its own title row is the top row. */
+[data-titlebar-layout="workflow"] .flow-content-heading {
+  --titlebar-leading-padding: 14px;
+}
 [data-titlebar-layout="page"] .workspace-header,
+[data-titlebar-layout="workflow"] .flow-content-heading,
 [data-titlebar-layout="conversation"]
   :is(
     .coding-main-column > .coding-header,
@@ -200,6 +207,7 @@
  * collapsed sidebar lets headers slide under navigation, so only then is the
  * header no-drag with a drag layer that starts after the navigation. */
 [data-titlebar-layout="page"] .workspace-header,
+[data-titlebar-layout="workflow"] .flow-content-heading,
 [data-titlebar-layout="conversation"]
   :is(
     .coding-main-column > .coding-header,
@@ -208,6 +216,7 @@
   -webkit-app-region: drag;
 }
 [data-titlebar-layout="page"][data-sidebar-collapsed] .workspace-header,
+[data-titlebar-layout="workflow"][data-sidebar-collapsed] .flow-content-heading,
 [data-titlebar-layout="conversation"][data-sidebar-collapsed]
   :is(
     .coding-main-column > .coding-header,
@@ -216,6 +225,8 @@
   -webkit-app-region: no-drag;
 }
 [data-titlebar-layout="page"][data-sidebar-collapsed] .workspace-header::before,
+[data-titlebar-layout="workflow"][data-sidebar-collapsed]
+  .flow-content-heading::before,
 [data-titlebar-layout="conversation"][data-sidebar-collapsed]
   :is(
     .coding-main-column > .coding-header,

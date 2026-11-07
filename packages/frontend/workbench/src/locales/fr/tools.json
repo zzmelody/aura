@@ -30,6 +30,7 @@
   "opened": "Outils ouverts",
   "closeTool": "Fermer l’outil : {{name}}",
   "tools": "Outils",
+  "blankTab": "Onglet vide",
   "openTool": "Ouvrir un outil",
   "newSideChat": "Nouvelle conversation latérale",
   "newTerminal": "Nouveau terminal",

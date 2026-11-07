@@ -37,8 +37,12 @@ export interface IntegrationUpdate {
 
 export interface ConversationSearchHit {
   id: string;
+  /** Workspace that owns the conversation. */
+  projectId?: string;
   title: string;
   snippet: string;
+  /** DSH log position of the matching message, used to jump to its turn. */
+  seq?: number;
 }
 
 export interface AgentTeamView {

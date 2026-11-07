@@ -128,7 +128,6 @@ export function useComposerCommands({
     group,
     running,
     canRunFlow: Boolean(onFlow),
-    leading: !liveSlash || !draft.slice(0, liveSlash.start).trim(),
   });
   const active = Math.min(index, Math.max(0, entries.length - 1));
 
@@ -227,11 +226,17 @@ export function useComposerCommands({
       if (liveSlash) applyEdit(replaceDraftRange(draft, liveSlash, ""));
       onFlow?.(entry.flow);
     } else if (entry.command === "plan" || entry.command === "goal") {
-      const end =
-        liveSlash?.end ??
-        command?.end ??
-        (draft.trim() === `/${entry.command}` ? draft.length : 0);
-      applyEdit(insertCollaborationCommand(draft, end, entry.command));
+      const range =
+        liveSlash && draft.slice(0, liveSlash.start).trim()
+          ? liveSlash
+          : {
+              start: 0,
+              end:
+                liveSlash?.end ??
+                command?.end ??
+                (draft.trim() === `/${entry.command}` ? draft.length : 0),
+            };
+      applyEdit(insertCollaborationCommand(draft, range, entry.command));
     } else {
       if (entry.command === "clear" || draft.trim() === `/${entry.command}`)
         setDraft("");

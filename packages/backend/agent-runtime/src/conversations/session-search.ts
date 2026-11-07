@@ -8,9 +8,14 @@ import {
 const messageTypes = ["user/message", "assistant/message"] as const;
 const limit = 30;
 
+export interface SearchableConversation {
+  title: string;
+  projectId: string;
+}
+
 export async function searchCodingSessions(
   service: SessionQueryEngine,
-  titles: ReadonlyMap<string, string>,
+  titles: ReadonlyMap<string, SearchableConversation>,
   query: string,
   signal: AbortSignal,
 ): Promise<ConversationSearchHit[]> {
@@ -28,8 +33,10 @@ export async function searchCodingSessions(
   if (items.length || !/\p{Script=Han}/u.test(query))
     return items.map(({ header, bestMatch }) => ({
       id: header.id,
-      title: titles.get(header.id) ?? "会话",
+      title: titles.get(header.id)?.title ?? "会话",
+      ...owner(titles, header.id),
       snippet: bestMatch.snippet,
+      seq: bestMatch.seq,
     }));
 
   // FTS tokenizes contiguous Han text as words. Use the native literal
@@ -60,8 +67,10 @@ export async function searchCodingSessions(
         return [
           {
             id,
-            title: titles.get(id) ?? "会话",
+            title: titles.get(id)?.title ?? "会话",
+            ...owner(titles, id),
             snippet: text.slice(offset, offset + 240),
+            seq: match.seq,
           },
         ];
       }),
@@ -70,4 +79,12 @@ export async function searchCodingSessions(
   }
   signal.throwIfAborted();
   return hits.slice(0, limit);
+}
+
+function owner(
+  titles: ReadonlyMap<string, SearchableConversation>,
+  id: string,
+): { projectId?: string } {
+  const projectId = titles.get(id)?.projectId;
+  return projectId ? { projectId } : {};
 }

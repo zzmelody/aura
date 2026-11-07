@@ -369,7 +369,12 @@ test(
         (await host.codingHistory("coding-project-continuation")).turns.map(
           (item) => item.prompt,
         ),
-        ["换到这个项目继续讨论"],
+        // A continuation shows the turns it inherited, then its own.
+        [
+          "先讨论，不执行。",
+          "WRITE_FILE 按刚才的方案实现",
+          "换到这个项目继续讨论",
+        ],
       );
       assert.equal(
         (await host.conversations(created.id)).find(

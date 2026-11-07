@@ -706,6 +706,17 @@ export class OrchestrationHost {
     });
   }
 
+  /** Saves a fork of a conversation through one completed turn. */
+  forkCodingConversation(
+    sessionId: string,
+    endSeq?: number,
+  ): Promise<{ conversation: CodingConversation }> {
+    return this.request<{ conversation: CodingConversation }>("coding/fork", {
+      sessionId,
+      ...(endSeq === undefined ? {} : { endSeq }),
+    });
+  }
+
   /** Durably opens an empty side chat, or returns the parent's existing one. */
   openCodingSide(sessionId: string): Promise<{ sessionId: string }> {
     return this.request<{ sessionId: string }>("coding/side/open", {

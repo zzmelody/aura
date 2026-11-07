@@ -132,6 +132,7 @@ export class CodingIntegrations {
   private voice?: Fiber;
   private team?: Fiber;
   private searchIndex?: { fiber: Fiber; query: SessionQueryEngine };
+  private searchOpening?: Promise<{ fiber: Fiber; query: SessionQueryEngine }>;
   private readonly ctx: Context;
   private readonly table: Table<IntegrationRecord>;
   private readonly index: CodingConversationIndex;
@@ -289,7 +290,6 @@ export class CodingIntegrations {
     const results = await Promise.allSettled([
       this.reconcileVoice(),
       this.reconcileTeam(),
-      this.reconcileSearch(),
     ]);
     if (results.some(({ status }) => status === "rejected"))
       throw new CodedFlowError(
@@ -534,17 +534,20 @@ export class CodingIntegrations {
     }
   }
 
-  async search(projectId: string, query: string) {
+  /** Searches saved conversation text in one workspace, or in all of them. */
+  async search(projectIds: readonly string[], query: string) {
     await this.ready();
-    if (!this.enabled("sessionSearch") || !this.searchIndex)
-      throw new CodedFlowError("会话全文搜索未启用或暂不可用。", 409, {
-        code: "session_search_unavailable",
-      });
+    const index = await this.openSearchIndex();
     const titles = new Map(
-      this.index.list(projectId).map((item) => [item.id, item.title]),
+      projectIds.flatMap((projectId) =>
+        this.index
+          .list(projectId)
+          .filter((item) => item.archivedAt === undefined)
+          .map((item) => [item.id, { title: item.title, projectId }] as const),
+      ),
     );
     const hits = await searchCodingSessions(
-      this.searchIndex.query,
+      index.query,
       titles,
       query,
       AbortSignal.timeout(20_000),
@@ -552,12 +555,13 @@ export class CodingIntegrations {
     return redactMcpResult(hits, this.mcpSecrets());
   }
 
-  private async reconcileSearch() {
-    if (!this.enabled("sessionSearch")) {
-      const index = this.searchIndex;
-      this.searchIndex = undefined;
-      await index?.fiber.dispose();
-    } else if (!this.searchIndex) {
+  /**
+   * Conversation search is always available; the in-memory index loads on
+   * the first search and indexes nothing until then.
+   */
+  private async openSearchIndex() {
+    if (this.searchIndex) return this.searchIndex;
+    this.searchOpening ??= (async () => {
       const { default: SQLiteSearch } =
         await import("@deepseek-ai/dsh-session-query-sqlite");
       const scope = this.ctx.isolate("sessionQuery");
@@ -568,11 +572,18 @@ export class CodingIntegrations {
       try {
         await fiber.await();
         this.searchIndex = { fiber, query: fiber.ctx.sessionQuery };
+        return this.searchIndex;
       } catch (error) {
         await fiber.dispose();
-        throw error;
+        void error;
+        throw new CodedFlowError("会话搜索暂不可用。", 503, {
+          code: "session_search_unavailable",
+        });
       }
-    }
+    })().finally(() => {
+      this.searchOpening = undefined;
+    });
+    return this.searchOpening;
   }
 }
 

@@ -38,6 +38,29 @@ const defaults: CapabilityRecord = {
   entries: {},
 };
 
+const budgetMessages = {
+  extra_request_uncertain:
+    "有结果未知的额外请求，请在对话能力设置中核对后继续。",
+  extra_request_budget_exhausted:
+    "额外请求额度不足，请在对话能力设置中增加额度。",
+} as const;
+type BudgetCode = keyof typeof budgetMessages;
+
+function budgetError(code: BudgetCode): CodedFlowError {
+  return new CodedFlowError(budgetMessages[code], 409, { code });
+}
+
+/**
+ * DSH persists a child's turn error as plain text, dropping our error code.
+ * Recover the ledger refusal so the panel can say why instead of a generic failure.
+ */
+export function budgetFailure(message?: string): CodedFlowError | undefined {
+  const code = (Object.keys(budgetMessages) as BudgetCode[]).find((key) =>
+    message?.includes(budgetMessages[key]),
+  );
+  return code ? budgetError(code) : undefined;
+}
+
 /** User-owned request allowance; a reservation is never refunded on uncertainty. */
 export class CodingCapabilityStore {
   private readonly table: Table<CapabilityRecord>;
@@ -169,17 +192,9 @@ export class CodingCapabilityStore {
           (item.state === "reserved" && !this.live.has(id)),
       )
     )
-      throw new CodedFlowError(
-        "有结果未知的额外请求，请在对话能力设置中核对后继续。",
-        409,
-        { code: "extra_request_uncertain" },
-      );
+      throw budgetError("extra_request_uncertain");
     if (Object.keys(prior.entries).length >= prior.maxRequests)
-      throw new CodedFlowError(
-        "额外请求额度不足，请在对话能力设置中增加额度。",
-        409,
-        { code: "extra_request_budget_exhausted" },
-      );
+      throw budgetError("extra_request_budget_exhausted");
   }
   async settle(id: string, complete: boolean): Promise<void> {
     await this.serialize(async () => {

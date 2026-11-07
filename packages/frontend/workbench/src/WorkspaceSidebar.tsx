@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { useWorkbenchMessages } from "./i18n.ts";
 import { useSidebarMessages } from "./sidebar-messages.ts";
 import { formatDate } from "@aura/i18n/runtime";
@@ -45,6 +45,7 @@ import type { CodingProjectInfo } from "@aura/protocol/types";
 import type { CodingProjectsController } from "./features/coding/useCodingProjects";
 import { WorkspaceDialog } from "./features/coding/WorkspaceDialog";
 import { isActiveStatus } from "./features/coding/conversationStatus";
+import { ConversationSearch } from "./features/coding/ConversationIntegrations";
 
 /** Task-independent destinations; archives and the full log live in Settings. */
 const tabs = [
@@ -72,6 +73,7 @@ export function WorkspaceSidebar({
   openedStudios = [],
   closeStudio,
   scheduledIds,
+  onSearchResult,
 }: {
   workspace: WorkspaceController;
   tab: Tab;
@@ -94,13 +96,14 @@ export function WorkspaceSidebar({
   closeStudio(id: string): void;
   /** Conversations with an active automation task. */
   scheduledIds?: ReadonlySet<string>;
+  /** Opens a search result at the matching message when it has one. */
+  onSearchResult(projectId: string, conversationId: string, seq?: number): void;
 }) {
   /** `null` creates a workspace; a record configures that one. */
   const { t: nav } = useWorkbenchMessages("navigation");
   const { t } = useSidebarMessages();
   const [spaceDialog, setSpaceDialog] = useState<CodingProjectInfo | null>();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const [onlyRunning, setOnlyRunning] = useState(false);
   const [closed, setClosed] = useState(new Set<string>());
   const toast = useToast();
@@ -130,11 +133,7 @@ export function WorkspaceSidebar({
     x: number;
     y: number;
   }>();
-  const search = useRef<HTMLInputElement>(null);
   const searchButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (searchOpen) search.current?.focus();
-  }, [searchOpen]);
   const running = new Set(workspace.runningIds);
   const remoteIds = new Set(
     Object.values(codingWorkspaces.conversations)
@@ -145,14 +144,10 @@ export function WorkspaceSidebar({
     (session) =>
       (offline || !remoteIds.has(`legacy-${session.id}`)) &&
       Boolean(session.archivedAt) === showArchived &&
-      (!onlyRunning || running.has(session.id)) &&
-      `${session.title} ${session.workflow?.title ?? ""} ${sidebarSessionTitle(session)} ${session.messages.at(-1)?.text ?? ""}`
-        .toLowerCase()
-        .includes(query.trim().toLowerCase()),
+      (!onlyRunning || running.has(session.id)),
   );
   const groups = groupSidebarSessions(filtered);
   // Workspace folders use the same archive view as ordinary conversations.
-  const needle = query.trim().toLowerCase();
   const spaceFolders = codingWorkspaces.projects.flatMap((space) => {
     const all = (codingWorkspaces.conversations[space.id] ?? []).filter(
       (item) =>
@@ -161,13 +156,23 @@ export function WorkspaceSidebar({
         (!onlyRunning || isActiveStatus(codingWorkspaces.statuses[item.id])),
     );
     if ((showArchived || onlyRunning) && !all.length) return [];
-    if (!needle || space.title.toLowerCase().includes(needle))
-      return [{ space, conversations: all }];
-    const matched = all.filter((item) =>
-      item.title.toLowerCase().includes(needle),
-    );
-    return matched.length ? [{ space, conversations: matched }] : [];
+    return [{ space, conversations: all }];
   });
+  // Every loaded conversation, so the dialog can match names instantly.
+  const searchTitles = codingWorkspaces.projects.flatMap((space) =>
+    (codingWorkspaces.conversations[space.id] ?? [])
+      .filter(
+        (item) =>
+          item.id !== PERSONAL_ASSISTANT_SESSION_ID &&
+          item.archivedAt === undefined,
+      )
+      .map((item) => ({
+        id: item.id,
+        projectId: space.id,
+        title: item.title,
+        place: space.title,
+      })),
+  );
   const toggleFolder = (key: string) =>
     setClosed((value) => {
       const next = new Set(value);
@@ -193,7 +198,6 @@ export function WorkspaceSidebar({
   ]);
   const shortcuts = pluginStudios.filter((studio) => opened.has(studio.id));
   const closeSearch = () => {
-    setQuery("");
     setSearchOpen(false);
     searchButton.current?.focus();
   };
@@ -272,12 +276,8 @@ export function WorkspaceSidebar({
         ))}
       </nav>
       {/* DSH section header: muted label, then search, view options and
-          add-workspace. Search expands inline over the label and actions. */}
-      <div
-        className={`session-heading${searchOpen ? " searching" : ""}`}
-        role="group"
-        aria-label={t("chatTools")}
-      >
+          add-workspace. Search opens the global conversation dialog. */}
+      <div className="session-heading" role="group" aria-label={t("chatTools")}>
         <span className="session-heading-label">
           {showArchived
             ? t("archived")
@@ -285,118 +285,90 @@ export function WorkspaceSidebar({
               ? t("active")
               : t("chats")}
         </span>
-        {searchOpen ? (
-          <label className="session-search">
-            <Search size={14} aria-hidden="true" />
-            <input
-              ref={search}
+        <div className="session-heading-actions">
+          <Tooltip label={t("search")}>
+            <button
+              ref={searchButton}
+              className="icon-control"
               aria-label={t("searchChats")}
-              placeholder={t("searchNames")}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onBlur={() => {
-                if (!query.trim()) setSearchOpen(false);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.stopPropagation();
-                  closeSearch();
-                }
-              }}
-            />
-            {query ? (
-              <Tooltip label={t("clearSearch")}>
-                <button
-                  type="button"
-                  className="session-search-clear"
-                  aria-label={t("clearSearch")}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    setQuery("");
-                    search.current?.focus();
-                  }}
-                >
-                  <X size={12} />
-                </button>
-              </Tooltip>
-            ) : null}
-          </label>
-        ) : (
-          <div className="session-heading-actions">
-            <Tooltip label={t("search")}>
-              <button
-                ref={searchButton}
-                className="icon-control"
-                aria-label={t("searchChats")}
-                aria-expanded={false}
-                onClick={() => setSearchOpen(true)}
-              >
-                <Search size={14} />
-              </button>
-            </Tooltip>
-            <WorkbenchMenu
-              label={t("viewOptions")}
-              tooltip={t("viewOptions")}
-              className={`icon-control${showArchived || onlyRunning ? " filtered" : ""}`}
-              items={[
-                {
-                  id: "all",
-                  label: t("allChats"),
-                  icon: (
-                    <Check
-                      size={14}
-                      opacity={!showArchived && !onlyRunning ? 1 : 0}
-                    />
-                  ),
-                  action: () => {
-                    onArchived(false);
-                    setOnlyRunning(false);
-                  },
-                },
-                {
-                  id: "running",
-                  label: t("activeOnly"),
-                  icon: <Check size={14} opacity={onlyRunning ? 1 : 0} />,
-                  action: () => {
-                    onArchived(false);
-                    setOnlyRunning(true);
-                  },
-                },
-                {
-                  id: "archived",
-                  label: t("archivedOnly"),
-                  icon: <Check size={14} opacity={showArchived ? 1 : 0} />,
-                  action: () => {
-                    setOnlyRunning(false);
-                    onArchived(true);
-                  },
-                },
-              ]}
+              aria-haspopup="dialog"
+              aria-expanded={searchOpen}
+              disabled={offline}
+              onClick={() => setSearchOpen(true)}
             >
-              <SlidersHorizontal size={14} />
-            </WorkbenchMenu>
-            <Tooltip label={offline ? t("serviceRequired") : t("addWorkspace")}>
-              <button
-                className="icon-control"
-                aria-label={t("addWorkspace")}
-                disabled={offline}
-                onClick={() => setSpaceDialog(null)}
-              >
-                <FolderPlus size={16} />
-              </button>
-            </Tooltip>
-          </div>
-        )}
+              <Search size={14} />
+            </button>
+          </Tooltip>
+          <WorkbenchMenu
+            label={t("viewOptions")}
+            tooltip={t("viewOptions")}
+            className={`icon-control${showArchived || onlyRunning ? " filtered" : ""}`}
+            items={[
+              {
+                id: "all",
+                label: t("allChats"),
+                icon: (
+                  <Check
+                    size={14}
+                    opacity={!showArchived && !onlyRunning ? 1 : 0}
+                  />
+                ),
+                action: () => {
+                  onArchived(false);
+                  setOnlyRunning(false);
+                },
+              },
+              {
+                id: "running",
+                label: t("activeOnly"),
+                icon: <Check size={14} opacity={onlyRunning ? 1 : 0} />,
+                action: () => {
+                  onArchived(false);
+                  setOnlyRunning(true);
+                },
+              },
+              {
+                id: "archived",
+                label: t("archivedOnly"),
+                icon: <Check size={14} opacity={showArchived ? 1 : 0} />,
+                action: () => {
+                  setOnlyRunning(false);
+                  onArchived(true);
+                },
+              },
+            ]}
+          >
+            <SlidersHorizontal size={14} />
+          </WorkbenchMenu>
+          <Tooltip label={offline ? t("serviceRequired") : t("addWorkspace")}>
+            <button
+              className="icon-control"
+              aria-label={t("addWorkspace")}
+              disabled={offline}
+              onClick={() => setSpaceDialog(null)}
+            >
+              <FolderPlus size={16} />
+            </button>
+          </Tooltip>
+        </div>
       </div>
-      {query.trim() &&
-      !filtered.length &&
-      !spaceFolders.some((folder) => folder.conversations.length) ? (
-        <div className="sidebar-empty">{t("noMatches")}</div>
+      {searchOpen ? (
+        <ConversationSearch
+          endpoint={endpoint}
+          titles={searchTitles}
+          onClose={closeSearch}
+          open={({ id, projectId, seq }) => {
+            const owner =
+              projectId ??
+              searchTitles.find((item) => item.id === id)?.projectId;
+            if (owner) onSearchResult(owner, id, seq);
+          }}
+        />
       ) : null}
       <div className="session-list">
         {spaceFolders.map(({ space, conversations }) => {
           const key = `space:${space.id}`;
-          const expanded = Boolean(query.trim() || !closed.has(key));
+          const expanded = !closed.has(key);
           // Highlight the folder containing the open conversation with the accent.
           const current =
             (tab === "studio:coding" ||
@@ -601,9 +573,7 @@ export function WorkspaceSidebar({
           );
         })}
         {groups.map((group) => {
-          const expanded = Boolean(
-            query.trim() || onlyRunning || !closed.has(group.id),
-          );
+          const expanded = Boolean(onlyRunning || !closed.has(group.id));
           return (
             <section
               className="session-folder"
@@ -749,7 +719,7 @@ export function WorkspaceSidebar({
         })}
         {!groups.length && !spaceFolders.length ? (
           <div className="sidebar-empty">
-            {query || onlyRunning
+            {onlyRunning
               ? t("noMatches")
               : showArchived
                 ? t("archiveEmpty")

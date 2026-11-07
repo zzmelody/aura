@@ -30,6 +30,7 @@
   "opened": "열린 도구",
   "closeTool": "도구 닫기: {{name}}",
   "tools": "도구",
+  "blankTab": "빈 탭",
   "openTool": "도구 열기",
   "newSideChat": "새 사이드 대화",
   "newTerminal": "새 터미널",

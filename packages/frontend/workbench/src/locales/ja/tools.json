@@ -30,6 +30,7 @@
   "opened": "開いているツール",
   "closeTool": "ツールを閉じる：{{name}}",
   "tools": "ツール",
+  "blankTab": "空白のタブ",
   "openTool": "ツールを開く",
   "newSideChat": "新しいサイド会話",
   "newTerminal": "新しい端末",

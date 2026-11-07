@@ -29,6 +29,7 @@ import {
   listConversations,
   listProjects,
   openSideChat,
+  forkConversation,
   saveConversationModel,
   saveConversationPermission,
   personalAssistant,
@@ -63,7 +64,8 @@ export type CodingProjectsController = {
   branchFrom?: string;
   branchAt?: number;
   continueIn(projectId: string): void;
-  fork(projectId: string, sessionId: string, endSeq: number): void;
+  /** Saves a fork as a new conversation and opens it. */
+  fork(projectId: string, sessionId: string, endSeq: number): Promise<void>;
   newChat(preferredProjectId?: string): void;
   selectModel(
     sessionId: string,
@@ -77,7 +79,9 @@ export type CodingProjectsController = {
   ): Promise<void>;
   select(id: string | undefined): void;
   /** Opens a conversation, or a draft bound to the given workspace. */
-  open(projectId: string, conversationId?: string): void;
+  open(projectId: string, conversationId?: string, focusSeq?: number): void;
+  /** A log position the open conversation should scroll to once. */
+  focus?: { conversationId: string; seq: number; key: number };
   refresh(signal?: AbortSignal): Promise<CodingProjectInfo[]>;
   refreshConversations(
     projectId: string,
@@ -409,13 +413,20 @@ export function useCodingProjects(
       ),
     [],
   );
+  const [focus, setFocus] = useState<CodingProjectsController["focus"]>();
   const open = useCallback(
-    (projectId: string, conversationId?: string) =>
+    (projectId: string, conversationId?: string, focusSeq?: number) => {
       setSelection({
         projectId,
         conversationId,
         workspaceLocked: !conversationId,
-      }),
+      });
+      setFocus(
+        conversationId && focusSeq !== undefined
+          ? { conversationId, seq: focusSeq, key: Date.now() }
+          : undefined,
+      );
+    },
     [],
   );
 
@@ -437,6 +448,42 @@ export function useCodingProjects(
     [refreshConversations],
   );
 
+  const fork = useCallback(
+    async (projectId: string, sessionId: string, endSeq: number) => {
+      try {
+        const { conversation } = await forkConversation(
+          endpoint,
+          sessionId,
+          endSeq,
+        );
+        versions.current.set(
+          projectId,
+          (versions.current.get(projectId) ?? 0) + 1,
+        );
+        setConversations((current) => ({
+          ...current,
+          [conversation.projectId]: [
+            conversation,
+            ...(current[conversation.projectId] ?? []).filter(
+              (item) => item.id !== conversation.id,
+            ),
+          ],
+        }));
+        setSelection({
+          projectId: conversation.projectId,
+          conversationId: conversation.id,
+        });
+        setError("");
+        void refreshConversations(conversation.projectId).catch(
+          () => undefined,
+        );
+      } catch (reason) {
+        setError(errorMessage(reason));
+        throw reason;
+      }
+    },
+    [endpoint, refreshConversations],
+  );
   const openSide = useCallback(
     async (projectId: string, parentId: string) => {
       try {
@@ -560,10 +607,14 @@ export function useCodingProjects(
       dataEndpoint !== endpoint || canChooseConversationWorkspace(selection),
     conversationId:
       dataEndpoint === endpoint ? selection.conversationId : undefined,
+    focus:
+      dataEndpoint === endpoint &&
+      focus?.conversationId === selection.conversationId
+        ? focus
+        : undefined,
     branchFrom: dataEndpoint === endpoint ? selection.branchFrom : undefined,
     branchAt: dataEndpoint === endpoint ? selection.branchAt : undefined,
-    fork: (projectId, sessionId, endSeq) =>
-      setSelection({ projectId, branchFrom: sessionId, branchAt: endSeq }),
+    fork,
     continueIn: (projectId) =>
       setSelection((current) =>
         current.projectId === projectId

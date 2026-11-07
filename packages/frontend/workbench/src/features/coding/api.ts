@@ -653,6 +653,19 @@ export const steerCodingTurn = (
     signal,
   );
 
+/** Saves a fork as its own conversation, inheriting through one completed turn. */
+export const forkConversation = (
+  endpoint: string,
+  sessionId: string,
+  endSeq: number,
+) =>
+  codingApi<{ conversation: CodingConversationInfo }>(
+    endpoint,
+    `/sessions/${encodeURIComponent(sessionId)}/fork`,
+    "POST",
+    { endSeq },
+  );
+
 export const openSideChat = (endpoint: string, parentId: string) =>
   codingApi<{ sessionId: string }>(
     endpoint,

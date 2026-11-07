@@ -317,7 +317,6 @@
   "analyzeFlowTitle": "让 Agent 读懂这个流程",
   "analyzeFlowHint": "在右侧描述你的想法，或让助手分析当前流程。",
   "generatedGraphHint": "生成的 SVG 流程图会显示在这里。",
-  "draftHint": "通过右侧对话完善流程，导出并注册后即可运行。",
   "graphRegion": "Agent 生成的流程图",
   "graphCanvas": "流程图画布",
   "graphAccessibleHelp": "滚轮缩放，双指平移或捏合，拖动平移。键盘加减号缩放，方向键平移，0 适应画布。",

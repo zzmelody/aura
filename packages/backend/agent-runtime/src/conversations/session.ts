@@ -372,6 +372,9 @@ export function codingService(
           throw new CodedFlowError("子 Agent 已停用。", 409, {
             code: "subagent_disabled",
           });
+        // Every child model request reserves from the user's ledger; refuse
+        // the spawn up front instead of starting a child that cannot run.
+        capabilities.assertBudgetAvailable();
         const args = exec.arguments as { cwd?: unknown };
         if (
           args.cwd !== undefined &&
@@ -859,7 +862,6 @@ export function codingService(
       !parent.events.some(
         (event) =>
           event.seq === options.endSeq &&
-          event.seq >= parent.inheritedEventCount &&
           event.type === "turn/end" &&
           event.data.reason.kind === "completed",
       )

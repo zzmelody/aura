@@ -283,6 +283,37 @@ export class CodingConversationIndex {
       : undefined;
   }
 
+  /**
+   * Saves a fork as an independent conversation at once. Its DSH log is
+   * seeded from the source on the first turn; until then history reads the
+   * source through the selected turn.
+   */
+  async openFork(sourceId: string, endSeq: number | undefined) {
+    const parent = this.get(sourceId) ?? this.sideParent(sourceId);
+    if (!parent || parent.archivedAt !== undefined)
+      throw new CodedFlowError("来源对话不存在或已归档。", 404, {
+        code: "conversation_source_missing",
+      });
+    const source =
+      parent.id === sourceId ? parent : this.side(parent, sourceId);
+    const now = Date.now();
+    const permission = this.permission(sourceId);
+    const modelConfig = this.modelConfig(sourceId) ?? parent.modelConfig;
+    const record: CodingConversationRecord = {
+      id: `fork-${randomUUID()}`,
+      projectId: parent.projectId,
+      title: source?.title ?? parent.title,
+      createdAt: now,
+      updatedAt: now,
+      sourceSessionId: sourceId,
+      ...(endSeq === undefined ? {} : { sourceEndSeq: endSeq }),
+      ...(permission ? { permission } : {}),
+      ...(modelConfig ? { modelConfig } : {}),
+    };
+    await this.table.put(record.id, record);
+    return conversation(record);
+  }
+
   /** Every explicit creation allocates an independent, durable side chat. */
   async openSide(parentId: string): Promise<string> {
     if (!this.get(parentId))

@@ -86,7 +86,9 @@ export function createIntegrationApp(
   app.get("/search", async (context) =>
     context.json(
       await host.request<ConversationSearchHit[]>("integrations/search", {
-        projectId: context.req.query("project"),
+        ...(context.req.query("project")
+          ? { projectId: context.req.query("project") }
+          : {}),
         query: context.req.query("q"),
       }),
     ),

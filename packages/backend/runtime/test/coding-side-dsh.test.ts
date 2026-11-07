@@ -265,11 +265,59 @@ test(
       assert.equal(usage.uncachedInputTokens, 23);
       assert.equal(usage.outputTokens, 5);
       assert.deepEqual(streamedUsage, usage);
+      // A fork shows the turns it inherited as part of its own history.
       assert.deepEqual(
-        branch.turns.map((item) => [item.prompt, item.endSeq]),
-        [["INDEPENDENT_REPLY", endSeq]],
+        branch.turns.map((item) => item.prompt),
+        ["PARENT_ONLY_CONTEXT", "SIDE_ONLY_CONTEXT", "INDEPENDENT_REPLY"],
       );
+      assert.equal(branch.turns.at(-1)?.endSeq, endSeq);
       await host.closeCodingConversation("branched-from-side");
+
+      // Forking saves a conversation at once; before its first message its
+      // history is the source through the selected turn.
+      const { conversation: saved } = await host.forkCodingConversation(
+        sideA,
+        branchAt,
+      );
+      assert.equal(saved.sourceSessionId, sideA);
+      assert.ok(
+        (await host.conversations(space.id)).some(
+          (item) => item.id === saved.id,
+        ),
+      );
+      assert.deepEqual(
+        (await host.codingHistory(saved.id, { page: true })).turns.map(
+          (item) => item.prompt,
+        ),
+        ["PARENT_ONLY_CONTEXT", "SIDE_ONLY_CONTEXT"],
+      );
+      // Forking an unsent fork again starts from the same source.
+      const { conversation: again } = await host.forkCodingConversation(
+        saved.id,
+        branchAt,
+      );
+      assert.equal(again.sourceSessionId, sideA);
+      await host.coding(
+        {
+          sessionId: saved.id,
+          projectId: space.id,
+          mode: "demo",
+          prompt: "FORK_FIRST_MESSAGE",
+        },
+        () => {},
+        AbortSignal.timeout(60_000),
+      );
+      const forkRequest = JSON.stringify(requests.at(-1));
+      assert.match(forkRequest, /SIDE_ONLY_CONTEXT/u);
+      assert.doesNotMatch(forkRequest, /SIDE_AFTER_RESTART/u);
+      assert.deepEqual(
+        (await host.codingHistory(saved.id, { page: true })).turns.map(
+          (item) => item.prompt,
+        ),
+        ["PARENT_ONLY_CONTEXT", "SIDE_ONLY_CONTEXT", "FORK_FIRST_MESSAGE"],
+      );
+      await host.closeCodingConversation(saved.id);
+      await host.closeCodingConversation(again.id);
 
       // Cold closure works even if no side agent has been resumed in this host.
       assert.equal((await host.closeCodingSide(blankSide)).closed, true);

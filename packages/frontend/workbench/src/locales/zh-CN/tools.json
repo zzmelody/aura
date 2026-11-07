@@ -30,6 +30,7 @@
   "opened": "已打开的工具",
   "closeTool": "关闭工具：{{name}}",
   "tools": "工具",
+  "blankTab": "空白标签页",
   "openTool": "打开工具",
   "newSideChat": "新建侧边对话",
   "newTerminal": "新建终端",

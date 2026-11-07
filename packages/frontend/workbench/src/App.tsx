@@ -34,6 +34,11 @@ import type { StudioTab, Tab } from "./types";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
 import { WorkspaceMenubar } from "./WorkspaceMenubar";
 import { ResizableSidebar, DEFAULT_SIDEBAR_WIDTH } from "./ResizableSidebar";
+import { useContainerWidth, usePaneSplit } from "./usePaneSplit.ts";
+import {
+  WORKFLOW_SPLIT_BOUNDS,
+  WORKFLOW_SPLIT_STORAGE_KEY,
+} from "./workflow-split.ts";
 import { SessionActions, type SessionDialogRequest } from "./SessionActions";
 import type { WorkbenchMenuItem } from "./WorkbenchMenu";
 import { SessionDialog } from "./SessionDialog";
@@ -226,7 +231,7 @@ function Workbench({ onReady }: AppProps) {
       ),
     ),
   );
-  const split = width - (wide && !collapsed ? sidebarWidth : 0) >= 720;
+  const { ref: deck, width: deckWidth } = useContainerWidth<HTMLDivElement>();
   const dark =
     workspace.state.theme === "system"
       ? systemTheme !== "light"
@@ -437,10 +442,15 @@ function Workbench({ onReady }: AppProps) {
     sessionId: string,
     endSeq: number,
   ) => {
-    codingWorkspaces.fork(projectId, sessionId, endSeq);
-    workspace.newChat();
-    navigate("studio:coding");
-    setSidebarOpen(false);
+    void codingWorkspaces.fork(projectId, sessionId, endSeq).then(
+      () => {
+        workspace.newChat();
+        navigate("studio:coding");
+        setSidebarOpen(false);
+      },
+      // The workspace error notice already reports the failure.
+      () => undefined,
+    );
   };
   const sidebar = (
     <WorkspaceSidebar
@@ -462,6 +472,13 @@ function Workbench({ onReady }: AppProps) {
       openedStudios={openedStudios}
       closeStudio={closeStudio}
       scheduledIds={scheduledIds}
+      onSearchResult={(projectId, conversationId, seq) => {
+        if (!canLeaveStudio()) return;
+        workspace.newChat();
+        codingWorkspaces.open(projectId, conversationId, seq);
+        navigate("studio:coding");
+        setSidebarOpen(false);
+      }}
     />
   );
   const showChat =
@@ -477,6 +494,20 @@ function Workbench({ onReady }: AppProps) {
     tab === "assistant" ||
     (workspace.state.provider !== "offline" &&
       (tab === "studio:coding" || (tab === "chat" && !showWorkflowChat)));
+  /** The editor carries its own title row, so the page header would repeat it. */
+  const workflowEditor = tab === "flows" && workflowDetail;
+  /** The workflow canvas and its assistant share the deck through one divider. */
+  const workflowSplit = usePaneSplit({
+    storageKey: WORKFLOW_SPLIT_STORAGE_KEY,
+    bounds: WORKFLOW_SPLIT_BOUNDS,
+    containerWidth: deckWidth,
+    active: tab === "flows" && showChat,
+    labels: {
+      label: t("resizeWorkflowSplit"),
+      hint: t("resizeHint"),
+      valueText: (value) => t("assistantPanelWidth", { width: value }),
+    },
+  });
   /** View commands of the hosting page join the session menu as one "..." entry. */
   const headerActions = (viewItems: WorkbenchMenuItem[] = []) =>
     tab === "chat" && workspace.active ? (
@@ -529,7 +560,9 @@ function Workbench({ onReady }: AppProps) {
             !workspace.saveError
               ? codingHeader
                 ? "conversation"
-                : "page"
+                : workflowEditor
+                  ? "workflow"
+                  : "page"
               : undefined
           }
           data-sidebar-collapsed={collapsed || undefined}
@@ -599,7 +632,7 @@ function Workbench({ onReady }: AppProps) {
                       </dialog>
                     ) : null}
                     <main className="workspace-main">
-                      {!codingHeader ? (
+                      {!codingHeader && !workflowEditor ? (
                         <header className="workspace-header">
                           <div className="workspace-heading">
                             {workspace.active?.workflow && tab === "chat" ? (
@@ -636,16 +669,28 @@ function Workbench({ onReady }: AppProps) {
                         }
                       >
                         <div
+                          ref={deck}
                           className="workspace-deck"
                           data-workflow-layout={
                             tab === "flows"
-                              ? split
-                                ? "split"
-                                : "stacked"
+                              ? workflowSplit.stacked
+                                ? "stacked"
+                                : "split"
                               : undefined
                           }
                           data-assistant-closed={
                             (tab === "flows" && !showChat) || undefined
+                          }
+                          data-resizing={workflowSplit.resizing || undefined}
+                          // Before the deck is measured the stylesheet's own
+                          // fallback width applies; an inline 0px would
+                          // override it and collapse the assistant.
+                          style={
+                            deckWidth
+                              ? ({
+                                  "--workflow-assistant-width": `${workflowSplit.width}px`,
+                                } as React.CSSProperties)
+                              : undefined
                           }
                           hidden={
                             tab !== "flows" &&
@@ -684,6 +729,13 @@ function Workbench({ onReady }: AppProps) {
                               />
                             ) : null}
                           </div>
+                          {tab === "flows" && !workflowSplit.stacked ? (
+                            <div
+                              className="workflow-split-handle"
+                              inert={!showChat}
+                              {...workflowSplit.handle}
+                            />
+                          ) : null}
                           <div
                             className={`assistant-area${tab === "chat" || tab === "assistant" ? " standalone" : ""}`}
                             hidden={tab !== "flows" && !showChat}

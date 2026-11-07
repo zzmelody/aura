@@ -317,7 +317,6 @@
   "analyzeFlowTitle": "Confiez l’analyse du workflow à l’agent",
   "analyzeFlowHint": "Décrivez votre idée à droite ou demandez à l’assistant d’analyser le workflow actuel.",
   "generatedGraphHint": "Le diagramme SVG généré apparaîtra ici.",
-  "draftHint": "Affinez le workflow dans la conversation à droite. Exportez-le et enregistrez-le dans le catalogue pour l’exécuter.",
   "graphRegion": "Diagramme du workflow généré par l’agent",
   "graphCanvas": "Canevas du diagramme",
   "graphAccessibleHelp": "Molette pour zoomer, deux doigts pour déplacer ou pincer, glisser pour déplacer. Touches + et − pour zoomer, flèches pour déplacer, 0 pour ajuster au canevas.",

@@ -93,7 +93,9 @@ export async function coldCodingHistory(
     const id = SessionId(sessionId);
     const stored = await persistence.stat(id, { signal });
     if (!stored) {
-      if (cursor.beforeSeq !== undefined) return undefined;
+      // An unseeded fork reads its source through the live reader.
+      if (cursor.beforeSeq !== undefined || record?.sourceSessionId)
+        return undefined;
       return {
         turns: legacyConversationTurns(
           record?.history ?? [],
@@ -108,7 +110,7 @@ export async function coldCodingHistory(
       const read = await handle.read(undefined, undefined, { signal });
       const page = storedHistoryPage(
         read.events,
-        side || record?.sourceSessionId ? handle.inheritedEventCount : 0,
+        side ? handle.inheritedEventCount : 0,
         cursor,
       );
       if (!page) return undefined;

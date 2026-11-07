@@ -938,12 +938,6 @@ body {
   font-size: 12px;
   text-align: center;
 }
-.flow-draft-hint {
-  padding: 6px 14px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 10px;
-}
 .badge {
   display: inline-flex;
   align-items: center;
@@ -1030,6 +1024,8 @@ body {
   flex: 1;
 }
 .workspace-deck[data-workflow-layout] {
+  /* The divider overrides this; it keeps the split usable before measuring. */
+  --workflow-assistant-width: clamp(320px, 30vw, 400px);
   --workspace-sidebar-progress: 1;
   position: relative;
   overflow: clip;
@@ -1043,13 +1039,53 @@ body {
 .workspace-deck[data-workflow-layout="stacked"] > .flow-area {
   transition: display var(--workspace-sidebar-duration) allow-discrete;
 }
+/* The divider sets the width; it is bounded so both panes stay usable. */
 .workspace-deck[data-workflow-layout="split"] > .assistant-area {
-  --workflow-assistant-width: clamp(330px, 28vw, 420px);
   flex: 0 0 var(--workflow-assistant-width);
   margin-inline-end: calc(
     (var(--workspace-sidebar-progress) - 1) * var(--workflow-assistant-width)
   );
-  border-left: 1px solid var(--border);
+}
+/* Same full-height, edge-faded grip as the conversation and sidebar splits. */
+.workflow-split-handle {
+  position: relative;
+  flex: 0 0 calc(8px * var(--workspace-sidebar-progress));
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  transition: visibility 0s var(--workspace-sidebar-duration);
+}
+.workspace-deck[data-assistant-closed] > .workflow-split-handle {
+  visibility: hidden;
+  transition: none;
+}
+.workflow-split-handle::after {
+  --workflow-divider-color: var(--workspace-divider);
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--workflow-divider-color) 50%,
+    transparent
+  );
+}
+.workflow-split-handle:hover::after,
+.workflow-split-handle:focus-visible::after,
+.workspace-deck[data-resizing] > .workflow-split-handle::after {
+  --workflow-divider-color: var(--secondary);
+}
+.workflow-split-handle:focus-visible {
+  outline: none;
+}
+.workspace-deck[data-resizing],
+.workspace-deck[data-resizing] * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 .workspace-deck[data-workflow-layout="stacked"] > .assistant-area {
   position: relative;

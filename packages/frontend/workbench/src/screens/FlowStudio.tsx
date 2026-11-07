@@ -256,9 +256,6 @@ export function FlowStudio({
             </p>
           </div>
         )}
-        {isDraft ? (
-          <div className="flow-draft-hint">{t("draftHint")}</div>
-        ) : null}
       </div>
     </section>
   );

@@ -22,7 +22,6 @@ import {
   MessageSquare,
   MessageSquareQuote,
   SquareTerminal,
-  Search,
   Users,
 } from "lucide-react";
 import {
@@ -45,10 +44,7 @@ import {
 } from "../../flow-conversation";
 import { ConversationPane } from "./ConversationPane";
 import { SubagentPanel } from "./SubagentPanel.tsx";
-import {
-  AgentTeamPanel,
-  ConversationSearch,
-} from "./ConversationIntegrations.tsx";
+import { AgentTeamPanel } from "./ConversationIntegrations.tsx";
 import { useIntegrations } from "../../integrations.tsx";
 import { ConversationSplit } from "./ConversationSplit";
 import { SideConversation } from "./SideConversation";
@@ -147,7 +143,7 @@ export function CodingStudio({
   const { t, i18n } = useConversationMessages();
   const { t: toolText } = useToolMessages();
   const { flags } = useIntegrations();
-  const [integrationPanel, setIntegrationPanel] = useState<"search" | "team">();
+  const [integrationPanel, setIntegrationPanel] = useState<"team">();
   const {
     projects,
     selectedId,
@@ -247,7 +243,6 @@ export function CodingStudio({
   >({});
   const studioRoot = useRef<HTMLElement>(null);
   const subagentAnchor = useRef<HTMLElement>(null);
-  const searchTrigger = useRef<HTMLButtonElement>(null);
   const [subagentView, setSubagentView] = useState<{
     parentId: string;
     sessionId: string;
@@ -732,23 +727,6 @@ ${summary}`,
       legacy?.archivedAt !== undefined ? (
         <span className="header-archived">{t("archivedBadge")}</span>
       ) : null}
-      {flags?.sessionSearch && projectId && !legacy && !personalAssistant ? (
-        <button
-          type="button"
-          className="icon-control"
-          aria-label={t("searchTitle")}
-          ref={searchTrigger}
-          aria-expanded={integrationPanel === "search"}
-          title={t("searchTitle")}
-          onClick={() =>
-            setIntegrationPanel((current) =>
-              current === "search" ? undefined : "search",
-            )
-          }
-        >
-          <Search size={16} />
-        </button>
-      ) : null}
       {flags?.agentTeam && conversationId && conversation && !legacy ? (
         <button
           type="button"
@@ -824,26 +802,6 @@ ${summary}`,
           <>
             {mainHeader}
             {visible &&
-            flags?.sessionSearch &&
-            integrationPanel === "search" &&
-            projectId &&
-            !legacy &&
-            !personalAssistant ? (
-              <ConversationSearch
-                key={projectId}
-                endpoint={endpoint}
-                projectId={projectId}
-                onClose={() => {
-                  setIntegrationPanel(undefined);
-                  searchTrigger.current?.focus();
-                }}
-                open={(id) => {
-                  open(projectId, id);
-                  setIntegrationPanel(undefined);
-                }}
-              />
-            ) : null}
-            {visible &&
             flags?.agentTeam &&
             integrationPanel === "team" &&
             conversationId &&
@@ -888,7 +846,7 @@ ${summary}`,
               </p>
             ) : null}
             {branchFrom ? (
-              <p className="coding-notice">
+              <p className="coding-notice" role="status">
                 {t(
                   branchAt === undefined
                     ? "inheritContext"
@@ -930,6 +888,7 @@ ${summary}`,
                 }
                 branchFrom={branchFrom}
                 branchAt={branchAt}
+                focus={workspaces.focus}
                 onForkTurn={
                   onForkConversation && conversation && !offline
                     ? (endSeq) =>
@@ -1071,7 +1030,12 @@ ${summary}`,
               </p>
             ) : null}
             {!tabs.length ? (
-              <div className="coding-tools-empty">
+              <div
+                className="coding-tools-empty"
+                role="tabpanel"
+                id="tool-panel-blank"
+                aria-labelledby="tool-tab-blank"
+              >
                 <strong>{t("openTools")}</strong>
                 <button
                   type="button"

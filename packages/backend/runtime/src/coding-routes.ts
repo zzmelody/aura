@@ -363,6 +363,31 @@ export function createCodingApp(host: OrchestrationHost) {
     }
   });
 
+  app.post("/sessions/:id/fork", async (context) => {
+    const body = await context.req.json().catch(() => undefined);
+    if (
+      !isRecord(body) ||
+      (body.endSeq !== undefined &&
+        (typeof body.endSeq !== "number" ||
+          !Number.isSafeInteger(body.endSeq) ||
+          body.endSeq < 0))
+    )
+      return context.json(
+        { message: "无效的分叉轮次。", code: "conversation_options_invalid" },
+        400,
+      );
+    try {
+      return context.json(
+        await host.forkCodingConversation(
+          context.req.param("id"),
+          body.endSeq as number | undefined,
+        ),
+      );
+    } catch (error) {
+      return failure(context, error);
+    }
+  });
+
   app.post("/sessions/:id/side", async (context) => {
     try {
       return context.json(await host.openCodingSide(context.req.param("id")));

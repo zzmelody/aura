@@ -317,7 +317,6 @@
   "analyzeFlowTitle": "Let the agent analyze this workflow",
   "analyzeFlowHint": "Describe your idea on the right, or ask the assistant to analyze the current workflow.",
   "generatedGraphHint": "The generated SVG diagram will appear here.",
-  "draftHint": "Refine the workflow in the conversation on the right. Export and register it to run.",
   "graphRegion": "Agent-generated workflow diagram",
   "graphCanvas": "Workflow diagram canvas",
   "graphAccessibleHelp": "Scroll to zoom, use two fingers to pan or pinch, or drag to pan. Use + and − to zoom, arrow keys to pan, and 0 to fit the canvas.",
