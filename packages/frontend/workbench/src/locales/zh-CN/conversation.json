@@ -316,8 +316,7 @@
   "imageUploadStatus": "图片上传失败（{{status}}）。",
   "imageAssetMissing": "图片上传没有返回有效的资产 ID。",
   "deliverables": "交付文件",
-  "maskLoading": "正在加载 DSH 密钥遮罩",
-  "maskPending": "用户消息暂未显示",
+  "maskLoading": "正在准备消息显示…",
   "maskDisplayOnly": "密钥遮罩仅影响显示；模型输入、历史记录和复制仍保留原文。",
   "showSecret": "显示密钥",
   "hideSecret": "隐藏密钥",
@@ -389,5 +388,7 @@
   "sideClosedRefreshFailed": "旁支已关闭，但列表刷新失败。请检查服务连接。",
   "chatConnectionFailed": "工作台连接失败（{{status}}）。请检查服务地址。",
   "chatUnavailable": "对话服务暂时不可用。",
-  "chatStreamInterrupted": "连接已中断，可以重新发送这条消息。"
+  "chatStreamInterrupted": "连接已中断，可以重新发送这条消息。",
+  "maskFailed": "消息显示组件加载失败。",
+  "maskRetry": "重新加载显示组件"
 }

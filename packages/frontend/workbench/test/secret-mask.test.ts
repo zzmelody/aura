@@ -11,9 +11,97 @@ import {
   installSecretMask,
   secretMaskSnapshot,
   secretSegments,
+  SecretMaskRuntime,
 } from "../src/features/coding/secret-mask.ts";
 
 const require = createRequire(import.meta.url);
+
+async function nativePlugin() {
+  let plugin: { apply(ctx: Context): void } | undefined;
+  const source = await readFile(
+    require.resolve("@deepseek-ai/dsh-client-ui-secret-mask/client"),
+    "utf8",
+  );
+  runInNewContext(source, {
+    window: {
+      __ModuleLoader__: {
+        load(bundle: { factory(require: NodeJS.Require): typeof plugin }) {
+          plugin = bundle.factory(require);
+        },
+      },
+    },
+  });
+  assert.ok(plugin);
+  return plugin;
+}
+
+test("local mask initialization is shared, retries finitely and keeps a working instance across failed replacement", async (t) => {
+  const plugin = await nativePlugin();
+  let calls = 0;
+  let fail = false;
+  const runtime = new SecretMaskRuntime(async () => {
+    calls++;
+    if (calls <= 2 || fail) throw new Error("Synthetic asset failure");
+    return plugin;
+  }, [0, 0]);
+  t.after(() => runtime.dispose());
+  const first = runtime.initialize();
+  assert.equal(runtime.initialize(), first);
+  await first;
+  assert.equal(calls, 3);
+  const original = runtime.snapshot().mask;
+  assert.ok(original);
+  await runtime.initialize();
+  assert.equal(calls, 3);
+  const snapshots: unknown[] = [];
+  const unsubscribe = runtime.subscribe(() =>
+    snapshots.push(runtime.snapshot().mask),
+  );
+  t.after(unsubscribe);
+  fail = true;
+  await runtime.initialize(true);
+  assert.equal(calls, 6);
+  assert.equal(runtime.snapshot().phase, "failed");
+  assert.equal(runtime.snapshot().mask, original);
+  assert.ok(snapshots.every((mask) => mask === original));
+  fail = false;
+  await runtime.initialize(true);
+  assert.equal(calls, 7);
+  assert.equal(runtime.snapshot().phase, "ready");
+  assert.notEqual(runtime.snapshot().mask, original);
+});
+
+test("a failed native registration retains the previous mask and disposing an in-flight load cancels retries", async (t) => {
+  const plugin = await nativePlugin();
+  let invalid = false;
+  const runtime = new SecretMaskRuntime(
+    async () => (invalid ? { apply() {} } : plugin),
+    [],
+  );
+  t.after(() => runtime.dispose());
+  await runtime.initialize();
+  const original = runtime.snapshot().mask;
+  invalid = true;
+  await runtime.initialize(true);
+  assert.equal(runtime.snapshot().phase, "failed");
+  assert.equal(runtime.snapshot().mask, original);
+  let attempts = 0;
+  const pending = new SecretMaskRuntime(
+    (signal) =>
+      new Promise((_resolve, reject) => {
+        attempts++;
+        signal.addEventListener("abort", () => reject(new Error("aborted")), {
+          once: true,
+        });
+      }),
+    [0, 0],
+  );
+  const opening = pending.initialize();
+  await pending.dispose();
+  await opening;
+  assert.equal(attempts, 1);
+  assert.deepEqual(pending.snapshot(), { phase: "idle" });
+});
 test("published DSH matcher and renderer mask credentials while preserving the original message", async () => {
   let factory:
     ((require: NodeJS.Require) => { apply(ctx: Context): void }) | undefined;

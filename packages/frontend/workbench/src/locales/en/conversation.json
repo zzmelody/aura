@@ -316,8 +316,7 @@
   "imageUploadStatus": "Image upload failed ({{status}}).",
   "imageAssetMissing": "The image upload did not return a valid asset ID.",
   "deliverables": "Deliverables",
-  "maskLoading": "Loading the DSH secret mask",
-  "maskPending": "User message not yet displayed",
+  "maskLoading": "Preparing message display…",
   "maskDisplayOnly": "Masking only affects the display. Model input, history and copied text retain the original content.",
   "showSecret": "Show secret",
   "hideSecret": "Hide secret",
@@ -389,5 +388,7 @@
   "sideClosedRefreshFailed": "The side conversation was closed, but its list could not be refreshed. Check the service connection.",
   "chatConnectionFailed": "The workbench connection failed ({{status}}). Check the service address.",
   "chatUnavailable": "The conversation service is temporarily unavailable.",
-  "chatStreamInterrupted": "The connection was interrupted. You can send this message again."
+  "chatStreamInterrupted": "The connection was interrupted. You can send this message again.",
+  "maskFailed": "The message display component could not be loaded.",
+  "maskRetry": "Reload display component"
 }

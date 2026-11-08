@@ -1,16 +1,38 @@
 import React, { useSyncExternalStore } from "react";
 import { useConversationMessages } from "../../conversation-messages.ts";
 import {
-  secretMaskSnapshot,
+  secretMaskStateSnapshot,
+  retrySecretMask,
   subscribeSecretMask,
   secretSegments,
 } from "./secret-mask.ts";
 
 export function MaskedUserText({ text }: { text: string }) {
   const { t } = useConversationMessages();
-  const mask = useSyncExternalStore(subscribeSecretMask, secretMaskSnapshot);
-  // Fail closed while the native browser bundle is loading or failed.
-  if (!mask) return <span title={t("maskLoading")}>{t("maskPending")}</span>;
+  const state = useSyncExternalStore(
+    subscribeSecretMask,
+    secretMaskStateSnapshot,
+  );
+  const mask = state.mask;
+  if (!mask)
+    return state.phase === "failed" ? (
+      <span className="coding-mask-status" role="alert">
+        <span>{t("maskFailed")}</span>
+        <button
+          type="button"
+          className="tool-button"
+          onClick={() => {
+            void retrySecretMask();
+          }}
+        >
+          {t("maskRetry")}
+        </button>
+      </span>
+    ) : (
+      <span role="status" aria-busy="true">
+        {t("maskLoading")}
+      </span>
+    );
   const Secret = mask.render;
   return (
     <span

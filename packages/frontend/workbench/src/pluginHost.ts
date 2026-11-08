@@ -1,7 +1,8 @@
+import { SECRET_MASK_MODULE } from "./features/coding/secret-mask.ts";
 import {
-  installSecretMask,
-  SECRET_MASK_MODULE,
-} from "./features/coding/secret-mask.ts";
+  claimClientModuleHost,
+  type ClientModuleLoaderTarget,
+} from "./client-bundle-loader.ts";
 import { Context, Service } from "@deepseek-ai/cordis";
 import {
   errorMessage,
@@ -78,25 +79,6 @@ interface ClientModulesBootstrap {
     },
   ): ClientModuleSystem;
   parseBootManifest(wire: unknown): unknown;
-}
-
-interface ClientBundleRegistration {
-  id: string;
-  chunk?: string;
-  factory: (require: (specifier: string) => unknown) => unknown;
-}
-
-/** DSH's `window.__ModuleLoader__` facade (queue until the system exists). */
-interface ClientModuleLoaderTarget {
-  mode: "queue" | "live";
-  pendingQueue: ClientBundleRegistration[];
-  load(registration: ClientBundleRegistration): void;
-}
-
-declare global {
-  interface Window {
-    __ModuleLoader__?: ClientModuleLoaderTarget;
-  }
 }
 
 interface ClientPlugin {
@@ -242,8 +224,6 @@ async function bootPluginHost(
   onChange: () => void,
   workbenchModule?: unknown,
 ): Promise<HostHandle> {
-  if (window.__ModuleLoader__)
-    throw new MessageError(pluginMessage("alreadyStarted"));
   const pages = new Map<string, RegisteredPage>();
   const results = new Map<string, RegisteredResult>();
   const failures: PluginFailure[] = [];
@@ -259,9 +239,14 @@ async function bootPluginHost(
       this.pendingQueue.push(registration);
     },
   };
-  window.__ModuleLoader__ = facade;
+  let releaseLoader = () => {};
 
   try {
+    try {
+      releaseLoader = claimClientModuleHost(facade);
+    } catch {
+      throw new MessageError(pluginMessage("alreadyStarted"));
+    }
     const graph = await readPluginGraph(endpoint, AbortSignal.timeout(20_000));
     const loaderRow = graph.entries.find((row) => row.id === LOADER_ID);
     if (!loaderRow) throw new MessageError(pluginMessage("loaderUnavailable"));
@@ -337,10 +322,7 @@ async function bootPluginHost(
 
     const mountedPlugins = new Map<string, ClientPlugin>();
     const mount = async (id: string, rev: string, plugin: ClientPlugin) => {
-      const fiber =
-        id === SECRET_MASK_MODULE
-          ? root.plugin((scope) => installSecretMask(scope, plugin))
-          : pluginOwnerContext(root, id).plugin(plugin);
+      const fiber = pluginOwnerContext(root, id).plugin(plugin);
       fibers.set(id, fiber);
       revisions.set(id, rev);
       try {
@@ -358,7 +340,9 @@ async function bootPluginHost(
       if (closed) return;
       const wanted = new Map(
         next.entries
-          .filter((row) => row.id !== LOADER_ID)
+          .filter(
+            (row) => row.id !== LOADER_ID && row.id !== SECRET_MASK_MODULE,
+          )
           .map((row) => [row.id, row.rev] as const),
       );
       const nextFailures: PluginFailure[] = [];
@@ -431,8 +415,7 @@ async function bootPluginHost(
               await root.fiber.dispose();
             } finally {
               for (const id of fibers.keys()) removeOwnedStyles(id);
-              if (window.__ModuleLoader__ === facade)
-                delete window.__ModuleLoader__;
+              releaseLoader();
             }
           }
         });
@@ -444,7 +427,7 @@ async function bootPluginHost(
       await root.fiber.dispose();
     } finally {
       for (const id of fibers.keys()) removeOwnedStyles(id);
-      if (window.__ModuleLoader__ === facade) delete window.__ModuleLoader__;
+      releaseLoader();
     }
     throw error;
   }

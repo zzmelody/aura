@@ -316,8 +316,7 @@
   "imageUploadStatus": "Échec de l’envoi de l’image ({{status}}).",
   "imageAssetMissing": "L’envoi de l’image n’a pas renvoyé d’identifiant de ressource valide.",
   "deliverables": "Livrables",
-  "maskLoading": "Chargement du masquage des secrets DSH",
-  "maskPending": "Le message utilisateur n’est pas encore affiché",
+  "maskLoading": "Préparation de l’affichage des messages…",
   "maskDisplayOnly": "Le masquage concerne uniquement l’affichage. L’entrée du modèle, l’historique et le texte copié conservent le contenu original.",
   "showSecret": "Afficher le secret",
   "hideSecret": "Masquer le secret",
@@ -389,5 +388,7 @@
   "sideClosedRefreshFailed": "Le chat latéral a été fermé, mais la liste n’a pas pu être actualisée. Vérifiez la connexion au service.",
   "chatConnectionFailed": "La connexion à l’espace de travail a échoué ({{status}}). Vérifiez l’adresse du service.",
   "chatUnavailable": "Le service de conversation est temporairement indisponible.",
-  "chatStreamInterrupted": "La connexion a été interrompue. Vous pouvez renvoyer ce message."
+  "chatStreamInterrupted": "La connexion a été interrompue. Vous pouvez renvoyer ce message.",
+  "maskFailed": "Impossible de charger le composant d’affichage des messages.",
+  "maskRetry": "Recharger le composant d’affichage"
 }

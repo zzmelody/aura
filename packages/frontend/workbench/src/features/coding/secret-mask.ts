@@ -1,4 +1,5 @@
-import type { Context } from "@deepseek-ai/cordis";
+/// <reference types="vite/client" />
+import { Context } from "@deepseek-ai/cordis";
 import type { ComponentType } from "react";
 import { language } from "@aura/i18n/runtime";
 import { conversationText } from "../../conversation-messages.ts";
@@ -28,23 +29,156 @@ interface NativeMask {
   render: ComponentType<SecretProps>;
   translate(key: string): string;
 }
-let current: NativeMask | undefined;
-const listeners = new Set<() => void>();
-export const secretMaskSnapshot = () => current;
-export function subscribeSecretMask(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+export interface SecretMaskPlugin {
+  apply(ctx: Context): unknown;
 }
+
+export interface SecretMaskState {
+  phase: "idle" | "loading" | "ready" | "failed";
+  mask?: NativeMask;
+}
+
+async function disposeScope(ctx?: Context) {
+  try {
+    await ctx?.fiber.dispose();
+  } catch {
+    // Scope retirement must not invalidate a working replacement or its retry state.
+  }
+}
+
+/** App-lifetime ownership, independent of backend connections and page plugins. */
+export class SecretMaskRuntime {
+  private state: SecretMaskState = { phase: "idle" };
+  private readonly listeners = new Set<() => void>();
+  private readonly load: (signal: AbortSignal) => Promise<SecretMaskPlugin>;
+  private readonly retryDelays: readonly number[];
+  private root?: Context;
+  private pending?: Promise<void>;
+  private stop = new AbortController();
+
+  constructor(
+    load: (signal: AbortSignal) => Promise<SecretMaskPlugin>,
+    retryDelays: readonly number[] = [500, 1500],
+  ) {
+    this.load = load;
+    this.retryDelays = retryDelays;
+  }
+
+  snapshot = () => this.state;
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  private publish(state: SecretMaskState) {
+    this.state = state;
+    for (const listener of this.listeners) listener();
+  }
+
+  initialize = (refresh = false): Promise<void> => {
+    if (this.pending) return this.pending;
+    if (!refresh && this.state.phase !== "idle") return Promise.resolve();
+    if (this.stop.signal.aborted) this.stop = new AbortController();
+    const signal = this.stop.signal;
+    this.pending = this.loadAndInstall(signal).finally(() => {
+      this.pending = undefined;
+    });
+    return this.pending;
+  };
+
+  private async loadAndInstall(signal: AbortSignal) {
+    const previous = this.state.mask;
+    this.publish({ phase: "loading", ...(previous ? { mask: previous } : {}) });
+    for (let attempt = 0; attempt <= this.retryDelays.length; attempt++) {
+      let candidate: Context | undefined;
+      try {
+        signal.throwIfAborted();
+        const plugin = await this.load(signal);
+        signal.throwIfAborted();
+        candidate = new Context();
+        let mask: NativeMask | undefined;
+        await candidate
+          .plugin((ctx) => {
+            mask = prepareSecretMask(ctx, plugin);
+          })
+          .await();
+        signal.throwIfAborted();
+        if (!mask) throw new Error("The secret mask did not initialize.");
+        const previousRoot = this.root;
+        this.root = candidate;
+        candidate = undefined;
+        this.publish({ phase: "ready", mask });
+        // Retiring an old scope cannot invalidate the newly published instance.
+        await disposeScope(previousRoot);
+        return;
+      } catch {
+        await disposeScope(candidate);
+        if (signal.aborted) return;
+        if (attempt === this.retryDelays.length) {
+          this.publish({
+            phase: "failed",
+            ...(previous ? { mask: previous } : {}),
+          });
+          return;
+        }
+        await new Promise<void>((resolve) => {
+          const finish = () => {
+            clearTimeout(timer);
+            signal.removeEventListener("abort", finish);
+            resolve();
+          };
+          const timer = setTimeout(finish, this.retryDelays[attempt]);
+          signal.addEventListener("abort", finish, { once: true });
+        });
+      }
+    }
+  }
+
+  /** Also supports isolated native-plugin fixtures and their owning scope. */
+  install(ctx: Context, plugin: SecretMaskPlugin) {
+    const mask = prepareSecretMask(ctx, plugin);
+    this.publish({ phase: "ready", mask });
+    ctx.effect(() => () => {
+      if (this.state.mask === mask) this.publish({ phase: "idle" });
+    });
+  }
+
+  async dispose() {
+    this.stop.abort();
+    await this.pending;
+    await disposeScope(this.root);
+    this.root = undefined;
+    this.publish({ phase: "idle" });
+  }
+}
+
+type SecretMaskLoader = (signal: AbortSignal) => Promise<SecretMaskPlugin>;
+let loadClient: SecretMaskLoader | undefined;
+const runtime = new SecretMaskRuntime(async (signal) => {
+  if (!loadClient) throw new Error("The secret mask client is not configured.");
+  return loadClient(signal);
+});
+export const secretMaskSnapshot = () => runtime.snapshot().mask;
+export const secretMaskStateSnapshot = runtime.snapshot;
+export const subscribeSecretMask = runtime.subscribe;
+export function startSecretMask(load: SecretMaskLoader) {
+  loadClient = load;
+  return runtime.initialize();
+}
+export const retrySecretMask = () => runtime.initialize(true);
+export const installSecretMask = (ctx: Context, plugin: SecretMaskPlugin) =>
+  runtime.install(ctx, plugin);
+if (import.meta.hot)
+  import.meta.hot.dispose(() => {
+    void runtime.dispose();
+  });
 
 /** Narrow host for DSH's public UserText rule and renderer registration seams.
  * The published plugin owns all recognition, masking and reveal behavior.
  */
-export function installSecretMask(
-  ctx: Context,
-  plugin: { apply(ctx: Context): unknown },
-) {
+function prepareSecretMask(ctx: Context, plugin: SecretMaskPlugin): NativeMask {
   let rule: SecretRule | undefined;
   let render: ComponentType<SecretProps> | undefined;
   let dictionaries: Record<string, Record<string, string>> = {};
@@ -92,12 +226,7 @@ export function installSecretMask(
       );
     },
   };
-  current = mask;
-  for (const listener of listeners) listener();
-  ctx.effect(() => () => {
-    if (current === mask) current = undefined;
-    for (const listener of listeners) listener();
-  });
+  return mask;
 }
 
 /** Segment one native rule's matches; UTF-16 offsets and original text are preserved. */

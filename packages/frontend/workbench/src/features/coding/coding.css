@@ -16,6 +16,13 @@
   color: var(--danger);
   font-size: 13px;
 }
+.coding-mask-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
 /* Notices sit below the latest message, inside the transcript column. */
 .coding-notices {
   display: flex;

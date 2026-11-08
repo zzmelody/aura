@@ -56,6 +56,8 @@ import "./workspace-chrome.css";
 import { StudiosScreen } from "./screens/Studios";
 import type { SettingsSectionId } from "./screens/Settings.tsx";
 import { Workflows } from "./screens/Workflows";
+import { startSecretMask } from "./features/coding/secret-mask.ts";
+import { loadSecretMaskClient } from "./features/coding/secret-mask-client.ts";
 
 const HistoryScreen = React.lazy(() =>
   import("./screens/Home").then((module) => ({
@@ -117,6 +119,9 @@ export default function App(props: AppProps) {
 }
 
 function Workbench({ onReady }: AppProps) {
+  useEffect(() => {
+    void startSecretMask(loadSecretMaskClient);
+  }, []);
   const { t } = useWorkbenchMessages("navigation");
   const workspace = useWorkspace();
   const codexAuth = useCodexAuth(workspace);
