@@ -83,7 +83,7 @@ Flow 图片通过 `agent({images})` 的受控 DSH 附件引用传递，在 Sessi
 
 ## 当前取舍
 
-个人插件仓库 aura-studio 的 `local-media` 管理本机模型的部署参数、ComfyUI 图和视频作业。宿主提供受管进程、系统资源租约、Codex 生图和媒体产物接口。
+个人插件仓库 aura-studio 的 `local-media` 管理本机模型的部署参数、ComfyUI 图和视频作业。宿主提供受管进程、系统资源租约、Codex 生图和媒体产物接口。Codex 图片能力支持可选 `referenceImages`，接收最多 4 个图片资产 ID 或 DSH 聊天附件引用，由后端校验并发送真实像素；不接受任意路径、URL 或内联 base64。图片模型仍由 Codex 自动选择，插件自身的输入 Schema 须显式声明并转发引用。详见 [Codex 图片能力与参考图片](../packages/backend/orchestration/README.md#codex-图片能力与参考图片)。
 
 「工作流」首页用卡片展示用途与可用状态，点击卡片按需通过 `/flows/:flowId/source` 读取已注册入口源码，在卡片下方静态解析节点；编辑入口进入流程图/代码详情。画布与节点支持拖拽，位置只影响当前预览，不修改代码。注册时保留源码快照，热加载失败时预览与运行均继续使用最后可用版本；接口按目录 ID 查注册表，不接受文件路径，不返回辅助文件或凭据。源码预览不具备发布或修改后端代码的能力。
 

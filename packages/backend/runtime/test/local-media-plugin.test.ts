@@ -55,6 +55,12 @@ test(
       "local-media/image",
       "local-media/tts",
     ]);
+    const imageSchema = JSON.stringify(
+      catalog.flows.find(({ id }) => id === "local-media/image")?.inputSchema ??
+        null,
+    );
+    assert.match(imageSchema, /"referenceImages"/u);
+    assert.match(imageSchema, /"maxItems":4/u);
     assert.ok(
       catalog.actions?.some(
         ({ id, available }) => id === "local-media/local-tts" && available,
@@ -74,6 +80,7 @@ test(
     await chat();
     assert.match(JSON.stringify(requests.at(-1)), /"name":"aura_tts"/u);
     assert.match(JSON.stringify(requests.at(-1)), /"name":"aura_image"/u);
+    assert.match(JSON.stringify(requests.at(-1)), /"referenceImages"/u);
     await host.configureContributions({
       flowRoots: [],
       actionRoots: [],

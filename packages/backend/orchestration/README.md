@@ -215,6 +215,35 @@ Run 创建时先写入持久化 FIFO，默认最多同时执行 32 个顶层 Run
 
 unknown 步骤支持 `retry`（每个新请求授权增加一次 attempt 预算）、`submit_output`（校验 Action 输出 Schema 或 Agent 字符串）、`terminate`（取消 Run，保留未知 attempt 审计）。一个 parallel 可能产生多个 unknown，全部处理完毕才继续。
 
+### Codex 图片能力与参考图片
+
+`aura.codex.image` 的 `generate` 接收 `prompt`、`aspect`（`square` / `portrait` / `landscape`）、可选 `quality` 和可选 `referenceImages`。不传参考图时保持原文字生图行为；传入参考图时，后端将真实图片像素按数组顺序作为 Responses `input_image` 发送给 Codex，供图片编辑、人物保持或风格转换使用。图片模型由 Codex 自动选择，返回的服务标记仍为 `codex-image`，不承诺某个 GPT Image 版本。
+
+`referenceImages` 最多 4 项，允许混用两种不可变引用：
+
+- 图片资产 ID：由宿主媒体上传/登记返回的 64 位小写 SHA-256 字符串，后端通过 `GeneratedArtifacts.readImage` 校验内容哈希。
+- 聊天图片附件引用：`{attachmentId: "sha256:<digest>", mediaType, bytes, width, height, name?, originalDimensions?}`，与 Flow Agent 的 `images` 格式相同，由 DSH attachment store 读取和校验。只有摘要不构成完整附件引用；不得根据本地路径伪造元数据。
+
+```js
+await auraCapability(ctx, "aura.codex.image").invoke(
+  "generate",
+  {
+    prompt:
+      "将参考图中穿红色外套的人单独提取，并转换为轻动漫风，保留本人特征。",
+    aspect: "portrait",
+    quality: "high",
+    referenceImages: [uploadedImageAssetId, admittedChatImageReference],
+  },
+  ctx.signal,
+);
+```
+
+不接受文件路径、远程 URL 或内联 base64 输入。源图片实际字节合计与归一化后的字节合计分别不得超过 32 MiB，单图解码不得超过 4000 万像素。只接受 PNG、JPEG、WebP 和 GIF；发送前解码为 PNG、按 EXIF 校正方向、移除元数据，动图只取第一帧。缺失、损坏、格式/大小不合规的参考图在上游请求前失败，不降级成纯文字；取消会阻止后续请求。一次调用只发送一次 Codex 请求，未知结果不自动重发。
+
+宿主在 `workflow-service.ts` 注入 DSH 附件读取端口；独立的 `aura-studio/local-media` 插件仍需在自身 Flow、Action、对话工具和页面 Schema 中声明并原样转发 `referenceImages`，宿主不会自动修改插件的输入契约或用户配置。本仓库的 `gpt-image-references.test.ts` 使用合成响应检查引用解析、输入顺序、格式/大小校验、隐私错误和取消，不代表真实 Codex 图片编辑已验收。
+
+检查：`pnpm --filter @aura/orchestration run typecheck`、`pnpm --filter @aura/orchestration run test`。
+
 ### 本地模型 Actions
 
 ### macOS 保持唤醒 Action

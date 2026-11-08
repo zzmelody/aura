@@ -33,6 +33,21 @@ Windows process trees and OS resource leases. `aura.codex.image` grants Actions
 availability checks and image generation through the host's signed-in Codex
 provider. The provider and credentials stay in Aura.
 
+The `generate` operation accepts `prompt`, `aspect`, optional `quality` and
+optional `referenceImages` (at most four). References may be image asset IDs
+(64 lowercase SHA-256 characters) or admitted chat attachment objects with
+`attachmentId: "sha256:<digest>"`, `mediaType`, `bytes`, `width` and `height`
+(the Flow Agent image reference format). The host resolves actual pixels from
+its stores, validates and normalizes PNG/JPEG/WebP/GIF to PNG, and sends them as
+ordered Codex `input_image` parts. Paths, URLs and inline base64 are rejected.
+Source and normalized images each have a combined 32 MiB limit, with at most
+40 million decoded pixels per image; animated inputs use the first frame.
+Invalid references fail before any provider request, never fall back to text,
+and cancellation is propagated. Codex selects the image model automatically;
+no specific GPT Image version is guaranteed. Plugin-owned schemas must declare
+and forward `referenceImages`; this host feature does not modify plugins or
+saved user configuration. See the [host contract](../orchestration/README.md#codex-图片能力与参考图片).
+
 `actionRunSettled(runId)` lets an Action provider clean up work created for a
 different plugin's Flow. The callback receives the Run ID and is scoped to
 providers referenced by that Run's Action steps. The media SDK also exports

@@ -356,6 +356,13 @@ export async function createWorkflowService(
     request: codexImageRequest(codexTokens, codexModel),
     signedIn: () => codexTokens.signedIn(),
     artifacts,
+    readAttachment: async (reference, signal) =>
+      (
+        await ctx.attachments.readImage(
+          reference as Parameters<Context["attachments"]["readImage"]>[0],
+          signal,
+        )
+      ).data,
     outputRoot: resolve(
       process.env.AURA_FLOW_CWD ?? process.cwd(),
       ".aura",
