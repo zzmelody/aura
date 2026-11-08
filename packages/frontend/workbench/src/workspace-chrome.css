@@ -851,6 +851,10 @@
 .workbench-menu-item.danger > svg {
   color: var(--danger);
 }
+.workbench-menu-item > svg.workbench-menu-check {
+  flex: none;
+  color: var(--text);
+}
 .workbench-menu-item kbd {
   font:
     10px var(--font-text),

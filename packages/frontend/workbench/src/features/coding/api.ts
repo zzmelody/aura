@@ -612,10 +612,35 @@ function questionItems(value: unknown[]): CodingQuestionItem[] {
         ...(options.length ? { options } : {}),
         ...(item.multiSelect === true ? { multiSelect: true } : {}),
         ...(item.kind === "approval" ? { kind: "approval" as const } : {}),
+        ...approvalFacts(item.approval),
         ...planIntent(item.intent, options),
       },
     ];
   });
+}
+
+/** Keeps the well-formed string fields of an approval's structured facts. */
+function approvalFacts(value: unknown): Pick<CodingQuestionItem, "approval"> {
+  const facts = value as Record<string, unknown> | null | undefined;
+  if (typeof facts?.toolName !== "string") return {};
+  const text = (key: string) =>
+    typeof facts[key] === "string" ? { [key]: facts[key] as string } : {};
+  const display =
+    typeof facts.displayReason === "object" && facts.displayReason !== null
+      ? Object.fromEntries(
+          Object.entries(facts.displayReason).filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string",
+          ),
+        )
+      : {};
+  return {
+    approval: {
+      toolName: facts.toolName,
+      ...text("escalation"),
+      ...text("reason"),
+      ...(Object.keys(display).length ? { displayReason: display } : {}),
+    },
+  };
 }
 
 /** Stops a conversation's running turn on the backend. */

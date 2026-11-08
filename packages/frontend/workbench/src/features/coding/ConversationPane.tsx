@@ -47,7 +47,6 @@ import { ComposerEditor } from "./ComposerEditor";
 import { collaborationCommand } from "./composer-commands";
 import {
   ArrowUp,
-  Check,
   ChevronDown,
   ChevronRight,
   CircleCheck,
@@ -87,6 +86,7 @@ import {
   MessageCircleQuestion,
   ShieldAlert,
   ShieldCheck,
+  ShieldHalf,
   ShieldX,
   Wrench,
   X,
@@ -417,6 +417,50 @@ function approvalLabels(asked: AskedQuestion) {
   };
 }
 
+const SANDBOX_MODE_LABELS: Record<string, ConversationMessageKey> = {
+  "read-only": "readOnly",
+  "workspace-write": "workspaceWrite",
+  "danger-full-access": "fullAccess",
+};
+
+/** Picks DSH's localized reason: exact locale, then base language, then English. */
+function localizedReason(
+  display: Record<string, string> | undefined,
+  locale: string,
+) {
+  if (!display) return undefined;
+  const base = locale.split("-")[0]!;
+  return display[locale] ?? display[base] ?? display.en;
+}
+
+/**
+ * Headline and detail of an approval in the interface language. Questions
+ * without structured facts (older history) keep the text the backend sent.
+ */
+function approvalText(
+  question: AskedQuestion["questions"][number] | undefined,
+  t: ReturnType<typeof useConversationMessages>["t"],
+  locale: string,
+) {
+  const facts = question?.approval;
+  if (!question || !facts)
+    return { headline: question?.question, detail: question?.detail };
+  const headline = t("approvalQuestion", { tool: facts.toolName });
+  const display = localizedReason(facts.displayReason, locale);
+  if (display) return { headline, detail: display };
+  if (facts.escalation) {
+    const key = SANDBOX_MODE_LABELS[facts.escalation];
+    const mode = key ? t(key) : facts.escalation;
+    return {
+      headline,
+      detail: facts.reason
+        ? t("approvalEscalation", { mode, reason: facts.reason })
+        : t("approvalEscalationNoReason", { mode }),
+    };
+  }
+  return { headline, detail: facts.reason };
+}
+
 /** The transcript trace of one approval request. */
 function ApprovalNote({
   asked,
@@ -425,8 +469,9 @@ function ApprovalNote({
   asked: AskedQuestion;
   live: boolean;
 }) {
-  const { t } = useConversationMessages();
+  const { t, i18n } = useConversationMessages();
   const question = asked.questions[0];
+  const text = approvalText(question, t, i18n.language);
   const { allow } = approvalLabels(asked);
   const granted = asked.answered?.some((answer) =>
     answer.selected.includes(allow),
@@ -441,11 +486,11 @@ function ApprovalNote({
   return (
     <div
       className={`coding-approval-note${state.tone}`}
-      title={question?.detail ?? question?.question}
+      title={text.detail ?? text.headline}
     >
       <state.Icon aria-hidden="true" />
       <span>{state.text}</span>
-      {question ? <span>· {question.question}</span> : null}
+      {question ? <span>· {text.headline}</span> : null}
     </div>
   );
 }
@@ -471,6 +516,7 @@ function ApprovalCard({
   const compositionEnded = useRef(false);
   const root = useRef<HTMLDivElement>(null);
   const question = asked.questions[0];
+  const text = approvalText(question, t, i18n.language);
   const labels = approvalLabels(asked);
   useEffect(() => {
     if (active) root.current?.focus();
@@ -541,9 +587,9 @@ function ApprovalCard({
         {t("pendingApproval")}
       </div>
       <div className="coding-decision-body">
-        <div className="coding-decision-headline">{question.question}</div>
-        {question.detail ? (
-          <div className="coding-decision-detail">{question.detail}</div>
+        <div className="coding-decision-headline">{text.headline}</div>
+        {text.detail ? (
+          <div className="coding-decision-detail">{text.detail}</div>
         ) : null}
       </div>
       <div className="coding-decision-actions">
@@ -1591,19 +1637,30 @@ export type ConversationSend = (
   options?: { preserveDraft?: boolean; intent?: CodingRunIntent },
 ) => Promise<Turn | undefined>;
 
+/** Each level has its own shield glyph, matching DSH's permission set. */
 const PERMISSION_OPTIONS = {
-  "read-only": { label: "readOnly", detail: "readOnlyDetail" },
+  "read-only": {
+    label: "readOnly",
+    detail: "readOnlyDetail",
+    Icon: ShieldCheck,
+  },
   "workspace-write": {
     label: "workspaceWrite",
     detail: "workspaceWriteDetail",
+    Icon: ShieldHalf,
   },
   "danger-full-access": {
     label: "fullAccess",
     detail: "fullAccessDetail",
+    Icon: ShieldAlert,
   },
 } satisfies Record<
   CodingPermission,
-  { label: ConversationMessageKey; detail: ConversationMessageKey }
+  {
+    label: ConversationMessageKey;
+    detail: ConversationMessageKey;
+    Icon: typeof ShieldCheck;
+  }
 >;
 
 /**
@@ -3262,6 +3319,47 @@ export function ConversationPane({
                   event.target.value = "";
                 }}
               />
+              {/* Mode chips sit with the attach control on the left, as in DSH. */}
+              {!offline ? (
+                <WorkbenchMenu
+                  label={t("permissionsLabel", {
+                    permissions: permission
+                      ? t(PERMISSION_OPTIONS[permission].detail)
+                      : t("defaultPermissions"),
+                  })}
+                  className={`composer-context composer-permission${permission === "danger-full-access" ? " danger" : ""}`}
+                  disabled={readOnly || !onPermission || permissionSaving}
+                  items={CODING_PERMISSIONS.map((preset) => ({
+                    id: preset,
+                    label: t(PERMISSION_OPTIONS[preset].detail),
+                    icon: React.createElement(PERMISSION_OPTIONS[preset].Icon, {
+                      size: 14,
+                      "aria-hidden": true,
+                    }),
+                    selected: preset === permission,
+                    danger: preset === "danger-full-access",
+                    action: () => {
+                      setError("");
+                      void onPermission?.(preset).catch(() =>
+                        setError(message("permissionSaveFailed")),
+                      );
+                    },
+                  }))}
+                >
+                  {React.createElement(
+                    permission
+                      ? PERMISSION_OPTIONS[permission].Icon
+                      : ShieldCheck,
+                    { size: 14, "aria-hidden": true },
+                  )}
+                  <span>
+                    {permission
+                      ? t(PERMISSION_OPTIONS[permission].label)
+                      : t("defaultPermissions")}
+                  </span>
+                  <ChevronDown size={12} aria-hidden="true" />
+                </WorkbenchMenu>
+              ) : null}
               {composerLeading}
             </div>
             <div className="composer-trailing">
@@ -3276,46 +3374,6 @@ export function ConversationPane({
                     editor.current?.focus();
                   }}
                 />
-              ) : null}
-              {!offline ? (
-                <WorkbenchMenu
-                  label={t("permissionsLabel", {
-                    permissions: permission
-                      ? t(PERMISSION_OPTIONS[permission].detail)
-                      : t("defaultPermissions"),
-                  })}
-                  className={`composer-context composer-permission${permission === "danger-full-access" ? " danger" : ""}`}
-                  disabled={readOnly || !onPermission || permissionSaving}
-                  items={CODING_PERMISSIONS.map((preset) => ({
-                    id: preset,
-                    label: t(PERMISSION_OPTIONS[preset].detail),
-                    icon:
-                      preset === permission ? (
-                        <Check size={14} />
-                      ) : preset === "danger-full-access" ? (
-                        <ShieldAlert size={14} />
-                      ) : undefined,
-                    danger: preset === "danger-full-access",
-                    action: () => {
-                      setError("");
-                      void onPermission?.(preset).catch(() =>
-                        setError(message("permissionSaveFailed")),
-                      );
-                    },
-                  }))}
-                >
-                  {permission === "danger-full-access" ? (
-                    <ShieldAlert size={14} aria-hidden="true" />
-                  ) : (
-                    <ShieldCheck size={14} aria-hidden="true" />
-                  )}
-                  <span>
-                    {permission
-                      ? t(PERMISSION_OPTIONS[permission].label)
-                      : t("defaultPermissions")}
-                  </span>
-                  <ChevronDown size={12} aria-hidden="true" />
-                </WorkbenchMenu>
               ) : null}
               <ChatModelControls
                 endpoint={endpoint}

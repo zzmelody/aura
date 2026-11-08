@@ -1,5 +1,6 @@
 import React, { useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Check } from "lucide-react";
 import { Tooltip } from "./Tooltip";
 
 export type WorkbenchMenuItem =
@@ -10,6 +11,8 @@ export type WorkbenchMenuItem =
       shortcut?: string;
       disabled?: boolean;
       danger?: boolean;
+      /** Radio-style item: shows a trailing check when the item is current. */
+      selected?: boolean;
       action(): void;
     }
   | { id: string; separator: true };
@@ -182,7 +185,10 @@ export function WorkbenchMenu({
                 ) : (
                   <button
                     key={item.id}
-                    role="menuitem"
+                    role={
+                      item.selected === undefined ? "menuitem" : "menuitemradio"
+                    }
+                    aria-checked={item.selected}
                     type="button"
                     disabled={item.disabled}
                     className={`workbench-menu-item${item.danger ? " danger" : ""}`}
@@ -194,6 +200,13 @@ export function WorkbenchMenu({
                     {item.icon}
                     <span>{item.label}</span>
                     {item.shortcut ? <kbd>{item.shortcut}</kbd> : null}
+                    {item.selected ? (
+                      <Check
+                        className="workbench-menu-check"
+                        size={14}
+                        aria-hidden="true"
+                      />
+                    ) : null}
                   </button>
                 ),
               )}

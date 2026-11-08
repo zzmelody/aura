@@ -138,11 +138,14 @@ export const APPROVAL_QUESTION_ID = "approval";
 /**
  * An approval request as a question card: DSH asks before an operation that
  * needs consent (for example a command retried outside the sandbox), and the
- * user grants it once or refuses. Typed answers are not offered.
+ * user grants it once or refuses. Typed answers are not offered. The question
+ * carries the structured facts so the client renders it in the interface
+ * language; the embedded Chinese text stays as its fallback.
  */
 export function approvalQuestion(
   toolName: string,
   reason?: string,
+  displayReason?: Record<string, string>,
 ): CodingQuestion {
   // The card title already says this is an authorization, so no header.
   return {
@@ -150,6 +153,11 @@ export function approvalQuestion(
     kind: "approval",
     question: `允许 ${toolName} 执行这个操作吗？`,
     ...(reason ? { detail: approvalReason(reason) } : {}),
+    approval: {
+      toolName,
+      ...approvalFacts(reason),
+      ...(displayReason ? { displayReason } : {}),
+    },
     options: [{ label: APPROVAL_ALLOW }, { label: APPROVAL_REJECT }],
   };
 }
@@ -158,6 +166,17 @@ const SANDBOX_MODES: Record<string, string> = {
   "workspace-write": "可写项目目录",
   "danger-full-access": "完全访问（不受沙箱限制）",
 };
+
+/**
+ * Splits `escalate sandbox to <mode>: <why>` so the client can localize it;
+ * any other reason passes through whole.
+ */
+function approvalFacts(reason?: string) {
+  if (!reason) return {};
+  const match = /^escalate sandbox to ([\w-]+): ([\s\S]*)$/u.exec(reason);
+  if (!match) return { reason };
+  return { escalation: match[1]!, reason: match[2]!.trim() };
+}
 
 /**
  * DSH phrases a sandbox escalation as `escalate sandbox to <mode>: <why>`.

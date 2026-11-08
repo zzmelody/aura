@@ -141,6 +141,19 @@ export interface CodingQuestion {
   intent?: { kind: "plan-review"; approve: string };
   /** `approval`: a grant-once-or-refuse decision; free text is not accepted. */
   kind?: "approval";
+  /** Structured approval facts the client localizes; `question`/`detail` stay as fallback. */
+  approval?: CodingApprovalFacts;
+}
+
+/** What an approval asks for, kept apart from any display language. */
+export interface CodingApprovalFacts {
+  toolName: string;
+  /** Sandbox mode requested by a `escalate sandbox to <mode>: <why>` reason. */
+  escalation?: string;
+  /** The asker's reason; for an escalation, only the `<why>` part. */
+  reason?: string;
+  /** DSH's localized presentation of the reason, keyed by locale; live only. */
+  displayReason?: Record<string, string>;
 }
 
 /** One request in a replayed coding conversation and everything it produced. */

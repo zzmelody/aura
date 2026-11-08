@@ -164,3 +164,23 @@ test("a sandbox escalation reason is shown in plain language", () => {
   // Any other reason is shown as given.
   assert.equal(approvalQuestion("write", "hook 拦截").detail, "hook 拦截");
 });
+
+test("an approval card carries language-neutral facts and DSH's localized reason", () => {
+  const escalation = approvalQuestion(
+    "pwsh",
+    "escalate sandbox to workspace-write: needs to write the build output",
+    { en: "Write the build output", zh: "写入构建产物" },
+  );
+  assert.deepEqual(escalation.approval, {
+    toolName: "pwsh",
+    escalation: "workspace-write",
+    reason: "needs to write the build output",
+    displayReason: { en: "Write the build output", zh: "写入构建产物" },
+  });
+  // A plain reason stays whole; no reason and no display copy add nothing.
+  assert.deepEqual(approvalQuestion("write", "hook blocked").approval, {
+    toolName: "write",
+    reason: "hook blocked",
+  });
+  assert.deepEqual(approvalQuestion("write").approval, { toolName: "write" });
+});

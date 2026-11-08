@@ -56,8 +56,9 @@
   container-type: inline-size;
   --coding-content-width: clamp(680px, 64cqi, 920px);
   --coding-composer-clearance: 16px;
-  --coding-composer-padding: 12px;
-  --coding-editor-padding: 3px;
+  /* DSH composer geometry: 8px control-row inset, text column 14px in. */
+  --coding-composer-padding: 8px;
+  --coding-editor-padding: 6px;
   /* Minimum inset to the editor text, including the card's 1px border. */
   --coding-content-inset: calc(
     var(--coding-composer-clearance) + var(--coding-composer-padding) +

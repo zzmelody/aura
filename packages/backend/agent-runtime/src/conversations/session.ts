@@ -1112,7 +1112,13 @@ export function codingService(
       // wait, which DSH turns into the fail-closed `unavailable` outcome.
       scoped.push(
         agent.ctx.on("approval/request", async (request) => {
-          const item = approvalQuestion(request.toolName, request.reason);
+          // `displayReason` is DSH's localized reason; it is never logged, so
+          // only the live card carries it and replayed history falls back.
+          const item = approvalQuestion(
+            request.toolName,
+            request.reason,
+            request.displayReason ? { ...request.displayReason } : undefined,
+          );
           const asked = request.signal
             ? AbortSignal.any([stop, request.signal])
             : stop;

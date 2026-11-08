@@ -73,6 +73,7 @@
 .coding-studio .coding-composer-tools {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   min-width: 0;
   margin: 12px 0 0;
@@ -81,7 +82,7 @@
 .composer-trailing {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 12px;
   min-width: 0;
 }
 .composer-leading {
@@ -100,7 +101,11 @@
   height: 28px;
   padding: 0;
   border-radius: 50%;
-  color: var(--secondary);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+}
+.coding-studio .composer-add-trigger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
 }
 .coding-studio .composer-add-trigger > svg {
   flex: none;
@@ -108,16 +113,18 @@
 .composer-context {
   display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: 160px;
+  gap: 4px;
+  max-width: 220px;
   min-width: 0;
   height: 28px;
-  padding: 0 7px;
+  padding: 0 4px 0 8px;
   border: 0;
   border-radius: calc(8px * var(--radius-scale, 1));
   background: transparent;
-  color: var(--muted);
-  font-size: 12px;
+  color: var(--secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
 }
 .composer-context > span {
   min-width: 0;
@@ -140,13 +147,13 @@
 .composer-permission {
   flex-shrink: 0;
 }
+/* Danger keeps its color as the signal; the fill only appears on hover/open. */
 .composer-permission.danger {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
 }
 .composer-permission.danger:hover:not(:disabled),
 .composer-permission.danger[aria-expanded="true"] {
-  background: color-mix(in srgb, var(--danger) 19%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
 }
 .coding-goal {
@@ -242,8 +249,14 @@
   padding: 0 4px 10px;
 }
 @container message-composer (max-width: 560px) {
+  .composer-leading,
   .composer-trailing {
     gap: 8px;
+  }
+}
+@container message-composer (max-width: 460px) {
+  .composer-permission > span {
+    display: none;
   }
 }
 @container message-composer (max-width: 440px) {
