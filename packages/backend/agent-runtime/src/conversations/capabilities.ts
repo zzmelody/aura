@@ -13,7 +13,6 @@ const settings = z.object({
   autoCompact: z.boolean(),
   web: z.boolean(),
   subagents: z.boolean(),
-  maxRequests: z.number().int().min(0).max(100_000),
 });
 const entry = z.object({
   kind: z.enum(["compaction", "subagent", "web", "goal", "mcp", "title"]),
@@ -21,7 +20,11 @@ const entry = z.object({
   state: z.enum(["reserved", "complete", "unknown", "acknowledged"]),
   at: z.number(),
 });
-const record = settings.extend({ entries: z.record(z.string(), entry) });
+const record = settings.extend({
+  // Retain the stored v1 field without enforcing or rewriting its old value.
+  maxRequests: z.number().int().min(0).max(100_000),
+  entries: z.record(z.string(), entry),
+});
 export type CapabilityRecord = z.infer<typeof record>;
 export const capabilitiesDomain = defineDomain({
   name: "aura_coding_capabilities",
@@ -52,7 +55,7 @@ function budgetError(code: BudgetCode): CodedFlowError {
 
 /**
  * DSH persists a child's turn error as plain text, dropping our error code.
- * Recover the ledger refusal so the panel can say why instead of a generic failure.
+ * Preserve display codes for historical refusals from the retired quota policy.
  */
 export function budgetFailure(message?: string): CodedFlowError | undefined {
   const code = (Object.keys(budgetMessages) as BudgetCode[]).find((key) =>
@@ -61,7 +64,7 @@ export function budgetFailure(message?: string): CodedFlowError | undefined {
   return code ? budgetError(code) : undefined;
 }
 
-/** User-owned request allowance; a reservation is never refunded on uncertainty. */
+/** User-owned request ledger; unknown outcomes never block unrelated requests. */
 export class CodingCapabilityStore {
   private readonly table: Table<CapabilityRecord>;
   private readonly credentials: Context["credentials"];
@@ -91,7 +94,6 @@ export class CodingCapabilityStore {
       autoCompact: config.autoCompact,
       web: config.web,
       subagents: config.subagents,
-      maxRequests: config.maxRequests,
       usedRequests: Object.keys(config.entries).length,
       unknownRequests: Object.entries(config.entries).filter(
         ([id, item]) =>
@@ -106,7 +108,6 @@ export class CodingCapabilityStore {
       .extend({
         key: z.string().trim().min(1).max(4096).optional(),
         clearKey: z.boolean().optional(),
-        acknowledgeUnknown: z.boolean().optional(),
       })
       .strict()
       .safeParse(source);
@@ -134,19 +135,11 @@ export class CodingCapabilityStore {
         await this.credentials.set(credentialRef(WEB_CREDENTIAL), input.key);
       if (input.clearKey)
         await this.credentials.unset(credentialRef(WEB_CREDENTIAL));
-      const entries = structuredClone(prior.entries);
-      if (input.acknowledgeUnknown)
-        for (const [id, item] of Object.entries(entries))
-          if (
-            item.state === "unknown" ||
-            (item.state === "reserved" && !this.live.has(id))
-          )
-            item.state = "acknowledged";
       try {
         await this.table.put("settings", {
+          ...prior,
           ...settings.parse(input),
           revision: prior.revision + 1,
-          entries,
         });
       } catch (error) {
         if (previousKey) await this.credentials.set(ref, previousKey.value);
@@ -171,7 +164,6 @@ export class CodingCapabilityStore {
         throw new CodedFlowError("这段对话已请求过标题提炼。", 409, {
           code: "title_request_exists",
         });
-      this.assertBudgetAvailable(prior);
       const id = randomUUID();
       await this.table.put("settings", {
         ...prior,
@@ -183,18 +175,6 @@ export class CodingCapabilityStore {
       this.live.add(id);
       return id;
     });
-  }
-  assertBudgetAvailable(prior = this.config()): void {
-    if (
-      Object.entries(prior.entries).some(
-        ([id, item]) =>
-          item.state === "unknown" ||
-          (item.state === "reserved" && !this.live.has(id)),
-      )
-    )
-      throw budgetError("extra_request_uncertain");
-    if (Object.keys(prior.entries).length >= prior.maxRequests)
-      throw budgetError("extra_request_budget_exhausted");
   }
   async settle(id: string, complete: boolean): Promise<void> {
     await this.serialize(async () => {

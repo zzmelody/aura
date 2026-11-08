@@ -16,7 +16,7 @@ interface ModelMessage {
 }
 
 test(
-  "DSH reviews plans and resumes persisted goals within Aura's request allowance",
+  "DSH reviews plans and resumes persisted goals without quotas after an unknown result",
   {
     timeout: 120_000,
   },
@@ -45,6 +45,8 @@ test(
 
     // This synthetic model is served only on loopback.
     const requests: ModelMessage[][] = [];
+    let failGoal = true;
+    let goalRequests = 0;
     const modelApp = new Hono();
     modelApp.post("/v1/chat/completions", async (context) => {
       const { messages } = await context.req.json<{
@@ -56,6 +58,16 @@ test(
       const roundAt = messages.findLastIndex((item) =>
         text(item.content).includes("<goal_round>"),
       );
+      if (roundAt >= 0 && failGoal && ++goalRequests === 2)
+        return context.json(
+          {
+            error: {
+              message: "Synthetic goal failure",
+              type: "invalid_request_error",
+            },
+          },
+          400,
+        );
       if (
         roundAt >= 0 &&
         text(messages[roundAt]?.content).includes("PAUSE_FIXTURE")
@@ -194,43 +206,19 @@ test(
       true,
     );
 
-    const saveAllowance = async (
-      driver: OrchestrationHost,
-      maxRequests: number,
-    ) => {
-      const { revision } = await driver.codingCapabilities();
-      await driver.codingCapabilities({
-        revision,
-        maxRequests,
-        autoCompact: false,
-        web: false,
-        subagents: false,
-      });
-    };
     const beforeGoal = requests.length;
+    const beforeLedger = (await host.codingCapabilities()).usedRequests;
     await assert.rejects(
       run(host, "goal-test", "Verify the fixture objective", "goal"),
-      /额度/u,
     );
-    assert.equal(requests.length, beforeGoal);
-    await saveAllowance(host, 1);
-    const notices: string[] = [];
-    await assert.rejects(
-      run(
-        host,
-        "goal-test",
-        "Verify the fixture objective",
-        "goal",
-        (event) => {
-          if (event.type === "notice") notices.push(event.text);
-        },
-      ),
-    );
-    assert.ok(notices.some((notice) => notice.includes("额度")));
-    assert.equal(requests.length, beforeGoal + 1);
+    assert.equal(requests.length, beforeGoal + 2);
     const interrupted = (await host.codingCollaboration("goal-test")).goal;
     assert.equal(interrupted?.armed, false);
-    assert.equal((await host.codingCapabilities()).usedRequests, 1);
+    assert.equal(
+      (await host.codingCapabilities()).usedRequests,
+      beforeLedger + 2,
+    );
+    assert.equal((await host.codingCapabilities()).unknownRequests, 1);
 
     await host.close();
     host = new OrchestrationHost(options);
@@ -239,7 +227,7 @@ test(
       (await host.codingCollaboration("goal-test")).goal?.armed,
       false,
     );
-    await saveAllowance(host, 6);
+    failGoal = false;
     await run(host, "goal-test", "Verify the fixture objective", "resume-goal");
     const complete = (await host.codingHistory("goal-test")).collaboration
       ?.goal;

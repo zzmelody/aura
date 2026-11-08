@@ -45,15 +45,10 @@
   "subagents": "조사 및 검토 하위 에이전트",
   "subagentsHint": "읽기 전용 하위 에이전트를 최대 2개까지 동시에 실행합니다.",
   "webHint": "DeepSeek 공식 Search / Fetch API만 사용하며 원래 질문은 전송하지 않습니다.",
-  "webKeyBudget": "Web 키 및 요청 한도",
   "webKeyConfigured": "Web 키 설정됨",
   "webKeyMissing": "Web 키 설정되지 않음",
-  "reservedRequests": "예약된 요청: {{count, number}}",
   "pasteWebKey": "DeepSeek Web API 키 붙여넣기",
-  "requestBudget": "추가 요청 총한도",
   "deleteWebKey": "저장된 Web 키 삭제",
-  "acknowledgeUnknown": "결과를 알 수 없는 요청({{count, number}}개)을 확인했으며 새 요청을 허용합니다. 이전 요청은 재전송하지 않습니다.",
-  "requestBudgetHint": "제목 생성, 컨텍스트 압축, 하위 에이전트 모델 호출, Search, Fetch는 각각 요청 1회를 예약합니다. 금액이 아닌 횟수 한도이며 실패하거나 취소해도 복원되지 않습니다. 키는 백엔드에만 저장됩니다.",
   "saveCapabilities": "대화 기능 저장",
   "readCapabilities": "대화 기능 불러오기",
   "pluginSettingsUnavailable": "플러그인 디렉터리 설정을 사용할 수 없습니다.",
@@ -92,5 +87,7 @@
   "noPlugins": "아직 플러그인이 없습니다",
   "openPluginSettings": "{{title}} 설정 열기",
   "settings": "설정",
-  "enablePlugin": "{{title}} 활성화"
+  "enablePlugin": "{{title}} 활성화",
+  "webKey": "Web 키",
+  "webKeyHint": "키는 백엔드에만 저장됩니다."
 }

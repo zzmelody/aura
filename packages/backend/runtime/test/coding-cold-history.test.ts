@@ -201,7 +201,8 @@ test(
       "Raw persisted events never enter the HTTP DTO",
     );
     assert.equal(launches, 0);
-    assert.equal(modelRequests, 13);
+    // Thirteen conversation requests and one title request for each session.
+    assert.equal(modelRequests, 15);
     assert.deepEqual(await fingerprint(options.dshHome), before);
     await assert.rejects(
       cold.codingHistory("ordinary-private-session", { page: true }),
@@ -286,7 +287,7 @@ test(
     await opening;
     assert.equal(
       modelRequests,
-      13,
+      15,
       "Starting the execution host and reading history do not replay requests",
     );
     // Finish this concurrent fixture before fingerprinting the next isolated

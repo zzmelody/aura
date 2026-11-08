@@ -278,12 +278,12 @@ test(
       },
     ]);
     assert.ok(!JSON.stringify(connected).includes(credential));
+    const beforeMcp = (await host.codingCapabilities()).usedRequests;
     await host.codingCapabilities({
       revision: 0,
       autoCompact: false,
       web: false,
       subagents: false,
-      maxRequests: 8,
     });
     await run("integration-mcp", "Call synthetic MCP");
     assert.equal(mcpCalls, 1);
@@ -296,7 +296,7 @@ test(
       false,
     );
     // The MCP call and this new conversation's title each reserve one request.
-    assert.equal((await host.codingCapabilities()).usedRequests, 2);
+    assert.equal((await host.codingCapabilities()).usedRequests, beforeMcp + 2);
 
     await run("integration-team", "Create a synthetic teammate");
     assert.ok(

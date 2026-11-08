@@ -1187,7 +1187,7 @@ const TurnView = memo(function TurnView({
         if (item.kind === "notice")
           return (
             <p key={index} className="coding-notice" role="status">
-              {item.text}
+              {messageText(item.text, i18n)}
             </p>
           );
         if (item.kind === "web")

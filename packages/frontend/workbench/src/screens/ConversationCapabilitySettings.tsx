@@ -63,7 +63,6 @@ export function ConversationCapabilitySettings({
   const [state, setState] = useState<CodingCapabilities>();
   const [key, setKey] = useState("");
   const [clearKey, setClearKey] = useState(false);
-  const [acknowledgeUnknown, setAcknowledgeUnknown] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>();
   useEffect(() => {
@@ -88,21 +87,18 @@ export function ConversationCapabilitySettings({
     setBusy(true);
     setFeedback(undefined);
     try {
-      const { revision, autoCompact, web, subagents, maxRequests } = state;
+      const { revision, autoCompact, web, subagents } = state;
       const next = await saveCodingCapabilities(endpoint, {
         revision,
         autoCompact,
         web,
         subagents,
-        maxRequests,
         clearKey,
-        acknowledgeUnknown,
         ...(key ? { key } : {}),
       });
       setState(next);
       setKey("");
       setClearKey(false);
-      setAcknowledgeUnknown(false);
       setFeedback({ tone: "ok", text: detailMessage("capabilitiesSaved") });
     } catch (cause) {
       setFeedback({
@@ -148,7 +144,7 @@ export function ConversationCapabilitySettings({
               }}
             >
               <div className="settings-row-copy">
-                <strong>{t("webKeyBudget")}</strong>
+                <strong>{t("webKey")}</strong>
                 <span>
                   <span
                     className={`settings-state ${state.hasWebKey ? "authenticated" : ""}`}
@@ -157,8 +153,6 @@ export function ConversationCapabilitySettings({
                       ? t("webKeyConfigured")
                       : t("webKeyMissing")}
                   </span>
-                  {" · "}
-                  {t("reservedRequests", { count: state.usedRequests })}
                 </span>
               </div>
               <div className="settings-form-grid">
@@ -176,21 +170,6 @@ export function ConversationCapabilitySettings({
                     onChange={(event) => setKey(event.target.value)}
                   />
                 </label>
-                <label>
-                  <span>{t("requestBudget")}</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100000"
-                    value={state.maxRequests}
-                    onChange={(event) =>
-                      setState({
-                        ...state,
-                        maxRequests: Number(event.target.value),
-                      })
-                    }
-                  />
-                </label>
                 {state.hasWebKey ? (
                   <label className="settings-check-field">
                     <input
@@ -201,24 +180,8 @@ export function ConversationCapabilitySettings({
                     <span>{t("deleteWebKey")}</span>
                   </label>
                 ) : null}
-                {state.unknownRequests > 0 ? (
-                  <label className="settings-check-field wide">
-                    <input
-                      type="checkbox"
-                      checked={acknowledgeUnknown}
-                      onChange={(event) =>
-                        setAcknowledgeUnknown(event.target.checked)
-                      }
-                    />
-                    <span>
-                      {t("acknowledgeUnknown", {
-                        count: state.unknownRequests,
-                      })}
-                    </span>
-                  </label>
-                ) : null}
               </div>
-              <p className="settings-feedback info">{t("requestBudgetHint")}</p>
+              <p className="settings-feedback info">{t("webKeyHint")}</p>
               <div className="settings-actions">
                 <button type="submit" className="tool-button" disabled={busy}>
                   <Save size={14} />

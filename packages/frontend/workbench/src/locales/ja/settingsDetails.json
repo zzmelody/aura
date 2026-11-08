@@ -45,15 +45,10 @@
   "subagents": "調査・レビュー用サブエージェント",
   "subagentsHint": "読み取り専用。最大 2 つを同時に実行します。",
   "webHint": "DeepSeek 公式 Search / Fetch API のみを使用し、元の質問は送信しません。",
-  "webKeyBudget": "Web キーとリクエスト上限",
   "webKeyConfigured": "Web キー設定済み",
   "webKeyMissing": "Web キー未設定",
-  "reservedRequests": "予約済みリクエスト：{{count, number}}",
   "pasteWebKey": "DeepSeek Web API キーを貼り付け",
-  "requestBudget": "追加リクエストの累計上限",
   "deleteWebKey": "保存済み Web キーを削除",
-  "acknowledgeUnknown": "結果不明のリクエスト（{{count, number}} 件）を確認し、新しいリクエストを許可します。過去のリクエストは再送しません。",
-  "requestBudgetHint": "タイトル生成、要約、サブエージェントのモデル呼び出し、Search、Fetch はそれぞれ 1 回分を予約します。金額ではなく回数の上限で、失敗やキャンセルでも戻りません。キーはバックエンドにのみ保存します。",
   "saveCapabilities": "会話機能を保存",
   "readCapabilities": "会話機能を読み込み",
   "pluginSettingsUnavailable": "プラグインフォルダーの設定を利用できません。",
@@ -92,5 +87,7 @@
   "noPlugins": "プラグインはまだありません",
   "openPluginSettings": "{{title}} の設定を開く",
   "settings": "設定",
-  "enablePlugin": "{{title}} を有効化"
+  "enablePlugin": "{{title}} を有効化",
+  "webKey": "Web キー",
+  "webKeyHint": "キーはバックエンドにのみ保存されます。"
 }

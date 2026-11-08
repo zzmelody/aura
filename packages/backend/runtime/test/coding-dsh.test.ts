@@ -52,7 +52,8 @@ test(
     const modelApp = new Hono();
     modelApp.post("/v1/chat/completions", async (context) => {
       const request = (await context.req.json()) as ModelRequest;
-      requests.push(request);
+      const titleCall = !request.tools?.length;
+      if (!titleCall) requests.push(request);
       if (request.tools)
         seenTools.push(request.tools.map((t) => t.function.name));
       const hasToolResult = request.messages.some((m) => m.role === "tool");
@@ -61,7 +62,7 @@ test(
           typeof message.content === "string" &&
           message.content.includes("WRITE_FILE"),
       );
-      const call = wantsWrite && !hasToolResult;
+      const call = !titleCall && wantsWrite && !hasToolResult;
       return streamSSE(context, async (output) => {
         await output.writeSSE({
           data: JSON.stringify({
@@ -86,7 +87,11 @@ test(
                       ],
                     }
                   : {
-                      content: hasToolResult ? "已写入 notes.txt" : "no-tool",
+                      content: titleCall
+                        ? "创建项目笔记"
+                        : hasToolResult
+                          ? "已写入 notes.txt"
+                          : "no-tool",
                     },
                 finish_reason: null,
               },
@@ -218,14 +223,14 @@ test(
       const written = await readFile(join(project, "notes.txt"), "utf8");
       assert.equal(written, "written by the coding agent\n");
 
-      // The conversation is indexed under the project, titled by its first turn.
+      // The conversation is indexed under the project with its generated title.
       const conversations = await host.conversations(created.id);
       assert.equal(conversations.length, 1);
       assert.equal(conversations[0]!.id, "coding-session-1");
       assert.equal(conversations[0]!.projectId, created.id);
-      assert.match(conversations[0]!.title, /WRITE_FILE/u);
+      assert.equal(conversations[0]!.title, "创建项目笔记");
 
-      // A follow-up turn reuses the session; the first request stays the title.
+      // A follow-up turn reuses the session and keeps its generated title.
       seenTools.length = 0;
       assert.equal(requests.at(-1)!.model, "deepseek-v4-flash");
       await host.request<{ model: string }>(
@@ -270,7 +275,7 @@ test(
         );
       const afterFollowUp = await host.conversations(created.id);
       assert.equal(afterFollowUp.length, 1);
-      assert.match(afterFollowUp[0]!.title, /WRITE_FILE/u);
+      assert.equal(afterFollowUp[0]!.title, "创建项目笔记");
       assert.ok(afterFollowUp[0]!.updatedAt >= conversations[0]!.updatedAt);
 
       // Re-admitting coding tools in the profile must not leak them into an

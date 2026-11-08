@@ -105,15 +105,15 @@ test("titles use the selected DSH route, bounded input and a reservation before 
   assert.equal(request.defaults?.maxTokens, 20_000);
 });
 
-test("no allowance prevents title dispatch and cancellation prevents reservations", async () => {
+test("ledger failures prevent title dispatch and cancellation prevents reservations", async () => {
   const { llm, budget, requests, order } = fixture([stop]);
   budget.reserve = async () => {
-    throw new Error("额度不足");
+    throw new Error("ledger write failed");
   };
   const generate = conversationTitleGenerator(llm, budget);
   await assert.rejects(
     generate(request, new AbortController().signal),
-    /额度不足/u,
+    /ledger write failed/u,
   );
   await assert.rejects(
     generate(request, AbortSignal.abort(new Error("cancelled"))),

@@ -51,7 +51,12 @@ test(
     const planModeRule = /You are in plan mode\./u;
     const modelApp = new Hono();
     modelApp.post("/v1/chat/completions", async (context) => {
-      requests.push(await context.req.json());
+      const request = await context.req.json<{
+        messages: Array<{ role: string; content: unknown }>;
+        tools?: unknown[];
+      }>();
+      // Title requests summarize only the first prompt, not the session context.
+      if (request.tools?.length) requests.push(request);
       return streamSSE(context, async (output) => {
         await output.writeSSE({
           data: JSON.stringify({

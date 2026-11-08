@@ -102,7 +102,7 @@
   "planMode": "Plan mode",
   "planHint": "Plan first, then approve execution in the review card",
   "goalMode": "Goal mode",
-  "goalHint": "Use the next message as a goal and continue automatically within the allowance",
+  "goalHint": "Use the next message as a goal and continue automatically",
   "compact": "Compact context",
   "compactHint": "Summarize earlier records with the current model while keeping the original chat history",
   "selectModel": "Choose model",

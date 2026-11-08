@@ -61,8 +61,14 @@ export default defineFlow({
     const requests: string[] = [];
     const app = new Hono();
     app.post("/v1/chat/completions", async (context) => {
-      const request = await context.req.json<{ messages: unknown[] }>();
-      requests.push(JSON.stringify(request.messages));
+      const request = await context.req.json<{
+        messages: unknown[];
+        max_tokens?: number;
+        max_completion_tokens?: number;
+      }>();
+      // Auxiliary title calls do not receive workspace instructions or history.
+      if ((request.max_completion_tokens ?? request.max_tokens) !== 128)
+        requests.push(JSON.stringify(request.messages));
       return streamSSE(context, async (output) => {
         await output.writeSSE({
           data: JSON.stringify({

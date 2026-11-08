@@ -16,6 +16,7 @@ interface ModelRequest {
   messages: Array<{ role: string; content: unknown }>;
   model: string;
   max_completion_tokens?: number;
+  max_tokens?: number;
   temperature?: number;
   reasoning_effort?: string;
 }
@@ -120,7 +121,9 @@ export default defineFlow({
     const modelApp = new Hono();
     modelApp.post("/v1/chat/completions", async (context) => {
       const request = (await context.req.json()) as ModelRequest;
-      calls.push(request);
+      // Count conversation and Flow execution separately from auxiliary titles.
+      if ((request.max_completion_tokens ?? request.max_tokens) !== 128)
+        calls.push(request);
       if (
         holdCoordinator &&
         request.messages.some(

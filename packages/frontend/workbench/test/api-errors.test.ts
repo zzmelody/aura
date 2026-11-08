@@ -15,8 +15,73 @@ import {
   WorkflowApiError,
 } from "../src/workflowSessions.ts";
 import { invokePluginPage } from "../src/pluginPages.ts";
-import { renameProject } from "../src/features/coding/api.ts";
+import { codingTurn, renameProject } from "../src/features/coding/api.ts";
+import { applyTurnEvent, newTurn } from "../src/features/coding/turns.ts";
 import { uploadChatImage } from "../src/chatImages.ts";
+
+test("title and compaction notices translate across six languages without replaying requests and preserve legacy text", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalLocale = language.getSnapshot().locale;
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    await language.systemChanged([originalLocale]);
+  });
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests++;
+    return new Response(
+      [
+        ...["conversation_title_fallback", "auto_compaction_incomplete"].map(
+          (code) => ({
+            type: "notice",
+            id: code,
+            text: "legacy notice",
+            details: { code, params: { token: "private" } },
+            at: 1,
+          }),
+        ),
+        { type: "notice", id: "old", text: "older server notice", at: 2 },
+        {
+          type: "notice",
+          id: "future",
+          text: "future server notice",
+          details: { code: "future", params: { token: "private" } },
+          at: 3,
+        },
+        { type: "done" },
+      ]
+        .map((event) => JSON.stringify(event))
+        .join("\n") + "\n",
+    );
+  };
+  let turn = newTurn("notice", "Original prompt", 1);
+  for await (const event of codingTurn(
+    "https://synthetic.invalid",
+    { sessionId: "notice", prompt: "Original prompt", mode: "demo" },
+    new AbortController().signal,
+  ))
+    if (event.type === "notice") turn = applyTurnEvent(turn, event);
+  const notices = turn.timeline.filter((item) => item.kind === "notice");
+  assert.equal(notices.length, 4);
+  assert.deepEqual(notices[0]?.text, {
+    namespace: "apiErrors",
+    key: "conversation_title_fallback",
+  });
+  assert.equal(notices[2]?.text, "older server notice");
+  assert.equal(notices[3]?.text, "future server notice");
+  assert.doesNotMatch(JSON.stringify(turn), /private/u);
+  const titleTranslations = new Set<string>();
+  const compactionTranslations = new Set<string>();
+  for (const locale of locales) {
+    await language.systemChanged([locale]);
+    titleTranslations.add(messageText(notices[0]!.text));
+    compactionTranslations.add(messageText(notices[1]!.text));
+  }
+  assert.equal(titleTranslations.size, 6);
+  assert.equal(compactionTranslations.size, 6);
+  assert.equal(requests, 1);
+  assert.equal(turn.prompt, "Original prompt");
+});
 
 test("plugin literals retain language choice, English fallback and template-looking user characters", async (t) => {
   const original = language.getSnapshot().locale;

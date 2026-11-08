@@ -253,7 +253,8 @@ export function codingService(
           emitters.get(agent.id)?.({
             type: "notice",
             id: `compact-warning-${Date.now()}`,
-            text: "自动压缩未完全降低上下文占用，本轮将继续。可在本轮结束后检查额度或拆分输入。",
+            text: "自动压缩未完全降低上下文占用，本轮将继续。可在本轮结束后检查会话状态或拆分输入。",
+            details: { code: "auto_compaction_incomplete" },
             at: Date.now(),
           });
         }
@@ -372,9 +373,6 @@ export function codingService(
           throw new CodedFlowError("子 Agent 已停用。", 409, {
             code: "subagent_disabled",
           });
-        // Every child model request reserves from the user's ledger; refuse
-        // the spawn up front instead of starting a child that cannot run.
-        capabilities.assertBudgetAvailable();
         const args = exec.arguments as { cwd?: unknown };
         if (
           args.cwd !== undefined &&
@@ -581,7 +579,7 @@ export function codingService(
         );
         if (!command || command.result.kind === "error")
           throw new CodedFlowError(
-            "压缩未完成；请检查额外请求额度和会话状态，结果未知时不要直接重试。",
+            "压缩未完成；请检查会话状态，结果未知时不要直接重试。",
             409,
             { code: "compaction_incomplete" },
           );
@@ -768,10 +766,9 @@ export function codingService(
           { code: "goal_text_required" },
         );
       if (!capabilities)
-        throw new CodedFlowError("对话额度账本不可用。", 503, {
+        throw new CodedFlowError("对话请求账本不可用。", 503, {
           code: "budget_service_unavailable",
         });
-      capabilities.assertBudgetAvailable();
       goalRuns.add(turn.sessionId);
     }
     active.add(turn.sessionId);
@@ -1332,7 +1329,7 @@ export function codingService(
         stop.throwIfAborted();
         if (goalIntent && matched === undefined)
           throw new CodedFlowError(
-            "目标未能开始续跑，请检查目标状态和请求额度。",
+            "目标未能开始续跑，请检查目标状态和模型服务。",
             409,
             { code: "goal_start_failed" },
           );

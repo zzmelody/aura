@@ -12,7 +12,7 @@ export type ConversationTitleGenerator = (
   signal: AbortSignal,
 ) => Promise<string>;
 
-/** One bounded auxiliary call, using the conversation route and user allowance. */
+/** One bounded auxiliary call, using the conversation route and request ledger. */
 export function conversationTitleGenerator(
   llm: Pick<Context["llm"], "prepareCall">,
   budget: Pick<CodingCapabilityStore, "reserve" | "settle">,

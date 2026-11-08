@@ -346,13 +346,16 @@ function parseCodingEvent(
     event.type === "notice" &&
     typeof event.id === "string" &&
     typeof event.text === "string"
-  )
+  ) {
+    const details = readErrorDetails(event.details);
     return {
       type: "notice",
       id: event.id,
       text: event.text,
+      ...(details ? { details } : {}),
       at: typeof event.at === "number" ? event.at : Date.now(),
     };
+  }
   if (
     event.type === "web" &&
     typeof event.callId === "string" &&

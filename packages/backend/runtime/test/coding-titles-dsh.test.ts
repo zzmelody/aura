@@ -10,7 +10,7 @@ import { OrchestrationHost } from "../src/dsh/host.ts";
 import type { CodingStreamEvent } from "@aura/agent-runtime";
 
 test(
-  "DSH summarizes main and side titles once, persists them and falls back when the title allowance is exhausted",
+  "DSH generates titles without quota setup, persists them and retains failed titles without retrying",
   {
     timeout: 90_000,
     skip:
@@ -57,9 +57,11 @@ test(
       if (title) titles.push(request);
       else mainRequests++;
       const text = title
-        ? JSON.stringify(request.messages).includes("SIDE_ONLY")
-          ? "定位旁支消息遗漏"
-          : "修复对话消息显示"
+        ? JSON.stringify(request.messages).includes("EMPTY_TITLE")
+          ? ""
+          : JSON.stringify(request.messages).includes("SIDE_ONLY")
+            ? "定位旁支消息遗漏"
+            : "修复对话消息显示"
         : "Synthetic completed reply";
       return streamSSE(context, async (stream) => {
         await stream.writeSSE({
@@ -91,13 +93,6 @@ test(
     };
     host = new OrchestrationHost(options);
     const space = await host.createProject(project);
-    await host.codingCapabilities({
-      revision: 0,
-      autoCompact: false,
-      web: false,
-      subagents: false,
-      maxRequests: 2,
-    });
     const send = (
       sessionId: string,
       prompt: string,
@@ -138,16 +133,19 @@ test(
     await send("main", "继续检查");
     await send(side.sessionId, "继续排查", "main");
     const fallback: CodingStreamEvent[] = [];
-    await send("no-budget", "额度耗尽保留临时标题", undefined, fallback);
-    assert.equal(titles.length, 2);
-    assert.equal(mainRequests, 5);
+    await send("empty-title", "EMPTY_TITLE 保留临时标题", undefined, fallback);
+    await send("empty-title", "继续");
+    assert.equal(titles.length, 3);
+    await send("another", "新对话无需设置额度");
+    assert.equal(titles.length, 4);
+    assert.equal(mainRequests, 7);
     assert.ok(
       fallback.some(
         (event) => event.type === "notice" && event.text.includes("临时标题"),
       ),
     );
-    assert.equal((await host.codingCapabilities()).usedRequests, 2);
-    assert.equal((await host.codingCapabilities()).unknownRequests, 0);
+    assert.equal((await host.codingCapabilities()).usedRequests, 4);
+    assert.equal((await host.codingCapabilities()).unknownRequests, 1);
     await host.close();
     host = new OrchestrationHost(options);
     listed = await host.conversations(space.id);
@@ -155,10 +153,14 @@ test(
     assert.equal(main?.title, "修复对话消息显示");
     assert.equal(main?.sideConversations?.[0]?.title, "定位旁支消息遗漏");
     assert.equal(
-      listed.find((item) => item.id === "no-budget")?.title,
-      "额度耗尽保留临时标题",
+      listed.find((item) => item.id === "empty-title")?.title,
+      "EMPTY_TITLE 保留临时标题",
     );
-    assert.equal(titles.length, 2);
-    assert.equal(mainRequests, 5);
+    assert.equal(
+      listed.find((item) => item.id === "another")?.title,
+      "修复对话消息显示",
+    );
+    assert.equal(titles.length, 4);
+    assert.equal(mainRequests, 7);
   },
 );

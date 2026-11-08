@@ -812,13 +812,12 @@ export interface AutomationHistory {
   truncated: boolean;
 }
 
-/** User-configured allowance for additional conversation requests, not currency. */
+/** Conversation feature settings and request ledger diagnostics. */
 export interface CodingCapabilities {
   revision: number;
   autoCompact: boolean;
   web: boolean;
   subagents: boolean;
-  maxRequests: number;
   usedRequests: number;
   unknownRequests: number;
   hasWebKey: boolean;
@@ -850,7 +849,13 @@ export interface CodingSubagent {
 }
 
 export type CodingCapabilityActivity =
-  | { type: "notice"; id: string; text: string; at: number }
+  | {
+      type: "notice";
+      id: string;
+      text: string;
+      details?: ApiErrorDetails;
+      at: number;
+    }
   | {
       type: "web";
       callId: string;

@@ -102,7 +102,7 @@
   "planMode": "计划模式",
   "planHint": "先规划，再通过审阅卡批准执行",
   "goalMode": "目标模式",
-  "goalHint": "将下一条消息设为目标，按额度自动续跑",
+  "goalHint": "将下一条消息设为目标并自动续跑",
   "compact": "压缩上下文",
   "compactHint": "用当前模型概括较早记录，保留原始聊天历史",
   "selectModel": "选择模型",

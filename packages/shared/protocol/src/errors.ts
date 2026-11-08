@@ -179,6 +179,8 @@ export const apiErrorCodes = [
   "conversation_turn_busy",
   "collaboration_initial_required",
   "compaction_incomplete",
+  "auto_compaction_incomplete",
+  "conversation_title_fallback",
   "generation_stopped",
   "conversation_ended",
   "model_images_unsupported",

@@ -171,7 +171,6 @@ test(
       autoCompact: false,
       web: false,
       subagents: true,
-      maxRequests: 10,
     });
     const events: unknown[] = [];
     const answers: Array<Promise<unknown>> = [];
@@ -238,7 +237,6 @@ test(
       web: true,
       key: "synthetic-web-test-key",
       subagents: true,
-      maxRequests: 30,
     });
     const automatic: unknown[] = [];
     for (let index = 0; index < 3; index++)
@@ -286,7 +284,7 @@ test(
     );
     assert.equal((await host.codingSubagents("coding-no-escape")).length, 0);
     escapeChild = false;
-    // An empty side has nothing to summarize and consumes no allowance.
+    // An empty side has nothing to summarize and creates no request reservation.
     const side = await host.request<{ sessionId: string }>("coding/side/open", {
       sessionId: "coding-native-child",
     });

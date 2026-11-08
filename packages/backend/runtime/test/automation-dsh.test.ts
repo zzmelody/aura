@@ -102,7 +102,7 @@ test(
         timing: { kind: "at", at: new Date(Date.now() + 2_000).toISOString() },
       });
       assert.equal(task.status, "active");
-      assert.equal(task.conversationTitle, "你好");
+      assert.equal(task.conversationTitle, "好的");
       assert.deepEqual(
         (await host.automationTasks()).map(({ id }) => id),
         [task.id],

@@ -102,7 +102,7 @@
   "planMode": "Mode planification",
   "planHint": "Planifier, puis approuver l’exécution dans la fiche de révision",
   "goalMode": "Mode objectif",
-  "goalHint": "Utiliser le prochain message comme objectif et poursuivre automatiquement dans la limite autorisée",
+  "goalHint": "Définir le prochain message comme objectif et continuer automatiquement",
   "compact": "Compacter le contexte",
   "compactHint": "Résumer les anciens échanges avec le modèle actuel en conservant l’historique original",
   "selectModel": "Choisir un modèle",

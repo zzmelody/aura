@@ -46,14 +46,20 @@ const settings = {
   autoCompact: true,
   web: true,
   subagents: true,
-  maxRequests: 2,
 };
 
 test("capabilities do not write defaults, expose credentials or accept stale configuration revisions", async () => {
   const { store, table } = fixture();
-  assert.equal((await store.snapshot()).maxRequests, 0);
+  assert.deepEqual(await store.snapshot(), {
+    ...settings,
+    autoCompact: false,
+    web: false,
+    subagents: false,
+    usedRequests: 0,
+    unknownRequests: 0,
+    hasWebKey: false,
+  });
   assert.equal(table.get("settings"), undefined);
-  await assert.rejects(store.reserve("web", "chat"), /额度不足/u);
   const result = await store.save({
     ...settings,
     key: "synthetic-key-do-not-use",
@@ -72,59 +78,58 @@ test("capabilities do not write defaults, expose credentials or accept stale con
   assert.deepEqual(table.get("settings"), before);
 });
 
-test("concurrent reservations respect the allowance and uncertain results block further requests across restart", async () => {
-  const { store, restart } = fixture();
-  await store.save(settings);
-  const results = await Promise.allSettled([
+test("all request kinds reserve concurrently with the stored zero quota and across restart", async () => {
+  const { store, restart, table } = fixture();
+  const ids = await Promise.all([
     store.reserve("web", "a"),
     store.reserve("subagent", "b"),
     store.reserve("compaction", "a"),
+    store.reserve("goal", "a"),
+    store.reserve("mcp", "a"),
+    store.reserve("title", "a"),
   ]);
-  assert.equal(
-    results.filter((result) => result.status === "fulfilled").length,
-    2,
-  );
+  assert.equal(new Set(ids).size, 6);
+  assert.equal(table.get("settings")?.maxRequests, 0);
+  assert.equal((await store.snapshot()).usedRequests, 6);
   assert.equal((await store.snapshot()).unknownRequests, 0);
   const recovered = restart();
-  assert.equal((await recovered.snapshot()).unknownRequests, 2);
-  await assert.rejects(recovered.reserve("web", "a"), /结果未知/u);
-  await recovered.save({
-    ...settings,
-    revision: 1,
-    maxRequests: 3,
-    acknowledgeUnknown: true,
-  });
+  assert.equal((await recovered.snapshot()).unknownRequests, 6);
   const id = await recovered.reserve("web", "a");
   await recovered.settle(id, true);
-  assert.equal((await recovered.snapshot()).usedRequests, 3);
-  assert.equal((await recovered.snapshot()).unknownRequests, 0);
+  assert.equal((await recovered.snapshot()).usedRequests, 7);
+  assert.equal((await recovered.snapshot()).unknownRequests, 6);
+  assert.ok(ids.every((reserved) => table.get("settings")?.entries[reserved]));
 });
 
-test("failed paid operations retain reservations and require an explicit acknowledgement", async () => {
-  const { store } = fixture();
+test("failed paid operations retain unknown results without blocking new requests or changing stored settings", async () => {
+  const { store, restart, table } = fixture();
   await store.save(settings);
-  await store.settle(await store.reserve("compaction", "a"), false);
-  await assert.rejects(store.reserve("compaction", "a"), /结果未知/u);
-  assert.equal((await store.snapshot()).usedRequests, 1);
-  await store.save({ ...settings, revision: 1, acknowledgeUnknown: true });
-  assert.ok(await store.reserve("web", "a"));
+  const initial = table.get("settings")!;
+  await table.put("settings", { ...initial, maxRequests: 1 });
+  const failed = await store.reserve("compaction", "a");
+  await store.settle(failed, false);
+  const recovered = restart();
+  await recovered.save({ ...settings, revision: 1, web: false });
+  const next = await recovered.reserve("web", "a");
+  await recovered.settle(next, true);
+  assert.equal((await recovered.snapshot()).usedRequests, 2);
+  assert.equal((await recovered.snapshot()).unknownRequests, 1);
+  const saved = table.get("settings")!;
+  assert.equal(saved.maxRequests, 1);
+  assert.equal(saved.revision, 2);
+  assert.equal(saved.entries[failed]?.state, "unknown");
+  assert.equal(saved.entries[next]?.state, "complete");
 });
 
-test("a title reservation cannot be repeated after restart or acknowledgement of an unknown outcome", async () => {
+test("a title reservation cannot be repeated after restart while other conversations remain available", async () => {
   const { store, restart } = fixture();
-  await store.save({ ...settings, maxRequests: 3 });
   await store.settle(await store.reserve("title", "side-chat"), false);
   const recovered = restart();
-  await recovered.save({
-    ...settings,
-    revision: 1,
-    maxRequests: 3,
-    acknowledgeUnknown: true,
-  });
   await assert.rejects(recovered.reserve("title", "side-chat"), /已请求过/u);
   assert.equal((await recovered.snapshot()).usedRequests, 1);
   const next = await recovered.reserve("title", "another-chat");
   await recovered.settle(next, true);
   await assert.rejects(recovered.reserve("title", "another-chat"), /已请求过/u);
   assert.equal((await recovered.snapshot()).usedRequests, 2);
+  assert.equal((await recovered.snapshot()).unknownRequests, 1);
 });

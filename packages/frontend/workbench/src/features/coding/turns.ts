@@ -142,7 +142,7 @@ export function pendingQuestion(
  * flow (think, act, explain, act again) instead of all tools then all text.
  */
 export type TimelineItem =
-  | { kind: "notice"; id: string; text: string }
+  | { kind: "notice"; id: string; text: string | MessageReference }
   | { kind: "web"; event: Extract<CodingActivity, { type: "web" }> }
   | { kind: "text"; text: string }
   | { kind: "tools"; callIds: string[] }
@@ -257,7 +257,7 @@ export function applyTurnEvent(turn: Turn, event: TurnEvent): Turn {
     const item: TimelineItem = {
       kind: "notice",
       id: event.id,
-      text: event.text,
+      text: apiErrorText(event.details, event.text),
     };
     const index = turn.timeline.findIndex(
       (entry) => entry.kind === "notice" && entry.id === event.id,

@@ -45,15 +45,10 @@
   "subagents": "Research and review subagents",
   "subagentsHint": "Read-only subagents, up to two at a time.",
   "webHint": "Uses only the official DeepSeek Search / Fetch API; the original question is not sent.",
-  "webKeyBudget": "Web key and request allowance",
   "webKeyConfigured": "Web key configured",
   "webKeyMissing": "Web key not configured",
-  "reservedRequests": "Reserved requests: {{count, number}}",
   "pasteWebKey": "Paste DeepSeek Web API key",
-  "requestBudget": "Total additional request allowance",
   "deleteWebKey": "Delete saved Web key",
-  "acknowledgeUnknown": "I have reviewed requests with unknown outcomes ({{count, number}}) and allow new requests. Previous requests will not be resent.",
-  "requestBudgetHint": "Title generation, compaction, subagent model calls, Search and Fetch each reserve one request. This limits request counts, not spending; failures and cancellations are not refunded. Keys stay on the backend.",
   "saveCapabilities": "Save capabilities",
   "readCapabilities": "Loading capabilities",
   "pluginSettingsUnavailable": "Plugin directory settings are unavailable.",
@@ -92,5 +87,7 @@
   "noPlugins": "No plugins yet",
   "openPluginSettings": "Open {{title}} settings",
   "settings": "Settings",
-  "enablePlugin": "Enable {{title}}"
+  "enablePlugin": "Enable {{title}}",
+  "webKey": "Web key",
+  "webKeyHint": "Keys are stored only on the backend."
 }

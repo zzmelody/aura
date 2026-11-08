@@ -183,7 +183,8 @@ export function conversationService(
             emit({
               type: "notice",
               id: `title-${id}`,
-              text: "标题未能自动提炼，已保留临时标题。可在模型服务的对话能力中检查请求额度。",
+              text: "标题未能自动提炼，已保留临时标题。",
+              details: { code: "conversation_title_fallback" },
               at: Date.now(),
             });
         }

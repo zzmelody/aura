@@ -45,15 +45,10 @@
   "subagents": "调研与审查子 Agent",
   "subagentsHint": "只读子 Agent，最多同时 2 个。",
   "webHint": "仅访问 DeepSeek 官方 Search / Fetch API，不发送原始问题。",
-  "webKeyBudget": "Web Key 与请求额度",
   "webKeyConfigured": "已配置 Web Key",
   "webKeyMissing": "未配置 Web Key",
-  "reservedRequests": "已预留请求：{{count, number}}",
   "pasteWebKey": "粘贴 DeepSeek Web API Key",
-  "requestBudget": "累计额外请求额度",
   "deleteWebKey": "删除保存的 Web Key",
-  "acknowledgeUnknown": "我已核对未知结果（{{count, number}} 次），允许后续新请求（不会重发旧请求）",
-  "requestBudgetHint": "每次标题提炼、压缩摘要、子 Agent 模型调用、Search 或 Fetch 预留一次；这是次数上限，不是金额上限，失败或取消不退回。密钥只保存在后端。",
   "saveCapabilities": "保存对话能力",
   "readCapabilities": "读取对话能力",
   "pluginSettingsUnavailable": "插件目录设置暂时不可用。",
@@ -92,5 +87,7 @@
   "noPlugins": "还没有插件",
   "openPluginSettings": "打开 {{title}} 设置",
   "settings": "设置",
-  "enablePlugin": "启用 {{title}}"
+  "enablePlugin": "启用 {{title}}",
+  "webKey": "Web Key",
+  "webKeyHint": "密钥只保存在后端。"
 }

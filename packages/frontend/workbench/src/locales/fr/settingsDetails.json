@@ -45,15 +45,10 @@
   "subagents": "Sous-agents de recherche et de révision",
   "subagentsHint": "Sous-agents en lecture seule, deux simultanément au maximum.",
   "webHint": "Utilise uniquement l’API officielle DeepSeek Search / Fetch, sans envoyer la question originale.",
-  "webKeyBudget": "Clé Web et quota de requêtes",
   "webKeyConfigured": "Clé Web configurée",
   "webKeyMissing": "Clé Web non configurée",
-  "reservedRequests": "Requêtes réservées : {{count, number}}",
   "pasteWebKey": "Collez la clé API DeepSeek Web",
-  "requestBudget": "Quota total de requêtes supplémentaires",
   "deleteWebKey": "Supprimer la clé Web enregistrée",
-  "acknowledgeUnknown": "J’ai vérifié les requêtes au résultat inconnu ({{count, number}}) et autorise de nouvelles requêtes. Les précédentes ne seront pas renvoyées.",
-  "requestBudgetHint": "La génération de titres, la synthèse, les appels de modèles des sous-agents, Search et Fetch réservent chacun une requête. Le quota porte sur le nombre, pas le coût ; échecs et annulations ne le restituent pas. Les clés restent sur le serveur.",
   "saveCapabilities": "Enregistrer les fonctionnalités",
   "readCapabilities": "Chargement des fonctionnalités",
   "pluginSettingsUnavailable": "Les paramètres des dossiers de plugins sont indisponibles.",
@@ -92,5 +87,7 @@
   "noPlugins": "Aucun plugin pour le moment",
   "openPluginSettings": "Ouvrir les paramètres de {{title}}",
   "settings": "Paramètres",
-  "enablePlugin": "Activer {{title}}"
+  "enablePlugin": "Activer {{title}}",
+  "webKey": "Clé Web",
+  "webKeyHint": "Les clés sont stockées uniquement sur le serveur."
 }
