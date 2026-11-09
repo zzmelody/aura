@@ -6,7 +6,9 @@ import {
   mkdtemp,
   rename,
   rm,
+  stat,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,6 +16,135 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { PluginModules } from "../src/plugin-modules.ts";
+
+test("access metadata and identical bytes do not invalidate imported modules or raw resources", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "aura-plugin-content-events-"));
+  const nativeWatch = fs.watch;
+  let watcher: FSWatcher | undefined;
+  const wrapped = t.mock.method(
+    fs,
+    "watch",
+    (...args: Parameters<typeof fs.watch>) => {
+      watcher = nativeWatch(...args);
+      return watcher;
+    },
+  );
+  syncBuiltinESMExports();
+  const modules = new PluginModules();
+  t.after(async () => {
+    modules.close();
+    wrapped.mock.restore();
+    syncBuiltinESMExports();
+    await rm(root, { recursive: true, force: true });
+  });
+  const files = new Map([
+    ["package.json", '{"type":"module"}'],
+    ["entry.js", 'export const version = "one";'],
+    ["evidence.json", '{"value":1}'],
+    ["startup.yaml", "value: one"],
+    ["plugin.json", '{"version":"1"}'],
+  ]);
+  for (const [name, contents] of files)
+    await writeFile(join(root, name), contents);
+  await modules.revision(root);
+  await modules.import(join(root, "entry.js"), root);
+  const before = await modules.revision(root);
+  assert.ok(watcher);
+  for (const [name, contents] of files) {
+    const path = join(root, name);
+    const previous = await stat(path);
+    await utimes(path, new Date(previous.atimeMs + 60_000), previous.mtime);
+    watcher.emit("change", "change", name);
+    assert.equal(
+      await modules.revision(root),
+      before,
+      `${name}: access time only`,
+    );
+    await writeFile(path, contents);
+    watcher.emit("change", "change", name);
+    assert.equal(
+      await modules.revision(root),
+      before,
+      `${name}: identical rewrite`,
+    );
+  }
+  for (const name of [
+    "entry.js",
+    "evidence.json",
+    "startup.yaml",
+    "plugin.json",
+    "package.json",
+  ]) {
+    const path = join(root, name);
+    const previous = await stat(path);
+    const value = files.get(name)!;
+    const next = value.replace(/one|1|module/u, (match) =>
+      match === "one" ? "two" : match === "1" ? "2" : "common",
+    );
+    assert.equal(next.length, value.length);
+    const revision = await modules.revision(root);
+    await writeFile(path, next);
+    await utimes(path, previous.atime, previous.mtime);
+    watcher.emit("change", "change", name);
+    const changed = await modules.revision(root);
+    assert.ok(
+      changed > revision,
+      `${name}: same-size edit with restored mtime`,
+    );
+    watcher.emit("change", "change", name);
+    assert.equal(await modules.revision(root), changed, `${name}: duplicate`);
+  }
+});
+
+test("resource creation, deletion and restoration invalidate once while ignored paths stay ignored", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "aura-plugin-resource-events-"));
+  const nativeWatch = fs.watch;
+  let watcher: FSWatcher | undefined;
+  const wrapped = t.mock.method(
+    fs,
+    "watch",
+    (...args: Parameters<typeof fs.watch>) => {
+      watcher = nativeWatch(...args);
+      return watcher;
+    },
+  );
+  syncBuiltinESMExports();
+  const modules = new PluginModules();
+  t.after(async () => {
+    modules.close();
+    wrapped.mock.restore();
+    syncBuiltinESMExports();
+    await rm(root, { recursive: true, force: true });
+  });
+  await writeFile(join(root, "package.json"), '{"type":"module"}');
+  await writeFile(join(root, "entry.js"), "export const value = 1;");
+  await modules.revision(root);
+  await modules.import(join(root, "entry.js"), root);
+  assert.ok(watcher);
+  let previous = await modules.revision(root);
+  for (const change of [
+    () => writeFile(join(root, "new.json"), "{}"),
+    () => rm(join(root, "new.json")),
+    () => writeFile(join(root, "new.json"), "{}"),
+  ]) {
+    await change();
+    watcher.emit("change", "rename", "new.json");
+    const changed = await modules.revision(root);
+    assert.ok(changed > previous);
+    watcher.emit("change", "rename", "new.json");
+    assert.equal(await modules.revision(root), changed);
+    previous = changed;
+  }
+  for (const name of [
+    "node_modules/helper.js",
+    ".cache/state.json",
+    "notes.md",
+    "already-removed.json",
+  ]) {
+    watcher.emit("change", "change", name);
+    assert.equal(await modules.revision(root), previous);
+  }
+});
 
 test("late notifications for unchanged loaded sources do not reopen their module generation", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "aura-plugin-source-events-"));

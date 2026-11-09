@@ -5,6 +5,7 @@ import {
   readFile,
   rm,
   stat,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -18,6 +19,86 @@ import { PluginBackends } from "../src/plugin-backends.ts";
 import { MANAGED_PROCESS_PERMISSION } from "../src/managed-process/process.ts";
 import { installHostPluginSdkResolution } from "../src/plugin-sdk-resolution.ts";
 import type { BackendRoot } from "../src/types.ts";
+
+test("access metadata preserves a backend while real helper and startup resource changes reload it", () =>
+  fixture(async (dir) => {
+    const pluginRoot = join(dir, "content");
+    await mkdir(pluginRoot);
+    const resource = join(pluginRoot, "startup.json");
+    await writeFile(resource, '{"value":"one"}');
+    const entry = await writeEntry(
+      pluginRoot,
+      `
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { defineBackend } from ${JSON.stringify(backendApi)};
+import { version } from "./helper.js";
+export default defineBackend({
+  async open() {
+    const instance = randomUUID();
+    const config = JSON.parse(await readFile(new URL("../startup.json", import.meta.url), "utf8"));
+    return {pageOperations: ["state"], invoke() {return {instance, version, config: config.value};}};
+  }
+});
+`,
+    );
+    const helper = join(pluginRoot, "backend", "helper.js");
+    await writeFile(helper, 'export const version = "one";');
+    const host = new PluginBackends({ dataRoot: join(dir, "data") });
+    try {
+      await host.replace([
+        {
+          root: entry,
+          pluginRoot,
+          namespace: "content",
+          plugin: { id: "content", name: "content", version: "1.0.0" },
+        },
+      ]);
+      const state = async () => {
+        const value = await host.invokeFromPage(
+          "content",
+          "state",
+          null,
+          signal(),
+        );
+        assert.ok(value && typeof value === "object" && !Array.isArray(value));
+        assert.equal(typeof value.instance, "string");
+        return value;
+      };
+      const initial = await state();
+      assert.equal(initial.config, "one");
+      for (const path of [resource, helper]) {
+        const previous = await stat(path);
+        await utimes(path, new Date(previous.atimeMs + 60_000), previous.mtime);
+      }
+      for (let index = 0; index < 20; index++) {
+        await delay(10);
+        await host.refresh();
+        assert.deepEqual(await state(), initial);
+      }
+      const previous = await stat(helper);
+      await writeFile(helper, 'export const version = "two";');
+      await utimes(helper, previous.atime, previous.mtime);
+      await waitFor(async () => {
+        await host.refresh();
+        return (await state()).version;
+      }, "two");
+      const second = await state();
+      assert.notEqual(second.instance, initial.instance);
+      const resourceTime = await stat(resource);
+      await writeFile(resource, '{"value":"two"}');
+      await utimes(resource, resourceTime.atime, resourceTime.mtime);
+      await waitFor(async () => {
+        await host.refresh();
+        return (await state()).config;
+      }, "two");
+      const third = await state();
+      assert.notEqual(third.instance, second.instance);
+      assert.equal(third.version, "two");
+    } finally {
+      await host.close();
+    }
+  }));
 
 const backendApi = "@aura/plugin-sdk/backend";
 
@@ -207,7 +288,7 @@ export default defineBackend({ open(host) {
     await host.close();
   }));
 
-test("a backend loads its actual imports without parsing unrelated files or hashing dynamic imports", () =>
+test("a backend loads its actual imports without parsing unrelated files or preloading dynamic imports", () =>
   fixture(async (dir) => {
     const descriptor = await plugin(
       dir,

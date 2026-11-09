@@ -29,6 +29,7 @@
 - [外部系统接入方案](proposals/external-integrations.md)：邮件、飞书、GitHub 的接入路径、凭据边界与分期，尚未实现。
 - [本轮验证](verification.md)
 - [历史验证记录](verification/history.md)：按当时提交与环境记录，不代表当前全仓状态。
+- [插件源码通知按内容去重](verification/plugin-source-content-2026-11-09.md)：访问时间误报、启动资源更新及量化长任务的宿主边界核验。
 
 新增文档放入对应目录，同时更新此入口。行为和公共接口变化更新所属包的 README 及功能文档；验证记录只记实际执行的结果。
 
